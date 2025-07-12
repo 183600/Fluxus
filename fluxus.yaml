@@ -1,0 +1,60 @@
+# Fluxus Compiler Configuration
+# This file contains default settings for the compiler
+
+# Source language (Python or Go)
+source_language: "Python"
+
+# Optimization level (O0, O1, O2, O3, Os)
+optimization_level: "O2"
+
+# Target platform
+target_platform: "linux-x86_64"
+
+# Feature flags
+enable_interop: true
+enable_debug_info: false
+enable_profiler: false
+enable_parallel: true
+enable_analysis: true
+
+# Compilation settings
+max_concurrency: 4
+cpp_standard: "c++20"
+cpp_compiler: "clang++"
+verbose_level: 1
+
+# Build settings
+keep_intermediates: false
+strict_mode: false
+
+# Paths
+include_paths:
+  - "/usr/include"
+  - "/usr/local/include"
+  - "/opt/homebrew/include"  # macOS Homebrew
+
+library_paths:
+  - "/usr/lib"
+  - "/usr/local/lib"
+  - "/opt/homebrew/lib"      # macOS Homebrew
+
+# Libraries to link
+linked_libraries:
+  - "stdc++"
+  - "pthread"
+
+# Development profile (uncomment to use)
+# source_language: "Python"
+# optimization_level: "O0"
+# enable_debug_info: true
+# verbose_level: 2
+# keep_intermediates: true
+# strict_mode: false
+
+# Production profile (uncomment to use)
+# source_language: "Python"
+# optimization_level: "O3"
+# enable_debug_info: false
+# verbose_level: 0
+# keep_intermediates: false
+# strict_mode: true
