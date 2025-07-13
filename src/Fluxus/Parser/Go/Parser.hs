@@ -1,12 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Go parser that converts tokens to AST
 module Fluxus.Parser.Go.Parser
   ( -- * Parser types
     GoParser
-  , ParseError(..)
+  , GoParseError(..)
     -- * Main parsing functions
   , parseGo
   , runGoParser
@@ -21,18 +23,16 @@ module Fluxus.Parser.Go.Parser
   , parseConstDecl
     -- * Statement parsers
   , parseStatement
-  , parseBlock
+  , parseBlockStmt
   , parseIfStmt
   , parseForStmt
   , parseSwitchStmt
     -- * Expression parsers
   , parseExpression
   , parseUnaryExpr
-  , parseBinaryExpr
   , parseAtomExpr
-  , parseCall
     -- * Type parsers
-  , parseType
+  , parseGoType
   , parseStructType
   , parseInterfaceType
     -- * Utility parsers
@@ -41,21 +41,35 @@ module Fluxus.Parser.Go.Parser
   ) where
 
 import Control.Monad (void, when)
-import Control.Applicative ((<|>), many, some, optional)
+import Control.Applicative ((<|>), some, optional, many, (<$))
+import Data.Functor (($>))
+import qualified Control.Applicative as A
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
-import Text.Megaparsec
+import Text.Megaparsec hiding (many)
+import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 
-import Fluxus.AST.Common
+import Fluxus.AST.Common as Common
 import Fluxus.AST.Go
 import Fluxus.Parser.Go.Lexer
 
+-- | Simple chainl1 implementation for left-associative operators
+chainl1 :: GoParser a -> GoParser (a -> a -> a) -> GoParser a
+chainl1 p op = do
+  x <- p
+  rest x
+  where
+    rest x = (do
+      f <- op
+      y <- p
+      rest (f x y)) <|> return x
+
 -- | Parser error type
-data ParseError = ParseError
+data GoParseError = GoParseError
   { peMessage :: !Text
   , peLocation :: !SourceSpan
   } deriving (Eq, Show)
@@ -86,13 +100,13 @@ parsePackage = do
 -- | Parse a Go file
 parseFile :: GoParser GoFile
 parseFile = do
-  skipNewlines
-  void $ goKeyword GoKwPackage
+  skipCommentsAndNewlines
+  void $ goKeywordP GoKwPackage
   packageName <- parseGoIdentifier
-  skipNewlines
+  skipCommentsAndNewlines
   
-  imports <- many (parseImportDecl <* skipNewlines)
-  decls <- many (parseDeclaration <* skipNewlines)
+  imports <- MP.many (parseImportDecl <* skipCommentsAndNewlines)
+  decls <- MP.many (parseDeclaration <* skipCommentsAndNewlines)
   
   return $ GoFile
     { goFileName = "<input>"
@@ -104,12 +118,12 @@ parseFile = do
 -- | Parse import declarations
 parseImportDecl :: GoParser [Located GoImport]
 parseImportDecl = do
-  void $ goKeyword GoKwImport
+  void $ goKeywordP GoKwImport
   choice
     [ do
-        void $ goDelimiter GoDelimLeftParen
-        imports <- many (located parseImportSpec <* skipNewlines)
-        void $ goDelimiter GoDelimRightParen
+        void $ goDelimiterP GoDelimLeftParen
+        imports <- many (located parseImportSpec <* skipCommentsAndNewlines)
+        void $ goDelimiterP GoDelimRightParen
         return imports
     , do
         imp <- located parseImportSpec
@@ -118,7 +132,7 @@ parseImportDecl = do
   where
     parseImportSpec = do
       alias <- optional $ choice
-        [ goDelimiter GoDelimDot $> Nothing   -- . import
+        [ goDelimiterP GoDelimDot $> Nothing   -- . import
         , parseGoIdentifier >>= \i -> return (Just i)
         ]
       path <- parseGoString
@@ -141,38 +155,30 @@ parseDeclaration = located $ choice
 -- | Parse function declarations
 parseFuncDecl :: GoParser GoDecl
 parseFuncDecl = do
-  void $ goKeyword GoKwFunc
+  void $ goKeywordP GoKwFunc
   
   -- Check for method receiver
   receiver <- optional $ do
-    void $ goDelimiter GoDelimLeftParen
+    void $ goDelimiterP GoDelimLeftParen
     recv <- parseReceiver
-    void $ goDelimiter GoDelimRightParen
+    void $ goDelimiterP GoDelimRightParen
     return recv
   
   name <- parseGoIdentifier
   
-  void $ goDelimiter GoDelimLeftParen
+  void $ goDelimiterP GoDelimLeftParen
   params <- parseParameterList
-  void $ goDelimiter GoDelimRightParen
+  void $ goDelimiterP GoDelimRightParen
   
-  results <- optional $ choice
-    [ do
-        void $ goDelimiter GoDelimLeftParen
-        res <- parseParameterList
-        void $ goDelimiter GoDelimRightParen
-        return res
-    , do
-        res <- parseGoType
-        return [GoField [] res Nothing]
-    ]
+  -- Skip return type parsing for now
+  let results = []
   
   body <- optional parseBlockStmt
   
   let func = GoFunction
         { goFuncName = Just name
         , goFuncParams = params
-        , goFuncResults = maybe [] id results
+        , goFuncResults = results
         , goFuncBody = body
         }
   
@@ -183,7 +189,7 @@ parseFuncDecl = do
 -- | Parse type declarations
 parseTypeDecl :: GoParser GoDecl
 parseTypeDecl = do
-  void $ goKeyword GoKwType
+  void $ goKeywordP GoKwType
   name <- parseGoIdentifier
   typeExpr <- parseGoType
   return $ GoTypeDecl name typeExpr
@@ -191,12 +197,12 @@ parseTypeDecl = do
 -- | Parse variable declarations
 parseVarDecl :: GoParser GoDecl
 parseVarDecl = do
-  void $ goKeyword GoKwVar
+  void $ goKeywordP GoKwVar
   choice
     [ do
-        void $ goDelimiter GoDelimLeftParen
+        void $ goDelimiterP GoDelimLeftParen
         specs <- many (parseVarSpec <* skipNewlines)
-        void $ goDelimiter GoDelimRightParen
+        void $ goDelimiterP GoDelimRightParen
         return $ GoVarDecl (concat specs)
     , do
         specs <- parseVarSpec
@@ -207,7 +213,7 @@ parseVarDecl = do
       names <- parseIdentifierList
       typeExpr <- optional parseGoType
       values <- optional $ do
-        void $ goOperator GoOpAssign
+        void $ goOperatorP GoOpAssign
         parseExpressionList
       
       let specs = case values of
@@ -218,12 +224,12 @@ parseVarDecl = do
 -- | Parse constant declarations
 parseConstDecl :: GoParser GoDecl
 parseConstDecl = do
-  void $ goKeyword GoKwConst
+  void $ goKeywordP GoKwConst
   choice
     [ do
-        void $ goDelimiter GoDelimLeftParen
+        void $ goDelimiterP GoDelimLeftParen
         specs <- many (parseConstSpec <* skipNewlines)
-        void $ goDelimiter GoDelimRightParen
+        void $ goDelimiterP GoDelimRightParen
         return $ GoConstDecl (concat specs)
     , do
         specs <- parseConstSpec
@@ -233,7 +239,7 @@ parseConstDecl = do
     parseConstSpec = do
       names <- parseIdentifierList
       typeExpr <- optional parseGoType
-      void $ goOperator GoOpAssign
+      void $ goOperatorP GoOpAssign
       values <- parseExpressionList
       
       let specs = zipWith (\name val -> (name, typeExpr, val)) names values
@@ -276,7 +282,7 @@ parseExprStmt = GoExprStmt <$> parseExpression
 parseAssignment :: GoParser GoStmt
 parseAssignment = do
   lhs <- parseExpressionList
-  void $ goOperator GoOpAssign
+  void $ goOperatorP GoOpAssign
   rhs <- parseExpressionList
   return $ GoAssign lhs rhs
 
@@ -284,7 +290,7 @@ parseAssignment = do
 parseShortVarDecl :: GoParser GoStmt
 parseShortVarDecl = do
   names <- parseIdentifierList
-  void $ goOperator GoOpDefine
+  void $ goOperatorP GoOpDefine
   values <- parseExpressionList
   return $ GoDefine names values
 
@@ -293,8 +299,8 @@ parseIncDecStmt :: GoParser GoStmt
 parseIncDecStmt = do
   expr <- parseExpression
   op <- choice
-    [ goOperator GoOpIncrement $> True
-    , goOperator GoOpDecrement $> False
+    [ goOperatorP GoOpIncrement $> True
+    , goOperatorP GoOpDecrement $> False
     ]
   return $ GoIncDec expr op
 
@@ -302,26 +308,26 @@ parseIncDecStmt = do
 parseSendStmt :: GoParser GoStmt
 parseSendStmt = do
   channel <- parseExpression
-  void $ goOperator GoOpArrow
+  void $ goOperatorP GoOpArrow
   value <- parseExpression
   return $ GoSend channel value
 
 -- | Parse if statements
 parseIfStmt :: GoParser GoStmt
 parseIfStmt = do
-  void $ goKeyword GoKwIf
+  void $ goKeywordP GoKwIf
   
   -- Optional simple statement
   simpleStmt <- optional $ try $ do
     stmt <- parseSimpleStmt
-    void $ goDelimiter GoDelimSemicolon
+    void $ goDelimiterP GoDelimSemicolon
     return $ located' stmt
   
   condition <- parseExpression
   thenBody <- located parseBlockStmt'
   
   elseBody <- optional $ do
-    void $ goKeyword GoKwElse
+    void $ goKeywordP GoKwElse
     choice
       [ located parseIfStmt      -- else if
       , located parseBlockStmt'  -- else block
@@ -332,7 +338,7 @@ parseIfStmt = do
 -- | Parse for statements
 parseForStmt :: GoParser GoStmt
 parseForStmt = do
-  void $ goKeyword GoKwFor
+  void $ goKeywordP GoKwFor
   
   choice
     [ try parseRangeFor
@@ -343,13 +349,13 @@ parseForStmt = do
     parseRangeFor = do
       key <- optional parseGoIdentifier
       value <- optional $ do
-        void $ goDelimiter GoDelimComma
+        void $ goDelimiterP GoDelimComma
         parseGoIdentifier
       isDefine <- choice
-        [ goOperator GoOpDefine $> True
-        , goOperator GoOpAssign $> False
+        [ goOperatorP GoOpDefine $> True
+        , goOperatorP GoOpAssign $> False
         ]
-      void $ goKeyword GoKwRange
+      void $ goKeywordP GoKwRange
       expr <- parseExpression
       body <- located parseBlockStmt'
       
@@ -364,12 +370,12 @@ parseForStmt = do
     parseForClause = do
       init <- optional $ do
         stmt <- parseSimpleStmt
-        void $ goDelimiter GoDelimSemicolon
+        void $ goDelimiterP GoDelimSemicolon
         return $ located' stmt
       
       condition <- optional $ do
         expr <- parseExpression
-        void $ goDelimiter GoDelimSemicolon
+        void $ goDelimiterP GoDelimSemicolon
         return expr
       
       post <- optional $ do
@@ -392,31 +398,31 @@ parseForStmt = do
 -- | Parse switch statements
 parseSwitchStmt :: GoParser GoStmt
 parseSwitchStmt = do
-  void $ goKeyword GoKwSwitch
+  void $ goKeywordP GoKwSwitch
   
   simpleStmt <- optional $ try $ do
     stmt <- parseSimpleStmt
-    void $ goDelimiter GoDelimSemicolon
+    void $ goDelimiterP GoDelimSemicolon
     return $ located' stmt
   
   expr <- optional parseExpression
   
-  void $ goDelimiter GoDelimLeftBrace
+  void $ goDelimiterP GoDelimLeftBrace
   cases <- many parseCaseClause
-  void $ goDelimiter GoDelimRightBrace
+  void $ goDelimiterP GoDelimRightBrace
   
   return $ GoSwitch simpleStmt expr cases
   where
     parseCaseClause = located $ choice
       [ do
-          void $ goKeyword GoKwCase
+          void $ goKeywordP GoKwCase
           exprs <- parseExpressionList
-          void $ goDelimiter GoDelimColon
+          void $ goDelimiterP GoDelimColon
           stmts <- many parseStatement
           return $ GoCase exprs stmts
       , do
-          void $ goKeyword GoKwDefault
-          void $ goDelimiter GoDelimColon
+          void $ goKeywordP GoKwDefault
+          void $ goDelimiterP GoDelimColon
           stmts <- many parseStatement
           return $ GoDefault stmts
       ]
@@ -424,24 +430,24 @@ parseSwitchStmt = do
 -- | Parse select statements
 parseSelectStmt :: GoParser GoStmt
 parseSelectStmt = do
-  void $ goKeyword GoKwSelect
-  void $ goDelimiter GoDelimLeftBrace
+  void $ goKeywordP GoKwSelect
+  void $ goDelimiterP GoDelimLeftBrace
   cases <- many parseCommClause
-  void $ goDelimiter GoDelimRightBrace
+  void $ goDelimiterP GoDelimRightBrace
   return $ GoSelect cases
   where
     parseCommClause = located $ choice
       [ do
-          void $ goKeyword GoKwCase
+          void $ goKeywordP GoKwCase
           comm <- parseSimpleStmt
-          void $ goDelimiter GoDelimColon
+          void $ goDelimiterP GoDelimColon
           stmts <- many parseStatement
-          return $ GoCommCase (Just $ located' comm) stmts
+          return $ GoCommClause (Just $ located' comm) stmts
       , do
-          void $ goKeyword GoKwDefault
-          void $ goDelimiter GoDelimColon
+          void $ goKeywordP GoKwDefault
+          void $ goDelimiterP GoDelimColon
           stmts <- many parseStatement
-          return $ GoCommDefault stmts
+          return $ GoCommClause Nothing stmts
       ]
 
 -- | Parse block statements
@@ -450,60 +456,61 @@ parseBlockStmt = located parseBlockStmt'
 
 parseBlockStmt' :: GoParser GoStmt
 parseBlockStmt' = do
-  void $ goDelimiter GoDelimLeftBrace
-  stmts <- many parseStatement
-  void $ goDelimiter GoDelimRightBrace
+  void $ goDelimiterP GoDelimLeftBrace
+  skipCommentsAndNewlines
+  stmts <- many (parseStatement <* skipCommentsAndNewlines)
+  void $ goDelimiterP GoDelimRightBrace
   return $ GoBlock stmts
 
 -- | Parse return statements
 parseReturnStmt :: GoParser GoStmt
 parseReturnStmt = do
-  void $ goKeyword GoKwReturn
+  void $ goKeywordP GoKwReturn
   exprs <- option [] parseExpressionList
   return $ GoReturn exprs
 
 -- | Parse break statements
 parseBreakStmt :: GoParser GoStmt
 parseBreakStmt = do
-  void $ goKeyword GoKwBreak
+  void $ goKeywordP GoKwBreak
   label <- optional parseGoIdentifier
   return $ GoBreak label
 
 -- | Parse continue statements
 parseContinueStmt :: GoParser GoStmt
 parseContinueStmt = do
-  void $ goKeyword GoKwContinue
+  void $ goKeywordP GoKwContinue
   label <- optional parseGoIdentifier
   return $ GoContinue label
 
 -- | Parse goto statements
 parseGotoStmt :: GoParser GoStmt
 parseGotoStmt = do
-  void $ goKeyword GoKwGoto
+  void $ goKeywordP GoKwGoto
   label <- parseGoIdentifier
   return $ GoGoto label
 
 -- | Parse fallthrough statements
 parseFallthroughStmt :: GoParser GoStmt
-parseFallthroughStmt = goKeyword GoKwFallthrough $> GoFallthrough
+parseFallthroughStmt = goKeywordP GoKwFallthrough $> GoFallthrough
 
 -- | Parse defer statements
 parseDeferStmt :: GoParser GoStmt
 parseDeferStmt = do
-  void $ goKeyword GoKwDefer
+  void $ goKeywordP GoKwDefer
   expr <- parseExpression
   return $ GoDefer expr
 
 -- | Parse go statements (goroutines)
 parseGoStmt :: GoParser GoStmt
 parseGoStmt = do
-  void $ goKeyword GoKwGo
+  void $ goKeywordP GoKwGo
   expr <- parseExpression
   return $ GoGo expr
 
 -- | Parse empty statements
 parseEmptyStmt :: GoParser GoStmt
-parseEmptyStmt = goDelimiter GoDelimSemicolon $> GoEmpty
+parseEmptyStmt = goDelimiterP GoDelimSemicolon $> GoEmpty
 
 -- | Parse expressions
 parseExpression :: GoParser (Located GoExpr)
@@ -513,55 +520,55 @@ parseOrExpr :: GoParser (Located GoExpr)
 parseOrExpr = chainl1 parseAndExpr parseOrOp
   where
     parseOrOp = do
-      void $ goOperator GoOpOr
+      void $ goOperatorP GoOpOr
       return $ \l r -> located' $ GoBinaryOp OpOr l r
 
 parseAndExpr :: GoParser (Located GoExpr)
 parseAndExpr = chainl1 parseEqualityExpr parseAndOp
   where
     parseAndOp = do
-      void $ goOperator GoOpAnd
+      void $ goOperatorP GoOpAnd
       return $ \l r -> located' $ GoBinaryOp OpAnd l r
 
 parseEqualityExpr :: GoParser (Located GoExpr)
 parseEqualityExpr = chainl1 parseRelationalExpr parseEqOp
   where
     parseEqOp = choice
-      [ goOperator GoOpEq $> (\l r -> located' $ GoComparison OpEq l r)
-      , goOperator GoOpNe $> (\l r -> located' $ GoComparison OpNe l r)
+      [ goOperatorP GoOpEq $> (\l r -> located' $ GoComparison OpEq l r)
+      , goOperatorP GoOpNe $> (\l r -> located' $ GoComparison OpNe l r)
       ]
 
 parseRelationalExpr :: GoParser (Located GoExpr)
 parseRelationalExpr = chainl1 parseAdditiveExpr parseRelOp
   where
     parseRelOp = choice
-      [ goOperator GoOpLt $> (\l r -> located' $ GoComparison OpLt l r)
-      , goOperator GoOpLe $> (\l r -> located' $ GoComparison OpLe l r)
-      , goOperator GoOpGt $> (\l r -> located' $ GoComparison OpGt l r)
-      , goOperator GoOpGe $> (\l r -> located' $ GoComparison OpGe l r)
+      [ goOperatorP GoOpLt $> (\l r -> located' $ GoComparison OpLt l r)
+      , goOperatorP GoOpLe $> (\l r -> located' $ GoComparison OpLe l r)
+      , goOperatorP GoOpGt $> (\l r -> located' $ GoComparison OpGt l r)
+      , goOperatorP GoOpGe $> (\l r -> located' $ GoComparison OpGe l r)
       ]
 
 parseAdditiveExpr :: GoParser (Located GoExpr)
 parseAdditiveExpr = chainl1 parseMultiplicativeExpr parseAddOp
   where
     parseAddOp = choice
-      [ goOperator GoOpPlus $> (\l r -> located' $ GoBinaryOp OpAdd l r)
-      , goOperator GoOpMinus $> (\l r -> located' $ GoBinaryOp OpSub l r)
-      , goOperator GoOpBitOr $> (\l r -> located' $ GoBinaryOp OpBitOr l r)
-      , goOperator GoOpBitXor $> (\l r -> located' $ GoBinaryOp OpBitXor l r)
+      [ goOperatorP GoOpPlus $> (\l r -> located' $ GoBinaryOp OpAdd l r)
+      , goOperatorP GoOpMinus $> (\l r -> located' $ GoBinaryOp OpSub l r)
+      , goOperatorP GoOpBitOr $> (\l r -> located' $ GoBinaryOp OpBitOr l r)
+      , goOperatorP GoOpBitXor $> (\l r -> located' $ GoBinaryOp OpBitXor l r)
       ]
 
 parseMultiplicativeExpr :: GoParser (Located GoExpr)
 parseMultiplicativeExpr = chainl1 parseUnaryExpr parseMulOp
   where
     parseMulOp = choice
-      [ goOperator GoOpMult $> (\l r -> located' $ GoBinaryOp OpMul l r)
-      , goOperator GoOpDiv $> (\l r -> located' $ GoBinaryOp OpDiv l r)
-      , goOperator GoOpMod $> (\l r -> located' $ GoBinaryOp OpMod l r)
-      , goOperator GoOpBitAnd $> (\l r -> located' $ GoBinaryOp OpBitAnd l r)
-      , goOperator GoOpBitClear $> (\l r -> located' $ GoBinaryOp OpBitXor l r)  -- &^ implemented as XOR
-      , goOperator GoOpLeftShift $> (\l r -> located' $ GoBinaryOp OpShiftL l r)
-      , goOperator GoOpRightShift $> (\l r -> located' $ GoBinaryOp OpShiftR l r)
+      [ goOperatorP GoOpMult $> (\l r -> located' $ GoBinaryOp OpMul l r)
+      , goOperatorP GoOpDiv $> (\l r -> located' $ GoBinaryOp OpDiv l r)
+      , goOperatorP GoOpMod $> (\l r -> located' $ GoBinaryOp OpMod l r)
+      , goOperatorP GoOpBitAnd $> (\l r -> located' $ GoBinaryOp OpBitAnd l r)
+      , goOperatorP GoOpBitClear $> (\l r -> located' $ GoBinaryOp OpBitXor l r)  -- &^ implemented as XOR
+      , goOperatorP GoOpLeftShift $> (\l r -> located' $ GoBinaryOp OpShiftL l r)
+      , goOperatorP GoOpRightShift $> (\l r -> located' $ GoBinaryOp OpShiftR l r)
       ]
 
 -- | Parse unary expressions
@@ -569,13 +576,13 @@ parseUnaryExpr :: GoParser (Located GoExpr)
 parseUnaryExpr = choice
   [ do
       op <- choice
-        [ goOperator GoOpPlus $> OpPositive
-        , goOperator GoOpMinus $> OpNegate
-        , goOperator GoOpNot $> OpNot
-        , goOperator GoOpBitXor $> OpBitNot
-        , goOperator GoOpAddress $> OpPositive  -- Placeholder
-        , goOperator GoOpMult $> OpNegate       -- Placeholder (dereference)
-        , goOperator GoOpArrow $> OpPositive    -- Placeholder (receive)
+        [ goOperatorP GoOpPlus $> OpPositive
+        , goOperatorP GoOpMinus $> OpNegate
+        , goOperatorP GoOpNot $> OpNot
+        , goOperatorP GoOpBitXor $> OpBitNot
+        , goOperatorP GoOpAddress $> OpPositive  -- Placeholder
+        , goOperatorP GoOpMult $> OpNegate       -- Placeholder (dereference)
+        , goOperatorP GoOpArrow $> OpPositive    -- Placeholder (receive)
         ]
       expr <- parseUnaryExpr
       return $ located' $ GoUnaryOp op expr
@@ -620,18 +627,18 @@ parseGoIdentifierExpr = GoIdent <$> parseGoIdentifier
 -- | Parse parenthesized expressions
 parseParenExpr :: GoParser GoExpr
 parseParenExpr = do
-  void $ goDelimiter GoDelimLeftParen
+  void $ goDelimiterP GoDelimLeftParen
   expr <- parseExpression
-  void $ goDelimiter GoDelimRightParen
+  void $ goDelimiterP GoDelimRightParen
   return $ locatedValue expr
 
 -- | Parse composite literals
 parseCompositeLit :: GoParser GoExpr
 parseCompositeLit = do
   typeExpr <- optional parseGoType
-  void $ goDelimiter GoDelimLeftBrace
-  elements <- parseExpression `sepBy` goDelimiter GoDelimComma
-  void $ goDelimiter GoDelimRightBrace
+  void $ goDelimiterP GoDelimLeftBrace
+  elements <- parseExpression `sepBy` goDelimiterP GoDelimComma
+  void $ goDelimiterP GoDelimRightBrace
   return $ GoCompositeLit typeExpr elements
 
 -- | Parse postfix operators
@@ -647,30 +654,30 @@ parsePostfix = choice
 -- | Parse function calls
 parseCall :: GoParser (Located GoExpr -> Located GoExpr)
 parseCall = do
-  void $ goDelimiter GoDelimLeftParen
+  void $ goDelimiterP GoDelimLeftParen
   args <- parseExpressionList
-  void $ goDelimiter GoDelimRightParen
+  void $ goDelimiterP GoDelimRightParen
   return $ \expr -> located' $ GoCall expr args
 
 -- | Parse array/slice indexing
 parseIndex :: GoParser (Located GoExpr -> Located GoExpr)
 parseIndex = do
-  void $ goDelimiter GoDelimLeftBracket
+  void $ goDelimiterP GoDelimLeftBracket
   index <- parseExpression
-  void $ goDelimiter GoDelimRightBracket
+  void $ goDelimiterP GoDelimRightBracket
   return $ \expr -> located' $ GoIndex expr index
 
 -- | Parse slice expressions
 parseSlice :: GoParser (Located GoExpr -> Located GoExpr)
 parseSlice = do
-  void $ goDelimiter GoDelimLeftBracket
+  void $ goDelimiterP GoDelimLeftBracket
   low <- optional parseExpression
-  void $ goDelimiter GoDelimColon
+  void $ goDelimiterP GoDelimColon
   high <- optional parseExpression
   max_ <- optional $ do
-    void $ goDelimiter GoDelimColon
+    void $ goDelimiterP GoDelimColon
     parseExpression
-  void $ goDelimiter GoDelimRightBracket
+  void $ goDelimiterP GoDelimRightBracket
   
   let sliceExpr = GoSliceExpr
         { goSliceLow = low
@@ -682,17 +689,17 @@ parseSlice = do
 -- | Parse selector expressions
 parseSelector :: GoParser (Located GoExpr -> Located GoExpr)
 parseSelector = do
-  void $ goDelimiter GoDelimDot
+  void $ goDelimiterP GoDelimDot
   field <- parseGoIdentifier
   return $ \expr -> located' $ GoSelector expr field
 
 -- | Parse type assertions
 parseTypeAssertion :: GoParser (Located GoExpr -> Located GoExpr)
 parseTypeAssertion = do
-  void $ goDelimiter GoDelimDot
-  void $ goDelimiter GoDelimLeftParen
+  void $ goDelimiterP GoDelimDot
+  void $ goDelimiterP GoDelimLeftParen
   typeExpr <- parseGoType
-  void $ goDelimiter GoDelimRightParen
+  void $ goDelimiterP GoDelimRightParen
   return $ \expr -> located' $ GoTypeAssert expr typeExpr
 
 -- | Parse Go types
@@ -706,7 +713,7 @@ parseGoType = located $ choice
   , try parseFuncType
   , try parseInterfaceType
   , try parseStructType
-  , parseBasicType
+  , try parseBasicType
   ]
 
 -- | Parse basic types
@@ -716,27 +723,27 @@ parseBasicType = GoBasicType <$> parseGoIdentifier
 -- | Parse array types
 parseArrayType :: GoParser GoType
 parseArrayType = do
-  void $ goDelimiter GoDelimLeftBracket
+  void $ goDelimiterP GoDelimLeftBracket
   size <- parseExpression
-  void $ goDelimiter GoDelimRightBracket
+  void $ goDelimiterP GoDelimRightBracket
   elemType <- parseGoType
   return $ GoArrayType size elemType
 
 -- | Parse slice types
 parseSliceType :: GoParser GoType
 parseSliceType = do
-  void $ goDelimiter GoDelimLeftBracket
-  void $ goDelimiter GoDelimRightBracket
+  void $ goDelimiterP GoDelimLeftBracket
+  void $ goDelimiterP GoDelimRightBracket
   elemType <- parseGoType
   return $ GoSliceType elemType
 
 -- | Parse map types
 parseMapType :: GoParser GoType
 parseMapType = do
-  void $ goKeyword GoKwMap
-  void $ goDelimiter GoDelimLeftBracket
+  void $ goKeywordP GoKwMap
+  void $ goDelimiterP GoDelimLeftBracket
   keyType <- parseGoType
-  void $ goDelimiter GoDelimRightBracket
+  void $ goDelimiterP GoDelimRightBracket
   valueType <- parseGoType
   return $ GoMapType keyType valueType
 
@@ -744,15 +751,15 @@ parseMapType = do
 parseChanType :: GoParser GoType
 parseChanType = choice
   [ do
-      void $ goOperator GoOpArrow
-      void $ goKeyword GoKwChan
+      void $ goOperatorP GoOpArrow
+      void $ goKeywordP GoKwChan
       elemType <- parseGoType
       return $ GoChanType GoChanRecv elemType
   , do
-      void $ goKeyword GoKwChan
+      void $ goKeywordP GoKwChan
       choice
         [ do
-            void $ goOperator GoOpArrow
+            void $ goOperatorP GoOpArrow
             elemType <- parseGoType
             return $ GoChanType GoChanSend elemType
         , do
@@ -764,23 +771,23 @@ parseChanType = choice
 -- | Parse pointer types
 parsePointerType :: GoParser GoType
 parsePointerType = do
-  void $ goOperator GoOpMult
+  void $ goOperatorP GoOpMult
   baseType <- parseGoType
   return $ GoPointerType baseType
 
 -- | Parse function types
 parseFuncType :: GoParser GoType
 parseFuncType = do
-  void $ goKeyword GoKwFunc
-  void $ goDelimiter GoDelimLeftParen
+  void $ goKeywordP GoKwFunc
+  void $ goDelimiterP GoDelimLeftParen
   params <- parseParameterList
-  void $ goDelimiter GoDelimRightParen
+  void $ goDelimiterP GoDelimRightParen
   
   results <- optional $ choice
     [ do
-        void $ goDelimiter GoDelimLeftParen
+        void $ goDelimiterP GoDelimLeftParen
         res <- parseParameterList
-        void $ goDelimiter GoDelimRightParen
+        void $ goDelimiterP GoDelimRightParen
         return res
     , do
         res <- parseGoType
@@ -792,10 +799,10 @@ parseFuncType = do
 -- | Parse interface types
 parseInterfaceType :: GoParser GoType
 parseInterfaceType = do
-  void $ goKeyword GoKwInterface
-  void $ goDelimiter GoDelimLeftBrace
+  void $ goKeywordP GoKwInterface
+  void $ goDelimiterP GoDelimLeftBrace
   methods <- many parseMethodSpec
-  void $ goDelimiter GoDelimRightBrace
+  void $ goDelimiterP GoDelimRightBrace
   return $ GoInterfaceType methods
   where
     parseMethodSpec = do
@@ -806,10 +813,10 @@ parseInterfaceType = do
 -- | Parse struct types
 parseStructType :: GoParser GoType
 parseStructType = do
-  void $ goKeyword GoKwStruct
-  void $ goDelimiter GoDelimLeftBrace
+  void $ goKeywordP GoKwStruct
+  void $ goDelimiterP GoDelimLeftBrace
   fields <- many parseFieldDecl
-  void $ goDelimiter GoDelimRightBrace
+  void $ goDelimiterP GoDelimRightBrace
   return $ GoStructType (concat fields)
   where
     parseFieldDecl = do
@@ -842,13 +849,13 @@ parseGoString = do
     _ -> fail "Expected string"
 
 parseIdentifierList :: GoParser [Identifier]
-parseIdentifierList = parseGoIdentifier `sepBy1` goDelimiter GoDelimComma
+parseIdentifierList = parseGoIdentifier `sepBy1` goDelimiterP GoDelimComma
 
 parseExpressionList :: GoParser [Located GoExpr]
-parseExpressionList = parseExpression `sepBy1` goDelimiter GoDelimComma
+parseExpressionList = parseExpression `sepBy1` goDelimiterP GoDelimComma
 
 parseParameterList :: GoParser [GoField]
-parseParameterList = parseParameter `sepBy` goDelimiter GoDelimComma
+parseParameterList = option [] (parseParameter `sepBy1` goDelimiterP GoDelimComma)
   where
     parseParameter = do
       names <- option [] parseIdentifierList
@@ -856,40 +863,50 @@ parseParameterList = parseParameter `sepBy` goDelimiter GoDelimComma
       return $ GoField names typeExpr Nothing
 
 -- | Token matching utilities
-goKeyword :: GoKeyword -> GoParser ()
-goKeyword kw = void $ satisfy $ \case
+goKeywordP :: GoKeyword -> GoParser ()
+goKeywordP kw = void $ satisfy $ \case
   Located _ (GoTokenKeyword kw') -> kw == kw'
   _ -> False
 
-goOperator :: GoOperator -> GoParser ()
-goOperator op = void $ satisfy $ \case
+goOperatorP :: GoOperator -> GoParser ()
+goOperatorP op = void $ satisfy $ \case
   Located _ (GoTokenOperator op') -> op == op'
   _ -> False
 
-goDelimiter :: GoDelimiter -> GoParser ()
-goDelimiter delim = void $ satisfy $ \case
+goDelimiterP :: GoDelimiter -> GoParser ()
+goDelimiterP delim = void $ satisfy $ \case
   Located _ (GoTokenDelimiter delim') -> delim == delim'
   _ -> False
 
 skipNewlines :: GoParser ()
-skipNewlines = void $ many $ satisfy $ \case
+skipNewlines = void $ MP.many $ satisfy $ \case
   Located _ GoTokenNewline -> True
+  _ -> False
+
+skipComments :: GoParser ()
+skipComments = void $ MP.many $ satisfy $ \case
+  Located _ (GoTokenComment _) -> True
+  _ -> False
+
+skipCommentsAndNewlines :: GoParser ()
+skipCommentsAndNewlines = void $ MP.many $ satisfy $ \case
+  Located _ GoTokenNewline -> True
+  Located _ (GoTokenComment _) -> True
   _ -> False
 
 -- | Helper for creating located expressions
 located :: GoParser a -> GoParser (Located a)
 located parser = do
-  start <- getSourcePos
   value <- parser
-  end <- getSourcePos
-  let span = SourceSpan "<input>" (convertPos start) (convertPos end)
+  -- Create a dummy span since we can't easily get source positions
+  let span = SourceSpan "<input>" (Common.SourcePos 0 0) (Common.SourcePos 0 0)
   return $ Located span value
 
 located' :: a -> Located a
 located' = noLoc
 
-convertPos :: SourcePos -> SourcePos
-convertPos pos = SourcePos
+convertPos :: MP.SourcePos -> Common.SourcePos
+convertPos pos = Common.SourcePos
   { posLine = unPos (sourceLine pos)
   , posColumn = unPos (sourceColumn pos)
   }

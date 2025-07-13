@@ -24,7 +24,6 @@ module Fluxus.Parser.Python.Lexer
   , numberLiteral
   , whitespace
   , comment
-  , indentation
     -- * Utilities
   , isKeyword
   , keywordToText
@@ -73,7 +72,7 @@ data PythonToken
   | TokenEOF
   | TokenError !Text
   
-  deriving stock (Eq, Show, Generic)
+  deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (Hashable, NFData)
 
 -- | Python keywords
@@ -263,7 +262,7 @@ bytesLiteral = do
 numberLiteral :: PythonLexer PythonToken
 numberLiteral = do
   num <- choice [try hexNumber, try octNumber, try binNumber, decNumber]
-  return $ TokenNumber num (T.any (== '.') num || T.any (`elem` "eE") num)
+  return $ TokenNumber num (T.any (== '.') num || T.any (\c -> c `elem` ("eE" :: String)) num)
   where
     hexNumber = do
       _ <- string "0x" <|> string "0X"

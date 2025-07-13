@@ -1,12 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Python parser that converts tokens to AST
 module Fluxus.Parser.Python.Parser
   ( -- * Parser types
     PythonParser
-  , ParseError(..)
+  , PythonParseError(..)
     -- * Main parsing functions
   , parsePython
   , runPythonParser
@@ -22,10 +24,6 @@ module Fluxus.Parser.Python.Parser
     -- * Expression parsers
   , parseExpression
   , parseAtom
-  , parseBinaryOp
-  , parseCall
-  , parseSubscript
-  , parseAttribute
     -- * Utility parsers
   , parseBlock
   , parseParameters
@@ -34,21 +32,36 @@ module Fluxus.Parser.Python.Parser
   ) where
 
 import Control.Monad (void, when)
-import Control.Applicative ((<|>), many, some, optional)
+import Control.Applicative ((<|>), optional, many, some)
+import Data.Functor (($>))
+import qualified Control.Applicative as A
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
-import Text.Megaparsec
+import Text.Megaparsec hiding (many, some)
+import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 
-import Fluxus.AST.Common
+import Fluxus.AST.Common as Common
 import Fluxus.AST.Python
-import Fluxus.Parser.Python.Lexer
+import qualified Fluxus.Parser.Python.Lexer as Lexer
+import Fluxus.Parser.Python.Lexer (PythonToken(..), Keyword(..), Delimiter(..))
+
+-- | Simple chainl1 implementation for left-associative operators
+chainl1 :: PythonParser a -> PythonParser (a -> a -> a) -> PythonParser a
+chainl1 p op = do
+  x <- p
+  rest x
+  where
+    rest x = (do
+      f <- op
+      y <- p
+      rest (f x y)) <|> return x
 
 -- | Parser error type
-data ParseError = ParseError
+data PythonParseError = PythonParseError
   { peMessage :: !Text
   , peLocation :: !SourceSpan
   } deriving (Eq, Show)
@@ -110,7 +123,7 @@ parseAssignment = do
   value <- parseExpression
   return $ PyAssign targets value
   where
-    isAssignOp (Located _ (TokenOperator OpAssign)) = True
+    isAssignOp (Located _ (TokenOperator Lexer.OpAssign)) = True
     isAssignOp _ = False
 
 -- | Parse augmented assignment
@@ -124,69 +137,69 @@ parseAugAssignment = do
     parseAugOp = do
       Located _ token <- anySingle
       case token of
-        TokenOperator OpPlusAssign -> return OpAdd
-        TokenOperator OpMinusAssign -> return OpSub
-        TokenOperator OpMultAssign -> return OpMul
-        TokenOperator OpDivAssign -> return OpDiv
-        TokenOperator OpModAssign -> return OpMod
-        TokenOperator OpPowerAssign -> return OpPow
-        TokenOperator OpFloorDivAssign -> return OpFloorDiv
+        TokenOperator Lexer.OpPlusAssign -> return OpAdd
+        TokenOperator Lexer.OpMinusAssign -> return OpSub
+        TokenOperator Lexer.OpMultAssign -> return OpMul
+        TokenOperator Lexer.OpDivAssign -> return Common.OpDiv
+        TokenOperator Lexer.OpModAssign -> return Common.OpMod
+        TokenOperator Lexer.OpPowerAssign -> return OpPow
+        TokenOperator Lexer.OpFloorDivAssign -> return Common.OpFloorDiv
         _ -> fail "Expected augmented assignment operator"
 
 -- | Parse if statements
 parseIfStmt :: PythonParser PythonStmt
 parseIfStmt = do
-  void $ keyword KwIf
+  void $ keywordP KwIf
   condition <- parseExpression
-  void $ delimiter DelimColon
+  void $ delimiterP DelimColon
   thenBody <- parseBlock
   elseBody <- option [] $ do
-    void $ keyword KwElse
-    void $ delimiter DelimColon
+    void $ keywordP KwElse
+    void $ delimiterP DelimColon
     parseBlock
   return $ PyIf condition thenBody elseBody
 
 -- | Parse while statements
 parseWhileStmt :: PythonParser PythonStmt
 parseWhileStmt = do
-  void $ keyword KwWhile
+  void $ keywordP KwWhile
   condition <- parseExpression
-  void $ delimiter DelimColon
+  void $ delimiterP DelimColon
   body <- parseBlock
   elseBody <- option [] $ do
-    void $ keyword KwElse
-    void $ delimiter DelimColon
+    void $ keywordP KwElse
+    void $ delimiterP DelimColon
     parseBlock
   return $ PyWhile condition body elseBody
 
 -- | Parse for statements
 parseForStmt :: PythonParser PythonStmt
 parseForStmt = do
-  void $ keyword KwFor
+  void $ keywordP KwFor
   target <- parsePattern
-  void $ keyword KwIn
+  void $ keywordP KwIn
   iter <- parseExpression
-  void $ delimiter DelimColon
+  void $ delimiterP DelimColon
   body <- parseBlock
   elseBody <- option [] $ do
-    void $ keyword KwElse
-    void $ delimiter DelimColon
+    void $ keywordP KwElse
+    void $ delimiterP DelimColon
     parseBlock
   return $ PyFor target iter body elseBody
 
 -- | Parse function definitions
 parseFuncDef :: PythonParser PythonStmt
 parseFuncDef = do
-  isAsync <- option False (keyword KwAsync $> True)
-  void $ keyword KwDef
+  isAsync <- option False (keywordP KwAsync $> True)
+  void $ keywordP KwDef
   name <- parseIdentifier
-  void $ delimiter DelimLeftParen
+  void $ delimiterP DelimLeftParen
   params <- parseParameters
-  void $ delimiter DelimRightParen
+  void $ delimiterP DelimRightParen
   returnType <- optional $ do
-    void $ operator OpArrow
+    void $ operator' Lexer.OpArrow
     parseTypeExpr
-  void $ delimiter DelimColon
+  void $ delimiterP DelimColon
   body <- parseBlock
   
   let funcDef = PythonFuncDef
@@ -204,20 +217,20 @@ parseFuncDef = do
 -- | Parse class definitions
 parseClassDef :: PythonParser PythonStmt
 parseClassDef = do
-  void $ keyword KwClass
+  void $ keywordP KwClass
   name <- parseIdentifier
   bases <- option [] $ do
-    void $ delimiter DelimLeftParen
-    parseExpression `sepBy` delimiter DelimComma
-    <* void (delimiter DelimRightParen)
-  void $ delimiter DelimColon
+    void $ delimiterP DelimLeftParen
+    parseExpression `sepBy` delimiterP DelimComma
+    <* void (delimiterP DelimRightParen)
+  void $ delimiterP DelimColon
   body <- parseBlock
   
   return $ PyClassDef $ PythonClassDef
     { pyClassName = name
     , pyClassDecorators = []  -- TODO: Parse decorators
     , pyClassBases = bases
-    , pyClassKeywords = []    -- TODO: Parse keyword arguments
+    , pyClassKeywords = []    -- TODO: Parse keywordP arguments
     , pyClassBody = body
     , pyClassDoc = Nothing    -- TODO: Parse docstrings
     }
@@ -225,21 +238,21 @@ parseClassDef = do
 -- | Parse return statements
 parseReturnStmt :: PythonParser PythonStmt
 parseReturnStmt = do
-  void $ keyword KwReturn
+  void $ keywordP KwReturn
   value <- optional parseExpression
   return $ PyReturn value
 
 -- | Parse break statements
 parseBreakStmt :: PythonParser PythonStmt
-parseBreakStmt = keyword KwBreak $> PyBreak
+parseBreakStmt = keywordP KwBreak $> PyBreak
 
 -- | Parse continue statements
 parseContinueStmt :: PythonParser PythonStmt
-parseContinueStmt = keyword KwContinue $> PyContinue
+parseContinueStmt = keywordP KwContinue $> PyContinue
 
 -- | Parse pass statements
 parsePassStmt :: PythonParser PythonStmt
-parsePassStmt = keyword KwPass $> PyPass
+parsePassStmt = keywordP KwPass $> PyPass
 
 -- | Parse import statements
 parseImportStmt :: PythonParser (Located PythonImport)
@@ -253,24 +266,24 @@ parseImportStmt' = PyImport . (:[]) <$> parseImportStmt
 
 parseRegularImport :: PythonParser PythonImport
 parseRegularImport = do
-  void $ keyword KwImport
+  void $ keywordP KwImport
   modName <- parseModuleName
   alias <- optional $ do
-    void $ keyword KwAs
+    void $ keywordP KwAs
     parseIdentifier
   return $ ImportModule modName alias
 
 parseFromImport :: PythonParser PythonImport
 parseFromImport = do
-  void $ keyword KwFrom
+  void $ keywordP KwFrom
   modName <- parseModuleName
-  void $ keyword KwImport
+  void $ keywordP KwImport
   choice
     [ do
-        void $ operator OpMult
+        void $ operator' Lexer.OpMult
         return $ ImportFromStar modName
     , do
-        names <- parseIdentifier `sepBy1` delimiter DelimComma
+        names <- parseIdentifier `sepBy1` delimiterP DelimComma
         return $ ImportFrom modName names []  -- TODO: Parse aliases
     ]
 
@@ -282,7 +295,7 @@ parseOrExpr :: PythonParser (Located PythonExpr)
 parseOrExpr = do
   first <- parseAndExpr
   rest <- many $ do
-    void $ keyword KwOr
+    void $ keywordP KwOr
     parseAndExpr
   return $ foldl (\acc expr -> located' $ PyBoolOp OpOr [acc, expr]) first rest
 
@@ -290,14 +303,14 @@ parseAndExpr :: PythonParser (Located PythonExpr)
 parseAndExpr = do
   first <- parseNotExpr
   rest <- many $ do
-    void $ keyword KwAnd
+    void $ keywordP KwAnd
     parseNotExpr
   return $ foldl (\acc expr -> located' $ PyBoolOp OpAnd [acc, expr]) first rest
 
 parseNotExpr :: PythonParser (Located PythonExpr)
 parseNotExpr = choice
   [ do
-      void $ keyword KwNot
+      void $ keywordP KwNot
       expr <- parseNotExpr
       return $ located' $ PyUnaryOp OpNot expr
   , parseComparison
@@ -316,41 +329,41 @@ parseComparison = do
 
 parseCompOp :: PythonParser ComparisonOp
 parseCompOp = choice
-  [ operator' OpEq $> OpEq
-  , operator' OpNe $> OpNe
-  , operator' OpLe $> OpLe
-  , operator' OpGe $> OpGe
-  , operator' OpLt $> OpLt
-  , operator' OpGt $> OpGt
-  , keyword KwIs $> OpIs
-  , keyword KwIn $> OpIn
+  [ operator' Lexer.OpEq $> OpEq
+  , operator' Lexer.OpNe $> OpNe
+  , operator' Lexer.OpLe $> OpLe
+  , operator' Lexer.OpGe $> OpGe
+  , operator' Lexer.OpLt $> OpLt
+  , operator' Lexer.OpGt $> OpGt
+  , keywordP KwIs $> OpIs
+  , keywordP KwIn $> OpEq  -- Using OpEq as placeholder for now
   ]
 
 parseArithExpr :: PythonParser (Located PythonExpr)
 parseArithExpr = chainl1 parseTermExpr parseAddOp
   where
     parseAddOp = choice
-      [ operator' OpPlus $> (\l r -> located' $ PyBinaryOp OpAdd l r)
-      , operator' OpMinus $> (\l r -> located' $ PyBinaryOp OpSub l r)
+      [ operator' Lexer.OpPlus $> (\l r -> located' $ PyBinaryOp OpAdd l r)
+      , operator' Lexer.OpMinus $> (\l r -> located' $ PyBinaryOp OpSub l r)
       ]
 
 parseTermExpr :: PythonParser (Located PythonExpr)
 parseTermExpr = chainl1 parseFactorExpr parseMulOp
   where
     parseMulOp = choice
-      [ operator' OpMult $> (\l r -> located' $ PyBinaryOp OpMul l r)
-      , operator' OpDiv $> (\l r -> located' $ PyBinaryOp OpDiv l r)
-      , operator' OpMod $> (\l r -> located' $ PyBinaryOp OpMod l r)
-      , operator' OpFloorDiv $> (\l r -> located' $ PyBinaryOp OpFloorDiv l r)
+      [ operator' Lexer.OpMult $> (\l r -> located' $ PyBinaryOp OpMul l r)
+      , operator' Lexer.OpDiv $> (\l r -> located' $ PyBinaryOp Common.OpDiv l r)
+      , operator' Lexer.OpMod $> (\l r -> located' $ PyBinaryOp Common.OpMod l r)
+      , operator' Lexer.OpFloorDiv $> (\l r -> located' $ PyBinaryOp Common.OpFloorDiv l r)
       ]
 
 parseFactorExpr :: PythonParser (Located PythonExpr)
 parseFactorExpr = choice
   [ do
       op <- choice
-        [ operator' OpPlus $> OpPositive
-        , operator' OpMinus $> OpNegate
-        , operator' OpBitNot $> OpBitNot
+        [ operator' Lexer.OpPlus $> OpPositive
+        , operator' Lexer.OpMinus $> OpNegate
+        , operator' Lexer.OpBitNot $> Common.OpBitNot
         ]
       expr <- parseFactorExpr
       return $ located' $ PyUnaryOp op expr
@@ -361,7 +374,7 @@ parsePowerExpr :: PythonParser (Located PythonExpr)
 parsePowerExpr = do
   base <- parseAtomExpr
   power <- optional $ do
-    void $ operator' OpPower
+    void $ operator' Lexer.OpPower
     parseFactorExpr
   case power of
     Nothing -> return base
@@ -404,36 +417,36 @@ parseIdentifierExpr = PyVar <$> parseIdentifier
 
 parseListLiteral :: PythonParser PythonExpr
 parseListLiteral = do
-  void $ delimiter DelimLeftBracket
-  elements <- parseExpression `sepBy` delimiter DelimComma
-  void $ delimiter DelimRightBracket
+  void $ delimiterP DelimLeftBracket
+  elements <- parseExpression `sepBy` delimiterP DelimComma
+  void $ delimiterP DelimRightBracket
   return $ PyList elements
 
 parseTupleLiteral :: PythonParser PythonExpr
 parseTupleLiteral = do
-  void $ delimiter DelimLeftParen
-  elements <- parseExpression `sepBy` delimiter DelimComma
-  void $ delimiter DelimRightParen
+  void $ delimiterP DelimLeftParen
+  elements <- parseExpression `sepBy` delimiterP DelimComma
+  void $ delimiterP DelimRightParen
   return $ PyTuple elements
 
 parseDictLiteral :: PythonParser PythonExpr
 parseDictLiteral = do
-  void $ delimiter DelimLeftBrace
-  pairs <- parseDictPair `sepBy` delimiter DelimComma
-  void $ delimiter DelimRightBrace
+  void $ delimiterP DelimLeftBrace
+  pairs <- parseDictPair `sepBy` delimiterP DelimComma
+  void $ delimiterP DelimRightBrace
   return $ PyDict pairs
   where
     parseDictPair = do
       key <- parseExpression
-      void $ delimiter DelimColon
+      void $ delimiterP DelimColon
       value <- parseExpression
       return (key, value)
 
 parseParenExpr :: PythonParser PythonExpr
 parseParenExpr = do
-  void $ delimiter DelimLeftParen
+  void $ delimiterP DelimLeftParen
   expr <- parseExpression
-  void $ delimiter DelimRightParen
+  void $ delimiterP DelimRightParen
   return $ locatedValue expr
 
 -- | Parse expression trailers (calls, subscripts, attributes)
@@ -446,23 +459,23 @@ parseTrailer = choice
 
 parseCallTrailer :: PythonParser (Located PythonExpr -> Located PythonExpr)
 parseCallTrailer = do
-  void $ delimiter DelimLeftParen
+  void $ delimiterP DelimLeftParen
   args <- parseArguments
-  void $ delimiter DelimRightParen
+  void $ delimiterP DelimRightParen
   return $ \expr -> located' $ PyCall expr args
 
 parseSubscriptTrailer :: PythonParser (Located PythonExpr -> Located PythonExpr)
 parseSubscriptTrailer = do
-  void $ delimiter DelimLeftBracket
+  void $ delimiterP DelimLeftBracket
   slice <- parseSliceOrIndex
-  void $ delimiter DelimRightBracket
+  void $ delimiterP DelimRightBracket
   return $ \expr -> located' $ PySubscript expr slice
   where
     parseSliceOrIndex = located $ SliceIndex <$> parseExpression  -- Simplified
 
 parseAttributeTrailer :: PythonParser (Located PythonExpr -> Located PythonExpr)
 parseAttributeTrailer = do
-  void $ delimiter DelimDot
+  void $ delimiterP DelimDot
   attr <- parseIdentifier
   return $ \expr -> located' $ PyAttribute expr attr
 
@@ -470,7 +483,7 @@ parseAttributeTrailer = do
 parsePattern :: PythonParser (Located PythonPattern)
 parsePattern = located $ choice
   [ PatVar <$> parseIdentifier
-  , PatWildcard <$ char '_'
+  , PatWildcard <$ parseUnderscore
   ]
 
 -- | Parse type expressions
@@ -479,21 +492,21 @@ parseTypeExpr = located $ TypeName <$> parseQualifiedName
 
 -- | Parse function parameters
 parseParameters :: PythonParser [Located PythonParameter]
-parseParameters = parseParameter `sepBy` delimiter DelimComma
+parseParameters = parseParameter `sepBy` delimiterP DelimComma
   where
     parseParameter = located $ do
       name <- parseIdentifier
       typeAnnotation <- optional $ do
-        void $ delimiter DelimColon
+        void $ delimiterP DelimColon
         parseTypeExpr
       defaultValue <- optional $ do
-        void $ operator' OpAssign
+        void $ operator' Lexer.OpAssign
         parseExpression
       return $ ParamNormal name typeAnnotation defaultValue
 
 -- | Parse function arguments
 parseArguments :: PythonParser [Located PythonArgument]
-parseArguments = parseArgument `sepBy` delimiter DelimComma
+parseArguments = parseArgument `sepBy` delimiterP DelimComma
   where
     parseArgument = located $ ArgPositional <$> parseExpression
 
@@ -522,19 +535,26 @@ parseQualifiedName = do
   name <- parseIdentifier
   return $ QualifiedName [] name
 
+parseUnderscore :: PythonParser ()
+parseUnderscore = do
+  Located _ token <- anySingle
+  case token of
+    TokenIdent "_" -> return ()
+    _ -> fail "Expected underscore"
+
 -- | Token matching utilities
-keyword :: Keyword -> PythonParser ()
-keyword kw = void $ satisfy $ \case
+keywordP :: Keyword -> PythonParser ()
+keywordP kw = void $ satisfy $ \case
   Located _ (TokenKeyword kw') -> kw == kw'
   _ -> False
 
-operator' :: Operator -> PythonParser ()
+operator' :: Lexer.Operator -> PythonParser ()
 operator' op = void $ satisfy $ \case
   Located _ (TokenOperator op') -> op == op'
   _ -> False
 
-delimiter :: Delimiter -> PythonParser ()
-delimiter delim = void $ satisfy $ \case
+delimiterP :: Delimiter -> PythonParser ()
+delimiterP delim = void $ satisfy $ \case
   Located _ (TokenDelimiter delim') -> delim == delim'
   _ -> False
 
@@ -556,17 +576,16 @@ skipNewlines = void $ many $ satisfy $ \case
 -- | Helper for creating located expressions
 located :: PythonParser a -> PythonParser (Located a)
 located parser = do
-  start <- getSourcePos
   value <- parser
-  end <- getSourcePos
-  let span = SourceSpan "<input>" (convertPos start) (convertPos end)
+  -- Create a dummy span since we can't easily get source positions
+  let span = SourceSpan "<input>" (Common.SourcePos 0 0) (Common.SourcePos 0 0)
   return $ Located span value
 
 located' :: a -> Located a
 located' = noLoc
 
-convertPos :: SourcePos -> SourcePos
-convertPos pos = SourcePos
+convertPos :: MP.SourcePos -> Common.SourcePos
+convertPos pos = Common.SourcePos
   { posLine = unPos (sourceLine pos)
   , posColumn = unPos (sourceColumn pos)
   }

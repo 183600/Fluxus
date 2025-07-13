@@ -74,7 +74,7 @@ data GoToken
   | GoTokenEOF
   | GoTokenError !Text
   
-  deriving stock (Eq, Show, Generic)
+  deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (Hashable, NFData)
 
 -- | Go keywords
@@ -127,7 +127,7 @@ data GoDelimiter
   = GoDelimLeftParen | GoDelimRightParen                -- ( )
   | GoDelimLeftBracket | GoDelimRightBracket            -- [ ]
   | GoDelimLeftBrace | GoDelimRightBrace                -- { }
-  | GoDelimComma | GoDelimSemicolon | GoDelimDot
+  | GoDelimComma | GoDelimSemicolon | GoDelimDot | GoDelimColon
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
   deriving anyclass (Hashable, NFData)
 
@@ -248,6 +248,7 @@ goDelimiter = GoTokenDelimiter <$> choice
   , char ',' $> GoDelimComma
   , char ';' $> GoDelimSemicolon
   , char '.' $> GoDelimDot
+  , char ':' $> GoDelimColon
   ]
 
 -- | Parse Go string literals

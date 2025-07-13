@@ -22,22 +22,15 @@ module Fluxus.CodeGen.CPP
   , CppType(..)
     -- * Code generation utilities
   , runCppCodeGen
-  , emitHeader
-  , emitSource
-  , emitInclude
-  , emitNamespace
     -- * Type mapping
   , mapPythonTypeToCpp
   , mapGoTypeToCpp
   , mapCommonTypeToCpp
-    -- * Expression and statement generation
-  , generateCppExpr
-  , generateCppStmt
-  , generateCppDecl
   ) where
 
 import Control.Monad.State
 import Control.Monad.Writer
+import Control.Monad (when)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.List (intercalate)
@@ -232,7 +225,7 @@ initialCppGenState config = CppGenState
 -- | Run code generation
 runCppCodeGen :: CppGenConfig -> CppCodeGen a -> (a, CppGenState)
 runCppCodeGen config action = 
-  let (result, finalState) = runState action (initialCppGenState config)
+  let ((result, finalState), output) = runWriter (runStateT action (initialCppGenState config))
   in (result, finalState)
 
 -- | Main entry point for C++ code generation
@@ -319,6 +312,14 @@ generatePythonStmt (Located _ stmt) = case stmt of
   _ -> addComment $ "TODO: Implement Python statement: " <> T.pack (show stmt)
 
 -- | Generate C++ from Python expressions
+-- | Generate C++ expression from Python argument
+generatePythonArgument :: Located PythonArgument -> CppCodeGen CppExpr
+generatePythonArgument (Located _ arg) = case arg of
+  ArgPositional expr -> generatePythonExpr expr
+  ArgKeyword _ expr -> generatePythonExpr expr  -- Simplified: ignore keyword
+  ArgStarred expr -> generatePythonExpr expr  -- Simplified
+  ArgKwStarred expr -> generatePythonExpr expr  -- Simplified
+
 generatePythonExpr :: Located PythonExpr -> CppCodeGen CppExpr
 generatePythonExpr (Located _ expr) = case expr of
   PyLiteral lit -> return $ CppLiteral $ mapPythonLiteral lit
@@ -330,7 +331,7 @@ generatePythonExpr (Located _ expr) = case expr of
     return $ CppBinary cppOp cppLeft cppRight
   PyCall func args -> do
     cppFunc <- generatePythonExpr func
-    cppArgs <- mapM generatePythonExpr args
+    cppArgs <- mapM generatePythonArgument args
     return $ CppCall cppFunc cppArgs
   PyList exprs -> do
     cppExprs <- mapM generatePythonExpr exprs
@@ -385,7 +386,7 @@ generatePythonClass classDef = do
   
   -- Generate class members
   members <- mapM generatePythonClassMember (pyClassBody classDef)
-  let memberDecls = map (CppVariable "member" CppInt Nothing) members  -- Simplified
+  let memberDecls = members  -- members are already CppDecl
   
   addDeclaration $ CppClass className baseClasses memberDecls
   where
@@ -599,8 +600,8 @@ generatePythonAssignment (Located _ pattern) cppExpr = case pattern of
     addDeclaration $ CppVariable name CppAuto (Just cppExpr)
   _ -> addComment "TODO: Complex pattern assignment"
 
-generatePythonClassMember :: Located PythonStmt -> CppCodeGen ()
-generatePythonClassMember _ = return ()  -- Simplified
+generatePythonClassMember :: Located PythonStmt -> CppCodeGen CppDecl
+generatePythonClassMember _ = return $ CppVariable "member" CppInt Nothing  -- Simplified
 
 generateGoVariable :: (Identifier, Maybe (Located GoType), Maybe (Located GoExpr)) -> CppCodeGen ()
 generateGoVariable (Identifier name, mtype, mexpr) = do

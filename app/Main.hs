@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 
 -- | Main entry point for the HyperStatic/CXX compiler
 module Main where
@@ -10,9 +11,11 @@ import Control.Monad (when, unless)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
+import Data.List (isPrefixOf, isSuffixOf)
 
 import Fluxus.Compiler.Driver
 import Fluxus.Compiler.Config
+import Fluxus.AST.Common (SourceSpan(..), SourcePos(..))
 
 -- | Main entry point
 main :: IO ()

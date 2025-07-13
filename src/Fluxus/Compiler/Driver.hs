@@ -35,6 +35,8 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Except
 import Control.Monad.IO.Class
+import Control.Monad (when, unless)
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
@@ -44,6 +46,7 @@ import Data.Time
 import System.FilePath
 import System.Directory
 import System.Process
+import System.Exit
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
@@ -312,13 +315,19 @@ compileProject inputFiles = do
   logInfo $ "Project compilation completed: " <> T.pack finalBinary
   return finalBinary
 
--- | Parse input file based on source language
+-- | Parse input file based on source language (detected from file extension)
 parseStage :: FilePath -> CompilerM (Either PythonAST GoAST)
 parseStage inputFile = do
   config <- ask
   content <- liftIO $ TIO.readFile inputFile
   
-  case ccSourceLanguage config of
+  -- Detect language from file extension, with config as fallback
+  let detectedLanguage = case takeExtension inputFile of
+        ".py"  -> Python
+        ".go"  -> Go
+        _      -> ccSourceLanguage config  -- fallback to config
+  
+  case detectedLanguage of
     Python -> do
       -- Tokenize Python
       tokens <- case runPythonLexer (T.pack inputFile) content of

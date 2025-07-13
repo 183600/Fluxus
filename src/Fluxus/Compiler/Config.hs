@@ -34,8 +34,13 @@ import Data.Yaml (decodeFileEither)
 import System.Environment (lookupEnv)
 import System.FilePath
 import System.Directory
+import System.Process (readProcessWithExitCode)
+import System.Exit
+import Control.Monad (unless)
 import Control.Monad.IO.Class
+import Control.Applicative ((<|>))
 import Data.Maybe (fromMaybe)
+import Data.List (isPrefixOf)
 import GHC.Generics (Generic)
 
 import Fluxus.Compiler.Driver
@@ -232,20 +237,24 @@ checkSystemRequirements :: CompilerConfig -> IO (Either String ())
 checkSystemRequirements config = do
   -- Check C++ compiler
   compilerExists <- doesFileExist (T.unpack $ ccCppCompiler config)
-  unless compilerExists $ do
-    -- Try to find in PATH
-    which <- readProcessWithExitCode "which" [T.unpack $ ccCppCompiler config] ""
-    case which of
-      (ExitSuccess, _, _) -> return ()
-      _ -> return $ Left $ "C++ compiler not found: " ++ T.unpack (ccCppCompiler config)
-  
-  -- Check include paths
-  mapM_ checkIncludePath (ccIncludePaths config)
-  
-  -- Check library paths
-  mapM_ checkLibraryPath (ccLibraryPaths config)
-  
-  return $ Right ()
+  if compilerExists
+    then do
+      -- Check include paths
+      mapM_ checkIncludePath (ccIncludePaths config)
+      -- Check library paths
+      mapM_ checkLibraryPath (ccLibraryPaths config)
+      return $ Right ()
+    else do
+      -- Try to find in PATH
+      which <- readProcessWithExitCode "which" [T.unpack $ ccCppCompiler config] ""
+      case which of
+        (ExitSuccess, _, _) -> do
+          -- Check include paths
+          mapM_ checkIncludePath (ccIncludePaths config)
+          -- Check library paths
+          mapM_ checkLibraryPath (ccLibraryPaths config)
+          return $ Right ()
+        _ -> return $ Left $ "C++ compiler not found: " ++ T.unpack (ccCppCompiler config)
   where
     checkIncludePath path = do
       exists <- doesDirectoryExist path
@@ -371,14 +380,14 @@ instance ToJSON CompilerConfig where
 
 instance FromJSON CompilerConfig where
   parseJSON = withObject "CompilerConfig" $ \o -> do
-    sourceLang <- o .:? "source_language" .!= "Python"
-    optLevel <- o .:? "optimization_level" .!= "O2"
-    targetPlatform <- o .:? "target_platform" .!= "linux-x86_64"
+    sourceLang <- o .:? "source_language" .!= ("Python" :: String)
+    optLevel <- o .:? "optimization_level" .!= ("O2" :: String)
+    targetPlatform <- o .:? "target_platform" .!= ("linux-x86_64" :: String)
     
     CompilerConfig
       <$> pure (parseSourceLanguage sourceLang)
       <*> pure (parseOptLevel optLevel)
-      <*> pure (parseTargetPlatform targetPlatform)
+      <*> pure (fromMaybe Linux_x86_64 (parseTargetPlatform targetPlatform))
       <*> o .:? "output_path"
       <*> o .:? "enable_interop" .!= True
       <*> o .:? "enable_debug_info" .!= False

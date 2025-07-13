@@ -79,6 +79,8 @@ library
     monad-logger >= 0.3.40,
     fast-logger >= 3.2,
     ansi-terminal >= 1.1,
+    time >= 1.12,
+    stm >= 2.5,
 
 executable fluxus
   import: shared-properties
