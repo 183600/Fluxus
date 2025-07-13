@@ -97,7 +97,7 @@ parseModule = do
 parseStatement :: PythonParser (Located PythonStmt)
 parseStatement = located $ choice
   [ try parseAssignment
-  , try parseAugAssignment
+  , try parseAugAssignment  
   , try parseIfStmt
   , try parseWhileStmt
   , try parseForStmt
@@ -118,7 +118,7 @@ parseExprStmt = PyExprStmt <$> parseExpression
 -- | Parse assignment statements
 parseAssignment :: PythonParser PythonStmt
 parseAssignment = do
-  targets <- parsePattern `sepBy1` satisfy isAssignOp
+  targets <- parsePattern `sepBy1` delimiterP DelimComma
   void $ satisfy isAssignOp
   value <- parseExpression
   return $ PyAssign targets value
@@ -390,8 +390,8 @@ parseAtomExpr = do
 
 parseAtom :: PythonParser (Located PythonExpr)
 parseAtom = located $ choice
-  [ parseLiteral
-  , parseIdentifierExpr
+  [ parseIdentifierExpr
+  , parseLiteral
   , parseListLiteral
   , parseTupleLiteral
   , parseDictLiteral

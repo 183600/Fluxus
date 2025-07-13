@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Test.Fluxus.Parser.Go (spec) where
 
@@ -35,7 +36,7 @@ lexerSpec = describe "Go Lexer" $ do
         length tokens `shouldBe` 5
         let isKeyword (Located _ (GoTokenKeyword _)) = True
             isKeyword _ = False
-        all (isKeyword . locatedValue) tokens `shouldBe` True
+        all (isKeyword) tokens `shouldBe` True
   
   it "tokenizes string literals" $ do
     let input = "\"hello world\""
@@ -66,7 +67,7 @@ lexerSpec = describe "Go Lexer" $ do
         let isNumber (Located _ (GoTokenInt _)) = True
             isNumber (Located _ (GoTokenFloat _)) = True
             isNumber _ = False
-        all (isNumber . locatedValue) tokens `shouldBe` True
+        all (isNumber) tokens `shouldBe` True
 
 parserSpec :: Spec
 parserSpec = describe "Go Parser" $ do
@@ -85,6 +86,7 @@ parserSpec = describe "Go Parser" $ do
     let tokens = mockGoTokens 
           [ GoTokenKeyword GoKwPackage
           , GoTokenIdent "main"
+          , GoTokenNewline
           , GoTokenKeyword GoKwFunc
           , GoTokenIdent "test_func"
           , GoTokenDelimiter GoDelimLeftParen
@@ -93,7 +95,7 @@ parserSpec = describe "Go Parser" $ do
           , GoTokenDelimiter GoDelimRightBrace
           ]
     case runGoParser "test.go" tokens of
-      Left _ -> expectationFailure "Parser failed"
+      Left err -> expectationFailure $ "Parser failed: " ++ show err
       Right ast -> do
         let GoAST package_ = ast
         let files = goPackageFiles package_

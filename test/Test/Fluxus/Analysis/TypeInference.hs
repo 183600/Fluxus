@@ -3,8 +3,6 @@
 module Test.Fluxus.Analysis.TypeInference (spec) where
 
 import Test.Hspec
-import Data.Text (Text)
-import qualified Data.Text as T
 
 import Fluxus.AST.Common
 
@@ -100,8 +98,36 @@ unifyTypes t1 t2
       _ -> Nothing
 
 solveConstraints :: [(Type, Type)] -> Maybe [(TypeVar, Type)]
-solveConstraints constraints = 
-  let simplified = [(var, typ) | (TVar var, typ) <- constraints]
-      isConsistent = all (\(var, typ) -> 
-        all (\(var2, typ2) -> var /= var2 || typ == typ2) simplified) simplified
-  in if isConsistent then Just simplified else Nothing
+solveConstraints constraints = go constraints []
+  where
+    go [] solution = Just solution
+    go ((TVar var, typ):rest) solution
+      | not (occurs var typ) = 
+          let subst = substitute var typ
+              newConstraints = [(subst t1, subst t2) | (t1, t2) <- rest]
+              newSolution = (var, typ) : [(v, subst t) | (v, t) <- solution]
+          in go newConstraints newSolution
+    go ((typ, TVar var):rest) solution
+      | not (occurs var typ) = 
+          let subst = substitute var typ
+              newConstraints = [(subst t1, subst t2) | (t1, t2) <- rest]
+              newSolution = (var, typ) : [(v, subst t) | (v, t) <- solution]
+          in go newConstraints newSolution
+    go ((t1, t2):rest) solution
+      | t1 == t2 = go rest solution
+      | otherwise = Nothing
+    
+    occurs :: TypeVar -> Type -> Bool
+    occurs var (TVar var') = var == var'
+    occurs var (TList t) = occurs var t
+    occurs var (TFunction args ret) = any (occurs var) args || occurs var ret
+    occurs _ _ = False
+    
+    substitute :: TypeVar -> Type -> Type -> Type
+    substitute var replacement (TVar var')
+      | var == var' = replacement
+      | otherwise = TVar var'
+    substitute var replacement (TList t) = TList (substitute var replacement t)
+    substitute var replacement (TFunction args ret) = 
+      TFunction (map (substitute var replacement) args) (substitute var replacement ret)
+    substitute _ _ t = t
