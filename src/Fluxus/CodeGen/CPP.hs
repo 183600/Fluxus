@@ -20,6 +20,8 @@ module Fluxus.CodeGen.CPP
   , CppStmt(..)
   , CppExpr(..)
   , CppType(..)
+  , CppLiteral(..)
+  , CppParam(..)
     -- * Code generation utilities
   , runCppCodeGen
     -- * Type mapping

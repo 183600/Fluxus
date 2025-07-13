@@ -107,6 +107,7 @@ parseFile = do
   
   imports <- MP.many (parseImportDecl <* skipCommentsAndNewlines)
   decls <- MP.many (parseDeclaration <* skipCommentsAndNewlines)
+  skipCommentsAndNewlines  -- Skip any trailing newlines
   
   return $ GoFile
     { goFileName = "<input>"
@@ -147,7 +148,7 @@ parseImportDecl = do
 parseDeclaration :: GoParser (Located GoDecl)
 parseDeclaration = located $ choice
   [ try parseFuncDecl
-  , try parseTypeDecl
+  , try parseTypeDecl  
   , try parseVarDecl
   , parseConstDecl
   ]
@@ -713,7 +714,7 @@ parseGoType = located $ choice
   , try parseFuncType
   , try parseInterfaceType
   , try parseStructType
-  , try parseBasicType
+  , parseBasicType
   ]
 
 -- | Parse basic types

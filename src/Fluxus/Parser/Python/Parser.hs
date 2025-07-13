@@ -113,7 +113,9 @@ parseStatement = located $ choice
 
 -- | Parse expression statements
 parseExprStmt :: PythonParser PythonStmt
-parseExprStmt = PyExprStmt <$> parseExpression
+parseExprStmt = do
+  expr <- parseExpression
+  return $ PyExprStmt expr
 
 -- | Parse assignment statements
 parseAssignment :: PythonParser PythonStmt
@@ -389,13 +391,13 @@ parseAtomExpr = do
     applyTrailer expr trailer = trailer expr
 
 parseAtom :: PythonParser (Located PythonExpr)
-parseAtom = located $ choice
-  [ parseIdentifierExpr
-  , parseLiteral
-  , parseListLiteral
-  , parseTupleLiteral
-  , parseDictLiteral
-  , parseParenExpr
+parseAtom = choice
+  [ located parseIdentifierExpr
+  , located parseLiteral
+  , located parseListLiteral
+  , located parseTupleLiteral
+  , located parseDictLiteral
+  , located parseParenExpr
   ]
 
 parseLiteral :: PythonParser PythonExpr
@@ -513,16 +515,20 @@ parseArguments = parseArgument `sepBy` delimiterP DelimComma
 -- | Parse a block of statements
 parseBlock :: PythonParser [Located PythonStmt]
 parseBlock = do
-  skipNewlines
+  void $ satisfy $ \case
+    Located _ TokenNewline -> True
+    _ -> False
   void $ parseIndent
-  stmts <- some (parseStatement <* skipNewlines)
+  stmts <- some (try parseStatement <* skipNewlines)
   void $ parseDedent
   return stmts
 
 -- | Utility parsers
 parseIdentifier :: PythonParser Identifier
 parseIdentifier = do
-  Located _ token <- anySingle
+  Located _ token <- satisfy $ \case
+    Located _ (TokenIdent _) -> True
+    _ -> False
   case token of
     TokenIdent text -> return $ Identifier text
     _ -> fail "Expected identifier"

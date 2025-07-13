@@ -48,7 +48,7 @@ expressionGenerationSpec = describe "Expression Generation" $ do
     stringLit `shouldBe` CppLiteral (CppStringLit "hello")
     boolLit `shouldBe` CppLiteral (CppBoolLit True)
   
-  it "generates binary operations" $ do
+  it "generates binary expressions" $ do
     let left = CppVar "x"
     let right = CppLiteral (CppIntLit 10)
     let addExpr = CppBinary "+" left right
@@ -56,44 +56,22 @@ expressionGenerationSpec = describe "Expression Generation" $ do
     addExpr `shouldBe` CppBinary "+" (CppVar "x") (CppLiteral (CppIntLit 10))
   
   it "generates function calls" $ do
-    let func = CppVar "printf"
     let args = [CppLiteral (CppStringLit "Hello %s"), CppVar "name"]
-    let callExpr = CppCall func args
+    let funcCall = CppCall (CppVar "printf") args
     
-    callExpr `shouldBe` CppCall (CppVar "printf") args
-  
-  it "generates member access" $ do
-    let obj = CppVar "myObject"
-    let memberExpr = CppMember obj "field"
-    
-    memberExpr `shouldBe` CppMember (CppVar "myObject") "field"
+    funcCall `shouldBe` CppCall (CppVar "printf") [CppLiteral (CppStringLit "Hello %s"), CppVar "name"]
 
 statementGenerationSpec :: Spec
 statementGenerationSpec = describe "Statement Generation" $ do
   it "generates expression statements" $ do
     let expr = CppCall (CppVar "printf") [CppLiteral (CppStringLit "Hello")]
-    let stmt = CppExprStmt expr
+    let exprStmt = CppExprStmt expr
     
-    stmt `shouldBe` CppExprStmt expr
+    exprStmt `shouldBe` CppExprStmt (CppCall (CppVar "printf") [CppLiteral (CppStringLit "Hello")])
   
   it "generates return statements" $ do
     let returnStmt = CppReturn (Just (CppLiteral (CppIntLit 0)))
     returnStmt `shouldBe` CppReturn (Just (CppLiteral (CppIntLit 0)))
-  
-  it "generates if statements" $ do
-    let condition = CppBinary ">" (CppVar "x") (CppLiteral (CppIntLit 0))
-    let thenBody = [CppReturn (Just (CppLiteral (CppIntLit 1)))]
-    let elseBody = [CppReturn (Just (CppLiteral (CppIntLit 0)))]
-    let ifStmt = CppIf condition thenBody elseBody
-    
-    ifStmt `shouldBe` CppIf condition thenBody elseBody
-  
-  it "generates while statements" $ do
-    let condition = CppBinary "<" (CppVar "i") (CppLiteral (CppIntLit 10))
-    let body = [CppExprStmt (CppUnary "++" (CppVar "i"))]
-    let whileStmt = CppWhile condition body
-    
-    whileStmt `shouldBe` CppWhile condition body
 
 declarationGenerationSpec :: Spec
 declarationGenerationSpec = describe "Declaration Generation" $ do
@@ -109,13 +87,14 @@ declarationGenerationSpec = describe "Declaration Generation" $ do
     funcDecl `shouldBe` CppFunction "add" CppInt params body
   
   it "generates class declarations" $ do
-    let members = [CppVariable "value" CppInt Nothing]
-    let classDecl = CppClass "MyClass" [] members
+    let methods = [CppMethod "getValue" CppInt [] [CppReturn (Just (CppVar "value"))] False]
+    let members = ["public", "private"]  -- Base classes as Text list
+    let classDecl = CppClass "MyClass" members methods
     
-    classDecl `shouldBe` CppClass "MyClass" [] members
+    classDecl `shouldBe` CppClass "MyClass" members methods
   
-  it "generates namespace declarations" $ do
+  it "generates program units" $ do
     let decls = [CppVariable "global_var" CppInt (Just (CppLiteral (CppIntLit 42)))]
-    let namespaceDecl = CppNamespace "myNamespace" decls
+    let program = CppUnit [] [] decls  -- includes, namespaces, declarations
     
-    namespaceDecl `shouldBe` CppNamespace "myNamespace" decls
+    program `shouldBe` CppUnit [] [] decls

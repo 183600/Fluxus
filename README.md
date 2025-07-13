@@ -1,6 +1,5 @@
 # Fluxus：高性能混合式 C++ AOT 编译器
 
-[![许可证：Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![状态：实验性](https://img.shields.io/badge/status-experimental-red.svg)](https://github.com/fluxus/fluxus)
 [![构建状态](https://img.shields.io/badge/build-passing-green.svg)](https://github.com/fluxus/fluxus)
 
