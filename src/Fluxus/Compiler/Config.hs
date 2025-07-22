@@ -56,7 +56,7 @@ loadConfig args = do
   let baseConfig = defaultConfig
   
   -- Load from config file if it exists
-  configFromFile <- loadConfigFromFile "hyperstatic.yaml"
+  configFromFile <- loadConfigFromFile "fluxus.yaml"
   let configWithFile = case configFromFile of
         Left _ -> baseConfig
         Right cfg -> mergeConfigs baseConfig cfg
@@ -164,8 +164,8 @@ parseCommandLineArgs args = parseArgs defaultConfig args
           Nothing -> Left $ "Unknown target platform: " ++ target
         [] -> Left "Expected target platform after --target"
       
-      "--help" -> Left "Usage: hyperstatic-cxx [options] <input-files>"
-      "--version" -> Left "HyperStatic/CXX Compiler v0.1.0"
+      "--help" -> Left "Usage: fluxus [options] <input-files>"
+      "--version" -> Left "Fluxus Compiler v0.1.0"
       
       _ | "--" `isPrefixOf` arg -> Left $ "Unknown option: " ++ arg
       _ -> parseArgs config rest  -- Assume it's an input file
@@ -202,6 +202,7 @@ mergeConfigs base override = CompilerConfig
   , ccKeepIntermediates = ccKeepIntermediates override
   , ccStrictMode = ccStrictMode override
   , ccEnableAnalysis = ccEnableAnalysis override
+  , ccStopAtCodegen = ccStopAtCodegen override
   }
 
 -- | Apply environment variable overrides
@@ -209,9 +210,9 @@ applyEnvironmentOverrides :: CompilerConfig -> IO CompilerConfig
 applyEnvironmentOverrides config = do
   -- Check for common environment variables
   cppCompiler <- lookupEnv "CXX"
-  cppStd <- lookupEnv "HYPERSTATIC_CPP_STD"
-  verboseLevel <- lookupEnv "HYPERSTATIC_VERBOSE"
-  enableInterop <- lookupEnv "HYPERSTATIC_INTEROP"
+  cppStd <- lookupEnv "FLUXUS_CPP_STD"
+  verboseLevel <- lookupEnv "FLUXUS_VERBOSE"
+  enableInterop <- lookupEnv "FLUXUS_INTEROP"
   
   return config
     { ccCppCompiler = maybe (ccCppCompiler config) T.pack cppCompiler
@@ -335,7 +336,7 @@ showTargetPlatform = \case
 -- | Pretty print configuration
 printConfig :: CompilerConfig -> IO ()
 printConfig config = do
-  putStrLn "=== HyperStatic Compiler Configuration ==="
+  putStrLn "=== Fluxus Compiler Configuration ==="
   putStrLn $ "Source Language: " ++ show (ccSourceLanguage config)
   putStrLn $ "Optimization Level: " ++ show (ccOptimizationLevel config)
   putStrLn $ "Target Platform: " ++ showTargetPlatform (ccTargetPlatform config)
@@ -404,6 +405,7 @@ instance FromJSON CompilerConfig where
       <*> o .:? "keep_intermediates" .!= False
       <*> o .:? "strict_mode" .!= False
       <*> o .:? "enable_analysis" .!= True
+      <*> o .:? "stop_at_codegen" .!= False
     where
       parseSourceLanguage "Python" = Python
       parseSourceLanguage "Go" = Go

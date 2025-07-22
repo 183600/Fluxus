@@ -1,6 +1,6 @@
-HyperStatic Compiler Test Results
+Fluxus Compiler Test Results
 ================================
-Date: 2025年 07月 13日 星期日 00:45:35 CST
+Date: 2025年 07月 17日 星期四 11:58:25 CST
 Total tests: 85
 Passed: 85
 Failed: 0

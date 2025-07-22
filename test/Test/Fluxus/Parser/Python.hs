@@ -5,7 +5,7 @@ module Test.Fluxus.Parser.Python (spec) where
 
 import Test.Hspec
 import Data.Text (Text)
-import qualified Data.Text as T
+-- import qualified Data.Text as T
 
 import Fluxus.Parser.Python.Lexer
 import Fluxus.Parser.Python.Parser
@@ -34,9 +34,9 @@ lexerSpec = describe "Python Lexer" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right tokens -> do
         length tokens `shouldBe` 5
-        let isKeyword (Located _ (TokenKeyword _)) = True
-            isKeyword _ = False
-        all (isKeyword) tokens `shouldBe` True
+        let isKeywordToken (Located _ (TokenKeyword _)) = True
+            isKeywordToken _ = False
+        all (isKeywordToken) tokens `shouldBe` True
   
   it "tokenizes string literals" $ do
     let input = "\"hello world\""

@@ -40,6 +40,7 @@ library
     Fluxus.Optimization.Monomorphization
     Fluxus.Optimization.Devirtualization
     Fluxus.CodeGen.CPP
+    Fluxus.CodeGen.Go
     Fluxus.Runtime.Python
     Fluxus.Runtime.Go
     Fluxus.Compiler.Driver

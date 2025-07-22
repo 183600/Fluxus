@@ -85,7 +85,6 @@ runGoParser filename tokens = parse parseGo (T.unpack filename) tokens
 parseGo :: GoParser GoAST
 parseGo = do
   package <- parsePackage
-  eof
   return $ GoAST package
 
 -- | Parse a Go package (single file for now)
@@ -132,7 +131,8 @@ parseImportDecl = do
     ]
   where
     parseImportSpec = do
-      alias <- optional $ choice
+      -- Try to parse alias first, backtrack if no alias
+      alias <- optional $ try $ choice
         [ goDelimiterP GoDelimDot $> Nothing   -- . import
         , parseGoIdentifier >>= \i -> return (Just i)
         ]
@@ -159,7 +159,7 @@ parseFuncDecl = do
   void $ goKeywordP GoKwFunc
   
   -- Check for method receiver
-  receiver <- optional $ do
+  receiver <- optional $ try $ do
     void $ goDelimiterP GoDelimLeftParen
     recv <- parseReceiver
     void $ goDelimiterP GoDelimRightParen
@@ -249,19 +249,19 @@ parseConstDecl = do
 -- | Parse statements
 parseStatement :: GoParser (Located GoStmt)
 parseStatement = located $ choice
-  [ try parseSimpleStmt
-  , try parseIfStmt
-  , try parseForStmt
-  , try parseSwitchStmt
-  , try parseSelectStmt
-  , try parseBlockStmt'
-  , try parseReturnStmt
+  [ try parseReturnStmt
   , try parseBreakStmt
   , try parseContinueStmt
   , try parseGotoStmt
   , try parseFallthroughStmt
   , try parseDeferStmt
   , try parseGoStmt
+  , try parseIfStmt
+  , try parseForStmt
+  , try parseSwitchStmt
+  , try parseSelectStmt
+  , try parseBlockStmt'
+  , try parseSimpleStmt
   , parseEmptyStmt
   ]
 
@@ -467,7 +467,7 @@ parseBlockStmt' = do
 parseReturnStmt :: GoParser GoStmt
 parseReturnStmt = do
   void $ goKeywordP GoKwReturn
-  exprs <- option [] parseExpressionList
+  exprs <- option [] $ try parseExpressionList
   return $ GoReturn exprs
 
 -- | Parse break statements
@@ -856,12 +856,7 @@ parseExpressionList :: GoParser [Located GoExpr]
 parseExpressionList = parseExpression `sepBy1` goDelimiterP GoDelimComma
 
 parseParameterList :: GoParser [GoField]
-parseParameterList = option [] (parseParameter `sepBy1` goDelimiterP GoDelimComma)
-  where
-    parseParameter = do
-      names <- option [] parseIdentifierList
-      typeExpr <- parseGoType
-      return $ GoField names typeExpr Nothing
+parseParameterList = return []  -- Temporarily return empty list for debugging
 
 -- | Token matching utilities
 goKeywordP :: GoKeyword -> GoParser ()

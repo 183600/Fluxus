@@ -5,7 +5,7 @@ module Test.Fluxus.Parser.Go (spec) where
 
 import Test.Hspec
 import Data.Text (Text)
-import qualified Data.Text as T
+-- import qualified Data.Text as T
 
 import Fluxus.Parser.Go.Lexer
 import Fluxus.Parser.Go.Parser
@@ -34,9 +34,9 @@ lexerSpec = describe "Go Lexer" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right tokens -> do
         length tokens `shouldBe` 5
-        let isKeyword (Located _ (GoTokenKeyword _)) = True
-            isKeyword _ = False
-        all (isKeyword) tokens `shouldBe` True
+        let isKeywordToken (Located _ (GoTokenKeyword _)) = True
+            isKeywordToken _ = False
+        all (isKeywordToken) tokens `shouldBe` True
   
   it "tokenizes string literals" $ do
     let input = "\"hello world\""

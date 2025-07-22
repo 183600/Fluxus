@@ -29,7 +29,9 @@ module Fluxus.Parser.Python.Lexer
   , keywordToText
   ) where
 
-import Control.Monad (void)
+import Control.Monad (void, when)
+import Control.Monad.State
+import Control.Monad.Trans.Class (lift)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Char (isAlphaNum, isAlpha, isDigit)
@@ -37,7 +39,7 @@ import Data.Void (Void)
 import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
-import Text.Megaparsec (many, choice, try, notFollowedBy, optional, eof, getSourcePos, satisfy, takeWhileP, manyTill, anySingle, (<|>))
+import Text.Megaparsec (many, choice, try, notFollowedBy, optional, eof, getSourcePos, satisfy, takeWhileP, manyTill, anySingle, (<|>), lookAhead, skipMany)
 import Text.Megaparsec.Char (string)
 import Control.Applicative ((<*), (*>))
 import Data.Functor (($>))
@@ -124,26 +126,115 @@ data Delimiter
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
   deriving anyclass (Hashable, NFData)
 
--- | Lexer type alias
-type PythonLexer = MP.Parsec Void Text
+-- | Lexer state for tracking indentation
+data LexerState = LexerState
+  { indentStack :: [Int]  -- Stack of current indentation levels
+  , atLineStart :: Bool   -- Whether we're at the start of a line
+  } deriving (Show, Eq)
+
+-- | Initial lexer state
+initialLexerState :: LexerState
+initialLexerState = LexerState
+  { indentStack = [0]  -- Start with base indentation level 0
+  , atLineStart = True
+  }
+
+-- | Lexer type alias with state
+type PythonLexer = StateT LexerState (MP.Parsec Void Text)
 
 -- | Run the Python lexer
 runPythonLexer :: Text -> Text -> Either (MP.ParseErrorBundle Text Void) [Located PythonToken]
-runPythonLexer filename input = MP.parse lexPython (T.unpack filename) input
+runPythonLexer filename input = MP.parse (evalStateT lexPython initialLexerState) (T.unpack filename) input
 
 -- | Main lexer entry point
 lexPython :: PythonLexer [Located PythonToken]
 lexPython = do
-  tokens <- many (locatedToken <* optional whitespace)
-  eof
-  return tokens
+  -- Initialize state
+  modify $ \s -> s { indentStack = [0], atLineStart = True }
+  
+  -- Process all tokens
+  tokens <- manyTill processLine eof
+  
+  -- Generate final dedent tokens
+  finalState <- get
+  let finalDedents = if length (indentStack finalState) > 1
+                      then map (Located (SourceSpan "<input>" (SourcePos 0 0) (SourcePos 0 0)) . TokenDedent) 
+                           (reverse $ tail (indentStack finalState))
+                      else []
+  
+  return $ concat tokens ++ finalDedents
+
+-- | Process a single line or token
+processLine :: PythonLexer [Located PythonToken]
+processLine = do
+  -- Skip whitespace at line start if not at line start
+  state <- get
+  when (not $ atLineStart state) $ do
+    lift $ skipMany (char ' ' <|> char '\t')
+  
+  -- Create span for tokens
+  start <- lift getSourcePos
+  
+  -- Handle indentation at line start
+  indentTokens <- if atLineStart state
+                   then handleIndentation
+                   else return []
+  
+  -- Parse tokens on this line
+  lineTokens <- manyTill (try locatedPythonToken) (lookAhead $ eof <|> void (Fluxus.Parser.Python.Lexer.newline))
+  
+  -- Parse newlines
+  newlineTokens <- many (Fluxus.Parser.Python.Lexer.newline)
+  
+  end <- lift getSourcePos
+  let span = SourceSpan "<input>" (convertPos start) (convertPos end)
+      locatedIndentTokens = indentTokens
+      locatedNewlineTokens = map (Located span) (map (\_ -> TokenNewline) newlineTokens)
+  
+  -- Update state for new line
+  when (not (null newlineTokens)) $ do
+    modify $ \s -> s { atLineStart = True }
+  
+  return $ locatedIndentTokens ++ lineTokens ++ locatedNewlineTokens
+
+-- | Handle indentation at the start of a line
+handleIndentation :: PythonLexer [Located PythonToken]
+handleIndentation = do
+  start <- lift getSourcePos
+  -- Count spaces/tabs
+  spaces <- many (char ' ' <|> char '\t')
+  let level = length spaces
+  
+  state <- get
+  let currentStack = indentStack state
+      currentLevel = head currentStack
+  
+  modify $ \s -> s { atLineStart = False }
+  
+  end <- lift getSourcePos
+  let span = SourceSpan "<input>" (convertPos start) (convertPos end)
+  
+  if level > currentLevel
+    then do
+      -- Increase indentation
+      modify $ \s -> s { indentStack = level : indentStack s }
+      return [Located span (TokenIndent level)]
+    else if level == currentLevel
+      then return []  -- Same level
+      else do
+        -- Decrease indentation
+        let (newStack, dedentTokens) = generateDedents level currentStack
+        modify $ \s -> s { indentStack = newStack }
+        return $ map (Located span) dedentTokens
   where
-    locatedToken = do
-      start <- getSourcePos
-      token <- pythonToken
-      end <- getSourcePos
-      let span = SourceSpan "<input>" (convertPos start) (convertPos end)
-      return $ Located span token
+    generateDedents :: Int -> [Int] -> ([Int], [PythonToken])
+    generateDedents targetLevel stack = go stack []
+      where
+        go [] tokens = ([0], tokens)
+        go (x:xs) tokens
+          | x > targetLevel = go xs (TokenDedent x : tokens)
+          | x == targetLevel = (x:xs, tokens)
+          | otherwise = error $ "Indentation error: no matching indentation level for " ++ show targetLevel
 
 -- | Convert Megaparsec SourcePos to our SourcePos
 convertPos :: MP.SourcePos -> SourcePos
@@ -163,25 +254,35 @@ pythonToken = choice
   , try keyword
   , identifier
   , delimiter
-  , try indentationToken
   , Fluxus.Parser.Python.Lexer.newline
-  ]
+    ]
+
+-- | Parse a located Python token with position information
+locatedPythonToken :: PythonLexer (Located PythonToken)
+locatedPythonToken = do
+  -- Skip whitespace (but not newlines) before parsing token
+  lift $ many (satisfy (\c -> c == ' ' || c == '\t'))
+  start <- lift getSourcePos
+  token <- pythonToken
+  end <- lift getSourcePos
+  let span = SourceSpan "<input>" (convertPos start) (convertPos end)
+  return $ Located span token
 
 -- | Parse keywords
 keyword :: PythonLexer PythonToken
 keyword = do
   kw <- choice (map tryKeyword allKeywords)
-  notFollowedBy alphaNumChar
+  lift $ notFollowedBy alphaNumChar
   return $ TokenKeyword kw
   where
     allKeywords = [minBound .. maxBound]
-    tryKeyword kw = string (keywordToText kw) $> kw
+    tryKeyword kw = lift (string (keywordToText kw)) $> kw
 
 -- | Parse identifiers
 identifier :: PythonLexer PythonToken
 identifier = do
-  first <- letterChar <|> char '_'
-  rest <- many (alphaNumChar <|> char '_')
+  first <- lift $ letterChar <|> char '_'
+  rest <- lift $ many (alphaNumChar <|> char '_')
   let ident = T.pack (first : rest)
   if isKeyword ident
     then fail "identifier cannot be a keyword"
@@ -190,72 +291,83 @@ identifier = do
 -- | Parse operators
 operator :: PythonLexer PythonToken
 operator = TokenOperator <$> choice
-  [ string "**=" $> OpPowerAssign
-  , string "//=" $> OpFloorDivAssign
-  , string "<<=" $> OpLeftShiftAssign
-  , string ">>=" $> OpRightShiftAssign
-  , string "+=" $> OpPlusAssign
-  , string "-=" $> OpMinusAssign
-  , string "*=" $> OpMultAssign
-  , string "/=" $> OpDivAssign
-  , string "%=" $> OpModAssign
-  , string "&=" $> OpBitAndAssign
-  , string "|=" $> OpBitOrAssign
-  , string "^=" $> OpBitXorAssign
-  , string "**" $> OpPower
-  , string "//" $> OpFloorDiv
-  , string "<<" $> OpLeftShift
-  , string ">>" $> OpRightShift
-  , string "==" $> OpEq
-  , string "!=" $> OpNe
-  , string "<=" $> OpLe
-  , string ">=" $> OpGe
-  , string ":=" $> OpWalrus
-  , string "->" $> OpArrow
-  , string "..." $> OpEllipsis
-  , string "+" $> OpPlus
-  , string "-" $> OpMinus
-  , string "*" $> OpMult
-  , string "/" $> OpDiv
-  , string "%" $> OpMod
-  , string "&" $> OpBitAnd
-  , string "|" $> OpBitOr
-  , string "^" $> OpBitXor
-  , string "~" $> OpBitNot
-  , string "<" $> OpLt
-  , string ">" $> OpGt
-  , string "=" $> OpAssign
+  [ lift (string "**=") $> OpPowerAssign
+  , lift (string "//=") $> OpFloorDivAssign
+  , lift (string "<<=") $> OpLeftShiftAssign
+  , lift (string ">>=") $> OpRightShiftAssign
+  , lift (string "+=") $> OpPlusAssign
+  , lift (string "-=") $> OpMinusAssign
+  , lift (string "*=") $> OpMultAssign
+  , lift (string "/=") $> OpDivAssign
+  , lift (string "%=") $> OpModAssign
+  , lift (string "&=") $> OpBitAndAssign
+  , lift (string "|=") $> OpBitOrAssign
+  , lift (string "^=") $> OpBitXorAssign
+  , lift (string "**") $> OpPower
+  , lift (string "//") $> OpFloorDiv
+  , lift (string "<<") $> OpLeftShift
+  , lift (string ">>") $> OpRightShift
+  , lift (string "==") $> OpEq
+  , lift (string "!=") $> OpNe
+  , lift (string "<=") $> OpLe
+  , lift (string ">=") $> OpGe
+  , lift (string ":=") $> OpWalrus
+  , lift (string "->") $> OpArrow
+  , lift (string "...") $> OpEllipsis
+  , lift (string "+") $> OpPlus
+  , lift (string "-") $> OpMinus
+  , lift (string "*") $> OpMult
+  , lift (string "/") $> OpDiv
+  , lift (string "%") $> OpMod
+  , lift (string "&") $> OpBitAnd
+  , lift (string "|") $> OpBitOr
+  , lift (string "^") $> OpBitXor
+  , lift (string "~") $> OpBitNot
+  , lift (string "<") $> OpLt
+  , lift (string ">") $> OpGt
+  , lift (string "=") $> OpAssign
   ]
 
 -- | Parse delimiters
 delimiter :: PythonLexer PythonToken
 delimiter = TokenDelimiter <$> choice
-  [ char '(' $> DelimLeftParen
-  , char ')' $> DelimRightParen
-  , char '[' $> DelimLeftBracket
-  , char ']' $> DelimRightBracket
-  , char '{' $> DelimLeftBrace
-  , char '}' $> DelimRightBrace
-  , char ',' $> DelimComma
-  , char ':' $> DelimColon
-  , char ';' $> DelimSemicolon
-  , char '.' $> DelimDot
-  , char '@' $> DelimAt
+  [ lift (char '(') $> DelimLeftParen
+  , lift (char ')') $> DelimRightParen
+  , lift (char '[') $> DelimLeftBracket
+  , lift (char ']') $> DelimRightBracket
+  , lift (char '{') $> DelimLeftBrace
+  , lift (char '}') $> DelimRightBrace
+  , lift (char ',') $> DelimComma
+  , lift (char ':') $> DelimColon
+  , lift (char ';') $> DelimSemicolon
+  , lift (char '.') $> DelimDot
+  , lift (char '@') $> DelimAt
   ]
 
--- | Parse string literals
+-- | Parse string literals (including f-strings)
 stringLiteral :: PythonLexer PythonToken
-stringLiteral = do
-  quote <- choice [string "\"\"\"", string "'''", string "\"", string "'"]
-  content <- manyTill L.charLiteral (string quote)
-  return $ TokenString (T.pack content)
+stringLiteral = choice
+  [ try parseFString
+  , parseRegularString
+  ]
+  where
+    parseRegularString = do
+      quote <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
+      content <- lift $ manyTill L.charLiteral (string quote)
+      return $ TokenString (T.pack content)
+    
+    parseFString = do
+      _ <- lift $ char 'f' <|> char 'F'
+      quote <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
+      content <- lift $ manyTill L.charLiteral (string quote)
+      return $ TokenString (T.pack content)  -- For now, treat f-strings as regular strings
 
 -- | Parse bytes literals
 bytesLiteral :: PythonLexer PythonToken
 bytesLiteral = do
-  _ <- char 'b' <|> char 'B'
-  quote <- choice [string "\"\"\"", string "'''", string "\"", string "'"]
-  content <- manyTill L.charLiteral (string quote)
+  _ <- lift $ char 'b' <|> char 'B'
+  quote <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
+  content <- lift $ manyTill L.charLiteral (string quote)
   return $ TokenBytes (T.pack content)
 
 -- | Parse number literals
@@ -265,26 +377,26 @@ numberLiteral = do
   return $ TokenNumber num (T.any (== '.') num || T.any (\c -> c `elem` ("eE" :: String)) num)
   where
     hexNumber = do
-      _ <- string "0x" <|> string "0X"
-      digits <- MP.some hexDigitChar
+      _ <- lift $ string "0x" <|> string "0X"
+      digits <- lift $ MP.some hexDigitChar
       return $ "0x" <> T.pack digits
     
     octNumber = do
-      _ <- string "0o" <|> string "0O"
-      digits <- MP.some octDigitChar
+      _ <- lift $ string "0o" <|> string "0O"
+      digits <- lift $ MP.some octDigitChar
       return $ "0o" <> T.pack digits
     
     binNumber = do
-      _ <- string "0b" <|> string "0B"
-      digits <- MP.some binDigitChar
+      _ <- lift $ string "0b" <|> string "0B"
+      digits <- lift $ MP.some binDigitChar
       return $ "0b" <> T.pack digits
     
     decNumber = do
-      intPart <- MP.some digitChar
-      fractPart <- optional $ do
+      intPart <- lift $ MP.some digitChar
+      fractPart <- lift $ optional $ do
         _ <- char '.'
         MP.some digitChar
-      expPart <- optional $ do
+      expPart <- lift $ optional $ do
         _ <- char 'e' <|> char 'E'
         sign <- optional (char '+' <|> char '-')
         exp <- MP.some digitChar
@@ -295,28 +407,21 @@ numberLiteral = do
 
 -- | Parse whitespace (but not newlines)
 whitespace :: PythonLexer ()
-whitespace = void $ takeWhileP (Just "whitespace") (`elem` [' ', '\t'])
+whitespace = void $ lift $ takeWhileP (Just "whitespace") (`elem` [' ', '\t'])
 
 -- | Parse comments
 comment :: PythonLexer PythonToken
 comment = do
-  _ <- char '#'
-  content <- takeWhileP (Just "comment") (/= '\n')
+  _ <- lift $ char '#'
+  content <- lift $ takeWhileP (Just "comment") (/= '\n')
   return $ TokenComment content
 
--- | Parse newlines
+-- | Parse newlines and update line start state
 newline :: PythonLexer PythonToken
 newline = do
-  _ <- choice [string "\r\n", string "\n", string "\r"]
+  _ <- lift $ choice [string "\r\n", string "\n", string "\r"]
+  modify $ \s -> s { atLineStart = True }
   return TokenNewline
-
--- | Parse indentation tokens (simplified version)
-indentationToken :: PythonLexer PythonToken
-indentationToken = do
-  level <- length <$> many (char ' ' <|> char '\t')
-  if level > 0
-    then return $ TokenIndent level
-    else fail "no indentation"
 
 -- | Check if text is a keyword
 isKeyword :: Text -> Bool

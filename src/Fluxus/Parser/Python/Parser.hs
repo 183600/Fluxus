@@ -83,22 +83,24 @@ parsePython = do
 -- | Parse a Python module
 parseModule :: PythonParser PythonModule
 parseModule = do
-  skipNewlines
-  imports <- many (try parseImportStmt <* skipNewlines)
-  body <- many (parseStatement <* skipNewlines)
+  skipNewlinesAndComments
+  imports <- many (try parseImportStmt <* skipNewlinesAndComments)
+  body <- many (parseStatement <* skipNewlinesAndComments)
+  
+  -- Extract docstring from module body
+  let (docstring, bodyStmts) = extractDocstring body
+  
   return $ PythonModule
     { pyModuleName = Nothing  -- Will be filled in later
-    , pyModuleDoc = Nothing   -- TODO: Parse docstrings
+    , pyModuleDoc = docstring
     , pyModuleImports = imports
-    , pyModuleBody = body
+    , pyModuleBody = bodyStmts
     }
 
 -- | Parse statements
 parseStatement :: PythonParser (Located PythonStmt)
 parseStatement = located $ choice
-  [ try parseAssignment
-  , try parseAugAssignment  
-  , try parseIfStmt
+  [ try parseIfStmt
   , try parseWhileStmt
   , try parseForStmt
   , try parseFuncDef
@@ -108,6 +110,8 @@ parseStatement = located $ choice
   , try parseContinueStmt
   , try parsePassStmt
   , try parseImportStmt'
+  , try parseAssignment
+  , try parseAugAssignment  
   , parseExprStmt
   ]
 
@@ -204,13 +208,16 @@ parseFuncDef = do
   void $ delimiterP DelimColon
   body <- parseBlock
   
+  -- Extract docstring from function body
+  let (docstring, bodyStmts) = extractDocstring body
+  
   let funcDef = PythonFuncDef
         { pyFuncName = name
         , pyFuncDecorators = []  -- TODO: Parse decorators
         , pyFuncParams = params
         , pyFuncReturns = returnType
-        , pyFuncBody = body
-        , pyFuncDoc = Nothing    -- TODO: Parse docstrings
+        , pyFuncBody = bodyStmts
+        , pyFuncDoc = docstring
         , pyFuncIsAsync = isAsync
         }
   
@@ -228,13 +235,16 @@ parseClassDef = do
   void $ delimiterP DelimColon
   body <- parseBlock
   
+  -- Extract docstring from class body
+  let (docstring, bodyStmts) = extractDocstring body
+  
   return $ PyClassDef $ PythonClassDef
     { pyClassName = name
     , pyClassDecorators = []  -- TODO: Parse decorators
     , pyClassBases = bases
     , pyClassKeywords = []    -- TODO: Parse keywordP arguments
-    , pyClassBody = body
-    , pyClassDoc = Nothing    -- TODO: Parse docstrings
+    , pyClassBody = bodyStmts
+    , pyClassDoc = docstring
     }
 
 -- | Parse return statements
@@ -519,7 +529,7 @@ parseBlock = do
     Located _ TokenNewline -> True
     _ -> False
   void $ parseIndent
-  stmts <- some (try parseStatement <* skipNewlines)
+  stmts <- some (try parseStatement <* skipNewlinesAndComments)
   void $ parseDedent
   return stmts
 
@@ -579,6 +589,17 @@ skipNewlines = void $ many $ satisfy $ \case
   Located _ TokenNewline -> True
   _ -> False
 
+skipComments :: PythonParser ()
+skipComments = void $ many $ satisfy $ \case
+  Located _ (TokenComment _) -> True
+  _ -> False
+
+skipNewlinesAndComments :: PythonParser ()
+skipNewlinesAndComments = void $ many $ satisfy $ \case
+  Located _ TokenNewline -> True
+  Located _ (TokenComment _) -> True
+  _ -> False
+
 -- | Helper for creating located expressions
 located :: PythonParser a -> PythonParser (Located a)
 located parser = do
@@ -589,6 +610,13 @@ located parser = do
 
 located' :: a -> Located a
 located' = noLoc
+
+-- | Extract docstring from a list of statements
+extractDocstring :: [Located PythonStmt] -> (Maybe Text, [Located PythonStmt])
+extractDocstring [] = (Nothing, [])
+extractDocstring (stmt:rest) = case locatedValue stmt of
+  PyExprStmt (Located _ (PyLiteral (PyString text))) -> (Just text, rest)
+  _ -> (Nothing, stmt:rest)
 
 convertPos :: MP.SourcePos -> Common.SourcePos
 convertPos pos = Common.SourcePos

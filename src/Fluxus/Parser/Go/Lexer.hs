@@ -141,11 +141,12 @@ runGoLexer filename input = MP.parse lexGo (T.unpack filename) input
 -- | Main lexer entry point
 lexGo :: GoLexer [Located GoToken]
 lexGo = do
-  tokens <- many (locatedToken <* optional goWhitespace)
-  eof
+  tokens <- manyTill locatedToken eof
   return tokens
   where
     locatedToken = do
+      -- Skip whitespace (but not newlines)
+      many (satisfy (\c -> c == ' ' || c == '\t'))
       start <- getSourcePos
       token <- goToken
       end <- getSourcePos

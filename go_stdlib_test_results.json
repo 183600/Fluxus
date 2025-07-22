@@ -86,7 +86,7 @@
     "data": {
       "add_duration": "2024-12-26",
       "format": "2024-12-25 15:30:45",
-      "now_day": 13,
+      "now_day": 17,
       "now_month": 7,
       "now_year": 2025,
       "parse_test": true,
@@ -99,21 +99,21 @@
     "name": "Rand Package",
     "success": true,
     "data": {
-      "float64": 0.5870045990325711,
-      "intn": 26,
+      "float64": 0.9985974966159766,
+      "intn": 30,
       "perm": [
         3,
+        0,
         1,
         4,
-        0,
         2
       ],
-      "seed_test": 645,
+      "seed_test": 154,
       "shuffled": [
         "apple",
         "cherry",
-        "banana",
-        "date"
+        "date",
+        "banana"
       ]
     }
   },

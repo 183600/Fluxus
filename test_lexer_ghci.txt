@@ -1,0 +1,3 @@
+import Fluxus.Parser.Python.Lexer
+:t runPythonLexer
+runPythonLexer "test.py" "x"

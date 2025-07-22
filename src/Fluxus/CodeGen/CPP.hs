@@ -22,6 +22,7 @@ module Fluxus.CodeGen.CPP
   , CppType(..)
   , CppLiteral(..)
   , CppParam(..)
+  , CppCase(..)
     -- * Code generation utilities
   , runCppCodeGen
     -- * Type mapping
@@ -32,10 +33,10 @@ module Fluxus.CodeGen.CPP
 
 import Control.Monad.State
 import Control.Monad.Writer
-import Control.Monad (when)
+import Control.Monad (when, unless)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.List (intercalate)
+import Data.List (intercalate, partition)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable (Hashable)
@@ -96,6 +97,7 @@ data CppDecl
   | CppTemplate ![Text] !CppDecl                        -- template params, declaration
   | CppNamespace !Text ![CppDecl]                       -- name, declarations
   | CppExternC ![CppDecl]                               -- C linkage declarations
+  | CppCommentDecl !Text                                -- comment at declaration level
   deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
@@ -160,6 +162,7 @@ data CppType
   | CppRvalueRef !CppType                               -- T&&
   | CppConst !CppType                                   -- const T
   | CppVolatile !CppType                                -- volatile T
+  | CppSizeT                                            -- std::size_t
   | CppFunctionType ![CppType] !CppType                     -- function type
   | CppClassType !Text ![CppType]                           -- class name, template args
   | CppTemplateType !Text ![CppType]                        -- template name, args
@@ -216,7 +219,7 @@ defaultCppGenConfig = CppGenConfig
 -- | Initial state
 initialCppGenState :: CppGenConfig -> CppGenState
 initialCppGenState config = CppGenState
-  { cgsIncludes = ["<memory>", "<string>", "<vector>", "<optional>"]
+  { cgsIncludes = []  -- Start with no includes, add as needed
   , cgsDeclarations = []
   , cgsNamespaces = []
   , cgsTempVarCount = 0
@@ -241,77 +244,126 @@ generateCpp config ast =
 -- | Generate C++ from Python AST
 generateCppFromPython :: PythonAST -> CppCodeGen CppUnit
 generateCppFromPython (PythonAST pyModule) = do
-  addInclude "<Python.h>"  -- For interop
-  addInclude "<pybind11/pybind11.h>"  -- Python bindings
+  -- Add basic C++ includes
+  addInclude "<iostream>"
+  addInclude "<string>"
   
   -- Generate module namespace
   let moduleName = maybe "main" (\(ModuleName n) -> n) (pyModuleName pyModule)
-  enterNamespace moduleName
   
-  -- Process module body
-  mapM_ generatePythonStmt (pyModuleBody pyModule)
+  -- Process module body - separate function definitions from module-level statements
+  let (funcDefs, moduleStmts) = partitionStmts (pyModuleBody pyModule)
   
-  -- Generate interop bindings if enabled
-  config <- gets cgsConfig
-  when (cgcEnableInterop config) $
-    generatePythonInteropBindings moduleName
+  -- Process function definitions first
+  mapM_ generatePythonStmt funcDefs
   
-  exitNamespace
+  -- Process module-level statements
+  moduleStmtsCpp <- mapM generatePythonStmt moduleStmts
+  
+  -- Ensure we have a main function for standalone execution
+  hasMain <- gets (any isMainFunction . cgsDeclarations)
+  unless hasMain $ do
+    -- If we have module-level statements, wrap them in main function
+    let mainBody = if null moduleStmtsCpp 
+                   then [CppReturn (Just (CppLiteral (CppIntLit 0)))]
+                   else moduleStmtsCpp ++ [CppReturn (Just (CppLiteral (CppIntLit 0)))]
+    addDeclaration $ CppFunction "main" CppInt [] mainBody
   
   -- Build final unit
   includes <- gets cgsIncludes
-  namespaces <- gets cgsNamespaces
   decls <- gets cgsDeclarations
   
-  return $ CppUnit includes namespaces decls
+  return $ CppUnit includes [] (reverse decls)  -- Reverse to maintain declaration order
+  where
+    isMainFunction (CppFunction "main" _ _ _) = True
+    isMainFunction _ = False
+    
+    partitionStmts stmts = 
+      let (funcs, others) = partition isFuncDef stmts
+      in (funcs, others)
+    
+    isFuncDef (Located _ (PyFuncDef _)) = True
+    isFuncDef _ = False
 
 -- | Generate C++ from Go AST
 generateCppFromGo :: GoAST -> CppCodeGen CppUnit
 generateCppFromGo (GoAST goPackage) = do
-  addInclude "<go_runtime.h>"  -- For interop
+  -- Add basic C++ includes
+  addInclude "<iostream>"
+  addInclude "<string>"
+  addInclude "<thread>"
+  addInclude "<mutex>"
+  addInclude "<condition_variable>"
+  addInclude "<queue>"
+  addInclude "<vector>"
+  addInclude "<functional>"
+  addInclude "<atomic>"
+  addInclude "<chrono>"
   
   -- Generate package namespace
   let packageName = (\(Identifier n) -> n) (goPackageName goPackage)
-  enterNamespace packageName
+  
+  -- Debug: Add comment showing package info
+  addComment $ "Generating C++ for Go package: " <> packageName
+  
+  -- Generate channel class implementation
+  generateChannelClass
   
   -- Process all files in package
-  mapM_ generateGoFile (goPackageFiles goPackage)
+  let files = goPackageFiles goPackage
+  addComment $ "Found " <> T.pack (show (length files)) <> " files in package"
+  when (null files) $ do
+    addComment "No files found in package"
   
-  -- Generate interop bindings if enabled
-  config <- gets cgsConfig
-  when (cgcEnableInterop config) $
-    generateGoInteropBindings packageName
+  mapM_ generateGoFile files
   
-  exitNamespace
+  -- Ensure we have a main function if processing main package
+  when (packageName == "main") $ do
+    hasMain <- gets (any isMainFunction . cgsDeclarations)
+    unless hasMain $ do
+      addDeclaration $ CppFunction "main" CppInt [] [CppReturn (Just (CppLiteral (CppIntLit 0)))]
   
   -- Build final unit
   includes <- gets cgsIncludes
   namespaces <- gets cgsNamespaces
   decls <- gets cgsDeclarations
   
-  return $ CppUnit includes namespaces decls
+  return $ CppUnit includes namespaces (reverse decls)  -- Reverse to maintain declaration order
+  where
+    isMainFunction (CppFunction "main" _ _ _) = True
+    isMainFunction _ = False
 
 -- | Generate C++ from Python statements
-generatePythonStmt :: Located PythonStmt -> CppCodeGen ()
+generatePythonStmt :: Located PythonStmt -> CppCodeGen CppStmt
 generatePythonStmt (Located _ stmt) = case stmt of
-  PyFuncDef funcDef -> generatePythonFunction funcDef
-  PyClassDef classDef -> generatePythonClass classDef
+  PyFuncDef funcDef -> do
+    generatePythonFunction funcDef
+    return $ CppComment "Function definition processed"
+  PyClassDef classDef -> do
+    generatePythonClass classDef
+    return $ CppComment "Class definition processed"
   PyExprStmt expr -> do
     cppExpr <- generatePythonExpr expr
-    addStatement $ CppExprStmt cppExpr
+    return $ CppExprStmt cppExpr
   PyAssign patterns expr -> do
     cppExpr <- generatePythonExpr expr
-    mapM_ (\pat -> generatePythonAssignment pat cppExpr) patterns
+    -- For now, handle simple single-target assignment
+    case patterns of
+      [Located _ (PatVar (Identifier varName))] -> do
+        let varType = CppAuto  -- Use auto for type inference
+        return $ CppDecl $ CppVariable varName varType (Just cppExpr)
+      _ -> do
+        -- Multiple assignment - not fully implemented
+        return $ CppComment "Multiple assignment not implemented"
   PyReturn mexpr -> do
     mcppExpr <- mapM generatePythonExpr mexpr
-    addStatement $ CppReturn mcppExpr
+    return $ CppReturn mcppExpr
   PyIf condition thenStmts elseStmts -> do
     cppCond <- generatePythonExpr condition
     cppThen <- mapM generatePythonStmt thenStmts
     cppElse <- mapM generatePythonStmt elseStmts
-    addStatement $ CppIf cppCond (map (CppExprStmt . const (CppLiteral $ CppIntLit 0)) cppThen) 
-                                 (map (CppExprStmt . const (CppLiteral $ CppIntLit 0)) cppElse)
-  _ -> addComment $ "TODO: Implement Python statement: " <> T.pack (show stmt)
+    return $ CppIf cppCond cppThen cppElse
+  _ -> return $ CppComment $ "TODO: Implement Python statement: " <> T.pack (show stmt)
 
 -- | Generate C++ from Python expressions
 -- | Generate C++ expression from Python argument
@@ -334,7 +386,14 @@ generatePythonExpr (Located _ expr) = case expr of
   PyCall func args -> do
     cppFunc <- generatePythonExpr func
     cppArgs <- mapM generatePythonArgument args
-    return $ CppCall cppFunc cppArgs
+    -- Handle special functions
+    case func of
+      Located _ (PyVar (Identifier "print")) -> do
+        -- Convert print to std::cout
+        case cppArgs of
+          [arg] -> return $ CppBinary "<<" (CppVar "std::cout") arg
+          _ -> return $ CppCall (CppVar "std::cout") cppArgs
+      _ -> return $ CppCall cppFunc cppArgs
   PyList exprs -> do
     cppExprs <- mapM generatePythonExpr exprs
     -- Generate std::vector initialization
@@ -347,16 +406,23 @@ generatePythonExpr (Located _ expr) = case expr of
 -- | Generate C++ from Go files
 generateGoFile :: GoFile -> CppCodeGen ()
 generateGoFile goFile = do
-  mapM_ generateGoDecl (goFileDecls goFile)
+  let decls = goFileDecls goFile
+  addComment $ "Processing Go file with " <> T.pack (show (length decls)) <> " declarations"
+  mapM_ generateGoDecl decls
 
 -- | Generate C++ from Go declarations
 generateGoDecl :: Located GoDecl -> CppCodeGen ()
 generateGoDecl (Located _ decl) = case decl of
-  GoFuncDecl func -> generateGoFunction func
+  GoFuncDecl func -> do
+    addComment $ "Generating function: " <> maybe "anonymous" (\(Identifier n) -> n) (goFuncName func)
+    generateGoFunction func
   GoTypeDecl name typeExpr -> do
+    addComment $ "Generating type declaration: " <> (\(Identifier n) -> n) name
     cppType <- generateGoType typeExpr
     addDeclaration $ CppTypedef ((\(Identifier n) -> n) name) cppType
-  GoVarDecl vars -> mapM_ generateGoVariable vars
+  GoVarDecl vars -> do
+    addComment $ "Generating variable declaration(s)"
+    mapM_ generateGoVariable vars
   _ -> addComment $ "TODO: Implement Go declaration: " <> T.pack (show decl)
 
 -- | Generate C++ functions from Python
@@ -370,13 +436,22 @@ generatePythonFunction funcDef = do
   -- Determine return type
   returnType <- case pyFuncReturns funcDef of
     Just typeExpr -> mapPythonType typeExpr
-    Nothing -> return CppVoid
+    Nothing -> if funcName == "main" 
+               then return CppInt 
+               else do
+                 -- Infer return type from function body
+                 let hasReturn = any hasReturnValue (pyFuncBody funcDef)
+                 return $ if hasReturn then CppAuto else CppVoid
   
   -- Generate function body
-  cppBody <- mapM generatePythonStmt (pyFuncBody funcDef)
-  let bodyStmts = map (CppExprStmt . const (CppLiteral $ CppIntLit 0)) cppBody
+  bodyStmts <- mapM generatePythonStmt (pyFuncBody funcDef)
   
-  addDeclaration $ CppFunction funcName returnType cppParams bodyStmts
+  -- Add return statement for main function if needed
+  let finalBodyStmts = if funcName == "main" && returnType == CppInt
+                      then bodyStmts ++ [CppReturn (Just (CppLiteral $ CppIntLit 0))]
+                      else bodyStmts
+  
+  addDeclaration $ CppFunction funcName returnType cppParams finalBodyStmts
 
 -- | Generate C++ classes from Python
 generatePythonClass :: PythonClassDef -> CppCodeGen ()
@@ -402,14 +477,48 @@ generateGoFunction func = do
     Just (Identifier name) -> do
       -- Map parameters and return types
       cppParams <- mapM mapGoParameter (goFuncParams func)
-      returnType <- mapGoResults (goFuncResults func)
+      returnType <- mapGoResultsForMain name (goFuncResults func)
       
       -- Generate function body
       case goFuncBody func of
         Nothing -> addDeclaration $ CppFunction name returnType cppParams []
         Just bodyStmt -> do
-          cppBody <- generateGoStmt bodyStmt
-          addDeclaration $ CppFunction name returnType cppParams [cppBody]
+          bodyStmts <- generateGoBlockStmt bodyStmt
+          -- Add return 0 for main function if no explicit return
+          let finalStmts = if name == "main" && not (hasReturnStmt bodyStmts)
+                          then bodyStmts ++ [CppReturn (Just (CppLiteral (CppIntLit 0)))]
+                          else bodyStmts
+          addDeclaration $ CppFunction name returnType cppParams finalStmts
+          
+          -- If this is the main function, also ensure we have #include <iostream>
+          when (name == "main") $ do
+            addInclude "<iostream>"
+
+-- | Check if statement list contains a return statement with a value
+hasReturnStmt :: [CppStmt] -> Bool
+hasReturnStmt = any isReturnStmt
+  where
+    isReturnStmt (CppReturn _) = True
+    isReturnStmt (CppBlock stmts) = hasReturnStmt stmts
+    isReturnStmt _ = False
+
+-- | Check if Python statement has a return with value
+hasReturnValue :: Located PythonStmt -> Bool
+hasReturnValue (Located _ stmt) = case stmt of
+  PyReturn (Just _) -> True
+  PyReturn Nothing -> False
+  PyIf _ thenStmts elseStmts -> any hasReturnValue thenStmts || any hasReturnValue elseStmts
+  PyWhile _ bodyStmts _ -> any hasReturnValue bodyStmts
+  PyFor _ _ bodyStmts _ -> any hasReturnValue bodyStmts
+  _ -> False
+
+-- | Generate block statement from Go (handling compound statements)
+generateGoBlockStmt :: Located GoStmt -> CppCodeGen [CppStmt]
+generateGoBlockStmt (Located _ stmt) = case stmt of
+  GoBlock stmts -> mapM generateGoStmt stmts
+  _ -> do
+    singleStmt <- generateGoStmt (Located undefined stmt)
+    return [singleStmt]
 
 -- | Generate statements from Go
 generateGoStmt :: Located GoStmt -> CppCodeGen CppStmt
@@ -437,6 +546,65 @@ generateGoStmt (Located _ stmt) = case stmt of
         stmt' <- generateGoStmt stmt
         return [stmt']
     return $ CppIf cppCond [cppThen] cppElse
+  GoFor mforClause bodyStmt -> do
+    -- Handle for loop (simplified as while for now)
+    case mforClause of
+      Nothing -> do
+        -- Infinite loop - convert to while(true)
+        bodyStmts <- generateGoBlockStmt bodyStmt
+        return $ CppWhile (CppLiteral $ CppBoolLit True) bodyStmts
+      Just forClause -> do
+        -- TODO: Handle proper for clause with init, condition, post
+        -- For now, just convert to while(true)
+        bodyStmts <- generateGoBlockStmt bodyStmt
+        return $ CppWhile (CppLiteral $ CppBoolLit True) bodyStmts
+  GoBlock stmts -> do
+    cppStmts <- mapM generateGoStmt stmts
+    return $ CppBlock cppStmts
+  GoGo expr -> do
+    -- Handle goroutines: convert to std::thread with proper lambda handling
+    addInclude "<thread>"
+    addInclude "<functional>"
+    cppExpr <- generateGoExpr expr
+    
+    case cppExpr of
+      CppCall func args -> do
+        -- Handle function calls in goroutines
+        let threadArgs = case func of
+              CppVar funcName -> 
+                [CppCall (CppVar "std::thread") ([func] ++ args)]
+              _ -> [CppCall (CppVar "std::thread") [cppExpr]]
+        return $ CppExprStmt (head threadArgs)
+      _ ->
+        return $ CppExprStmt $ CppCall (CppVar "std::thread") [cppExpr]
+  GoSend channel value -> do
+    -- Handle channel send: channel <- value
+    cppChannel <- generateGoExpr channel
+    cppValue <- generateGoExpr value
+    return $ CppExprStmt $ CppCall (CppMember cppChannel "send") [cppValue]
+  GoDefine identifiers exprs -> do
+    -- Handle variable definition: x, y := a, b
+    case (identifiers, exprs) of
+      ([Identifier varName], [expr]) -> do
+        -- Single variable assignment
+        cppExpr <- generateGoExpr expr
+        return $ CppDecl $ CppVariable varName CppAuto (Just cppExpr)
+      _ -> do
+        -- Multiple variable assignment - simplified for now
+        addComment $ "Multiple variable definition not fully implemented"
+        return $ CppComment $ "Multiple variable definition"
+  GoAssign leftExprs rightExprs -> do
+    -- Handle assignment: x, y = a, b
+    case (leftExprs, rightExprs) of
+      ([leftExpr], [rightExpr]) -> do
+        -- Single assignment
+        cppLeft <- generateGoExpr leftExpr
+        cppRight <- generateGoExpr rightExpr
+        return $ CppExprStmt $ CppBinary "=" cppLeft cppRight
+      _ -> do
+        -- Multiple assignment - simplified for now
+        addComment $ "Multiple assignment not fully implemented"
+        return $ CppComment $ "Multiple assignment"
   _ -> do
     addComment $ "TODO: Implement Go statement: " <> T.pack (show stmt)
     return $ CppComment $ "Unimplemented Go statement"
@@ -454,10 +622,46 @@ generateGoExpr (Located _ expr) = case expr of
   GoCall func args -> do
     cppFunc <- generateGoExpr func
     cppArgs <- mapM generateGoExpr args
-    return $ CppCall cppFunc cppArgs
+    
+    -- Special handling for fmt.Printf and similar functions
+    case cppFunc of
+      CppMember (CppVar "fmt") "Printf" -> do
+        addInclude "<iostream>"
+        addInclude "<iomanip>"
+        -- Convert Go format string to C++ style
+        case cppArgs of
+          (CppLiteral (CppStringLit formatStr) : restArgs) -> do
+            let cppFormatStr = convertGoFormatToCpp formatStr restArgs
+            return $ CppCall (CppVar "std::cout") [CppLiteral (CppStringLit cppFormatStr)]
+          _ -> return $ CppCall cppFunc cppArgs
+      CppMember (CppVar "fmt") "Println" -> do
+        addInclude "<iostream>"
+        case cppArgs of
+          [] -> return $ CppCall (CppVar "std::cout") [CppLiteral (CppStringLit "")]
+          [arg] -> return $ CppBinary "<<" (CppVar "std::cout") 
+                     (CppBinary "<<" arg (CppVar "std::endl"))
+          _ -> return $ CppCall cppFunc cppArgs
+      _ -> return $ CppCall cppFunc cppArgs
+  GoSelector obj (Identifier member) -> do
+    cppObj <- generateGoExpr obj
+    return $ CppMember cppObj member
+  GoReceive expr -> do
+    -- Handle <-channel
+    cppExpr <- generateGoExpr expr
+    return $ CppCall (CppMember cppExpr "receive") []
   _ -> do
     addComment $ "TODO: Implement Go expression: " <> T.pack (show expr)
     return $ CppLiteral $ CppIntLit 0
+
+-- | Convert Go format string to C++ output
+convertGoFormatToCpp :: Text -> [CppExpr] -> Text
+convertGoFormatToCpp formatStr args = 
+  -- Simplified: just replace %d with the actual values
+  -- In a real implementation, this would be much more sophisticated
+  let result = T.replace "%d" "\" << " formatStr
+      result2 = T.replace "%s" "\" << " result
+      result3 = T.replace "\\n" "\" << std::endl" result2
+  in "\"" <> result3
 
 -- | Type mapping functions
 mapPythonTypeToCpp :: Type -> CppType
@@ -484,6 +688,7 @@ mapGoTypeToCpp = \case
   GoMapType (Located _ keyType) (Located _ valueType) -> 
     CppUnorderedMap (mapGoTypeToCpp keyType) (mapGoTypeToCpp valueType)
   GoPointerType (Located _ baseType) -> CppPointer (mapGoTypeToCpp baseType)
+  GoChanType _ (Located _ elemType) -> CppTemplateType "Channel" [mapGoTypeToCpp elemType]
   _ -> CppAuto
 
 mapCommonTypeToCpp :: Type -> CppType
@@ -523,18 +728,76 @@ mapPythonBinaryOp = \case
 mapGoBinaryOp :: BinaryOp -> Text
 mapGoBinaryOp = mapPythonBinaryOp  -- Same mapping
 
+-- | Generate Channel class for Go channel operations
+-- This implements a generic channel that can handle any type via templates
+generateChannelClass :: CppCodeGen ()
+generateChannelClass = do
+  let templateParam = CppTemplateType "T" []
+  
+  let channelMembers = 
+        [ CppVariable "queue_" (CppTemplateType "std::queue" [templateParam]) Nothing
+        , CppVariable "mutex_" (CppClassType "std::mutex" []) Nothing
+        , CppVariable "cv_" (CppClassType "std::condition_variable" []) Nothing
+        , CppVariable "capacity_" CppSizeT Nothing
+        ]
+  
+  let channelMethods =
+        [ CppConstructor "Channel" [CppParam "capacity" CppSizeT Nothing] 
+            [ CppExprStmt $ CppBinary "=" (CppMember CppThis "capacity_") (CppVar "capacity")
+            ]
+        , CppMethod "send" CppVoid [CppParam "value" templateParam Nothing]
+            [ CppDecl $ CppVariable "lock" (CppTemplateType "std::unique_lock" [CppClassType "std::mutex" []]) 
+                (Just $ CppCall (CppVar "std::unique_lock<std::mutex>") [CppMember CppThis "mutex_"])
+            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "cv_") "wait") 
+                [ CppVar "lock"
+                , CppLambda [] 
+                    [ CppReturn $ Just $ CppBinary "<" 
+                        (CppCall (CppMember (CppMember CppThis "queue_") "size") []) 
+                        (CppMember CppThis "capacity_")
+                    ]
+                ]
+            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "queue_") "push") [CppVar "value"]
+            , CppExprStmt $ CppCall (CppMember (CppVar "cv_") "notify_one") []
+            ] False
+        , CppMethod "receive" templateParam []
+            [ CppDecl $ CppVariable "value" templateParam Nothing
+            , CppDecl $ CppVariable "lock" (CppTemplateType "std::unique_lock" [CppClassType "std::mutex" []]) 
+                (Just $ CppCall (CppVar "std::unique_lock<std::mutex>") [CppMember CppThis "mutex_"])
+            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "cv_") "wait") 
+                [ CppVar "lock"
+                , CppLambda [] 
+                    [ CppReturn $ Just $ CppUnary "!" 
+                        (CppCall (CppMember (CppMember CppThis "queue_") "empty") [])
+                    ]
+                ]
+            , CppExprStmt $ CppBinary "=" (CppVar "value") (CppCall (CppMember (CppMember CppThis "queue_") "front") [])
+            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "queue_") "pop") []
+            , CppExprStmt $ CppCall (CppMember (CppVar "cv_") "notify_one") []
+            , CppReturn $ Just $ CppVar "value"
+            ] False
+        ]
+  
+  addDeclaration $ CppTemplate ["T"] (CppClass "Channel" [] (channelMembers ++ channelMethods))
+
+
 -- | Helper functions
 addInclude :: Text -> CppCodeGen ()
-addInclude inc = modify $ \s -> s { cgsIncludes = inc : cgsIncludes s }
+addInclude inc = do
+  currentIncludes <- gets cgsIncludes
+  unless (inc `elem` currentIncludes) $ 
+    modify $ \s -> s { cgsIncludes = inc : cgsIncludes s }
 
 addDeclaration :: CppDecl -> CppCodeGen ()
 addDeclaration decl = modify $ \s -> s { cgsDeclarations = decl : cgsDeclarations s }
 
 addStatement :: CppStmt -> CppCodeGen ()
-addStatement stmt = addDeclaration $ CppNamespace "statements" [CppVariable "stmt" CppVoid Nothing]
+addStatement stmt = do
+  -- For now, we'll ignore isolated statements since we don't have a proper context
+  -- In a real implementation, statements would be collected within function bodies
+  return ()
 
 addComment :: Text -> CppCodeGen ()
-addComment comment = addStatement $ CppComment comment
+addComment comment = addDeclaration $ CppCommentDecl comment
 
 enterNamespace :: Text -> CppCodeGen ()
 enterNamespace ns = modify $ \s -> s { cgsNamespaces = ns : cgsNamespaces s }
@@ -595,6 +858,11 @@ mapGoResults [field] = generateGoType (goFieldType field)
 mapGoResults fields = do
   types <- mapM (generateGoType . goFieldType) fields
   return $ CppTuple types
+
+-- | Special handling for main function
+mapGoResultsForMain :: Text -> [GoField] -> CppCodeGen CppType
+mapGoResultsForMain "main" [] = return CppInt  -- main() should return int in C++
+mapGoResultsForMain _ results = mapGoResults results
 
 generatePythonAssignment :: Located PythonPattern -> CppExpr -> CppCodeGen ()
 generatePythonAssignment (Located _ pattern) cppExpr = case pattern of
