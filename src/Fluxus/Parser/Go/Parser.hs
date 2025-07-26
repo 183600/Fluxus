@@ -119,30 +119,48 @@ parseFile = do
 parseImportDecl :: GoParser [Located GoImport]
 parseImportDecl = do
   void $ goKeywordP GoKwImport
+  skipCommentsAndNewlines
   choice
     [ do
+        -- Parenthesized imports
         void $ goDelimiterP GoDelimLeftParen
-        imports <- many (located parseImportSpec <* skipCommentsAndNewlines)
+        skipCommentsAndNewlines
+        imports <- many $ do
+          skipCommentsAndNewlines
+          imp <- parseImportSpec
+          skipCommentsAndNewlines
+          return $ located' imp
+        skipCommentsAndNewlines
         void $ goDelimiterP GoDelimRightParen
         return imports
     , do
-        imp <- located parseImportSpec
-        return [imp]
+        -- Single import
+        imp <- parseImportSpec
+        return [located' imp]
     ]
   where
     parseImportSpec = do
-      -- Try to parse alias first, backtrack if no alias
-      alias <- optional $ try $ choice
-        [ goDelimiterP GoDelimDot $> Nothing   -- . import
-        , parseGoIdentifier >>= \i -> return (Just i)
+      -- Simple parsing: either just a string, or alias + string
+      choice
+        [ try $ do
+            -- . import
+            void $ goDelimiterP GoDelimDot
+            skipCommentsAndNewlines
+            path <- parseGoString
+            return $ GoImportDot path
+        , try $ do
+            -- alias import
+            alias <- parseGoIdentifier
+            skipCommentsAndNewlines
+            path <- parseGoString
+            if alias == Identifier "_"
+              then return $ GoImportBlank path
+              else return $ GoImportNormal (Just alias) path
+        , do
+            -- normal import (just the path)
+            path <- parseGoString
+            return $ GoImportNormal Nothing path
         ]
-      path <- parseGoString
-      case alias of
-        Nothing -> return $ GoImportNormal Nothing path
-        Just Nothing -> return $ GoImportDot path
-        Just (Just ident) 
-          | ident == Identifier "_" -> return $ GoImportBlank path
-          | otherwise -> return $ GoImportNormal (Just ident) path
 
 -- | Parse top-level declarations
 parseDeclaration :: GoParser (Located GoDecl)
@@ -171,15 +189,24 @@ parseFuncDecl = do
   params <- parseParameterList
   void $ goDelimiterP GoDelimRightParen
   
-  -- Skip return type parsing for now
-  let results = []
+  -- Parse return type/parameters
+  results <- optional $ choice
+    [ try $ do
+        void $ goDelimiterP GoDelimLeftParen
+        res <- parseParameterList
+        void $ goDelimiterP GoDelimRightParen
+        return res
+    , do
+        res <- parseGoType
+        return [GoField [] res Nothing]
+    ]
   
   body <- optional parseBlockStmt
   
   let func = GoFunction
         { goFuncName = Just name
         , goFuncParams = params
-        , goFuncResults = results
+        , goFuncResults = maybe [] id results
         , goFuncBody = body
         }
   
@@ -816,15 +843,28 @@ parseStructType :: GoParser GoType
 parseStructType = do
   void $ goKeywordP GoKwStruct
   void $ goDelimiterP GoDelimLeftBrace
-  fields <- many parseFieldDecl
+  skipCommentsAndNewlines
+  fields <- many (parseFieldDecl <* skipCommentsAndNewlines)
   void $ goDelimiterP GoDelimRightBrace
   return $ GoStructType (concat fields)
   where
     parseFieldDecl = do
-      names <- option [] parseIdentifierList
-      typeExpr <- parseGoType
-      tag <- optional parseGoString
-      return [GoField names typeExpr tag]
+      choice
+        [ try $ do
+            -- Named fields: name1, name2 type [tag]
+            names <- parseIdentifierList
+            skipCommentsAndNewlines
+            typeExpr <- parseGoType
+            skipCommentsAndNewlines
+            tag <- optional parseGoString
+            return [GoField names typeExpr tag]
+        , do
+            -- Anonymous field: just type [tag]
+            typeExpr <- parseGoType
+            skipCommentsAndNewlines
+            tag <- optional parseGoString
+            return [GoField [] typeExpr tag]
+        ]
 
 -- | Parse method receivers
 parseReceiver :: GoParser GoReceiver
@@ -856,7 +896,24 @@ parseExpressionList :: GoParser [Located GoExpr]
 parseExpressionList = parseExpression `sepBy1` goDelimiterP GoDelimComma
 
 parseParameterList :: GoParser [GoField]
-parseParameterList = return []  -- Temporarily return empty list for debugging
+parseParameterList = do
+  fields <- parseFieldDecl `sepBy` goDelimiterP GoDelimComma
+  return $ concat fields
+  where
+    parseFieldDecl = do
+      skipCommentsAndNewlines
+      choice
+        [ try $ do
+            -- Named parameters: name1, name2 type
+            names <- parseIdentifierList
+            skipCommentsAndNewlines
+            typeExpr <- parseGoType
+            return [GoField names typeExpr Nothing]
+        , do
+            -- Unnamed parameter: just type
+            typeExpr <- parseGoType
+            return [GoField [] typeExpr Nothing]
+        ]
 
 -- | Token matching utilities
 goKeywordP :: GoKeyword -> GoParser ()
