@@ -171,6 +171,7 @@ data PythonLiteral
   | PyFloat !Double
   | PyComplex !Double !Double
   | PyString !Text
+  | PyFString !Text ![Located PythonExpr]    -- f-string with embedded expressions
   | PyBytes !Text
   | PyBool !Bool
   | PyNone

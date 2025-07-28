@@ -85,7 +85,7 @@ parseModule :: PythonParser PythonModule
 parseModule = do
   skipNewlinesAndComments
   imports <- many (try parseImportStmt <* skipNewlinesAndComments)
-  body <- many (parseStatement <* skipNewlinesAndComments)
+  body <- parseModuleBody
   
   -- Extract docstring from module body
   let (docstring, bodyStmts) = extractDocstring body
@@ -97,21 +97,29 @@ parseModule = do
     , pyModuleBody = bodyStmts
     }
 
+-- | Parse module body with better handling of top-level statements
+parseModuleBody :: PythonParser [Located PythonStmt]
+parseModuleBody = many $ do
+  skipNewlinesAndComments
+  stmt <- parseStatement
+  skipNewlinesAndComments
+  return stmt
+
 -- | Parse statements
 parseStatement :: PythonParser (Located PythonStmt)
 parseStatement = located $ choice
-  [ try parseIfStmt
+  [ try parseFuncDef
+  , try parseClassDef
+  , try parseIfStmt
   , try parseWhileStmt
   , try parseForStmt
-  , try parseFuncDef
-  , try parseClassDef
   , try parseReturnStmt
   , try parseBreakStmt
   , try parseContinueStmt
   , try parsePassStmt
   , try parseImportStmt'
+  , try parseAugAssignment
   , try parseAssignment
-  , try parseAugAssignment  
   , parseExprStmt
   ]
 
@@ -122,8 +130,16 @@ parseExprStmt = do
   return $ PyExprStmt expr
 
 -- | Parse assignment statements
-parseAssignment :: PythonParser PythonStmt
+parseAssignment :: PythonParser PythonStmt  
 parseAssignment = do
+  -- Use lookAhead to check if this looks like an assignment before consuming tokens
+  lookAhead $ do
+    _ <- parsePattern
+    choice
+      [ void $ delimiterP DelimComma  -- x, y = ...
+      , void $ satisfy isAssignOp      -- x = ...  
+      ]
+  -- Now actually parse the assignment
   targets <- parsePattern `sepBy1` delimiterP DelimComma
   void $ satisfy isAssignOp
   value <- parseExpression
@@ -135,11 +151,25 @@ parseAssignment = do
 -- | Parse augmented assignment
 parseAugAssignment :: PythonParser PythonStmt
 parseAugAssignment = do
+  -- Use lookAhead to check if this looks like an augmented assignment
+  lookAhead $ do
+    _ <- parsePattern
+    void $ satisfy isAugOp
+  -- Now actually parse the augmented assignment
   target <- parsePattern
   op <- parseAugOp
   value <- parseExpression
   return $ PyAugAssign target op value
   where
+    isAugOp (Located _ (TokenOperator Lexer.OpPlusAssign)) = True
+    isAugOp (Located _ (TokenOperator Lexer.OpMinusAssign)) = True
+    isAugOp (Located _ (TokenOperator Lexer.OpMultAssign)) = True
+    isAugOp (Located _ (TokenOperator Lexer.OpDivAssign)) = True
+    isAugOp (Located _ (TokenOperator Lexer.OpModAssign)) = True
+    isAugOp (Located _ (TokenOperator Lexer.OpPowerAssign)) = True
+    isAugOp (Located _ (TokenOperator Lexer.OpFloorDivAssign)) = True
+    isAugOp _ = False
+    
     parseAugOp = do
       Located _ token <- anySingle
       case token of
@@ -402,12 +432,12 @@ parseAtomExpr = do
 
 parseAtom :: PythonParser (Located PythonExpr)
 parseAtom = choice
-  [ located parseIdentifierExpr
-  , located parseLiteral
+  [ located parseLiteral
+  , located parseParenExpr
+  , located parseIdentifierExpr
   , located parseListLiteral
   , located parseTupleLiteral
   , located parseDictLiteral
-  , located parseParenExpr
   ]
 
 parseLiteral :: PythonParser PythonExpr
@@ -415,6 +445,7 @@ parseLiteral = do
   Located _ token <- anySingle
   case token of
     TokenString text -> return $ PyLiteral $ PyString text
+    TokenFString text exprs -> return $ PyLiteral $ PyFString text []  -- TODO: Parse embedded expressions
     TokenNumber text isFloat ->
       if isFloat
         then return $ PyLiteral $ PyFloat (read $ T.unpack text)
@@ -430,9 +461,8 @@ parseIdentifierExpr = PyVar <$> parseIdentifier
 parseListLiteral :: PythonParser PythonExpr
 parseListLiteral = do
   void $ delimiterP DelimLeftBracket
-  elements <- parseExpression `sepBy` delimiterP DelimComma
   void $ delimiterP DelimRightBracket
-  return $ PyList elements
+  return $ PyList []
 
 parseTupleLiteral :: PythonParser PythonExpr
 parseTupleLiteral = do
@@ -444,15 +474,8 @@ parseTupleLiteral = do
 parseDictLiteral :: PythonParser PythonExpr
 parseDictLiteral = do
   void $ delimiterP DelimLeftBrace
-  pairs <- parseDictPair `sepBy` delimiterP DelimComma
   void $ delimiterP DelimRightBrace
-  return $ PyDict pairs
-  where
-    parseDictPair = do
-      key <- parseExpression
-      void $ delimiterP DelimColon
-      value <- parseExpression
-      return (key, value)
+  return $ PyDict []
 
 parseParenExpr :: PythonParser PythonExpr
 parseParenExpr = do
@@ -494,8 +517,8 @@ parseAttributeTrailer = do
 -- | Parse patterns
 parsePattern :: PythonParser (Located PythonPattern)
 parsePattern = located $ choice
-  [ PatVar <$> parseIdentifier
-  , PatWildcard <$ parseUnderscore
+  [ try (PatVar <$> parseIdentifier)
+  , try (PatWildcard <$ parseUnderscore)
   ]
 
 -- | Parse type expressions
@@ -516,11 +539,40 @@ parseParameters = parseParameter `sepBy` delimiterP DelimComma
         parseExpression
       return $ ParamNormal name typeAnnotation defaultValue
 
--- | Parse function arguments
+-- | Parse function arguments  
 parseArguments :: PythonParser [Located PythonArgument]
-parseArguments = parseArgument `sepBy` delimiterP DelimComma
+parseArguments = do
+  -- Look ahead at the next token without consuming it
+  input <- getInput
+  case input of
+    (Located _ (TokenDelimiter DelimRightParen) : _) -> 
+      return []  -- Empty argument list
+    _ -> 
+      parseArgument `sepBy1` delimiterP DelimComma  -- Parse arguments
   where
-    parseArgument = located $ ArgPositional <$> parseExpression
+    parseArgument = located $ choice
+      [ try parseKeywordArgument
+      , ArgPositional <$> parseExpression
+      ]
+    
+    parseKeywordArgument = do
+      name <- parseIdentifier
+      void $ operator' Lexer.OpAssign
+      value <- parseExpression
+      return $ ArgKeyword name value
+
+-- | Parse comprehension clauses
+parseComprehension :: PythonParser PythonComprehension
+parseComprehension = do
+  isAsync <- option False (keywordP KwAsync $> True)
+  void $ keywordP KwFor
+  target <- parsePattern
+  void $ keywordP KwIn
+  iter <- parseExpression
+  filters <- many $ do
+    void $ keywordP KwIf
+    parseExpression
+  return $ PythonComprehension target iter filters isAsync
 
 -- | Parse a block of statements
 parseBlock :: PythonParser [Located PythonStmt]
@@ -529,9 +581,15 @@ parseBlock = do
     Located _ TokenNewline -> True
     _ -> False
   void $ parseIndent
-  stmts <- some (try parseStatement <* skipNewlinesAndComments)
+  stmts <- some (parseBlockStatement)
   void $ parseDedent
   return stmts
+  where
+    parseBlockStatement = do
+      skipNewlinesAndComments
+      stmt <- parseStatement
+      skipNewlinesAndComments
+      return stmt
 
 -- | Utility parsers
 parseIdentifier :: PythonParser Identifier

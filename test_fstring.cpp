@@ -5,7 +5,7 @@
 void test() {
     auto i = 5;
     auto result = 8;
-    std::cout << "fib({i}) = {result}";
+    std::cout << "fib({i}) = {result}" << std::endl;
 }
 
 int main() {

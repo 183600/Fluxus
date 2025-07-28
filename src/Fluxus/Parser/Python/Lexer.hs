@@ -57,6 +57,7 @@ data PythonToken
   -- Identifiers and literals
   | TokenIdent !Text
   | TokenString !Text
+  | TokenFString !Text ![Text]                              -- f-string content and expressions
   | TokenNumber !Text !Bool                             -- Text representation, isFloat
   | TokenBytes !Text
   
@@ -360,7 +361,7 @@ stringLiteral = choice
       _ <- lift $ char 'f' <|> char 'F'
       quote <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
       content <- lift $ manyTill L.charLiteral (string quote)
-      return $ TokenString (T.pack content)  -- For now, treat f-strings as regular strings
+      return $ TokenFString (T.pack content) []  -- TODO: Parse expressions within {}
 
 -- | Parse bytes literals
 bytesLiteral :: PythonLexer PythonToken

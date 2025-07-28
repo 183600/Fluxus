@@ -391,8 +391,12 @@ generatePythonExpr (Located _ expr) = case expr of
       Located _ (PyVar (Identifier "print")) -> do
         -- Convert print to std::cout
         case cppArgs of
-          [arg] -> return $ CppBinary "<<" (CppVar "std::cout") arg
-          _ -> return $ CppCall (CppVar "std::cout") cppArgs
+          [] -> return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
+          [arg] -> return $ CppBinary "<<" (CppBinary "<<" (CppVar "std::cout") arg) (CppVar "std::endl")
+          args -> do
+            -- Chain multiple << operators for multiple arguments
+            let chainedOutput = foldl (\acc arg -> CppBinary "<<" (CppBinary "<<" acc arg) (CppLiteral (CppStringLit " "))) (CppVar "std::cout") (init args)
+            return $ CppBinary "<<" (CppBinary "<<" chainedOutput (last args)) (CppVar "std::endl")
       _ -> return $ CppCall cppFunc cppArgs
   PyList exprs -> do
     cppExprs <- mapM generatePythonExpr exprs
@@ -701,6 +705,7 @@ mapPythonLiteral = \case
   PyFloat f -> CppFloatLit f
   PyBool b -> CppBoolLit b
   PyString s -> CppStringLit s
+  PyFString s _ -> CppStringLit s  -- For now, treat f-strings as regular strings
   PyNone -> CppNullPtr
   _ -> CppIntLit 0
 
