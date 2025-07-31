@@ -90,7 +90,8 @@ generateDeclarations module_ config =
 -- | Generate Go code as text
 generateGoCode :: PythonAST -> GoGenConfig -> Text
 generateGoCode ast config =
-  generateGoFromPython ast config
+  let (header, body) = generateModule (pyModule ast) config
+  in header <> "\n" <> body
 
 -- | Generate statement
 generateStatement :: GoGenConfig -> PythonStmt -> [Text]
@@ -142,9 +143,15 @@ generateFunctionDef config funcDef =
       params = map (generateParameter config) (pyFuncParams funcDef)
       paramStr = if null params then "" else T.intercalate ", " params
       body = concatMap (\(Located _ stmt) -> generateStatement config stmt) (pyFuncBody funcDef)
-  in ["func " <> funcName <> "(" <> paramStr <> ") int {"] ++
+      returnType = if funcName == "main" then "int" else "int"
+  in ["func " <> funcName <> "(" <> paramStr <> ") " <> returnType <> " {"] ++
      map ("\t" <>) body ++
+     (if funcName == "main" && not (hasReturnStatement (pyFuncBody funcDef)) then ["\treturn 0"] else []) ++
      ["}"]
+  where
+    hasReturnStatement stmts = any isReturnStmt stmts
+    isReturnStmt (Located _ (PyReturn _)) = True
+    isReturnStmt _ = False
 
 -- | Generate parameter
 generateParameter :: GoGenConfig -> Located PythonParameter -> Text
@@ -194,10 +201,11 @@ generateExpression config expr = case expr of
         argStr = T.intercalate ", " argExprs
     in case funcExpr of
          "print" -> case argExprs of
-                      [arg] | T.all (\c -> c >= '0' && c <= '9') arg -> "fmt.Printf(\"%d\\n\", " <> arg <> ")"
-                      [arg] | T.head arg == '"' -> "fmt.Printf(\"%s\\n\", " <> arg <> ")"
-                      [arg] -> "fmt.Printf(\"%v\\n\", " <> arg <> ")"
-                      _ -> "fmt.Printf(" <> argStr <> ")"
+                      [] -> "fmt.Println()"
+                      [arg] | T.all (\c -> c >= '0' && c <= '9') arg -> "fmt.Println(" <> arg <> ")"
+                      [arg] | T.head arg == '"' -> "fmt.Println(" <> arg <> ")"
+                      [arg] -> "fmt.Println(" <> arg <> ")"
+                      _ -> "fmt.Println(" <> argStr <> ")"
          "println" -> "fmt.Println(" <> argStr <> ")"
          _ -> funcExpr <> "(" <> argStr <> ")"
     

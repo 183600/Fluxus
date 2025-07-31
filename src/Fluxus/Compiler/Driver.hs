@@ -294,7 +294,10 @@ compileFile inputFile = do
       -- Link if this is the final step
       setCurrentPhase "linking"
       finalOutput <- case ccOutputPath config of
-        Nothing -> return objFile
+        Nothing -> do
+          -- Generate executable name from input file
+          let executableName = dropExtension (takeFileName inputFile)
+          linkObjects [objFile] executableName
         Just outPath -> linkObjects [objFile] outPath
       
       incrementProcessedFiles

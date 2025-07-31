@@ -432,7 +432,7 @@ parseAtomExpr = do
 
 parseAtom :: PythonParser (Located PythonExpr)
 parseAtom = choice
-  [ located parseLiteral
+  [ located $ try parseLiteral
   , located parseParenExpr
   , located parseIdentifierExpr
   , located parseListLiteral

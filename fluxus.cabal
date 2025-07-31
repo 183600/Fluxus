@@ -126,3 +126,27 @@ benchmark fluxus-bench
     text,
     deepseq
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
+
+executable test-python-lexer
+  import: shared-properties
+  main-is: debug_python_lexer.hs
+  hs-source-dirs: .
+  build-depends:
+    base,
+    fluxus,
+    text,
+    megaparsec,
+    parser-combinators
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+
+executable test-python-parser
+  import: shared-properties
+  main-is: test-debug.hs
+  hs-source-dirs: .
+  build-depends:
+    base,
+    fluxus,
+    text,
+    megaparsec,
+    parser-combinators
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
