@@ -93,6 +93,7 @@ data GoStmt
     GoExprStmt !(Located GoExpr)
   | GoAssign ![Located GoExpr] ![Located GoExpr]        -- x, y = a, b
   | GoDefine ![Identifier] ![Located GoExpr]            -- x, y := a, b
+  | GoVarStmt ![(Identifier, Maybe (Located GoType), Maybe (Located GoExpr))]  -- var x int = 42
   | GoIncDec !(Located GoExpr) !Bool                    -- expr++ (True) or expr-- (False)
   | GoSend !(Located GoExpr) !(Located GoExpr)          -- channel <- value
   | GoReturn ![Located GoExpr]

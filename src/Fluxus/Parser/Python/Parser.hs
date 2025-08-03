@@ -461,8 +461,9 @@ parseIdentifierExpr = PyVar <$> parseIdentifier
 parseListLiteral :: PythonParser PythonExpr
 parseListLiteral = do
   void $ delimiterP DelimLeftBracket
+  elements <- parseExpression `sepBy` delimiterP DelimComma
   void $ delimiterP DelimRightBracket
-  return $ PyList []
+  return $ PyList elements
 
 parseTupleLiteral :: PythonParser PythonExpr
 parseTupleLiteral = do

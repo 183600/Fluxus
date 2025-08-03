@@ -150,3 +150,51 @@ executable test-python-parser
     megaparsec,
     parser-combinators
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
+
+executable debug-go-func
+  import: shared-properties
+  main-is: debug_go_func.hs
+  hs-source-dirs: .
+  build-depends:
+    base,
+    fluxus,
+    text,
+    megaparsec,
+    parser-combinators
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+
+executable debug-func-parser
+  import: shared-properties
+  main-is: debug_func_parser.hs
+  hs-source-dirs: .
+  build-depends:
+    base,
+    fluxus,
+    text,
+    megaparsec,
+    parser-combinators
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+
+executable simple-go-test
+  import: shared-properties
+  main-is: simple_go_test2.hs
+  hs-source-dirs: .
+  build-depends:
+    base,
+    fluxus,
+    text,
+    megaparsec,
+    parser-combinators
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+
+executable debug-full-go
+  import: shared-properties
+  main-is: debug_full_go.hs
+  hs-source-dirs: .
+  build-depends:
+    base,
+    fluxus,
+    text,
+    megaparsec,
+    parser-combinators
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N

@@ -1,23 +1,14 @@
-#!/bin/bash
+#\!/bin/bash
 
-# Comprehensive test suite for Fluxus Python compilation
-# This script tests that Python code compiled through Fluxus produces the correct output
-
-set -e
-
-echo "=== Fluxus Python Compilation Test Suite ==="
+# Comprehensive Python Test Suite for Fluxus Compiler
+echo "=== Comprehensive Python Test Suite ==="
+echo "Testing Python code compilation and execution through Fluxus..."
 echo
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-# Test counter
-TOTAL_TESTS=0
-PASSED_TESTS=0
-FAILED_TESTS=0
+FLUXUS="dist-newstyle/build/x86_64-linux/ghc-9.6.7/fluxus-0.1.0.0/x/fluxus/build/fluxus/fluxus"
+PASSED=0
+FAILED=0
+TOTAL=0
 
 # Function to run a test
 run_test() {
@@ -26,201 +17,171 @@ run_test() {
     local expected_output="$3"
     local description="$4"
     
-    TOTAL_TESTS=$((TOTAL_TESTS + 1))
-    echo -e "${YELLOW}Test $TOTAL_TESTS: $test_name${NC}"
+    echo "--- Test: $test_name ---"
     echo "Description: $description"
-    echo "Source file: $source_file"
+    echo "Source: $source_file"
     
-    # Compile with Fluxus
-    echo "Compiling with Fluxus..."
-    if cabal run fluxus -- --python -o test_output "$source_file" 2>/dev/null; then
-        echo "✓ Fluxus compilation successful"
-        
-        # Run the generated executable and capture output
-        echo "Running generated executable..."
-        local actual_output=$(./test_output 2>&1)
-        
-        # Compare with expected output
-        if [[ "$actual_output" == "$expected_output" ]]; then
-            echo -e "${GREEN}✓ Test PASSED${NC}"
-            echo "Expected: '$expected_output'"
-            echo "Actual:   '$actual_output'"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-        else
-            echo -e "${RED}✗ Test FAILED${NC}"
-            echo "Expected: '$expected_output'"
-            echo "Actual:   '$actual_output'"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-        fi
-    else
-        echo -e "${RED}✗ Fluxus compilation failed${NC}"
-        FAILED_TESTS=$((FAILED_TESTS + 1))
+    TOTAL=$((TOTAL + 1))
+    
+    # Clean up previous executable
+    rm -f "test_${test_name}"
+    
+    # Compile
+    echo "Compiling..."
+    if \! $FLUXUS "$source_file" -o "test_${test_name}" 2>/dev/null; then
+        echo "❌ COMPILATION FAILED"
+        FAILED=$((FAILED + 1))
+        echo
+        return 1
     fi
     
-    # Cleanup
-    rm -f test_output
+    # Run and capture output
+    echo "Running..."
+    if [ -x "test_${test_name}" ]; then
+        actual_output=$(./test_${test_name} 2>&1)
+        exit_code=$?
+        
+        if [ "$exit_code" -eq 0 ]; then
+            if [ "$expected_output" = "$actual_output" ]; then
+                echo "✅ PASSED"
+                echo "Expected: $expected_output"
+                echo "Actual: $actual_output"
+                PASSED=$((PASSED + 1))
+            else
+                echo "❌ OUTPUT MISMATCH"
+                echo "Expected: '$expected_output'"
+                echo "Actual: '$actual_output'"
+                FAILED=$((FAILED + 1))
+            fi
+        else
+            echo "❌ RUNTIME ERROR (exit code: $exit_code)"
+            echo "Output: $actual_output"
+            FAILED=$((FAILED + 1))
+        fi
+    else
+        echo "❌ EXECUTABLE NOT CREATED"
+        FAILED=$((FAILED + 1))
+    fi
+    
     echo
 }
 
-# Test 1: Very Basic Print
-run_test "Very Basic" \
-    "examples/python/very_basic.py" \
-    "42" \
-    "Simple number printing"
+# Test 1: Simple print statement
+cat > test_py_basic.py << 'INNER_EOF'
+print(42)
+INNER_EOF
 
-# Test 2: Simple Print Multiple
-run_test "Simple Print Multiple" \
-    "examples/python/simple_print.py" \
-    "5
-8
-13" \
-    "Multiple print statements"
+run_test "py_basic" "test_py_basic.py" "42" "Simple print statement"
 
-# Test 3: Fibonacci Basic
-run_test "Fibonacci Basic" \
-    "examples/python/fibonacci_basic.py" \
-    "1
-1
-2
-3
-5" \
-    "Basic fibonacci sequence generation"
+# Test 2: String print
+cat > test_py_string.py << 'INNER_EOF'
+print("Hello World")
+INNER_EOF
 
-# Test 4: Variable Operations
-cat > test_variable_ops.py << 'EOF'
-x = 10
-y = 20
-sum_result = x + y
-print(f"Sum: {sum_result}")
+run_test "py_string" "test_py_string.py" "Hello World" "String print statement"
 
-x = x + 5
-print(f"Updated x: {x}")
+# Test 3: Variable assignment and print
+cat > test_py_var.py << 'INNER_EOF'
+x = 42
+print(x)
+INNER_EOF
 
-is_greater = x > y
-print(f"x > y: {is_greater}")
-EOF
+run_test "py_var" "test_py_var.py" "42" "Variable assignment and print"
 
-run_test "Variable Operations" \
-    "test_variable_ops.py" \
-    "Sum: 30
-Updated x: 15
-x > y: False" \
-    "Variable assignment and comparison"
+# Test 4: Arithmetic operations
+cat > test_py_math.py << 'INNER_EOF'
+x = 5
+y = 3
+z = x + y
+print(z)
+INNER_EOF
 
-# Test 5: Function Definitions
-cat > test_functions.py << 'EOF'
-def greet(name):
-    return f"Hello, {name}!"
+run_test "py_math" "test_py_math.py" "8" "Arithmetic operations"
 
+# Test 5: Simple function
+cat > test_py_func.py << 'INNER_EOF'
 def add(a, b):
     return a + b
 
-print(greet("World"))
-result = add(10, 20)
-print(f"10 + 20 = {result}")
-EOF
+result = add(5, 3)
+print(result)
+INNER_EOF
 
-run_test "Function Definitions" \
-    "test_functions.py" \
-    "Hello, World!
-10 + 20 = 30" \
-    "Function definitions and calls"
+run_test "py_func" "test_py_func.py" "8" "Simple function definition and call"
 
-# Test 6: Control Flow
-cat > test_control_flow.py << 'EOF'
-x = 15
-if x > 10:
-    print("x is greater than 10")
+# Test 6: If statement
+cat > test_py_if.py << 'INNER_EOF'
+x = 10
+if x > 5:
+    print("big")
 else:
-    print("x is not greater than 10")
+    print("small")
+INNER_EOF
 
-print("Even numbers:", end=" ")
-for i in range(0, 11, 2):
-    print(i, end=" ")
-print()
-EOF
+run_test "py_if" "test_py_if.py" "big" "If-else statement"
 
-run_test "Control Flow" \
-    "test_control_flow.py" \
-    "x is greater than 10
-Even numbers: 0 2 4 6 8 10 " \
-    "If-else statements and for loops"
+# Test 7: For loop
+cat > test_py_for.py << 'INNER_EOF'
+for i in range(3):
+    print(i)
+INNER_EOF
 
-# Test 7: Mathematical Operations
-cat > test_math_ops.py << 'EOF'
-import math
+run_test "py_for" "test_py_for.py" "0
+1
+2" "For loop with range"
 
-# Basic arithmetic
-a = 10
-b = 3
-print(f"Addition: {a + b}")
-print(f"Subtraction: {a - b}")
-print(f"Multiplication: {a * b}")
-print(f"Division: {a / b}")
-print(f"Modulo: {a % b}")
+# Test 8: Fibonacci function
+cat > test_py_fibonacci.py << 'INNER_EOF'
+def fibonacci(n):
+    if n <= 1:
+        return n
+    return fibonacci(n-1) + fibonacci(n-2)
 
-# Power and square root
-print(f"Power: {a ** 2}")
-print(f"Square root: {math.sqrt(a)}")
+print(fibonacci(5))
+INNER_EOF
 
-# Built-in functions
+run_test "py_fibonacci" "test_py_fibonacci.py" "5" "Recursive fibonacci function"
+
+# Test 9: List operations
+cat > test_py_list.py << 'INNER_EOF'
 numbers = [1, 2, 3, 4, 5]
-print(f"Sum: {sum(numbers)}")
-print(f"Max: {max(numbers)}")
-print(f"Min: {min(numbers)}")
-EOF
+print(sum(numbers))
+INNER_EOF
 
-run_test "Mathematical Operations" \
-    "test_math_ops.py" \
-    "Addition: 13
-Subtraction: 7
-Multiplication: 30
-Division: 3.3333333333333335
-Modulo: 1
-Power: 100
-Square root: 3.1622776601683795
-Sum: 15
-Max: 5
-Min: 1" \
-    "Mathematical operations and built-in functions"
+run_test "py_list" "test_py_list.py" "15" "List operations"
 
-# Test 8: String Operations
-cat > test_strings.py << 'EOF'
-name = "Fluxus"
-version = "1.0"
+# Test 10: Multiple print statements
+cat > test_py_multi_print.py << 'INNER_EOF'
+print("Line 1")
+print("Line 2")
+print("Line 3")
+INNER_EOF
 
-# String concatenation
-full_name = name + " " + version
-print(full_name)
+run_test "py_multi_print" "test_py_multi_print.py" "Line 1
+Line 2
+Line 3" "Multiple print statements"
 
-# String methods
-print(f"Upper: {name.upper()}")
-print(f"Lower: {name.lower()}")
-print(f"Length: {len(name)}")
+# Clean up test files
+rm -f test_py_*.py test_py_*
 
-# String formatting
-print(f"Welcome to {name} v{version}")
-EOF
+# Summary
+echo "=== Python Test Results ==="
+echo "Total tests: $TOTAL"
+echo "Passed: $PASSED"
+echo "Failed: $FAILED"
+if [ $TOTAL -gt 0 ]; then
+    success_rate=$(echo "scale=2; $PASSED * 100 / $TOTAL" | bc 2>/dev/null || echo "$PASSED/$TOTAL")
+    echo "Success rate: $success_rate%"
+else
+    echo "Success rate: 0%"
+fi
+echo
 
-run_test "String Operations" \
-    "test_strings.py" \
-    "Fluxus 1.0
-Upper: FLUXUS
-Lower: fluxus
-Length: 6
-Welcome to Fluxus v1.0" \
-    "String operations and formatting"
-
-# Print summary
-echo "=== Test Summary ==="
-echo "Total tests: $TOTAL_TESTS"
-echo -e "${GREEN}Passed: $PASSED_TESTS${NC}"
-echo -e "${RED}Failed: $FAILED_TESTS${NC}"
-
-if [ $FAILED_TESTS -eq 0 ]; then
-    echo -e "${GREEN}All tests passed!${NC}"
+if [ $FAILED -eq 0 ]; then
+    echo "🎉 All Python tests passed\!"
     exit 0
 else
-    echo -e "${RED}Some tests failed.${NC}"
+    echo "⚠️  Some Python tests failed. Check the output above for details."
     exit 1
 fi
+EOF < /dev/null

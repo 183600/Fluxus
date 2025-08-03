@@ -3,7 +3,9 @@
 #include <iostream>
 
 int main() {
-    auto z = 35;
+    auto x = 5;
+    auto y = 3;
+    std::cout << x + y << std::endl;
     return 0;
 }
 

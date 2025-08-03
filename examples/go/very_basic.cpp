@@ -49,7 +49,8 @@ class Channel {
 };
 
 // Found 1 files in package
-// Processing Go file with 0 declarations
+// Processing Go file with 1 declarations
+// Generating function: main
 int main() {
     return 0;
 }

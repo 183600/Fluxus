@@ -3,7 +3,7 @@
 #include <iostream>
 
 int main() {
-    auto y = 30;
+    std::cout << "Hello" << std::endl;
     return 0;
 }
 

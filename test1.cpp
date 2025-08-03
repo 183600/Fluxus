@@ -3,7 +3,7 @@
 #include <iostream>
 
 int main() {
-    auto x = 25;
+    std::cout << 42 << std::endl;
     return 0;
 }
 

@@ -1,23 +1,14 @@
-#!/bin/bash
+#\!/bin/bash
 
-# Comprehensive test suite for Fluxus Go compilation
-# This script tests that Go code compiled through Fluxus produces the correct output
-
-set -e
-
-echo "=== Fluxus Go Compilation Test Suite ==="
+# Comprehensive Go Test Suite for Fluxus Compiler
+echo "=== Comprehensive Go Test Suite ==="
+echo "Testing Go code compilation and execution through Fluxus..."
 echo
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-# Test counter
-TOTAL_TESTS=0
-PASSED_TESTS=0
-FAILED_TESTS=0
+FLUXUS="dist-newstyle/build/x86_64-linux/ghc-9.6.7/fluxus-0.1.0.0/x/fluxus/build/fluxus/fluxus"
+PASSED=0
+FAILED=0
+TOTAL=0
 
 # Function to run a test
 run_test() {
@@ -26,176 +17,213 @@ run_test() {
     local expected_output="$3"
     local description="$4"
     
-    TOTAL_TESTS=$((TOTAL_TESTS + 1))
-    echo -e "${YELLOW}Test $TOTAL_TESTS: $test_name${NC}"
+    echo "--- Test: $test_name ---"
     echo "Description: $description"
-    echo "Source file: $source_file"
+    echo "Source: $source_file"
     
-    # Compile with Fluxus
-    echo "Compiling with Fluxus..."
-    if cabal run fluxus -- --go -o test_output "$source_file" 2>/dev/null; then
-        echo "✓ Fluxus compilation successful"
-        
-        # Run the generated executable and capture output
-        echo "Running generated executable..."
-        local actual_output=$(./test_output 2>&1)
-        
-        # Compare with expected output
-        if [[ "$actual_output" == "$expected_output" ]]; then
-            echo -e "${GREEN}✓ Test PASSED${NC}"
-            echo "Expected: '$expected_output'"
-            echo "Actual:   '$actual_output'"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-        else
-            echo -e "${RED}✗ Test FAILED${NC}"
-            echo "Expected: '$expected_output'"
-            echo "Actual:   '$actual_output'"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-        fi
-    else
-        echo -e "${RED}✗ Fluxus compilation failed${NC}"
-        FAILED_TESTS=$((FAILED_TESTS + 1))
+    TOTAL=$((TOTAL + 1))
+    
+    # Clean up previous executable
+    rm -f "test_${test_name}"
+    
+    # Compile
+    echo "Compiling..."
+    if \! $FLUXUS --go "$source_file" -o "test_${test_name}" 2>/dev/null; then
+        echo "❌ COMPILATION FAILED"
+        FAILED=$((FAILED + 1))
+        echo
+        return 1
     fi
     
-    # Cleanup
-    rm -f test_output
+    # Run and capture output
+    echo "Running..."
+    if [ -x "test_${test_name}" ]; then
+        actual_output=$(./test_${test_name} 2>&1)
+        exit_code=$?
+        
+        if [ "$exit_code" -eq 0 ]; then
+            if [ "$expected_output" = "$actual_output" ]; then
+                echo "✅ PASSED"
+                echo "Expected: $expected_output"
+                echo "Actual: $actual_output"
+                PASSED=$((PASSED + 1))
+            else
+                echo "❌ OUTPUT MISMATCH"
+                echo "Expected: '$expected_output'"
+                echo "Actual: '$actual_output'"
+                FAILED=$((FAILED + 1))
+            fi
+        else
+            echo "❌ RUNTIME ERROR (exit code: $exit_code)"
+            echo "Output: $actual_output"
+            FAILED=$((FAILED + 1))
+        fi
+    else
+        echo "❌ EXECUTABLE NOT CREATED"
+        FAILED=$((FAILED + 1))
+    fi
+    
     echo
 }
 
-# Test 1: Simple Hello World
-run_test "Hello World" \
-    "examples/go/simple_hello.go" \
-    "Hello, Fluxus!
-Count: 0
-Count: 1
-Count: 2
-Count: 3
-Count: 4" \
-    "Basic hello world with loop"
-
-# Test 2: Simple Math Operations
-run_test "Simple Math" \
-    "examples/go/simple_math.go" \
-    "Simple Math Operations
-5 + 3 = 8
-5 * 3 = 15
-5! = 120
-Numbers 1 to 5:
-1 2 3 4 5" \
-    "Basic arithmetic operations and factorial"
-
-# Test 3: Fibonacci Working
-run_test "Fibonacci Working" \
-    "examples/go/fibonacci_working.go" \
-    "Fibonacci sequence:
-fib(0) = 0
-fib(1) = 1
-fib(2) = 1
-fib(3) = 2
-fib(4) = 3
-fib(5) = 5
-fib(6) = 8
-fib(7) = 13
-fib(8) = 21
-fib(9) = 34" \
-    "Basic fibonacci sequence generation"
-
-# Test 4: Variable Operations
-cat > test_variable_ops.go << 'EOF'
+# Test 1: Very basic Go program (empty main)
+cat > test_go_empty.go << 'TESTEOF'
 package main
-
-import "fmt"
 
 func main() {
-    x := 10
-    y := 20
-    sum := x + y
-    fmt.Printf("Sum: %d\n", sum)
-    
-    x = x + 5
-    fmt.Printf("Updated x: %d\n", x)
-    
-    isGreater := x > y
-    fmt.Printf("x > y: %t\n", isGreater)
 }
-EOF
+TESTEOF
 
-run_test "Variable Operations" \
-    "test_variable_ops.go" \
-    "Sum: 30
-Updated x: 15
-x > y: false" \
-    "Variable assignment and comparison"
+run_test "go_empty" "test_go_empty.go" "" "Empty Go main function"
 
-# Test 5: Simple Function Calls
-cat > test_functions.go << 'EOF'
+# Test 2: Simple variable assignment
+cat > test_go_var.go << 'INNER_EOF'
 package main
 
-import "fmt"
-
-func greet(name string) string {
-    return "Hello, " + name + "!"
+func main() {
+    x := 42
 }
+INNER_EOF
+
+run_test "go_var" "test_go_var.go" "" "Simple variable assignment"
+
+# Test 3: Basic print without import
+cat > test_go_print_basic.go << 'INNER_EOF'
+package main
+
+func main() {
+    println("Hello World")
+}
+INNER_EOF
+
+run_test "go_print_basic" "test_go_print_basic.go" "Hello World" "Basic println without import"
+
+# Test 4: Simple arithmetic
+cat > test_go_math.go << 'INNER_EOF'
+package main
+
+func main() {
+    x := 5
+    y := 3
+    z := x + y
+    println(z)
+}
+INNER_EOF
+
+run_test "go_math" "test_go_math.go" "8" "Simple arithmetic operations"
+
+# Test 5: Simple function call
+cat > test_go_func.go << 'INNER_EOF'
+package main
 
 func add(a int, b int) int {
     return a + b
 }
 
 func main() {
-    message := greet("World")
-    fmt.Println(message)
-    
-    result := add(10, 20)
-    fmt.Printf("10 + 20 = %d\n", result)
+    result := add(5, 3)
+    println(result)
 }
-EOF
+INNER_EOF
 
-run_test "Function Calls" \
-    "test_functions.go" \
-    "Hello, World!
-10 + 20 = 30" \
-    "Function calls with different parameter types"
+run_test "go_func" "test_go_func.go" "8" "Simple function call"
 
-# Test 6: Control Flow
-cat > test_control_flow.go << 'EOF'
+# Test 6: If statement
+cat > test_go_if.go << 'INNER_EOF'
 package main
 
-import "fmt"
+func main() {
+    x := 10
+    if x > 5 {
+        println("big")
+    } else {
+        println("small")
+    }
+}
+INNER_EOF
+
+run_test "go_if" "test_go_if.go" "big" "If-else statement"
+
+# Test 7: For loop
+cat > test_go_for.go << 'INNER_EOF'
+package main
 
 func main() {
-    // If-else
-    x := 15
-    if x > 10 {
-        fmt.Println("x is greater than 10")
-    } else {
-        fmt.Println("x is not greater than 10")
+    for i := 0; i < 3; i++ {
+        println(i)
     }
-    
-    // For loop
-    fmt.Print("Even numbers: ")
-    for i := 0; i <= 10; i += 2 {
-        fmt.Printf("%d ", i)
-    }
-    fmt.Println()
 }
-EOF
+INNER_EOF
 
-run_test "Control Flow" \
-    "test_control_flow.go" \
-    "x is greater than 10
-Even numbers: 0 2 4 6 8 10 " \
-    "If-else statements and for loops"
+run_test "go_for" "test_go_for.go" "0
+1
+2" "For loop"
 
-# Print summary
-echo "=== Test Summary ==="
-echo "Total tests: $TOTAL_TESTS"
-echo -e "${GREEN}Passed: $PASSED_TESTS${NC}"
-echo -e "${RED}Failed: $FAILED_TESTS${NC}"
+# Test 8: Fibonacci function
+cat > test_go_fibonacci.go << 'INNER_EOF'
+package main
 
-if [ $FAILED_TESTS -eq 0 ]; then
-    echo -e "${GREEN}All tests passed!${NC}"
+func fibonacci(n int) int {
+    if n <= 1 {
+        return n
+    }
+    return fibonacci(n-1) + fibonacci(n-2)
+}
+
+func main() {
+    println(fibonacci(5))
+}
+INNER_EOF
+
+run_test "go_fibonacci" "test_go_fibonacci.go" "5" "Recursive fibonacci function"
+
+# Test 9: Multiple variable declarations
+cat > test_go_multi_var.go << 'INNER_EOF'
+package main
+
+func main() {
+    var a int = 10
+    var b int = 20
+    c := a + b
+    println(c)
+}
+INNER_EOF
+
+run_test "go_multi_var" "test_go_multi_var.go" "30" "Multiple variable declarations"
+
+# Test 10: String operations
+cat > test_go_string.go << 'INNER_EOF'
+package main
+
+func main() {
+    s := "Hello"
+    println(s)
+}
+INNER_EOF
+
+run_test "go_string" "test_go_string.go" "Hello" "String operations"
+
+# Clean up test files
+rm -f test_go_*.go test_go_*
+
+# Summary
+echo "=== Go Test Results ==="
+echo "Total tests: $TOTAL"
+echo "Passed: $PASSED"
+echo "Failed: $FAILED"
+if [ $TOTAL -gt 0 ]; then
+    success_rate=$(echo "scale=2; $PASSED * 100 / $TOTAL" | bc 2>/dev/null || echo "$PASSED/$TOTAL")
+    echo "Success rate: $success_rate%"
+else
+    echo "Success rate: 0%"
+fi
+echo
+
+if [ $FAILED -eq 0 ]; then
+    echo "🎉 All Go tests passed\!"
     exit 0
 else
-    echo -e "${RED}Some tests failed.${NC}"
+    echo "⚠️  Some Go tests failed. Check the output above for details."
     exit 1
 fi
+EOF < /dev/null

@@ -62,7 +62,7 @@ import Fluxus.Parser.Go.Parser (runGoParser)
 import Fluxus.CodeGen.CPP
   ( CppUnit(..), CppDecl(..), CppStmt(..), CppExpr(..), CppType(..)
   , CppLiteral(..), CppParam(..), CppCase(..), CppGenConfig(..)
-  , generateCpp
+  , generateCpp, generateCppMain
   )
 import Fluxus.Utils.Pretty
 
@@ -273,7 +273,7 @@ compileFile inputFile = do
   
   -- Code generation
   setCurrentPhase "code-generation"
-  cppCode <- codeGenStage optimizedAst
+  cppCode <- codeGenStageMain optimizedAst
   
   -- Write intermediate C++ file
   let cppFile = replaceExtension inputFile ".cpp"
@@ -315,8 +315,16 @@ compileProject inputFiles = do
   
   logInfo $ "Compiling project with " <> T.pack (show $ length inputFiles) <> " files"
   
-  -- Compile all files to object files
-  objFiles <- mapM compileFile inputFiles
+  -- Compile all files to object files (without linking)
+  -- First file is treated as main file
+  objFiles <- case inputFiles of
+    [] -> return []
+    (mainFile:otherFiles) -> do
+      -- Compile main file (with main function)
+      mainObj <- compileFileToObjectMain mainFile
+      -- Compile other files (without main function)
+      otherObjs <- mapM compileFileToObject otherFiles
+      return (mainObj : otherObjs)
   
   if ccStopAtCodegen config
     then do
@@ -337,6 +345,108 @@ compileProject inputFiles = do
       
       logInfo $ "Project compilation completed: " <> T.pack finalBinary
       return finalBinary
+
+-- | Compile a single file to object file (without linking to executable)
+compileFileToObject :: FilePath -> CompilerM FilePath
+compileFileToObject inputFile = do
+  config <- ask
+  
+  logInfo $ "Compiling file: " <> T.pack inputFile
+  setCurrentPhase "parsing"
+  
+  -- Parse input file
+  ast <- parseStage inputFile
+  
+  -- Type inference (if enabled)
+  typedAst <- if ccEnableAnalysis config
+    then do
+      setCurrentPhase "type-inference"
+      typeInferenceStage ast
+    else return ast
+  
+  -- Optimization passes
+  optimizedAst <- if ccOptimizationLevel config > O0
+    then do
+      setCurrentPhase "optimization"
+      optimizationStage typedAst
+    else return typedAst
+  
+  -- Code generation
+  setCurrentPhase "code-generation"
+  cppCode <- codeGenStage optimizedAst
+  
+  -- Write intermediate C++ file
+  let cppFile = replaceExtension inputFile ".cpp"
+  liftIO $ TIO.writeFile cppFile (renderCppUnit cppCode)
+  addIntermediateFile cppFile
+  
+  -- Check if we should stop at code generation
+  if ccStopAtCodegen config
+    then do
+      logInfo $ "Code generation completed: " <> T.pack cppFile
+      incrementProcessedFiles
+      return cppFile
+    else do
+      -- Compile C++ to object file (without linking)
+      setCurrentPhase "c++-compilation"
+      objFile <- compileCpp cppFile
+      addIntermediateFile objFile
+      
+      incrementProcessedFiles
+      logInfo $ "Successfully compiled: " <> T.pack inputFile
+      
+      return objFile
+
+-- | Compile main file to object file (with main function)
+compileFileToObjectMain :: FilePath -> CompilerM FilePath
+compileFileToObjectMain inputFile = do
+  config <- ask
+  
+  logInfo $ "Compiling main file: " <> T.pack inputFile
+  setCurrentPhase "parsing"
+  
+  -- Parse input file
+  ast <- parseStage inputFile
+  
+  -- Type inference (if enabled)
+  typedAst <- if ccEnableAnalysis config
+    then do
+      setCurrentPhase "type-inference"
+      typeInferenceStage ast
+    else return ast
+  
+  -- Optimization passes
+  optimizedAst <- if ccOptimizationLevel config > O0
+    then do
+      setCurrentPhase "optimization"
+      optimizationStage typedAst
+    else return typedAst
+  
+  -- Code generation (with main function)
+  setCurrentPhase "code-generation"
+  cppCode <- codeGenStageMain optimizedAst
+  
+  -- Write intermediate C++ file
+  let cppFile = replaceExtension inputFile ".cpp"
+  liftIO $ TIO.writeFile cppFile (renderCppUnit cppCode)
+  addIntermediateFile cppFile
+  
+  -- Check if we should stop at code generation
+  if ccStopAtCodegen config
+    then do
+      logInfo $ "Code generation completed: " <> T.pack cppFile
+      incrementProcessedFiles
+      return cppFile
+    else do
+      -- Compile C++ to object file (without linking)
+      setCurrentPhase "c++-compilation"
+      objFile <- compileCpp cppFile
+      addIntermediateFile objFile
+      
+      incrementProcessedFiles
+      logInfo $ "Successfully compiled main file: " <> T.pack inputFile
+      
+      return objFile
 
 -- | Parse input file based on source language (detected from file extension)
 parseStage :: FilePath -> CompilerM (Either PythonAST GoAST)
@@ -414,6 +524,24 @@ codeGenStage ast = do
         }
   
   return $ generateCpp cppConfig ast
+
+-- | Code generation stage for main file (with main function)
+codeGenStageMain :: Either PythonAST GoAST -> CompilerM CppUnit
+codeGenStageMain ast = do
+  config <- ask
+  
+  let cppConfig = CppGenConfig
+        { cgcOptimizationLevel = fromEnum $ ccOptimizationLevel config
+        , cgcEnableInterop = ccEnableInterop config
+        , cgcTargetCppStd = ccCppStandard config
+        , cgcUseSmartPointers = ccOptimizationLevel config >= O2
+        , cgcEnableParallel = ccEnableParallel config
+        , cgcEnableCoroutines = ccCppStandard config >= "c++20"
+        , cgcNamespace = "hyperstatic"
+        , cgcHeaderGuard = "HYPERSTATIC_GENERATED"
+        }
+  
+  return $ generateCppMain cppConfig ast
 
 -- | Compile C++ file to object file
 compileCpp :: FilePath -> CompilerM FilePath
@@ -653,9 +781,28 @@ renderCppStmt = \case
     "}"
   CppFor init cond incr body ->
     "for (" <> 
-    (maybe "" renderCppStmt init) <> "; " <>
+    (maybe "" (\case
+        CppDecl (CppVariable name varType mexpr) -> 
+          -- For variable declarations in for loop init, render as "type name = expr"
+          renderCppType varType <> " " <> name <>
+          (maybe "" (\e -> " = " <> renderCppExpr e) mexpr)
+        CppDecl decl -> 
+          -- For other declarations, strip semicolon and newline
+          T.strip $ T.dropWhileEnd (\c -> c == ';' || c == '\n') $ renderCppDecl decl
+        stmt -> 
+          -- For statements, strip semicolon
+          T.strip $ T.dropWhileEnd (\c -> c == ';' || c == '\n') $ renderCppStmt stmt
+     ) init) <> "; " <>
     (maybe "" renderCppExpr cond) <> "; " <>
     (maybe "" renderCppExpr incr) <> ") {\n" <>
+    T.unlines (map ("    " <>) (map renderCppStmt body)) <>
+    "}"
+  CppForRange varName rangeExpr body ->
+    "for (int " <> varName <> " = 0; " <> varName <> " < " <> renderCppExpr rangeExpr <> "; ++" <> varName <> ") {\n" <>
+    T.unlines (map ("    " <>) (map renderCppStmt body)) <>
+    "}"
+  CppForRangeStartEnd varName startExpr endExpr body ->
+    "for (int " <> varName <> " = " <> renderCppExpr startExpr <> "; " <> varName <> " < " <> renderCppExpr endExpr <> "; ++" <> varName <> ") {\n" <>
     T.unlines (map ("    " <>) (map renderCppStmt body)) <>
     "}"
   CppBlock stmts ->
@@ -726,6 +873,7 @@ renderCppExpr = \case
   CppForward expr -> "std::forward(" <> renderCppExpr expr <> ")"
   CppMakeUnique cppType args -> "std::make_unique<" <> renderCppType cppType <> ">(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
   CppMakeShared cppType args -> "std::make_shared<" <> renderCppType cppType <> ">(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
+  CppInitList cppType args -> renderCppType cppType <> "{" <> T.intercalate ", " (map renderCppExpr args) <> "}"
   CppThis -> "this"
   _ -> "/* unimplemented expr */"
 
