@@ -17,6 +17,8 @@ module Fluxus.AST.Go
   , GoImport(..)
   , GoField(..)
   , GoMethod(..)
+  , GoConstraint(..)
+  , GoBuiltin(..)
   , GoFunction(..)
   , GoReceiver(..)
   , GoChannel(..)
@@ -32,9 +34,13 @@ module Fluxus.AST.Go
   , isGoPointerType
   , isGoChannelType
   , isGoInterfaceType
+    -- * Visibility helpers
+  , isPublicIdentifier
+  , isPrivateIdentifier
   ) where
 
 import Data.Text (Text)
+import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
@@ -83,6 +89,9 @@ data GoDecl
   
   -- Method declarations (functions with receivers)
   | GoMethodDecl !GoReceiver !GoFunction
+  
+  -- Init function declarations (special handling)
+  | GoInitDecl !(Located GoStmt)  -- init() { ... }
   
   deriving stock (Eq, Show, Generic)
   deriving anyclass (Hashable, NFData)
@@ -142,6 +151,7 @@ data GoExpr
   
   -- Function calls and indexing
   | GoCall !(Located GoExpr) ![Located GoExpr]
+  | GoBuiltinCall !GoBuiltin ![Located GoExpr]           -- Built-in function calls
   | GoIndex !(Located GoExpr) !(Located GoExpr)
   | GoSlice !(Located GoExpr) !GoSliceExpr
   | GoSelector !(Located GoExpr) !Identifier
@@ -162,6 +172,17 @@ data GoExpr
   
   -- Function literals
   | GoFuncLit !GoFunction
+  
+  -- Go 1.18+ features - Generics and type parameters
+  | GoGenericInstance !(Located GoExpr) ![Located GoType] -- func[T](args)
+  | GoTypeInference !(Located GoExpr)                    -- Type inference expression
+  
+  -- Go 1.21+ features
+  | GoRangeOverInt !(Located GoExpr)                     -- range n
+  | GoSlicesIndex !(Located GoExpr) !(Located GoExpr)    -- slices.Index(s, v)
+  | GoSlicesContains !(Located GoExpr) !(Located GoExpr) -- slices.Contains(s, v)
+  | GoMapsKeys !(Located GoExpr)                         -- maps.Keys(m)
+  | GoMapsValues !(Located GoExpr)                       -- maps.Values(m)
   
   deriving stock (Eq, Show, Generic)
   deriving anyclass (Hashable, NFData)
@@ -184,10 +205,19 @@ data GoType
   -- Named and generic types
   | GoNamedType !QualifiedName
   | GoGenericType !QualifiedName ![Located GoType]      -- Type[T1, T2, ...]
-  | GoTypeParam !Identifier !(Maybe (Located GoType))   -- T ~constraint
+  | GoTypeParam !Identifier !(Maybe (Located GoConstraint))   -- T constraint
   
   -- Special types
   | GoEllipsisType !(Located GoType)                     -- ...type (variadic)
+  
+  -- Go 1.18+ Generics
+  | GoGenericConstraint ![Located GoConstraint]         -- T1 | T2 | T3
+  | GoInstantiatedType !(Located GoType) ![Located GoType] -- Container[int, string]
+  
+  -- Go 1.21+ types
+  | GoCmpOrdered                                         -- cmp.Ordered
+  | GoSlicesCloneable !(Located GoType)                  -- For slices.Clone[T]
+  | GoMapsComparable !(Located GoType) !(Located GoType) -- For maps with comparable keys
   
   deriving stock (Eq, Show, Generic)
   deriving anyclass (Hashable, NFData)
@@ -221,19 +251,62 @@ data GoField = GoField
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (Hashable, NFData)
 
--- | Go interface methods
-data GoMethod = GoMethod
-  { goMethodName :: !Identifier
-  , goMethodType :: !(Located GoType)                   -- Function type
-  } deriving stock (Eq, Show, Generic)
-    deriving anyclass (Hashable, NFData)
+-- | Go interface methods or embedded constraints
+data GoMethod 
+  = GoMethod !Identifier !(Located GoType)             -- method: func signature
+  | GoTypeConstraint !(Located GoConstraint)            -- embedded type constraint  
+  | GoEmbeddedInterface !(Located GoType)               -- embedded interface
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (Hashable, NFData)
+
+-- | Go generic type constraints
+data GoConstraint
+  = GoBasicConstraint !(Located GoType)                 -- T
+  | GoApproximationConstraint !(Located GoType)         -- ~T  
+  | GoUnionConstraint ![Located GoConstraint]           -- A | B | C
+  | GoInterfaceConstraint ![GoMethod]                   -- interface { methods }
+  | GoMethodSetConstraint ![Located GoType]            -- {T; U; V} method set constraint
+  | GoComparableConstraint                              -- comparable built-in constraint
+  | GoOrderedConstraint                                 -- constraints.Ordered
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (Hashable, NFData)
+
+-- | Go built-in functions
+data GoBuiltin
+  = GoMake                -- make(type, args...)
+  | GoNew                 -- new(type)
+  | GoLen                 -- len(expr)
+  | GoCap                 -- cap(expr)
+  | GoAppend              -- append(slice, elems...)
+  | GoCopy                -- copy(dst, src)
+  | GoDelete              -- delete(map, key)
+  | GoClose               -- close(channel)
+  | GoPanic               -- panic(expr)
+  | GoRecover             -- recover()
+  | GoReal                -- real(complex)
+  | GoImagBuiltin         -- imag(complex) - renamed to avoid conflict
+  | GoComplex             -- complex(real, imag)
+  | GoMin                 -- min(a, b) - Go 1.21+
+  | GoMax                 -- max(a, b) - Go 1.21+
+  | GoClear               -- clear(map/slice) - Go 1.21+
+  | GoUnsafeString        -- unsafe.String(ptr, len) - Go 1.20+
+  | GoUnsafeSlice         -- unsafe.Slice(ptr, len) - Go 1.20+
+  | GoErrorsJoin          -- errors.Join(errs...) - Go 1.20+
+  | GoPrint               -- print(args...) - built-in
+  | GoPrintln             -- println(args...) - built-in
+  -- Additional Go 1.21+ builtins
+  | GoAny                 -- any type constraint
+  | GoComparable          -- comparable type constraint
+  deriving stock (Eq, Show, Enum, Bounded, Generic)
+  deriving anyclass (Hashable, NFData)
 
 -- | Go function definitions
 data GoFunction = GoFunction
-  { goFuncName    :: !(Maybe Identifier)                -- Nothing for function literals
-  , goFuncParams  :: ![GoField]
-  , goFuncResults :: ![GoField]
-  , goFuncBody    :: !(Maybe (Located GoStmt))          -- Nothing for function signatures
+  { goFuncName       :: !(Maybe Identifier)                -- Nothing for function literals
+  , goFuncTypeParams :: ![GoField]                         -- Generic type parameters
+  , goFuncParams     :: ![GoField]
+  , goFuncResults    :: ![GoField]
+  , goFuncBody       :: !(Maybe (Located GoStmt))          -- Nothing for function signatures
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (Hashable, NFData)
 
@@ -266,6 +339,7 @@ data GoRangeClause = GoRangeClause
   , goRangeValue :: !(Maybe Identifier)
   , goRangeDefine :: !Bool                              -- := vs =
   , goRangeExpr  :: !(Located GoExpr)
+  , goRangeInteger :: !(Maybe Integer)                  -- For "range 10" syntax (Go 1.22+)
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (Hashable, NFData)
 
@@ -305,3 +379,16 @@ isGoChannelType _ = False
 isGoInterfaceType :: GoType -> Bool
 isGoInterfaceType (GoInterfaceType _) = True
 isGoInterfaceType _ = False
+
+-- | Check if an identifier is public (starts with uppercase)
+isPublicIdentifier :: Identifier -> Bool
+isPublicIdentifier (Identifier name) = 
+  case T.uncons name of
+    Just (c, _) -> isUpper c
+    Nothing -> False
+  where
+    isUpper c = c >= 'A' && c <= 'Z'
+
+-- | Check if an identifier is private (starts with lowercase)
+isPrivateIdentifier :: Identifier -> Bool
+isPrivateIdentifier ident = not (isPublicIdentifier ident)

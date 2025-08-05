@@ -102,26 +102,47 @@ parseFile :: GoParser GoFile
 parseFile = do
   skipCommentsAndNewlines
   void $ goKeywordP GoKwPackage
+  skipCommentsAndNewlines
   packageName <- parseGoIdentifier
-  skipCommentsAndNewlines
   
-  -- Skip all import statements for now - just consume until we see func
-  skipAllImports
+  -- Parse imports
   skipCommentsAndNewlines
+  imports <- concat <$> parseWhileLookingImport
   
-  -- Parse function declarations only
-  decls <- MP.many $ do
-    skipCommentsAndNewlines
-    decl <- parseFuncDecl
-    skipCommentsAndNewlines
-    return $ located' decl
+  -- Parse declarations
+  skipCommentsAndNewlines
+  declarations <- parseWhileLookingDecl
   
   return $ GoFile
     { goFileName = "<input>"
     , goFilePackage = packageName
-    , goFileImports = []  -- Skip imports for now
-    , goFileDecls = decls
+    , goFileImports = map (noLoc) imports
+    , goFileDecls = declarations
     }
+-- | Parse imports while looking for import keywords
+parseWhileLookingImport :: GoParser [[GoImport]]
+parseWhileLookingImport = do
+  skipCommentsAndNewlines
+  result <- optional $ try $ do
+    lookAhead anySingle >>= \case
+      Located _ (GoTokenKeyword GoKwImport) -> parseImportDecl
+      _ -> fail "Not an import"
+  case result of
+    Just imp -> do
+      rest <- parseWhileLookingImport
+      return (imp : rest)
+    Nothing -> return []
+
+-- | Parse declarations while looking for declaration keywords  
+parseWhileLookingDecl :: GoParser [Located GoDecl]
+parseWhileLookingDecl = do
+  skipCommentsAndNewlines
+  result <- optional $ try parseDeclaration
+  case result of
+    Just decl -> do
+      rest <- parseWhileLookingDecl
+      return (decl : rest)
+    Nothing -> return []
 
 -- | Skip all import statements by consuming tokens until we see func
 skipAllImports :: GoParser ()
@@ -168,15 +189,48 @@ skipImportsRobust = do
           void anySingle  -- Consume and continue
           skipUntilFunc
 
--- | Parse import declarations - simplified robust version
-parseImportDecl :: GoParser [Located GoImport]
+-- | Parse import declarations - comprehensive version
+parseImportDecl :: GoParser [GoImport]
 parseImportDecl = do
   void $ goKeywordP GoKwImport
   skipCommentsAndNewlines
-  -- Simple parsing: just consume the import path string
-  path <- parseGoString
-  skipCommentsAndNewlines
-  return [located' $ GoImportNormal Nothing path]
+  choice
+    [ do
+        -- Multiple imports: import ( ... )
+        void $ goDelimiterP GoDelimLeftParen
+        skipCommentsAndNewlines
+        imports <- many (parseImportSpec <* skipCommentsAndNewlines)
+        void $ goDelimiterP GoDelimRightParen
+        return imports
+    , do
+        -- Single import: import "path" or import alias "path"
+        imp <- parseImportSpec
+        return [imp]
+    ]
+  where
+    parseImportSpec = choice
+      [ try $ do
+          -- Dot import: . "path"
+          void $ goDelimiterP GoDelimDot
+          path <- parseGoString
+          return $ GoImportDot path
+      , try $ do
+          -- Blank import: _ "path"
+          void $ satisfy $ \case
+            Located _ (GoTokenIdent "_") -> True
+            _ -> False
+          path <- parseGoString
+          return $ GoImportBlank path
+      , try $ do
+          -- Alias import: alias "path"
+          alias <- parseGoIdentifier
+          path <- parseGoString
+          return $ GoImportNormal (Just alias) path
+      , do
+          -- Normal import: "path"
+          path <- parseGoString
+          return $ GoImportNormal Nothing path
+      ]
 
 -- | Parse top-level declarations
 parseDeclaration :: GoParser (Located GoDecl)
@@ -202,35 +256,79 @@ parseDeclaration = located $ do
     ]
   return result
 
--- | Parse function declarations
+-- | Parse function declarations (including methods and init functions)
 parseFuncDecl :: GoParser GoDecl
 parseFuncDecl = do
   void $ goKeywordP GoKwFunc
+  
+  -- Check for receiver (method)
+  receiver <- optional $ try $ do
+    void $ goDelimiterP GoDelimLeftParen
+    recv <- parseReceiver
+    void $ goDelimiterP GoDelimRightParen
+    return recv
+  
   name <- parseGoIdentifier
-  void $ goDelimiterP GoDelimLeftParen
-  -- Parse parameters
-  params <- parseParameterList
-  void $ goDelimiterP GoDelimRightParen
   
-  -- Parse optional return type (only if we don't see '{' immediately)
-  skipCommentsAndNewlines
-  results <- optional $ try $ do
-    -- Look ahead to make sure we're not at a '{'
-    notFollowedBy (goDelimiterP GoDelimLeftBrace)
-    parseGoType
-  skipCommentsAndNewlines
-  
-  -- Parse function body
-  body <- parseBlockStmt'
-  
-  let func = GoFunction
-        { goFuncName = Just name
-        , goFuncParams = params
-        , goFuncResults = maybe [] (\t -> [GoField [] t Nothing]) results
-        , goFuncBody = Just $ located' body
-        }
-  
-  return $ GoFuncDecl func
+  -- Check for init function
+  if name == Identifier "init"
+    then parseInitFunction
+    else parseRegularFunction receiver name
+  where
+    parseInitFunction = do
+      -- Init functions have no parameters or return values
+      void $ goDelimiterP GoDelimLeftParen
+      void $ goDelimiterP GoDelimRightParen
+      skipCommentsAndNewlines
+      body <- parseBlockStmt'
+      return $ GoInitDecl (located' body)
+    
+    parseRegularFunction receiver name = do
+      -- Parse optional type parameters [T any, U comparable]
+      typeParams <- optional $ try $ do
+        void $ goDelimiterP GoDelimLeftBracket
+        params <- parseParameterList
+        void $ goDelimiterP GoDelimRightBracket
+        return params
+      
+      void $ goDelimiterP GoDelimLeftParen
+      -- Parse parameters
+      params <- parseParameterList
+      void $ goDelimiterP GoDelimRightParen
+      
+      -- Parse optional return type(s)
+      skipCommentsAndNewlines
+      results <- optional $ try $ do
+        -- Look ahead to make sure we're not at a '{'
+        notFollowedBy (goDelimiterP GoDelimLeftBrace)
+        choice
+          [ do
+              -- Multiple return values: (int, error)
+              void $ goDelimiterP GoDelimLeftParen
+              types <- parseParameterList
+              void $ goDelimiterP GoDelimRightParen
+              return types
+          , do
+              -- Single return value: int
+              t <- parseGoType
+              return [GoField [] t Nothing]
+          ]
+      skipCommentsAndNewlines
+      
+      -- Parse function body - required for regular functions
+      body <- Just <$> parseBlockStmt'
+      
+      let func = GoFunction
+            { goFuncName = Just name
+            , goFuncTypeParams = maybe [] id typeParams
+            , goFuncParams = params
+            , goFuncResults = maybe [] id results
+            , goFuncBody = fmap located' body
+            }
+      
+      case receiver of
+        Just recv -> return $ GoMethodDecl recv func
+        Nothing -> return $ GoFuncDecl func
 
 -- | Skip everything until we find the matching closing brace
 skipFunctionBody :: GoParser ()
@@ -421,12 +519,57 @@ parseForStmt :: GoParser GoStmt
 parseForStmt = do
   void $ goKeywordP GoKwFor
   
-  -- Temporarily disable range for parsing to fix regular for loops
   choice
-    [ try parseForClause
+    [ try parseRangeLoop
+    , try parseForClause
     , parseInfiniteFor
     ]
   where
+    parseRangeLoop = do
+      -- Parse range loop: for k, v := range expr or for v := range expr or for range n
+      key <- optional parseGoIdentifier
+      value <- optional $ do
+        case key of
+          Just _ -> do
+            void $ goDelimiterP GoDelimComma
+            parseGoIdentifier
+          Nothing -> parseGoIdentifier
+      
+      void $ goOperatorP GoOpDefine
+      void $ goKeywordP GoKwRange
+      
+      -- Parse range expression or integer (Go 1.22+)
+      rangeTarget <- choice
+        [ try $ do
+            -- Integer range: for range 10
+            Located _ (GoTokenInt text) <- satisfy $ \case
+              Located _ (GoTokenInt _) -> True
+              _ -> False
+            let intVal = read $ T.unpack text
+            body <- located parseBlockStmt'
+            let rangeClause = GoRangeClause
+                  { goRangeKey = key
+                  , goRangeValue = value
+                  , goRangeDefine = True
+                  , goRangeExpr = located' $ GoLiteral $ GoInt intVal
+                  , goRangeInteger = Just intVal
+                  }
+            return $ GoRange rangeClause body
+        , do
+            -- Expression range: for range slice
+            expr <- parseExpression
+            body <- located parseBlockStmt'
+            let rangeClause = GoRangeClause
+                  { goRangeKey = key
+                  , goRangeValue = value
+                  , goRangeDefine = True
+                  , goRangeExpr = expr
+                  , goRangeInteger = Nothing
+                  }
+            return $ GoRange rangeClause body
+        ]
+      return rangeTarget
+    
     parseForClause = do
       -- Try to parse init statement
       init <- optional $ try $ do
@@ -665,12 +808,24 @@ parseUnaryExpr = choice
         , goOperatorP GoOpMinus $> OpNegate
         , goOperatorP GoOpNot $> OpNot
         , goOperatorP GoOpBitXor $> OpBitNot
-        , goOperatorP GoOpAddress $> OpPositive  -- Placeholder
-        , goOperatorP GoOpMult $> OpNegate       -- Placeholder (dereference)
-        , goOperatorP GoOpArrow $> OpPositive    -- Placeholder (receive)
         ]
       expr <- parseUnaryExpr
       return $ located' $ GoUnaryOp op expr
+  , do
+      -- Address-of operator: &expr
+      void $ goOperatorP GoOpAddress
+      expr <- parseUnaryExpr
+      return $ located' $ GoAddress expr
+  , do
+      -- Dereference operator: *expr
+      void $ goOperatorP GoOpMult
+      expr <- parseUnaryExpr
+      return $ located' $ GoDeref expr
+  , do
+      -- Channel receive operator: <-expr
+      void $ goOperatorP GoOpArrow
+      expr <- parseUnaryExpr
+      return $ located' $ GoReceive expr
   , parseAtomExpr
   ]
 
@@ -743,13 +898,44 @@ parsePostfix = choice
   , parseTypeAssertion
   ]
 
--- | Parse function calls
+-- | Parse function calls (including built-in functions)
 parseCall :: GoParser (Located GoExpr -> Located GoExpr)
 parseCall = do
   void $ goDelimiterP GoDelimLeftParen
   args <- option [] parseExpressionList  -- Allow empty argument lists
   void $ goDelimiterP GoDelimRightParen
-  return $ \expr -> located' $ GoCall expr args
+  return $ \expr -> 
+    case locatedValue expr of
+      GoIdent name -> case parseBuiltinFunction name of
+        Just builtin -> located' $ GoBuiltinCall builtin args
+        Nothing -> located' $ GoCall expr args
+      _ -> located' $ GoCall expr args
+
+-- | Check if an identifier is a built-in function
+parseBuiltinFunction :: Identifier -> Maybe GoBuiltin
+parseBuiltinFunction (Identifier name) = case name of
+  "make" -> Just GoMake
+  "new" -> Just GoNew
+  "len" -> Just GoLen
+  "cap" -> Just GoCap
+  "append" -> Just GoAppend
+  "copy" -> Just GoCopy
+  "delete" -> Just GoDelete
+  "close" -> Just GoClose
+  "panic" -> Just GoPanic
+  "recover" -> Just GoRecover
+  "real" -> Just GoReal
+  "imag" -> Just GoImagBuiltin
+  "complex" -> Just GoComplex
+  "min" -> Just GoMin
+  "max" -> Just GoMax
+  "clear" -> Just GoClear
+  "print" -> Just GoPrint
+  "println" -> Just GoPrintln
+  -- Go 1.21+ builtins
+  "any" -> Just GoAny
+  "comparable" -> Just GoComparable
+  _ -> Nothing
 
 -- | Parse array/slice indexing
 parseIndex :: GoParser (Located GoExpr -> Located GoExpr)
@@ -805,8 +991,11 @@ parseGoType = located $ choice
   , try parseFuncType
   , try parseInterfaceType
   , try parseStructType
+  , try parseTypeParam
   , parseBasicType
   ]
+
+
 
 -- | Parse basic types
 parseBasicType :: GoParser GoType
@@ -888,19 +1077,176 @@ parseFuncType = do
   
   return $ GoFuncType params (maybe [] id results)
 
--- | Parse interface types
+-- | Parse interface types with support for type constraints and embedding
 parseInterfaceType :: GoParser GoType
 parseInterfaceType = do
   void $ goKeywordP GoKwInterface
   void $ goDelimiterP GoDelimLeftBrace
-  methods <- many parseMethodSpec
+  skipCommentsAndNewlines
+  methods <- many (parseMethodOrConstraint <* skipCommentsAndNewlines)
   void $ goDelimiterP GoDelimRightBrace
   return $ GoInterfaceType methods
   where
+    parseMethodOrConstraint = choice
+      [ try parseEmbeddedInterface
+      , try parseEmbeddedConstraint
+      , try parseGenericInterface
+      , parseMethodSpec
+      ]
+    
+    parseEmbeddedInterface = do
+      -- Parse embedded interface like io.Reader
+      typeExpr <- parseConstraintType
+      skipCommentsAndNewlines
+      return $ GoEmbeddedInterface typeExpr
+    
+    parseEmbeddedConstraint = do
+      -- Parse embedded constraint like ~int
+      constraint <- parseTypeConstraint
+      skipCommentsAndNewlines
+      return $ GoTypeConstraint constraint
+    
+    parseGenericInterface = do
+      -- Parse generic interface like Container[T]
+      identifier <- parseGoIdentifier
+      void $ goDelimiterP GoDelimLeftBracket
+      typeParams <- parseGoType `sepBy` goDelimiterP GoDelimComma
+      void $ goDelimiterP GoDelimRightBracket
+      let genericType = GoGenericType (QualifiedName [] identifier) typeParams
+      return $ GoEmbeddedInterface (located' genericType)
+    
     parseMethodSpec = do
       name <- parseGoIdentifier
+      skipCommentsAndNewlines
       typeExpr <- parseGoType
+      skipCommentsAndNewlines
       return $ GoMethod name typeExpr
+
+-- | Parse type constraints with improved approximation constraint support
+parseTypeConstraint :: GoParser (Located GoConstraint)
+parseTypeConstraint = located $ do
+  skipCommentsAndNewlines
+  -- Try to parse approximation constraint first
+  result <- optional $ try $ do
+    void $ goOperatorP GoOpTilde
+    typeExpr <- parseConstraintType
+    return $ GoApproximationConstraint typeExpr
+  
+  case result of
+    Just constraint -> return constraint
+    Nothing -> parseComplexConstraint
+  where
+    parseComplexConstraint = do
+      first <- parseBasicConstraint
+      skipCommentsAndNewlines
+      rest <- many $ do
+        void $ goOperatorP GoOpBitOr  -- | operator
+        skipCommentsAndNewlines
+        parseBasicConstraint
+      skipCommentsAndNewlines
+      case rest of
+        [] -> return $ locatedValue first
+        _ -> return $ GoUnionConstraint (first : rest)
+    
+    parseBasicConstraint = located $ do
+      -- Try built-in constraints first
+      result <- optional $ choice
+        [ try $ do
+            token <- lookAhead anySingle
+            case locValue token of
+              GoTokenIdent "comparable" -> do
+                void anySingle
+                return GoComparableConstraint
+              _ -> fail "Not comparable"
+        , try $ do
+            token <- lookAhead anySingle
+            case locValue token of
+              GoTokenIdent "Ordered" -> do
+                void anySingle
+                return GoOrderedConstraint
+              _ -> fail "Not Ordered"
+        ]
+      case result of
+        Just constraint -> return constraint
+        Nothing -> do
+          typeExpr <- parseConstraintType
+          return $ GoBasicConstraint typeExpr
+
+-- | Parse types used in constraints (avoid recursion)
+parseConstraintType :: GoParser (Located GoType)
+parseConstraintType = located $ do
+  skipCommentsAndNewlines
+  choice
+    [ try parseQualifiedType
+    , try parsePointerTypeConstraint
+    , try parseSliceTypeConstraint
+    , try parseMapTypeConstraint
+    , try parseChanTypeConstraint
+    , try parseArrayTypeConstraint
+    , parseBasicType
+    ]
+  where
+    parseQualifiedType = do
+      Identifier pkgName <- parseGoIdentifier
+      void $ goDelimiterP GoDelimDot  
+      skipCommentsAndNewlines
+      typeName <- parseGoIdentifier
+      return $ GoNamedType $ QualifiedName [ModuleName pkgName] typeName
+    
+    parsePointerTypeConstraint = do
+      void $ goOperatorP GoOpMult
+      baseType <- parseConstraintType
+      return $ GoPointerType baseType
+    
+    parseSliceTypeConstraint = do
+      void $ goDelimiterP GoDelimLeftBracket
+      void $ goDelimiterP GoDelimRightBracket
+      elemType <- parseConstraintType
+      return $ GoSliceType elemType
+    
+    parseMapTypeConstraint = do
+      void $ goKeywordP GoKwMap
+      void $ goDelimiterP GoDelimLeftBracket
+      keyType <- parseConstraintType
+      void $ goDelimiterP GoDelimRightBracket
+      valueType <- parseConstraintType
+      return $ GoMapType keyType valueType
+    
+    parseChanTypeConstraint = do
+      choice
+        [ do
+            void $ goOperatorP GoOpArrow
+            void $ goKeywordP GoKwChan
+            elemType <- parseConstraintType
+            return $ GoChanType GoChanRecv elemType
+        , do
+            void $ goKeywordP GoKwChan
+            choice
+              [ do
+                  void $ goOperatorP GoOpArrow
+                  elemType <- parseConstraintType
+                  return $ GoChanType GoChanSend elemType
+              , do
+                  elemType <- parseConstraintType
+                  return $ GoChanType GoChanBidi elemType
+              ]
+        ]
+    
+    parseArrayTypeConstraint = do
+      void $ goDelimiterP GoDelimLeftBracket
+      size <- parseExpression
+      void $ goDelimiterP GoDelimRightBracket
+      elemType <- parseConstraintType
+      return $ GoArrayType size elemType
+
+-- | Parse type parameters with full constraint support
+parseTypeParam :: GoParser GoType
+parseTypeParam = do
+  skipCommentsAndNewlines
+  identifier <- parseGoIdentifier
+  skipCommentsAndNewlines
+  constraint <- optional parseTypeConstraint
+  return $ GoTypeParam identifier constraint
 
 -- | Parse struct types
 parseStructType :: GoParser GoType
@@ -940,7 +1286,9 @@ parseReceiver = do
 -- | Utility parsers
 parseGoIdentifier :: GoParser Identifier
 parseGoIdentifier = do
-  Located _ token <- anySingle
+  Located _ token <- satisfy $ \case
+    Located _ (GoTokenIdent _) -> True
+    _ -> False
   case token of
     GoTokenIdent text -> return $ Identifier text
     _ -> fail "Expected identifier"

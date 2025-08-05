@@ -122,6 +122,7 @@ data Type
     TInt !Int                           -- Sized integers (8, 16, 32, 64)
   | TUInt !Int                          -- Unsigned integers
   | TFloat !Int                         -- Floating point (32, 64)
+  | TComplex !Type                      -- Complex numbers (real, imaginary)
   | TBool
   | TString
   | TBytes

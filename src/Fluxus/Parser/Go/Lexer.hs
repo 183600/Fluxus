@@ -119,6 +119,9 @@ data GoOperator
   -- Ellipsis
   | GoOpEllipsis                                        -- ...
   
+  -- Approximation constraint (Go 1.18+)
+  | GoOpTilde                                           -- ~
+  
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
   deriving anyclass (Hashable, NFData)
 
@@ -223,6 +226,7 @@ goOperator = GoTokenOperator <$> choice
   , string ":=" $> GoOpDefine
   , string "&^" $> GoOpBitClear
   , string "..." $> GoOpEllipsis
+  , string "~" $> GoOpTilde
   , string "+" $> GoOpPlus
   , string "-" $> GoOpMinus
   , string "*" $> GoOpMult

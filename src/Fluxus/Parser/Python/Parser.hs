@@ -118,7 +118,6 @@ parseStatement = located $ choice
   , try parseContinueStmt
   , try parsePassStmt
   , try parseImportStmt'
-  , try parseAugAssignment
   , try parseAssignment
   , parseExprStmt
   ]
@@ -131,36 +130,32 @@ parseExprStmt = do
 
 -- | Parse assignment statements
 parseAssignment :: PythonParser PythonStmt  
-parseAssignment = do
-  -- Use lookAhead to check if this looks like an assignment before consuming tokens
-  lookAhead $ do
-    _ <- parsePattern
-    choice
-      [ void $ delimiterP DelimComma  -- x, y = ...
-      , void $ satisfy isAssignOp      -- x = ...  
-      ]
-  -- Now actually parse the assignment
-  targets <- parsePattern `sepBy1` delimiterP DelimComma
-  void $ satisfy isAssignOp
+parseAssignment = try $ do
+  -- Parse assignment more carefully
+  target <- parsePattern
+  void $ operator' Lexer.OpAssign
   value <- parseExpression
-  return $ PyAssign targets value
-  where
-    isAssignOp (Located _ (TokenOperator Lexer.OpAssign)) = True
-    isAssignOp _ = False
+  return $ PyAssign [target] value
 
 -- | Parse augmented assignment
-parseAugAssignment :: PythonParser PythonStmt
 parseAugAssignment = do
   -- Use lookAhead to check if this looks like an augmented assignment
-  lookAhead $ do
-    _ <- parsePattern
-    void $ satisfy isAugOp
+  lookAhead checkAugAssignment
   -- Now actually parse the augmented assignment
   target <- parsePattern
   op <- parseAugOp
   value <- parseExpression
   return $ PyAugAssign target op value
   where
+    -- Check if this looks like an augmented assignment without consuming tokens
+    checkAugAssignment = do
+      -- Check for identifier pattern
+      void $ satisfy $ \case
+        Located _ (TokenIdent _) -> True
+        _ -> False
+      -- Check for augmented assignment operator
+      void $ satisfy isAugOp
+    
     isAugOp (Located _ (TokenOperator Lexer.OpPlusAssign)) = True
     isAugOp (Located _ (TokenOperator Lexer.OpMinusAssign)) = True
     isAugOp (Located _ (TokenOperator Lexer.OpMultAssign)) = True
@@ -189,11 +184,21 @@ parseIfStmt = do
   condition <- parseExpression
   void $ delimiterP DelimColon
   thenBody <- parseBlock
+  elifClauses <- many $ do
+    void $ keywordP KwElif
+    elifCondition <- parseExpression
+    void $ delimiterP DelimColon
+    elifBody <- parseBlock
+    return (elifCondition, elifBody)
   elseBody <- option [] $ do
     void $ keywordP KwElse
     void $ delimiterP DelimColon
     parseBlock
-  return $ PyIf condition thenBody elseBody
+  
+  -- Combine elif clauses into nested if statements
+  let finalBody = foldr (\(cond, body) acc -> [located' $ PyIf cond body acc]) elseBody elifClauses
+  
+  return $ PyIf condition thenBody finalBody
 
 -- | Parse while statements
 parseWhileStmt :: PythonParser PythonStmt
@@ -432,12 +437,14 @@ parseAtomExpr = do
 
 parseAtom :: PythonParser (Located PythonExpr)
 parseAtom = choice
-  [ located $ try parseLiteral
+  [ located parseLambdaExpr
+  , located $ try parseLiteral
   , located parseParenExpr
   , located parseIdentifierExpr
-  , located parseListLiteral
-  , located parseTupleLiteral
-  , located parseDictLiteral
+  , located $ try parseListLiteral
+  , located $ try parseTupleLiteral
+  , located $ try parseDictLiteral
+  , located $ try parseSetLiteral
   ]
 
 parseLiteral :: PythonParser PythonExpr
@@ -468,15 +475,204 @@ parseListLiteral = do
 parseTupleLiteral :: PythonParser PythonExpr
 parseTupleLiteral = do
   void $ delimiterP DelimLeftParen
-  elements <- parseExpression `sepBy` delimiterP DelimComma
+  elements <- parseTupleElements
   void $ delimiterP DelimRightParen
   return $ PyTuple elements
+  where
+    parseTupleElements = do
+      input <- getInput
+      case input of
+        (Located _ (TokenDelimiter DelimRightParen) : _) -> return []
+        _ -> do
+          first <- parseExpression
+          rest <- parseTupleRest
+          return (first : rest)
+    
+    parseTupleRest = do
+      input <- getInput
+      case input of
+        (Located _ (TokenDelimiter DelimComma) : _) -> do
+          void $ delimiterP DelimComma
+          input' <- getInput
+          case input' of
+            (Located _ (TokenDelimiter DelimRightParen) : _) -> return []
+            _ -> do
+              next <- parseExpression
+              rest <- parseTupleRest
+              return (next : rest)
+        _ -> return []
+
+parseDictOrSetLiteral :: PythonParser PythonExpr
+parseDictOrSetLiteral = do
+  void $ delimiterP DelimLeftBrace
+  -- Look ahead to see if this is a dict or set
+  input <- getInput
+  case input of
+    (Located _ (TokenDelimiter DelimRightBrace) : _) -> do
+      -- Empty set
+      void $ delimiterP DelimRightBrace
+      return $ PySet []
+    (Located _ TokenNewline : _) -> do
+      -- Handle newline after opening brace
+      void $ skipNewlinesAndComments
+      parseDictOrSetContent
+    _ -> do
+      parseDictOrSetContent
+  where
+    parseDictOrSetContent = do
+      -- Try to parse as dict first by looking for colon
+      firstExpr <- parseExpression
+      input <- getInput
+      case input of
+        (Located _ (TokenDelimiter DelimColon) : _) -> do
+          -- This is a dict
+          void $ delimiterP DelimColon
+          value <- parseExpression
+          pairs <- parseDictPairsRest [(firstExpr, value)]
+          void $ delimiterP DelimRightBrace
+          return $ PyDict pairs
+        _ -> do
+          -- This is a set
+          elements <- parseSetElementsRest [firstExpr]
+          void $ delimiterP DelimRightBrace
+          return $ PySet elements
+    
+    parseDictPairsRest acc = do
+      input <- getInput
+      case input of
+        (Located _ (TokenDelimiter DelimComma) : _) -> do
+          void $ delimiterP DelimComma
+          skipNewlinesAndComments
+          input' <- getInput
+          case input' of
+            (Located _ (TokenDelimiter DelimRightBrace) : _) -> return acc
+            _ -> do
+              key <- parseExpression
+              void $ delimiterP DelimColon
+              value <- parseExpression
+              parseDictPairsRest ((key, value) : acc)
+        _ -> return acc
+    
+    parseSetElementsRest acc = do
+      input <- getInput
+      case input of
+        (Located _ (TokenDelimiter DelimComma) : _) -> do
+          void $ delimiterP DelimComma
+          skipNewlinesAndComments
+          input' <- getInput
+          case input' of
+            (Located _ (TokenDelimiter DelimRightBrace) : _) -> return acc
+            _ -> do
+              expr <- parseExpression
+              parseSetElementsRest (expr : acc)
+        _ -> return acc
 
 parseDictLiteral :: PythonParser PythonExpr
 parseDictLiteral = do
   void $ delimiterP DelimLeftBrace
-  void $ delimiterP DelimRightBrace
-  return $ PyDict []
+  -- Look ahead to see if this is a dict or set
+  input <- getInput
+  case input of
+    (Located _ (TokenDelimiter DelimRightBrace) : _) -> do
+      -- Empty dict
+      void $ delimiterP DelimRightBrace
+      return $ PyDict []
+    (Located _ TokenNewline : _) -> do
+      -- Handle newline after opening brace
+      void $ skipNewlinesAndComments
+      parseDictContent
+    _ -> do
+      parseDictContent
+  where
+    parseDictContent = do
+      -- Try to parse as dict by looking for colon
+      firstExpr <- parseExpression
+      input <- getInput
+      case input of
+        (Located _ (TokenDelimiter DelimColon) : _) -> do
+          -- This is a dict
+          void $ delimiterP DelimColon
+          value <- parseExpression
+          pairs <- parseDictPairsRest [(firstExpr, value)]
+          void $ delimiterP DelimRightBrace
+          return $ PyDict pairs
+        _ -> do
+          -- This might be a set, but since we're in dict parsing, fail
+          fail "Expected dict literal"
+    
+    parseDictPairsRest acc = do
+      input <- getInput
+      case input of
+        (Located _ (TokenDelimiter DelimComma) : _) -> do
+          void $ delimiterP DelimComma
+          skipNewlinesAndComments
+          input' <- getInput
+          case input' of
+            (Located _ (TokenDelimiter DelimRightBrace) : _) -> return acc
+            _ -> do
+              key <- parseExpression
+              void $ delimiterP DelimColon
+              value <- parseExpression
+              parseDictPairsRest ((key, value) : acc)
+        _ -> return acc
+
+parseSetLiteral :: PythonParser PythonExpr
+parseSetLiteral = do
+  void $ delimiterP DelimLeftBrace
+  -- Look ahead to see if this is a dict or set
+  input <- getInput
+  case input of
+    (Located _ (TokenDelimiter DelimRightBrace) : _) -> do
+      -- Empty set
+      void $ delimiterP DelimRightBrace
+      return $ PySet []
+    (Located _ TokenNewline : _) -> do
+      -- Handle newline after opening brace
+      void $ skipNewlinesAndComments
+      parseSetContent
+    _ -> do
+      parseSetContent
+  where
+    parseSetContent = do
+      -- Try to parse as set by ensuring no colon follows
+      firstExpr <- parseExpression
+      input <- getInput
+      case input of
+        (Located _ (TokenDelimiter DelimColon) : _) -> do
+          -- This is a dict, but since we're in set parsing, fail
+          fail "Expected set literal"
+        _ -> do
+          -- This is a set
+          elements <- parseSetElementsRest [firstExpr]
+          void $ delimiterP DelimRightBrace
+          return $ PySet elements
+    
+    parseSetElementsRest acc = do
+      input <- getInput
+      case input of
+        (Located _ (TokenDelimiter DelimComma) : _) -> do
+          void $ delimiterP DelimComma
+          skipNewlinesAndComments
+          input' <- getInput
+          case input' of
+            (Located _ (TokenDelimiter DelimRightBrace) : _) -> return acc
+            _ -> do
+              expr <- parseExpression
+              parseSetElementsRest (expr : acc)
+        _ -> return acc
+
+parseLambdaExpr :: PythonParser PythonExpr
+parseLambdaExpr = do
+  void $ keywordP KwLambda
+  params <- parseLambdaParameters
+  void $ delimiterP DelimColon
+  body <- parseExpression
+  return $ PyLambda params body
+  where
+    parseLambdaParameters = parseLambdaParameter `sepBy` delimiterP DelimComma
+    parseLambdaParameter = located $ do
+      name <- parseIdentifier
+      return $ ParamNormal name Nothing Nothing
 
 parseParenExpr :: PythonParser PythonExpr
 parseParenExpr = do
@@ -521,6 +717,22 @@ parsePattern = located $ choice
   [ try (PatVar <$> parseIdentifier)
   , try (PatWildcard <$ parseUnderscore)
   ]
+
+-- | Parse list patterns
+parseListPattern :: PythonParser PythonPattern
+parseListPattern = do
+  void $ delimiterP DelimLeftBracket
+  patterns <- parsePattern `sepBy` delimiterP DelimComma
+  void $ delimiterP DelimRightBracket
+  return $ PatList patterns
+
+-- | Parse tuple patterns  
+parseTuplePattern :: PythonParser PythonPattern
+parseTuplePattern = do
+  void $ delimiterP DelimLeftParen
+  patterns <- parsePattern `sepBy` delimiterP DelimComma
+  void $ delimiterP DelimRightParen
+  return $ PatTuple patterns
 
 -- | Parse type expressions
 parseTypeExpr :: PythonParser (Located PythonTypeExpr)

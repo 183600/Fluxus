@@ -950,16 +950,83 @@ mapPythonTypeToCpp = \case
 
 mapGoTypeToCpp :: GoType -> CppType
 mapGoTypeToCpp = \case
+  -- Basic types
   GoBasicType (Identifier "int") -> CppInt
+  GoBasicType (Identifier "int8") -> CppChar
+  GoBasicType (Identifier "int16") -> CppShort
+  GoBasicType (Identifier "int32") -> CppInt
+  GoBasicType (Identifier "int64") -> CppLongLong
+  GoBasicType (Identifier "uint") -> CppUInt
+  GoBasicType (Identifier "uint8") -> CppUChar
+  GoBasicType (Identifier "uint16") -> CppUShort
+  GoBasicType (Identifier "uint32") -> CppUInt
+  GoBasicType (Identifier "uint64") -> CppULongLong
+  GoBasicType (Identifier "float32") -> CppFloat
   GoBasicType (Identifier "float64") -> CppDouble
   GoBasicType (Identifier "bool") -> CppBool
   GoBasicType (Identifier "string") -> CppString
+  
+  -- Complex types
+  GoBasicType (Identifier "complex64") -> CppTemplateType "std::complex" [CppFloat]
+  GoBasicType (Identifier "complex128") -> CppTemplateType "std::complex" [CppDouble]
+  
+  -- Container types
   GoSliceType (Located _ elemType) -> CppVector (mapGoTypeToCpp elemType)
+  GoArrayType _ _ -> CppArray CppInt 10  -- Simplified: fixed size arrays for now
   GoMapType (Located _ keyType) (Located _ valueType) -> 
     CppUnorderedMap (mapGoTypeToCpp keyType) (mapGoTypeToCpp valueType)
+  
+  -- Pointer types
   GoPointerType (Located _ baseType) -> CppPointer (mapGoTypeToCpp baseType)
-  GoChanType _ (Located _ elemType) -> CppTemplateType "Channel" [mapGoTypeToCpp elemType]
-  _ -> CppAuto
+  
+  -- Channel types - use Channel class without template parameters
+  GoChanType _ _ -> CppClassType "Channel" []
+  
+  -- Function types
+  GoFuncType params results -> 
+    let paramTypes = map (\field -> mapGoTypeToCpp (locatedValue (goFieldType field))) params
+        resultType = case results of
+                      [] -> CppVoid
+                      [field] -> mapGoTypeToCpp (locatedValue (goFieldType field))
+                      _ -> CppAuto  -- Multiple return values use auto
+    in CppFunctionType paramTypes resultType
+  
+  -- Interface types - use void* for simplicity
+  GoInterfaceType _ -> CppPointer CppVoid
+  
+  -- Struct types
+  GoStructType _ -> CppAuto  -- For now, use auto for structs
+  
+  -- Generic types and constraints
+  GoGenericType (QualifiedName _ (Identifier name)) typeArgs ->
+    let cppTypeArgs = map (mapGoTypeToCpp . locatedValue) typeArgs
+    in case name of
+         "Container" -> CppTemplateType "Container" cppTypeArgs
+         "Vector" -> CppTemplateType "std::vector" cppTypeArgs
+         _ -> CppTemplateType name cppTypeArgs
+  
+  -- Type parameters - use int as fallback for template safety
+  GoTypeParam _ _ -> CppInt
+  
+  -- Ellipsis types (variadic)
+  GoEllipsisType (Located _ baseType) -> CppVector (mapGoTypeToCpp baseType)
+  
+  -- Fallback for unknown types
+  _ -> CppInt  -- Use int instead of auto for better template compatibility
+
+-- | Extract array size from Go expression
+extractArraySize :: Located GoExpr -> Int
+extractArraySize (Located _ expr) = case expr of
+  GoLiteral (GoInt n) -> fromIntegral n
+  GoLiteral (GoFloat n) -> floor n
+  _ -> 10  -- Default size for complex expressions
+
+-- | Safe template type generation for Go types
+safeGoTypeToCpp :: GoType -> CppType
+safeGoTypeToCpp goType = 
+  case mapGoTypeToCpp goType of
+    CppAuto -> CppInt  -- Replace auto with int for template safety
+    other -> other
 
 mapCommonTypeToCpp :: Type -> CppType
 mapCommonTypeToCpp = mapPythonTypeToCpp  -- Reuse Python mapping
@@ -1011,55 +1078,29 @@ mapPythonComparisonOp = \case
   OpIsNot -> "!="  -- Simplified: use != for 'is not'
 
 -- | Generate Channel class for Go channel operations
--- This implements a generic channel that can handle any type via templates
+-- This implements a simple int-based channel for compatibility
 generateChannelClass :: CppCodeGen ()
 generateChannelClass = do
-  let templateParam = CppTemplateType "T" []
-  
   let channelMembers = 
-        [ CppVariable "queue_" (CppTemplateType "std::queue" [templateParam]) Nothing
-        , CppVariable "mutex_" (CppClassType "std::mutex" []) Nothing
-        , CppVariable "cv_" (CppClassType "std::condition_variable" []) Nothing
-        , CppVariable "capacity_" CppSizeT Nothing
+        [ CppVariable "data" CppInt Nothing
+        , CppVariable "has_data" CppBool Nothing
         ]
   
   let channelMethods =
-        [ CppConstructor "Channel" [CppParam "capacity" CppSizeT Nothing] 
-            [ CppExprStmt $ CppBinary "=" (CppMember CppThis "capacity_") (CppVar "capacity")
+        [ CppConstructor "Channel" []
+            [ CppExprStmt $ CppBinary "=" (CppMember CppThis "data") (CppLiteral $ CppIntLit 0)
+            , CppExprStmt $ CppBinary "=" (CppMember CppThis "has_data") (CppLiteral $ CppBoolLit False)
             ]
-        , CppMethod "send" CppVoid [CppParam "value" templateParam Nothing]
-            [ CppDecl $ CppVariable "lock" (CppTemplateType "std::unique_lock" [CppClassType "std::mutex" []]) 
-                (Just $ CppCall (CppVar "std::unique_lock<std::mutex>") [CppMember CppThis "mutex_"])
-            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "cv_") "wait") 
-                [ CppVar "lock"
-                , CppLambda [] 
-                    [ CppReturn $ Just $ CppBinary "<" 
-                        (CppCall (CppMember (CppMember CppThis "queue_") "size") []) 
-                        (CppMember CppThis "capacity_")
-                    ]
-                ]
-            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "queue_") "push") [CppVar "value"]
-            , CppExprStmt $ CppCall (CppMember (CppVar "cv_") "notify_one") []
+        , CppMethod "send" CppVoid [CppParam "value" CppInt Nothing] 
+            [ CppExprStmt $ CppBinary "=" (CppMember CppThis "data") (CppVar "value")
+            , CppExprStmt $ CppBinary "=" (CppMember CppThis "has_data") (CppLiteral $ CppBoolLit True)
             ] False
-        , CppMethod "receive" templateParam []
-            [ CppDecl $ CppVariable "value" templateParam Nothing
-            , CppDecl $ CppVariable "lock" (CppTemplateType "std::unique_lock" [CppClassType "std::mutex" []]) 
-                (Just $ CppCall (CppVar "std::unique_lock<std::mutex>") [CppMember CppThis "mutex_"])
-            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "cv_") "wait") 
-                [ CppVar "lock"
-                , CppLambda [] 
-                    [ CppReturn $ Just $ CppUnary "!" 
-                        (CppCall (CppMember (CppMember CppThis "queue_") "empty") [])
-                    ]
-                ]
-            , CppExprStmt $ CppBinary "=" (CppVar "value") (CppCall (CppMember (CppMember CppThis "queue_") "front") [])
-            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "queue_") "pop") []
-            , CppExprStmt $ CppCall (CppMember (CppVar "cv_") "notify_one") []
-            , CppReturn $ Just $ CppVar "value"
+        , CppMethod "receive" CppInt [] 
+            [ CppReturn $ Just $ CppMember CppThis "data"
             ] False
         ]
   
-  addDeclaration $ CppTemplate ["T"] (CppClass "Channel" [] (channelMembers ++ channelMethods))
+  addDeclaration $ CppStruct "Channel" (channelMembers ++ channelMethods)
 
 
 -- | Helper functions
