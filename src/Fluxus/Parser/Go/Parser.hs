@@ -216,9 +216,10 @@ parseImportDecl = do
           return $ GoImportDot path
       , try $ do
           -- Blank import: _ "path"
-          void $ satisfy $ \case
+          void $ lookAhead $ satisfy $ \case
             Located _ (GoTokenIdent "_") -> True
             _ -> False
+          void $ parseGoIdentifier  -- Actually consume the identifier
           path <- parseGoString
           return $ GoImportBlank path
       , try $ do
@@ -571,35 +572,87 @@ parseForStmt = do
       return rangeTarget
     
     parseForClause = do
-      -- Try to parse init statement
-      init <- optional $ try $ do
-        stmt <- parseSimpleStmt
-        void $ goDelimiterP GoDelimSemicolon
-        return $ located' stmt
-      
-      -- Try to parse condition
-      condition <- optional $ try $ do
-        expr <- parseExpression
-        void $ goDelimiterP GoDelimSemicolon
-        return expr
-      
-      -- Try to parse post statement (no semicolon after)
-      post <- optional $ do
-        stmt <- parseSimpleStmt
-        return $ located' stmt
-      
-      -- Ensure we parsed at least something for a for clause
-      when (isNothing init && isNothing condition && isNothing post) $
-        fail "Expected for clause components"
-      
-      body <- located parseBlockStmt'
-      
-      let forClause = Just $ GoForClause
-            { goForInit = init
-            , goForCond = condition
-            , goForPost = post
-            }
-      return $ GoFor forClause body
+      -- Check if this is a while-style for loop: for condition { ... }
+      -- Look ahead to see if there's a semicolon after the first expression
+      firstToken <- lookAhead anySingle
+      case locValue firstToken of
+        GoTokenDelimiter GoDelimLeftBrace -> do
+          -- This is just "for { ... }" - infinite loop
+          body <- located parseBlockStmt'
+          return $ GoFor Nothing body
+        _ -> do
+          -- Try to parse init statement
+          init <- optional $ try $ do
+            stmt <- parseSimpleStmt
+            void $ goDelimiterP GoDelimSemicolon
+            return $ located' stmt
+          
+          -- If we have no init, check if this is a while-style for loop
+          if isNothing init
+            then do
+              -- Try to parse condition (may be followed by semicolon or brace)
+              condition <- optional $ try $ do
+                expr <- parseExpression
+                -- Look ahead to see what comes next
+                nextToken <- lookAhead anySingle
+                case locValue nextToken of
+                  GoTokenDelimiter GoDelimSemicolon -> do
+                    void $ goDelimiterP GoDelimSemicolon
+                    return expr
+                  GoTokenDelimiter GoDelimLeftBrace -> do
+                    return expr
+                  _ -> fail "Expected semicolon or left brace after condition"
+              
+              -- If we have a condition but no semicolon, this is a while-style loop
+              case condition of
+                Just expr -> do
+                  -- This is "for condition { ... }" - treat as while loop
+                  body <- located parseBlockStmt'
+                  let whileClause = Just $ GoForClause
+                        { goForInit = Nothing
+                        , goForCond = Just expr
+                        , goForPost = Nothing
+                        }
+                  return $ GoFor whileClause body
+                Nothing -> do
+                  -- Try to parse post statement (should have semicolon before)
+                  post <- optional $ try $ do
+                    stmt <- parseSimpleStmt
+                    return $ located' stmt
+                  
+                  -- Ensure we parsed at least something for a for clause
+                  when (isNothing post) $
+                    fail "Expected for clause components"
+                  
+                  body <- located parseBlockStmt'
+                  
+                  let forClause = Just $ GoForClause
+                        { goForInit = Nothing
+                        , goForCond = Nothing
+                        , goForPost = post
+                        }
+                  return $ GoFor forClause body
+            else do
+              -- We have an init statement, continue with normal for clause parsing
+              -- Try to parse condition
+              condition <- optional $ try $ do
+                expr <- parseExpression
+                void $ goDelimiterP GoDelimSemicolon
+                return expr
+              
+              -- Try to parse post statement (no semicolon after)
+              post <- optional $ do
+                stmt <- parseSimpleStmt
+                return $ located' stmt
+              
+              body <- located parseBlockStmt'
+              
+              let forClause = Just $ GoForClause
+                    { goForInit = init
+                    , goForCond = condition
+                    , goForPost = post
+                    }
+              return $ GoFor forClause body
     
     parseInfiniteFor = do
       body <- located parseBlockStmt'
@@ -859,7 +912,7 @@ parseGoLiteral = do
     Located _ (GoTokenRune _) -> True
     _ -> False
   case token of
-    GoTokenInt text -> return $ GoLiteral $ GoInt (read $ T.unpack text)
+    GoTokenInt text -> return $ GoLiteral $ GoInt (read (T.unpack text) :: Integer)
     GoTokenFloat text -> return $ GoLiteral $ GoFloat (read $ T.unpack text)
     GoTokenImag text -> return $ GoLiteral $ GoImag (read $ T.unpack $ T.init text)  -- Remove 'i'
     GoTokenString text -> return $ GoLiteral $ GoString text
@@ -869,7 +922,13 @@ parseGoLiteral = do
 
 -- | Parse identifiers as expressions
 parseGoIdentifierExpr :: GoParser GoExpr
-parseGoIdentifierExpr = GoIdent <$> parseGoIdentifier
+parseGoIdentifierExpr = do
+  ident <- parseGoIdentifier
+  case ident of
+    Identifier "true" -> return $ GoLiteral $ GoBool True
+    Identifier "false" -> return $ GoLiteral $ GoBool False
+    Identifier "nil" -> return $ GoLiteral GoNil
+    _ -> return $ GoIdent ident
 
 -- | Parse parenthesized expressions
 parseParenExpr :: GoParser GoExpr
@@ -991,8 +1050,8 @@ parseGoType = located $ choice
   , try parseFuncType
   , try parseInterfaceType
   , try parseStructType
-  , try parseTypeParam
   , parseBasicType
+  , try parseTypeParam
   ]
 
 

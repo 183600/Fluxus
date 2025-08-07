@@ -1,5 +1,8 @@
 package main
 
+import "fmt"
+
 func main() {
-    println("Hello from test!")
+    result := 42
+    fmt.Println("test", result)
 }

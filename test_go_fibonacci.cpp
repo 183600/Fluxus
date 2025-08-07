@@ -11,23 +11,43 @@
 #include <iostream>
 
 // Generating C++ for Go package: main
-// TODO: Render other declaration types
+template<typename T>
+struct Channel {
+    std::queue<T> data_queue;
+    std::mutex mutex;
+    std::condition_variable cv;
+    Channel() {
+        // Initialize empty channel
+    }
+    void send(T value) {
+        std::lock_guard<std::mutex> lock = std::lock_guard(this->mutex);
+        this->data_queue.push(value);
+        this->cv.notify_one();
+    }
+    T receive() {
+        std::unique_lock<std::mutex> lock = std::unique_lock(this->mutex);
+        this->cv.wait(lock);
+        T result = this->data_queue.front();
+        this->data_queue.pop();
+        return result;
+    }
+};
 
 // Found 1 files in package
 // Processing Go file with 2 declarations
 // Generating function: fibonacci
 int fibonacci(int n) {
-    if (n <= 1.0) {
+    if (n <= 1) {
     {
     return n;
 }
 }
-    return fibonacci(n - 1.0) + fibonacci(n - 2.0);
+    return fibonacci(n - 1) + fibonacci(n - 2);
 }
 
 // Generating function: main
 int main() {
-    std::cout << fibonacci(5.0) << std::endl;
+    std::cout << fibonacci(5) << std::endl;
     return 0;
 }
 

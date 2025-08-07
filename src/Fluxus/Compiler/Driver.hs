@@ -785,9 +785,17 @@ renderCppDecl = \case
     T.unlines (map ("    " <>) (map renderCppStmt body)) <>
     "}\n"
   CppVariable name varType Nothing -> 
-    renderCppType varType <> " " <> name <> ";\n"
+    case varType of
+      CppArray elemType size -> 
+        renderCppType elemType <> " " <> name <> "[" <> T.pack (show size) <> "];\n"
+      _ -> 
+        renderCppType varType <> " " <> name <> ";\n"
   CppVariable name varType (Just expr) -> 
-    renderCppType varType <> " " <> name <> " = " <> renderCppExpr expr <> ";\n"
+    case varType of
+      CppArray elemType size -> 
+        renderCppType elemType <> " " <> name <> "[" <> T.pack (show size) <> "] = " <> renderCppExpr expr <> ";\n"
+      _ -> 
+        renderCppType varType <> " " <> name <> " = " <> renderCppExpr expr <> ";\n"
   CppNamespace nsName innerDecls ->
     "namespace " <> nsName <> " {\n" <>
     T.unlines (map renderCppDecl innerDecls) <>
@@ -821,7 +829,31 @@ renderCppDecl = \case
     "}\n"
   CppCommentDecl comment ->
     "// " <> comment
+  CppStruct name members ->
+    "struct " <> name <> " {\n" <>
+    T.unlines (map ("    " <>) (map renderCppMember members)) <>
+    "};\n"
   _ -> "// TODO: Render other declaration types\n"
+
+-- | Render C++ struct member
+renderCppMember :: CppDecl -> Text
+renderCppMember = \case
+  CppVariable name varType mInit ->
+    let initStr = case mInit of
+          Just init -> " = " <> renderCppExpr init
+          Nothing -> ""
+    in renderCppType varType <> " " <> name <> initStr <> ";"
+  CppConstructor name params body ->
+    name <> "(" <> T.intercalate ", " (map renderCppParam params) <> ") {\n" <>
+    T.unlines (map ("        " <>) (map renderCppStmt body)) <>
+    "    }"
+  CppMethod name retType params body isVirtual ->
+    (if isVirtual then "virtual " else "") <>
+    renderCppType retType <> " " <> name <> "(" <> 
+    T.intercalate ", " (map renderCppParam params) <> ") {\n" <>
+    T.unlines (map ("        " <>) (map renderCppStmt body)) <>
+    "    }"
+  _ -> "// TODO: Render other member types"
 
 -- | Render C++ type
 renderCppType :: CppType -> Text
@@ -832,6 +864,7 @@ renderCppType = \case
   CppBool -> "bool"
   CppString -> "std::string"
   CppAuto -> "auto"
+  CppTypeVar name -> name
   CppPointer cppType -> renderCppType cppType <> "*"
   CppReference cppType -> renderCppType cppType <> "&"
   CppVector elemType -> "std::vector<" <> renderCppType elemType <> ">"
@@ -846,7 +879,7 @@ renderCppType = \case
   CppConst cppType -> "const " <> renderCppType cppType
   CppVolatile cppType -> "volatile " <> renderCppType cppType
   CppRvalueRef cppType -> renderCppType cppType <> "&&"
-  CppArray elemType size -> renderCppType elemType <> "[" <> T.pack (show size) <> "]"
+  CppArray elemType _ -> renderCppType elemType
   CppFunctionType paramTypes retType -> 
     renderCppType retType <> "(" <> T.intercalate ", " (map renderCppType paramTypes) <> ")"
   CppVariant types -> "std::variant<" <> T.intercalate ", " (map renderCppType types) <> ">"
@@ -983,7 +1016,10 @@ renderCppExpr = \case
   CppForward expr -> "std::forward(" <> renderCppExpr expr <> ")"
   CppMakeUnique cppType args -> "std::make_unique<" <> renderCppType cppType <> ">(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
   CppMakeShared cppType args -> "std::make_shared<" <> renderCppType cppType <> ">(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
-  CppInitList cppType args -> renderCppType cppType <> "{" <> T.intercalate ", " (map renderCppExpr args) <> "}"
+  CppInitList cppType args -> 
+    case cppType of
+      CppArray _ _ -> "{" <> T.intercalate ", " (map renderCppExpr args) <> "}"
+      _ -> renderCppType cppType <> "{" <> T.intercalate ", " (map renderCppExpr args) <> "}"
   CppThis -> "this"
   _ -> "/* unimplemented expr */"
 
@@ -994,5 +1030,17 @@ renderCppLiteral = \case
   CppFloatLit f -> T.pack $ show f
   CppBoolLit True -> "true"
   CppBoolLit False -> "false" 
-  CppStringLit s -> "\"" <> s <> "\""
+  CppStringLit s -> "\"" <> escapeCppString s <> "\""
   CppNullPtr -> "nullptr"
+  where
+    -- Helper function to escape string literals for C++
+    escapeCppString :: Text -> Text
+    escapeCppString s = T.concatMap escapeChar s
+      where
+        escapeChar '\n' = "\\n"
+        escapeChar '\t' = "\\t"
+        escapeChar '\r' = "\\r"
+        escapeChar '\\' = "\\\\"
+        escapeChar '\"' = "\\\""
+        escapeChar '\'' = "\\'"
+        escapeChar c = T.singleton c

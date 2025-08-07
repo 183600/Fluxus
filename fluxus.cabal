@@ -198,3 +198,15 @@ executable debug-full-go
     megaparsec,
     parser-combinators
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
+
+executable debug-simple-full-go
+  import: shared-properties
+  main-is: debug_simple_full_go.hs
+  hs-source-dirs: .
+  build-depends:
+    base,
+    fluxus,
+    text,
+    megaparsec,
+    parser-combinators
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N

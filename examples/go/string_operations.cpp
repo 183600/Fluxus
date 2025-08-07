@@ -12,48 +12,30 @@
 
 // Generating C++ for Go package: main
 template<typename T>
-class Channel {
-    std::queue<T> queue_;
-
-    std::mutex mutex_;
-
-    std::condition_variable cv_;
-
-    size_t capacity_;
-
-    Channel(size_t capacity) {
-        this->capacity_ = capacity;
+struct Channel {
+    std::queue<T> data_queue;
+    std::mutex mutex;
+    std::condition_variable cv;
+    Channel() {
+        // Initialize empty channel
     }
-
     void send(T value) {
-        std::unique_lock<std::mutex> lock = std::unique_lock<std::mutex>(this->mutex_);
-        this->cv_.wait(lock, [this]() {
-    return this->queue_.size() < this->capacity_;
-});
-        this->queue_.push(value);
-        cv_.notify_one();
+        std::lock_guard<std::mutex> lock = std::lock_guard(this->mutex);
+        this->data_queue.push(value);
+        this->cv.notify_one();
     }
-
     T receive() {
-        T value;
-        std::unique_lock<std::mutex> lock = std::unique_lock<std::mutex>(this->mutex_);
-        this->cv_.wait(lock, [this]() {
-    return !this->queue_.empty();
-});
-        value = this->queue_.front();
-        this->queue_.pop();
-        cv_.notify_one();
-        return value;
+        std::unique_lock<std::mutex> lock = std::unique_lock(this->mutex);
+        this->cv.wait(lock);
+        T result = this->data_queue.front();
+        this->data_queue.pop();
+        return result;
     }
-
 };
 
 // Found 1 files in package
-// Processing Go file with 1 declarations
-// Generating function: reverse
-auto reverse(auto s) {
-}
-
+// Processing Go file with 0 declarations
+// No declarations found in Go file - parser may need to be fixed
 // Generating fallback main function - Go parser not working properly
 int main() {
     return 0;

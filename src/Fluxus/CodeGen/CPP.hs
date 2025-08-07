@@ -37,7 +37,7 @@ import Control.Monad.Writer
 import Control.Monad (when, unless)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.List (intercalate, partition)
+import Data.List (intercalate, partition, sortBy)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable (Hashable)
@@ -177,6 +177,7 @@ data CppType
   | CppTuple ![CppType]                                 -- std::tuple<Ts...>
   | CppMap !CppType !CppType                            -- std::map<K, V>
   | CppUnorderedMap !CppType !CppType                   -- std::unordered_map<K, V>
+  | CppTypeVar !Text                                     -- Template type variable (T, U, etc.)
   deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
@@ -314,6 +315,12 @@ generateCppFromGo (GoAST goPackage) isMainFile = do
   addInclude "<functional>"
   addInclude "<atomic>"
   addInclude "<chrono>"
+  addInclude "<tuple>"  -- Add tuple support for multiple return values
+  addInclude "<array>"  -- Add array support
+  addInclude "<iomanip>"  -- Add formatting support
+  
+  -- Generate helper functions for printing containers
+  generatePrintHelpers
   
   -- Generate package namespace
   let packageName = (\(Identifier n) -> n) (goPackageName goPackage)
@@ -332,13 +339,12 @@ generateCppFromGo (GoAST goPackage) isMainFile = do
   
   mapM_ generateGoFile files
   
-  -- Ensure we have a main function if processing main package (only for main file)
+  -- Only add fallback main if we're generating a main file and no main function was found
   when (isMainFile && packageName == "main") $ do
     hasMain <- gets (any isMainFunction . cgsDeclarations)
     unless hasMain $ do
-      addComment "Generating fallback main function - Go parser not working properly"
-      addInclude "<iostream>"
-      addDeclaration $ CppFunction "main" CppInt [] [CppReturn (Just (CppLiteral (CppIntLit 0)))]
+      addComment "No main function found in declarations - this might be expected for some files"
+      -- Don't generate fallback main automatically - let the user handle this
   
   -- Build final unit
   includes <- gets cgsIncludes
@@ -518,7 +524,13 @@ generateGoFile goFile = do
   when (null decls) $ do
     addComment "No declarations found in Go file - parser may need to be fixed"
   
-  mapM_ generateGoDecl decls
+  -- Process declarations in correct order - functions first, then others
+  let (funcDecls, otherDecls) = partition isFuncDecl decls
+  mapM_ generateGoDecl funcDecls
+  mapM_ generateGoDecl otherDecls
+  where
+    isFuncDecl (Located _ (GoFuncDecl _)) = True
+    isFuncDecl _ = False
 
 -- | Generate C++ from Go declarations
 generateGoDecl :: Located GoDecl -> CppCodeGen ()
@@ -586,7 +598,7 @@ generateGoFunction func = do
     Nothing -> return ()  -- Function literal, handle differently
     Just (Identifier name) -> do
       -- Map parameters and return types
-      cppParams <- mapM mapGoParameter (goFuncParams func)
+      cppParams <- mapGoParameters (goFuncParams func)
       returnType <- mapGoResultsForMain name (goFuncResults func)
       
       -- Generate function body
@@ -607,6 +619,31 @@ generateGoFunction func = do
           -- If this is the main function, also ensure we have #include <iostream>
           when (name == "main") $ do
             addInclude "<iostream>"
+-- | Helper function to extract text from Identifier
+unIdentifier :: Identifier -> Text
+unIdentifier (Identifier name) = name
+
+-- | Map Go parameters to C++ parameters, handling shorthand notation (a, b int)
+mapGoParameters :: [GoField] -> CppCodeGen [CppParam]
+mapGoParameters fields = do
+  allParams <- mapM expandGoField fields
+  return $ concat allParams
+  where
+    expandGoField :: GoField -> CppCodeGen [CppParam]
+    expandGoField field = case goFieldNames field of
+      [] -> do
+        -- Anonymous parameter
+        cppType <- generateGoType (goFieldType field)
+        return [CppParam "param" cppType Nothing]
+      [name] -> do
+        -- Single named parameter
+        cppType <- generateGoType (goFieldType field)
+        return [CppParam (unIdentifier name) cppType Nothing]
+      names -> do
+        -- Multiple names with same type (a, b int) -> expand to separate parameters
+        cppType <- generateGoType (goFieldType field)
+        mapM (\name -> return $ CppParam (unIdentifier name) cppType Nothing) names
+-- | Map a single Go parameter to C++ parameter
 
 -- | Check if statement list contains a return statement with a value
 hasReturnStmt :: [CppStmt] -> Bool
@@ -636,10 +673,18 @@ hasReturnValue (Located _ stmt) = case stmt of
 -- | Generate block statement from Go (handling compound statements)
 generateGoBlockStmt :: Located GoStmt -> CppCodeGen [CppStmt]
 generateGoBlockStmt (Located _ stmt) = case stmt of
-  GoBlock stmts -> mapM generateGoStmt stmts
+  GoBlock stmts -> do
+    cppStmts <- mapM generateGoStmt stmts
+    -- Flatten any CppBlock statements to avoid nested scopes
+    return $ concatMap flattenCppStmt cppStmts
   _ -> do
     singleStmt <- generateGoStmt (Located undefined stmt)
-    return [singleStmt]
+    return $ flattenCppStmt singleStmt
+
+-- | Flatten CppBlock statements to avoid unnecessary nesting
+flattenCppStmt :: CppStmt -> [CppStmt]
+flattenCppStmt (CppBlock stmts) = concatMap flattenCppStmt stmts
+flattenCppStmt stmt = [stmt]
 
 -- | Generate statements from Go
 generateGoStmt :: Located GoStmt -> CppCodeGen CppStmt
@@ -660,13 +705,18 @@ generateGoStmt (Located _ stmt) = case stmt of
     return $ CppExprStmt cppExpr
   GoIf _ cond thenStmt elseStmt -> do
     cppCond <- generateGoExpr cond
-    cppThen <- generateGoStmt thenStmt
-    cppElse <- case elseStmt of
+    cppThenStmts <- case thenStmt of
+      Located _ (GoBlock stmts) -> mapM generateGoStmt stmts
+      _ -> do
+        stmt <- generateGoStmt thenStmt
+        return [stmt]
+    cppElseStmts <- case elseStmt of
       Nothing -> return []
+      Just (Located _ (GoBlock stmts)) -> mapM generateGoStmt stmts
       Just stmt -> do
         stmt' <- generateGoStmt stmt
         return [stmt']
-    return $ CppIf cppCond [cppThen] cppElse
+    return $ CppIf cppCond cppThenStmts cppElseStmts
   GoFor mforClause bodyStmt -> do
     -- Handle for loop properly
     case mforClause of
@@ -739,10 +789,34 @@ generateGoStmt (Located _ stmt) = case stmt of
         -- Infer type from the expression
         let cppType = inferTypeFromExpr expr
         return $ CppDecl $ CppVariable varName cppType (Just cppExpr)
-      _ -> do
-        -- Multiple variable assignment - simplified for now
-        addComment $ "Multiple variable definition not fully implemented"
-        return $ CppComment $ "Multiple variable definition"
+      (multipleNames, multipleExprs) -> do
+        -- Multiple variable assignment - handle tuple unpacking
+        if length multipleNames == length multipleExprs
+        then do
+          -- Generate individual declarations (not in a block to avoid scope issues)
+          let pairs = zip multipleNames multipleExprs
+          assignments <- mapM (\(Identifier name, expr) -> do
+            cppExpr <- generateGoExpr expr
+            let cppType = inferTypeFromExpr expr
+            return $ CppDecl $ CppVariable name cppType (Just cppExpr)
+            ) pairs
+          -- Return individual statements, not wrapped in a block
+          case assignments of
+            [] -> return $ CppComment "Empty assignment"
+            [single] -> return single
+            multiple -> return $ CppBlock multiple
+        else if length multipleExprs == 1
+        then do
+          -- Handle tuple unpacking from single expression (e.g., x, y := func())
+          cppExpr <- generateGoExpr (head multipleExprs)
+          -- Generate individual declarations first, then std::tie assignment
+          let varNames = map (\(Identifier name) -> name) multipleNames
+              declarations = map (\name -> CppDecl $ CppVariable name CppAuto Nothing) varNames
+              tieExpr = CppCall (CppVar "std::tie") (map CppVar varNames)
+              assignment = CppExprStmt $ CppBinary "=" tieExpr cppExpr
+          return $ CppBlock (declarations ++ [assignment])
+        else
+          return $ CppComment "Unsupported multiple assignment pattern"
   GoAssign leftExprs rightExprs -> do
     -- Handle assignment: x, y = a, b
     case (leftExprs, rightExprs) of
@@ -751,10 +825,35 @@ generateGoStmt (Located _ stmt) = case stmt of
         cppLeft <- generateGoExpr leftExpr
         cppRight <- generateGoExpr rightExpr
         return $ CppExprStmt $ CppBinary "=" cppLeft cppRight
-      _ -> do
-        -- Multiple assignment - simplified for now
-        addComment $ "Multiple assignment not fully implemented"
-        return $ CppComment $ "Multiple assignment"
+      (multipleLeft, multipleRight) -> do
+        -- Multiple assignment: a, b = b, a+b
+        if length multipleLeft == length multipleRight
+        then do
+          let pairs = zip multipleLeft multipleRight
+          -- For simultaneous assignment, we need to evaluate all right expressions first
+          cppRightExprs <- mapM generateGoExpr multipleRight
+          cppLeftExprs <- mapM generateGoExpr multipleLeft
+          -- Use temporary variables for proper simultaneous assignment
+          let tempVars = map (\i -> "temp_" <> T.pack (show i)) [0 .. length pairs - 1]
+              tempDecls = zipWith (\tempName rightExpr -> 
+                CppDecl $ CppVariable tempName CppAuto (Just rightExpr)
+                ) tempVars cppRightExprs
+              assignments = zipWith (\leftExpr tempName -> 
+                CppExprStmt $ CppBinary "=" leftExpr (CppVar tempName)
+                ) cppLeftExprs tempVars
+          return $ CppBlock (tempDecls ++ assignments)
+        else if length multipleRight == 1
+        then do
+          -- Tuple unpacking from single expression
+          cppRight <- generateGoExpr (head multipleRight)
+          leftVars <- mapM generateGoExpr multipleLeft
+          let tieExpr = CppCall (CppVar "std::tie") leftVars
+              assignment = CppExprStmt $ CppBinary "=" tieExpr cppRight
+          return assignment
+        else do
+          -- Unsupported pattern
+          addComment $ "Multiple assignment pattern not supported"
+          return $ CppComment $ "Multiple assignment"
   GoVarStmt vars -> do
     -- Handle variable declarations: var x int = 42
     case vars of
@@ -771,10 +870,17 @@ generateGoStmt (Located _ stmt) = case stmt of
         -- Single variable with value, inferred type
         cppValue <- generateGoExpr valueExpr
         return $ CppDecl $ CppVariable varName CppAuto (Just cppValue)
-      _ -> do
-        -- Multiple variables or unsupported cases
-        addComment $ "Complex variable declaration not fully implemented"
-        return $ CppComment $ "Complex variable declaration"
+      multipleVars -> do
+        -- Multiple variables declaration - generate all variables
+        -- Create a comment that lists all variables being declared
+        let varNames = map (\(Identifier name, _, _) -> name) multipleVars
+        let comment = "Multiple variables: " <> T.intercalate ", " varNames
+        addComment comment
+        
+        -- Generate only the first variable for now as a temporary workaround
+        case multipleVars of
+          [] -> return $ CppComment "Empty variable declaration"
+          (firstVar:_) -> generateGoVariableDecl firstVar
   GoIncDec expr isIncrement -> do
     -- Handle increment/decrement: i++ or i--
     cppExpr <- generateGoExpr expr
@@ -799,13 +905,19 @@ generateGoExpr (Located _ expr) = case expr of
     cppRight <- generateGoExpr right
     let cppOp = mapPythonComparisonOp op
     return $ CppBinary cppOp cppLeft cppRight
+  GoQualifiedIdent pkg (Identifier name) -> do
+    case (pkg, name) of
+      (Identifier "fmt", "Println") -> return $ CppVar "fmt_println"
+      (Identifier "fmt", "Print") -> return $ CppVar "fmt_print"
+      (Identifier "fmt", "Printf") -> return $ CppVar "fmt_printf"
+      _ -> return $ CppVar $ (case pkg of Identifier p -> p) <> "." <> name
   GoCall func args -> do
     cppFunc <- generateGoExpr func
     cppArgs <- mapM generateGoExpr args
     
     -- Special handling for fmt.Printf and similar functions
     case cppFunc of
-      CppMember (CppVar "fmt") "Printf" -> do
+      CppVar "fmt_printf" -> do
         addInclude "<iostream>"
         addInclude "<iomanip>"
         -- Convert Go format string to C++ style
@@ -815,28 +927,185 @@ generateGoExpr (Located _ expr) = case expr of
             let streamingExpr = buildStreamingExpr formatStr restArgs
             return streamingExpr
           _ -> return $ CppCall cppFunc cppArgs
+      CppVar "fmt_println" -> do
+        addInclude "<iostream>"
+        case cppArgs of
+          [] -> return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
+          [arg] -> do
+            -- For single arguments, just use regular stream output
+            return $ CppBinary "<<" (CppBinary "<<" (CppVar "std::cout") arg) (CppVar "std::endl")
+          _ -> do
+            -- Multiple arguments to println - add spaces between arguments
+            let addSpaceBetween acc arg = CppBinary "<<" (CppBinary "<<" acc (CppLiteral (CppStringLit " "))) arg
+            let streamingExpr = case cppArgs of
+                  [] -> CppVar "std::cout"
+                  (firstArg:restArgs) -> 
+                    let baseExpr = CppBinary "<<" (CppVar "std::cout") firstArg
+                    in foldl addSpaceBetween baseExpr restArgs
+            return $ CppBinary "<<" streamingExpr (CppVar "std::endl")
+      CppVar "fmt_print" -> do
+        addInclude "<iostream>"
+        case cppArgs of
+          [] -> return $ CppVar "std::cout"
+          [arg] -> return $ CppBinary "<<" (CppVar "std::cout") arg
+          _ -> do
+            -- Multiple arguments to print - add spaces between arguments (no newline)
+            let addSpaceBetween acc arg = CppBinary "<<" (CppBinary "<<" acc (CppLiteral (CppStringLit " "))) arg
+            let streamingExpr = case cppArgs of
+                  [] -> CppVar "std::cout"
+                  (firstArg:restArgs) -> 
+                    let baseExpr = CppBinary "<<" (CppVar "std::cout") firstArg
+                    in foldl addSpaceBetween baseExpr restArgs
+            return streamingExpr
       CppMember (CppVar "fmt") "Println" -> do
         addInclude "<iostream>"
         case cppArgs of
-          [] -> return $ CppCall (CppVar "std::cout") [CppLiteral (CppStringLit "")]
+          [] -> return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
           [arg] -> return $ CppBinary "<<" (CppVar "std::cout") 
                      (CppBinary "<<" arg (CppVar "std::endl"))
-          _ -> return $ CppCall cppFunc cppArgs
+          _ -> do
+            -- Multiple arguments to println
+            let addSpaceBetween acc arg = CppBinary "<<" (CppBinary "<<" acc (CppLiteral (CppStringLit " "))) arg
+            let streamingExpr = case cppArgs of
+                  [] -> CppVar "std::cout"
+                  (firstArg:restArgs) -> 
+                    let baseExpr = CppBinary "<<" (CppVar "std::cout") firstArg
+                    in foldl addSpaceBetween baseExpr restArgs
+            return $ CppBinary "<<" streamingExpr (CppVar "std::endl")
+      CppMember (CppVar "fmt") "Print" -> do
+        addInclude "<iostream>"
+        case cppArgs of
+          [] -> return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
+          [arg] -> return $ CppBinary "<<" (CppVar "std::cout") arg
+          _ -> do
+            -- Multiple arguments to print
+            let streamingExpr = foldl (\acc arg -> CppBinary "<<" acc arg) (CppVar "std::cout") cppArgs
+            return streamingExpr
       CppVar "println" -> do
         addInclude "<iostream>"
         case cppArgs of
-          [] -> return $ CppCall (CppVar "std::cout") [CppLiteral (CppStringLit "")]
+          [] -> return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
           [arg] -> return $ CppBinary "<<" (CppVar "std::cout") 
                      (CppBinary "<<" arg (CppVar "std::endl"))
-          _ -> return $ CppCall cppFunc cppArgs
+          _ -> do
+            -- Multiple arguments to println
+            let addSpaceBetween acc arg = CppBinary "<<" (CppBinary "<<" acc (CppLiteral (CppStringLit " "))) arg
+            let streamingExpr = case cppArgs of
+                  [] -> CppVar "std::cout"
+                  (firstArg:restArgs) -> 
+                    let baseExpr = CppBinary "<<" (CppVar "std::cout") firstArg
+                    in foldl addSpaceBetween baseExpr restArgs
+            return $ CppBinary "<<" streamingExpr (CppVar "std::endl")
+      CppVar "std::cout" -> do
+        -- This is the case where fmt.Printf/Println/Print was converted to std::cout
+        addInclude "<iostream>"
+        addInclude "<iomanip>"
+        case cppArgs of
+          [] -> return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
+          [CppLiteral (CppStringLit formatStr)] -> do
+            -- Single format string argument (like fmt.Printf with no args)
+            let streamingExpr = buildStreamingExpr formatStr []
+            return streamingExpr
+          (CppLiteral (CppStringLit formatStr) : restArgs) -> do
+            -- Format string with arguments (fmt.Printf case)
+            let streamingExpr = buildStreamingExpr formatStr restArgs
+            return streamingExpr
+          [arg] -> return $ CppBinary "<<" (CppVar "std::cout") 
+                     (CppBinary "<<" arg (CppVar "std::endl"))
+          _ -> do
+            -- Multiple arguments to println (non-format case)  
+            let addSpaceBetween acc arg = CppBinary "<<" (CppBinary "<<" acc (CppLiteral (CppStringLit " "))) arg
+            let streamingExpr = case cppArgs of
+                  [] -> CppVar "std::cout"
+                  (firstArg:restArgs) -> 
+                    let baseExpr = CppBinary "<<" (CppVar "std::cout") firstArg
+                    in foldl addSpaceBetween baseExpr restArgs
+            return $ CppBinary "<<" streamingExpr (CppVar "std::endl")
       _ -> return $ CppCall cppFunc cppArgs
   GoSelector obj (Identifier member) -> do
     cppObj <- generateGoExpr obj
-    return $ CppMember cppObj member
+    case cppObj of
+      CppVar pkg -> do
+        -- Check if this is a qualified identifier like fmt.Println
+        case (pkg, member) of
+          ("fmt", "Println") -> return $ CppVar "fmt_println"
+          ("fmt", "Print") -> return $ CppVar "fmt_print"
+          ("fmt", "Printf") -> return $ CppVar "fmt_printf"
+          _ -> return $ CppMember cppObj member
+      _ -> return $ CppMember cppObj member
   GoReceive expr -> do
     -- Handle <-channel
     cppExpr <- generateGoExpr expr
     return $ CppCall (CppMember cppExpr "receive") []
+  GoBuiltinCall builtin args -> do
+    cppArgs <- mapM generateGoExpr args
+    case builtin of
+      GoPrint -> do
+        addInclude "<iostream>"
+        case cppArgs of
+          [] -> return $ CppCall (CppVar "std::cout") [CppLiteral (CppStringLit "")]
+          [arg] -> return $ CppBinary "<<" (CppVar "std::cout") arg
+          _ -> do
+            -- Multiple arguments to print
+            let streamingExpr = foldl (\acc arg -> CppBinary "<<" acc arg) (CppVar "std::cout") cppArgs
+            return streamingExpr
+      GoPrintln -> do
+        addInclude "<iostream>"
+        case cppArgs of
+          [] -> return $ CppCall (CppVar "std::cout") [CppLiteral (CppStringLit "")]
+          [arg] -> return $ CppBinary "<<" (CppVar "std::cout") 
+                     (CppBinary "<<" arg (CppVar "std::endl"))
+          _ -> do
+            -- Multiple arguments to println
+            let addSpaceBetween acc arg = CppBinary "<<" (CppBinary "<<" acc (CppLiteral (CppStringLit " "))) arg
+            let streamingExpr = case cppArgs of
+                  [] -> CppVar "std::cout"
+                  (firstArg:restArgs) -> 
+                    let baseExpr = CppBinary "<<" (CppVar "std::cout") firstArg
+                    in foldl addSpaceBetween baseExpr restArgs
+            return $ CppBinary "<<" streamingExpr (CppVar "std::endl")
+      GoAppend -> do
+        -- Handle append(slice, item)
+        case cppArgs of
+          [sliceExpr, itemExpr] -> do
+            -- For now, create a new vector with the item added
+            -- In a real implementation, this would use vector::push_back
+            return $ CppCall (CppMember sliceExpr "push_back") [itemExpr]
+          _ -> do
+            addComment $ "Append with multiple items not fully implemented"
+            return $ CppLiteral $ CppIntLit 0
+      _ -> do
+        addComment $ "TODO: Implement Go builtin: " <> T.pack (show builtin)
+        return $ CppLiteral $ CppIntLit 0
+  GoCompositeLit mtypeExpr elements -> do
+    -- Handle composite literals like [3]int{1, 2, 3} or []int{1, 2, 3}
+    cppElements <- mapM generateGoExpr elements
+    
+    case mtypeExpr of
+      Nothing -> do
+        -- No type specified, use initializer list
+        return $ CppInitList CppAuto cppElements
+      Just (Located _ typeExpr) -> do
+        -- Type specified, use appropriate type
+        case typeExpr of
+          GoArrayType sizeExpr (Located _ elemType) -> do
+            -- Array type like [3]int - use regular array for now since std::array needs constant size
+            let cppElemType = mapGoTypeToCpp elemType
+            case locatedValue sizeExpr of
+              GoLiteral (GoInt size) -> do
+                -- Use C-style array instead of std::array to avoid template issues
+                let arrayType = CppArray cppElemType (fromIntegral size)
+                return $ CppInitList arrayType cppElements
+              _ -> return $ CppInitList (CppArray cppElemType 10) cppElements
+          GoSliceType (Located _ elemType) -> do
+            -- Slice type like []int
+            let cppElemType = mapGoTypeToCpp elemType
+                vectorType = CppVector cppElemType
+            return $ CppInitList vectorType cppElements
+          _ -> do
+            -- Other types
+            let cppType = mapGoTypeToCpp typeExpr
+            return $ CppInitList cppType cppElements
   _ -> do
     addComment $ "TODO: Implement Go expression: " <> T.pack (show expr)
     return $ CppLiteral $ CppIntLit 0
@@ -858,17 +1127,20 @@ buildStreamingExpr formatStr args =
   -- General printf format string to C++ streaming conversion
   -- "Pi = %.2f\n" with [3.14159] becomes: 
   -- std::cout << "Pi = " << std::fixed << std::setprecision(2) << 3.14159 << std::endl
-  let hasEndl = T.isSuffixOf "\n" formatStr
-      cleanFormatStr = T.replace "\n" "" formatStr
+  let normalizedFormat = T.replace "\\n" "\n" formatStr  -- Ensure consistent newline representation
+      hasEndl = T.isSuffixOf "\n" normalizedFormat
+      cleanFormatStr = if hasEndl then T.init normalizedFormat else normalizedFormat
+      -- Escape any literal newlines in the format string for C++
+      safeFormatStr = T.replace "\n" "\\n" cleanFormatStr
   in case args of
     [] -> -- No arguments, just print the format string
-      let baseExpr = CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit cleanFormatStr))
+      let baseExpr = CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit safeFormatStr))
       in if hasEndl then CppBinary "<<" baseExpr (CppVar "std::endl") else baseExpr
     [arg1] -> -- Single argument
       -- Handle different format types: %d, %f, %.2f, %s, etc.
-      if T.isInfixOf "%d" cleanFormatStr then
+      if T.isInfixOf "%d" safeFormatStr then
         -- Integer format
-        let parts = T.splitOn "%d" cleanFormatStr
+        let parts = T.splitOn "%d" safeFormatStr
         in case parts of
           [before, after] ->
             let expr1 = if T.null before then CppVar "std::cout"
@@ -877,10 +1149,10 @@ buildStreamingExpr formatStr args =
                 expr3 = if T.null after then expr2
                         else CppBinary "<<" expr2 (CppLiteral (CppStringLit after))
             in if hasEndl then CppBinary "<<" expr3 (CppVar "std::endl") else expr3
-          _ -> CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit formatStr))
-      else if T.isInfixOf "%.2f" cleanFormatStr then
+          _ -> CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit safeFormatStr))
+      else if T.isInfixOf "%.2f" safeFormatStr then
         -- Float format with 2 decimal places
-        let parts = T.splitOn "%.2f" cleanFormatStr
+        let parts = T.splitOn "%.2f" safeFormatStr
         in case parts of
           [before, after] ->
             let expr1 = if T.null before then CppVar "std::cout"
@@ -891,10 +1163,10 @@ buildStreamingExpr formatStr args =
                 expr5 = if T.null after then expr4
                         else CppBinary "<<" expr4 (CppLiteral (CppStringLit after))
             in if hasEndl then CppBinary "<<" expr5 (CppVar "std::endl") else expr5
-          _ -> CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit formatStr))
-      else if T.isInfixOf "%f" cleanFormatStr then
+          _ -> CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit safeFormatStr))
+      else if T.isInfixOf "%f" safeFormatStr then
         -- Basic float format
-        let parts = T.splitOn "%f" cleanFormatStr
+        let parts = T.splitOn "%f" safeFormatStr
         in case parts of
           [before, after] ->
             let expr1 = if T.null before then CppVar "std::cout"
@@ -903,13 +1175,61 @@ buildStreamingExpr formatStr args =
                 expr3 = if T.null after then expr2
                         else CppBinary "<<" expr2 (CppLiteral (CppStringLit after))
             in if hasEndl then CppBinary "<<" expr3 (CppVar "std::endl") else expr3
-          _ -> CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit formatStr))
+          _ -> CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit safeFormatStr))
       else
         -- Fallback: treat as string or unrecognized format
-        let expr1 = CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit cleanFormatStr))
+        let expr1 = CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit safeFormatStr))
         in if hasEndl then CppBinary "<<" expr1 (CppVar "std::endl") else expr1
-    _ -> -- Multiple arguments - fallback for now
-      CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit formatStr))
+    _ -> -- Multiple arguments - handle multiple format specifiers
+      -- Handle multiple format specifiers: %d, %f, %s, %t, %.1f, %.2f etc.
+      let formatSpecifiers = ["%d", "%f", "%s", "%t", "%.1f", "%.2f"]
+          -- Find all format specifiers in the string and their positions
+          findFormatSpecs :: Text -> [(Text, Int)]
+          findFormatSpecs str = 
+            let allMatches = [(spec, pos) | spec <- formatSpecifiers, 
+                             pos <- findAllOccurrences spec str]
+            in sortBy (\(_, pos1) (_, pos2) -> compare pos1 pos2) allMatches
+          
+          findAllOccurrences :: Text -> Text -> [Int]
+          findAllOccurrences pattern text = findAll 0 text
+            where
+              findAll offset remaining
+                | T.null remaining = []
+                | pattern `T.isPrefixOf` remaining = 
+                    offset : findAll (offset + T.length pattern) (T.drop (T.length pattern) remaining)
+                | otherwise = findAll (offset + 1) (T.drop 1 remaining)
+          
+          formatSpecs = findFormatSpecs safeFormatStr
+          
+      in if length formatSpecs == length args then
+        -- We have matching number of format specifiers and arguments
+        let buildExprWithFormats :: [(Text, Int)] -> [CppExpr] -> Text -> Int -> CppExpr -> CppExpr
+            buildExprWithFormats [] [] _ _ acc = acc
+            buildExprWithFormats ((spec, pos):restSpecs) (arg:restArgs) remainingStr currentPos acc =
+              let beforeSpec = T.take (pos - currentPos) remainingStr
+                  afterSpec = T.drop (pos - currentPos + T.length spec) remainingStr
+                  acc1 = if T.null beforeSpec then acc
+                        else CppBinary "<<" acc (CppLiteral (CppStringLit beforeSpec))
+                  acc2 = case spec of
+                    "%.1f" -> CppBinary "<<" (CppBinary "<<" (CppBinary "<<" acc1 (CppVar "std::fixed")) 
+                             (CppCall (CppVar "std::setprecision") [CppLiteral (CppIntLit 1)])) arg
+                    "%.2f" -> CppBinary "<<" (CppBinary "<<" (CppBinary "<<" acc1 (CppVar "std::fixed")) 
+                             (CppCall (CppVar "std::setprecision") [CppLiteral (CppIntLit 2)])) arg
+                    "%t" -> CppBinary "<<" (CppBinary "<<" acc1 (CppVar "std::boolalpha")) arg
+                    _ -> CppBinary "<<" acc1 arg  -- %d, %f, %s all work the same way in C++
+                  newPos = pos + T.length spec
+              in buildExprWithFormats restSpecs restArgs afterSpec newPos acc2
+            buildExprWithFormats [] [] remainingStr _ acc =
+              if T.null remainingStr then acc
+              else CppBinary "<<" acc (CppLiteral (CppStringLit remainingStr))
+            buildExprWithFormats _ _ _ _ acc = acc  -- Fallback
+            
+            finalExpr = buildExprWithFormats formatSpecs args safeFormatStr 0 (CppVar "std::cout")
+        in if hasEndl then CppBinary "<<" finalExpr (CppVar "std::endl") else finalExpr
+      else
+        -- Fallback: just output the format string
+        let expr1 = CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit formatStr))
+        in if hasEndl then CppBinary "<<" expr1 (CppVar "std::endl") else expr1
 
 -- | Convert Go format string to C++ output
 convertGoFormatToCpp :: Text -> [CppExpr] -> Text
@@ -919,18 +1239,30 @@ convertGoFormatToCpp formatStr args =
   -- "x << \" + \" << y << \" = \" << sum << std::endl"
   case (T.splitOn "%d" formatStr, args) of
     ([before, " + ", " = ", after], [arg1, arg2, arg3]) -> 
-      "\"" <> before <> "\" << " <> renderCppExprSimple arg1 <> 
+      "\"" <> escapeCppString before <> "\" << " <> renderCppExprSimple arg1 <> 
       " << \" + \" << " <> renderCppExprSimple arg2 <> 
       " << \" = \" << " <> renderCppExprSimple arg3 <> 
-      " << \"" <> T.replace "\\n" "" after <> "\" << std::endl"
+      " << \"" <> T.replace "\\n" "" (escapeCppString after) <> "\" << std::endl"
     ([before, after], [arg1]) ->
-      "\"" <> before <> "\" << " <> renderCppExprSimple arg1 <> 
-      " << \"" <> T.replace "\\n" "" after <> "\""
-    _ -> "\"" <> formatStr <> "\""  -- fallback
+      "\"" <> escapeCppString before <> "\" << " <> renderCppExprSimple arg1 <> 
+      " << \"" <> T.replace "\\n" "" (escapeCppString after) <> "\""
+    _ -> "\"" <> escapeCppString formatStr <> "\""  -- fallback
   where
+    -- Helper function to escape string literals for C++
+    escapeCppString :: Text -> Text
+    escapeCppString s = T.concatMap escapeChar s
+      where
+        escapeChar '\n' = "\\n"
+        escapeChar '\t' = "\\t"
+        escapeChar '\r' = "\\r"
+        escapeChar '\\' = "\\\\"
+        escapeChar '\"' = "\\\""
+        escapeChar '\'' = "\\'"
+        escapeChar c = T.singleton c
+    
     renderCppExprSimple (CppVar name) = name
     renderCppExprSimple (CppLiteral (CppIntLit i)) = T.pack (show i)
-    renderCppExprSimple (CppLiteral (CppStringLit s)) = "\"" <> s <> "\""
+    renderCppExprSimple (CppLiteral (CppStringLit s)) = "\"" <> escapeCppString s <> "\""
     renderCppExprSimple expr = "(" <> T.pack (show expr) <> ")"
 
 -- | Type mapping functions
@@ -972,15 +1304,21 @@ mapGoTypeToCpp = \case
   
   -- Container types
   GoSliceType (Located _ elemType) -> CppVector (mapGoTypeToCpp elemType)
-  GoArrayType _ _ -> CppArray CppInt 10  -- Simplified: fixed size arrays for now
+  GoArrayType sizeExpr (Located _ elemType) -> 
+    -- Extract array size from expression
+    case locatedValue sizeExpr of
+      GoLiteral (GoInt size) -> CppArray (mapGoTypeToCpp elemType) (fromIntegral size)
+      _ -> CppArray (mapGoTypeToCpp elemType) 10  -- Default size
   GoMapType (Located _ keyType) (Located _ valueType) -> 
     CppUnorderedMap (mapGoTypeToCpp keyType) (mapGoTypeToCpp valueType)
   
   -- Pointer types
   GoPointerType (Located _ baseType) -> CppPointer (mapGoTypeToCpp baseType)
   
-  -- Channel types - use Channel class without template parameters
-  GoChanType _ _ -> CppClassType "Channel" []
+  -- Channel types - use template-based Channel class
+  GoChanType _ (Located _ elemType) -> 
+    let cppElemType = mapGoTypeToCpp elemType
+    in CppTemplateType "Channel" [cppElemType]
   
   -- Function types
   GoFuncType params results -> 
@@ -1049,6 +1387,9 @@ mapGoLiteral = \case
   GoBool b -> CppBoolLit b
   GoString s -> CppStringLit s
   GoNil -> CppNullPtr
+  GoRune c -> CppCharLit c
+  GoImag _ -> CppIntLit 0  -- Simplified: ignore imaginary part
+  GoRawString s -> CppStringLit s
   _ -> CppIntLit 0
 
 -- | Operator mapping
@@ -1078,29 +1419,125 @@ mapPythonComparisonOp = \case
   OpIsNot -> "!="  -- Simplified: use != for 'is not'
 
 -- | Generate Channel class for Go channel operations
--- This implements a simple int-based channel for compatibility
+-- This implements a template-based channel for different data types
 generateChannelClass :: CppCodeGen ()
 generateChannelClass = do
+  addInclude "<queue>"
+  addInclude "<mutex>"
+  addInclude "<condition_variable>"
+  
   let channelMembers = 
-        [ CppVariable "data" CppInt Nothing
-        , CppVariable "has_data" CppBool Nothing
+        [ CppVariable "data_queue" (CppTemplateType "std::queue" [CppTypeVar "T"]) Nothing
+        , CppVariable "mutex" (CppTemplateType "std::mutex" []) Nothing
+        , CppVariable "cv" (CppTemplateType "std::condition_variable" []) Nothing
         ]
   
   let channelMethods =
         [ CppConstructor "Channel" []
-            [ CppExprStmt $ CppBinary "=" (CppMember CppThis "data") (CppLiteral $ CppIntLit 0)
-            , CppExprStmt $ CppBinary "=" (CppMember CppThis "has_data") (CppLiteral $ CppBoolLit False)
+            [ CppComment "Initialize empty channel"
             ]
-        , CppMethod "send" CppVoid [CppParam "value" CppInt Nothing] 
-            [ CppExprStmt $ CppBinary "=" (CppMember CppThis "data") (CppVar "value")
-            , CppExprStmt $ CppBinary "=" (CppMember CppThis "has_data") (CppLiteral $ CppBoolLit True)
+        , CppMethod "send" CppVoid [CppParam "value" (CppTypeVar "T") Nothing] 
+            [ CppDecl $ CppVariable "lock" (CppTemplateType "std::lock_guard" [CppTemplateType "std::mutex" []]) 
+                           (Just (CppCall (CppVar "std::lock_guard") [CppMember CppThis "mutex"]))
+            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "data_queue") "push") [CppVar "value"]
+            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "cv") "notify_one") []
             ] False
-        , CppMethod "receive" CppInt [] 
-            [ CppReturn $ Just $ CppMember CppThis "data"
+        , CppMethod "receive" (CppTypeVar "T") [] 
+            [ CppDecl $ CppVariable "lock" (CppTemplateType "std::unique_lock" [CppTemplateType "std::mutex" []]) 
+                           (Just (CppCall (CppVar "std::unique_lock") [CppMember CppThis "mutex"]))
+            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "cv") "wait") [CppVar "lock"]
+            , CppDecl $ CppVariable "result" (CppTypeVar "T") (Just (CppCall (CppMember (CppMember CppThis "data_queue") "front") []))
+            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "data_queue") "pop") []
+            , CppReturn $ Just $ CppVar "result"
             ] False
         ]
   
-  addDeclaration $ CppStruct "Channel" (channelMembers ++ channelMethods)
+  addDeclaration $ CppTemplate ["T"] (CppStruct "Channel" (channelMembers ++ channelMethods))
+
+-- | Generate helper functions for printing containers
+generatePrintHelpers :: CppCodeGen ()
+generatePrintHelpers = do
+  -- Generate function to print vector
+  addDeclaration $ CppFunction "print_vector_int" CppVoid
+    [CppParam "vec" (CppReference $ CppVector CppInt) Nothing]
+    [ CppExprStmt $ CppBinary "<<" (CppVar "std::cout") (CppLiteral $ CppStringLit "[")
+    , CppDecl $ CppVariable "first" CppBool (Just $ CppLiteral $ CppBoolLit True)
+    , CppDecl $ CppVariable "i" (CppSizeT) (Just $ CppLiteral $ CppIntLit 0)
+    , CppFor 
+        Nothing  -- no init
+        (Just $ CppBinary "<" (CppVar "i") (CppCall (CppMember (CppVar "vec") "size") []))  -- condition
+        (Just $ CppUnary "++" (CppVar "i"))  -- post-increment
+        [ CppIf (CppUnary "!" (CppVar "first")) 
+            [CppExprStmt $ CppBinary "<<" (CppVar "std::cout") (CppLiteral $ CppStringLit ", ")] []
+        , CppExprStmt $ CppBinary "<<" (CppVar "std::cout") (CppIndex (CppVar "vec") (CppVar "i"))
+        , CppExprStmt $ CppBinary "=" (CppVar "first") (CppLiteral $ CppBoolLit False)
+        ]
+    , CppExprStmt $ CppBinary "<<" (CppVar "std::cout") (CppLiteral $ CppStringLit "]")
+    ]
+  
+  -- Generate function to print initializer list
+  addDeclaration $ CppFunction "print_array_int" CppVoid
+    [CppParam "arr" (CppReference $ CppTemplateType "std::initializer_list" [CppInt]) Nothing]
+    [ CppExprStmt $ CppBinary "<<" (CppVar "std::cout") (CppLiteral $ CppStringLit "[")
+    , CppDecl $ CppVariable "first" CppBool (Just $ CppLiteral $ CppBoolLit True)
+    , CppDecl $ CppVariable "it" (CppAuto) (Just $ CppCall (CppMember (CppVar "arr") "begin") [])
+    , CppWhile (CppBinary "!=" (CppVar "it") (CppCall (CppMember (CppVar "arr") "end") []))
+        [ CppIf (CppUnary "!" (CppVar "first")) 
+            [CppExprStmt $ CppBinary "<<" (CppVar "std::cout") (CppLiteral $ CppStringLit ", ")] []
+        , CppExprStmt $ CppBinary "<<" (CppVar "std::cout") (CppUnary "*" (CppVar "it"))
+        , CppExprStmt $ CppBinary "=" (CppVar "first") (CppLiteral $ CppBoolLit False)
+        , CppExprStmt $ CppUnary "++" (CppVar "it")
+        ]
+    , CppExprStmt $ CppBinary "<<" (CppVar "std::cout") (CppLiteral $ CppStringLit "]")
+    ]
+  
+  -- Use standard for loops instead of range-based for loops to avoid CppForRange issues
+  addDeclaration $ CppFunction "operator<<" (CppReference $ CppTemplateType "std::ostream" [])
+    [ CppParam "os" (CppReference $ CppTemplateType "std::ostream" []) Nothing
+    , CppParam "vec" (CppReference $ CppVector CppInt) Nothing
+    ]
+    [ CppExprStmt $ CppBinary "<<" (CppVar "os") (CppLiteral $ CppStringLit "[")
+    , CppDecl $ CppVariable "first" CppBool (Just $ CppLiteral $ CppBoolLit True)
+    , CppFor 
+        (Just $ CppDecl $ CppVariable "it" CppAuto (Just $ CppCall (CppMember (CppVar "vec") "begin") []))
+        (Just $ CppBinary "!=" (CppVar "it") (CppCall (CppMember (CppVar "vec") "end") []))
+        (Just $ CppUnary "++" (CppVar "it"))
+        [ CppIf (CppUnary "!" (CppVar "first"))
+            [CppExprStmt $ CppBinary "<<" (CppVar "os") (CppLiteral $ CppStringLit ", ")] []
+        , CppExprStmt $ CppBinary "<<" (CppVar "os") (CppUnary "*" (CppVar "it"))
+        , CppExprStmt $ CppBinary "=" (CppVar "first") (CppLiteral $ CppBoolLit False)
+        ]
+    , CppExprStmt $ CppBinary "<<" (CppVar "os") (CppLiteral $ CppStringLit "]")
+    , CppReturn $ Just $ CppVar "os"
+    ]
+  
+  addDeclaration $ CppFunction "operator<<" (CppReference $ CppTemplateType "std::ostream" [])
+    [ CppParam "os" (CppReference $ CppTemplateType "std::ostream" []) Nothing
+    , CppParam "lst" (CppReference $ CppTemplateType "std::initializer_list" [CppInt]) Nothing
+    ]
+    [ CppExprStmt $ CppBinary "<<" (CppVar "os") (CppLiteral $ CppStringLit "[")
+    , CppDecl $ CppVariable "first" CppBool (Just $ CppLiteral $ CppBoolLit True)
+    , CppFor
+        (Just $ CppDecl $ CppVariable "it" CppAuto (Just $ CppCall (CppMember (CppVar "lst") "begin") []))
+        (Just $ CppBinary "!=" (CppVar "it") (CppCall (CppMember (CppVar "lst") "end") []))
+        (Just $ CppUnary "++" (CppVar "it"))
+        [ CppIf (CppUnary "!" (CppVar "first"))
+            [CppExprStmt $ CppBinary "<<" (CppVar "os") (CppLiteral $ CppStringLit ", ")] []
+        , CppExprStmt $ CppBinary "<<" (CppVar "os") (CppUnary "*" (CppVar "it"))
+        , CppExprStmt $ CppBinary "=" (CppVar "first") (CppLiteral $ CppBoolLit False)
+        ]
+    , CppExprStmt $ CppBinary "<<" (CppVar "os") (CppLiteral $ CppStringLit "]")
+    , CppReturn $ Just $ CppVar "os"
+    ]
+
+-- | Generate print expression that handles special container types
+generatePrintExprForArg :: CppExpr -> CppCodeGen CppExpr
+generatePrintExprForArg arg = case arg of
+  CppVar varName -> do
+    -- For container variables, we'll just return them as-is
+    -- The printing will be handled at a higher level
+    return arg
+  _ -> return arg
 
 
 -- | Helper functions
@@ -1207,6 +1644,30 @@ generateGoVariable (Identifier name, mtype, mexpr) = do
       return $ Just e
     Nothing -> return Nothing
   addDeclaration $ CppVariable name cppType cppExpr
+
+generateGoVariableDecl :: (Identifier, Maybe (Located GoType), Maybe (Located GoExpr)) -> CppCodeGen CppStmt
+generateGoVariableDecl (Identifier name, mtype, mexpr) = do
+  cppType <- case mtype of
+    Just typeExpr -> generateGoType typeExpr
+    Nothing -> return CppAuto
+  cppExpr <- case mexpr of
+    Just expr -> do
+      e <- generateGoExpr expr
+      return $ Just e
+    Nothing -> return Nothing
+  return $ CppDecl $ CppVariable name cppType cppExpr
+
+generateGoDefineDecl :: [Located GoExpr] -> (Identifier, Int) -> CppCodeGen CppStmt
+generateGoDefineDecl exprs (Identifier name, index) = do
+  if index < length exprs
+    then do
+      let expr = exprs !! index
+      cppExpr <- generateGoExpr expr
+      let cppType = inferTypeFromExpr expr
+      return $ CppDecl $ CppVariable name cppType (Just cppExpr)
+    else do
+      -- If no corresponding expression, use default initialization
+      return $ CppDecl $ CppVariable name CppAuto Nothing
 
 -- | Process f-string templates into proper C++ stream operations
 processFStringTemplate :: Text -> CppExpr

@@ -12,83 +12,52 @@
 
 // Generating C++ for Go package: main
 template<typename T>
-class Channel {
-    std::queue<T> queue_;
-
-    std::mutex mutex_;
-
-    std::condition_variable cv_;
-
-    size_t capacity_;
-
-    Channel(size_t capacity) {
-        this->capacity_ = capacity;
+struct Channel {
+    std::queue<T> data_queue;
+    std::mutex mutex;
+    std::condition_variable cv;
+    Channel() {
+        // Initialize empty channel
     }
-
     void send(T value) {
-        std::unique_lock<std::mutex> lock = std::unique_lock<std::mutex>(this->mutex_);
-        this->cv_.wait(lock, [this]() {
-    return this->queue_.size() < this->capacity_;
-});
-        this->queue_.push(value);
-        cv_.notify_one();
+        std::lock_guard<std::mutex> lock = std::lock_guard(this->mutex);
+        this->data_queue.push(value);
+        this->cv.notify_one();
     }
-
     T receive() {
-        T value;
-        std::unique_lock<std::mutex> lock = std::unique_lock<std::mutex>(this->mutex_);
-        this->cv_.wait(lock, [this]() {
-    return !this->queue_.empty();
-});
-        value = this->queue_.front();
-        this->queue_.pop();
-        cv_.notify_one();
-        return value;
+        std::unique_lock<std::mutex> lock = std::unique_lock(this->mutex);
+        this->cv.wait(lock);
+        T result = this->data_queue.front();
+        this->data_queue.pop();
+        return result;
     }
-
 };
 
 // Found 1 files in package
 // Processing Go file with 4 declarations
 // Generating function: add
-auto add(auto a, auto b) {
+int add(int a, int b) {
     return a + b;
 }
 
-// Generating function: divideWithRemainder
-auto divideWithRemainder(auto a, auto b) {
-    return std::make_tuple(a / b, a % b);
+// Generating function: multiply
+int multiply(int a, int b) {
+    return a * b;
 }
 
-// Generating function: namedReturn
-auto namedReturn(auto x, auto y) {
-    {
-    auto sum;
-    auto product;
-    sum = x + y;
-}
-    {
-    auto sum;
-    auto product;
-    product = x * y;
-}
-    {
-    auto sum;
-    auto product;
-    return;
-}
+// Generating function: swap
+std::tuple<std::string, std::string> swap(std::string a, std::string b) {
+    return std::make_tuple(b, a);
 }
 
 // Generating function: main
-// Multiple variable definition not fully implemented
-// Multiple variable definition not fully implemented
 int main() {
-    auto result = add(5.0, 3.0);
-    std::cout << "5 + 3 =" << " " << result << std::endl;
-    // Multiple variable definition
-    std::cout << "17 / 5 =" << " " << quotient << " " << "remainder" << " " << remainder << std::endl;
-    // Multiple variable definition
-    std::cout << "8 + 9 =" << " " << sum << " " << "8 * 9 =" << " " << product << std::endl;
+    auto x = add(10, 20);
+    std::cout << "add(10, 20):" << " " << x << std::endl;
+    auto y = multiply(5, 6);
+    std::cout << "multiply(5, 6):" << " " << y << std::endl;
+    auto first = swap("hello", "world");
+    std::cout << "swap result:" << " " << first << " " << second << std::endl;
     return 0;
 }
 

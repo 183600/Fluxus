@@ -11,14 +11,34 @@
 #include <iostream>
 
 // Generating C++ for Go package: main
-// TODO: Render other declaration types
+template<typename T>
+struct Channel {
+    std::queue<T> data_queue;
+    std::mutex mutex;
+    std::condition_variable cv;
+    Channel() {
+        // Initialize empty channel
+    }
+    void send(T value) {
+        std::lock_guard<std::mutex> lock = std::lock_guard(this->mutex);
+        this->data_queue.push(value);
+        this->cv.notify_one();
+    }
+    T receive() {
+        std::unique_lock<std::mutex> lock = std::unique_lock(this->mutex);
+        this->cv.wait(lock);
+        T result = this->data_queue.front();
+        this->data_queue.pop();
+        return result;
+    }
+};
 
 // Found 1 files in package
 // Processing Go file with 1 declarations
 // Generating function: main
 int main() {
-    double a = 5.0;
-    double b = 3.0;
+    int a = 5;
+    int b = 3;
     std::cout << a + b << std::endl;
     return 0;
 }

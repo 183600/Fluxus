@@ -11,14 +11,34 @@
 #include <iostream>
 
 // Generating C++ for Go package: main
-// TODO: Render other declaration types
+template<typename T>
+struct Channel {
+    std::queue<T> data_queue;
+    std::mutex mutex;
+    std::condition_variable cv;
+    Channel() {
+        // Initialize empty channel
+    }
+    void send(T value) {
+        std::lock_guard<std::mutex> lock = std::lock_guard(this->mutex);
+        this->data_queue.push(value);
+        this->cv.notify_one();
+    }
+    T receive() {
+        std::unique_lock<std::mutex> lock = std::unique_lock(this->mutex);
+        this->cv.wait(lock);
+        T result = this->data_queue.front();
+        this->data_queue.pop();
+        return result;
+    }
+};
 
 // Found 1 files in package
 // Processing Go file with 1 declarations
 // Generating function: main
-// DEBUG: goForCond found: Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = GoComparison OpLe (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = GoIdent (Identifier "i")}) (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = GoLiteral (GoFloat 3.0)})}
+// DEBUG: goForCond found: Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = GoComparison OpLe (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = GoIdent (Identifier "i")}) (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = GoLiteral (GoInt 3)})}
 int main() {
-    for (double i = 1.0; i <= 3.0; ++i) {
+    for (int i = 1; i <= 3; ++i) {
     std::cout << i << std::endl;
 }
     return 0;

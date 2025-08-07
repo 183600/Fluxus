@@ -336,8 +336,12 @@ goNumberLiteral = choice
         exp <- MP.some digitChar
         return $ 'e' : maybe "" (:[]) sign ++ exp
       
-      let result = intPart ++ maybe "" ('.':) fractPart ++ maybe "" id expPart
-      return $ GoTokenFloat (T.pack result)
+      -- At least one of fractPart or expPart must be present for a float
+      case (fractPart, expPart) of
+        (Nothing, Nothing) -> fail "Not a float - missing fractional or exponent part"
+        _ -> do
+          let result = intPart ++ maybe "" ('.':) fractPart ++ maybe "" id expPart
+          return $ GoTokenFloat (T.pack result)
     
     goHexInt = do
       _ <- string "0x" <|> string "0X"
