@@ -385,17 +385,79 @@ generatePythonStmt (Located _ stmt) = case stmt of
     cppCond <- generatePythonExpr condition
     cppThen <- mapM generatePythonStmt thenStmts
     cppElse <- mapM generatePythonStmt elseStmts
+    -- Debug: Add comment to track if condition
+    addComment $ "IF condition: " <> T.pack (show condition)
     return $ CppIf cppCond cppThen cppElse
   PyFor (Located _ (PatVar (Identifier varName))) iterExpr bodyStmts _ -> do
     cppIter <- generatePythonExpr iterExpr
     cppBody <- mapM generatePythonStmt bodyStmts
-    -- Handle range() function calls
-    case cppIter of
-      CppCall (CppVar "range") [CppLiteral (CppIntLit n)] -> do
-        return $ CppForRange varName (CppLiteral (CppIntLit n)) cppBody
-      CppCall (CppVar "range") [CppLiteral (CppIntLit start), CppLiteral (CppIntLit end)] -> do
-        return $ CppForRangeStartEnd varName (CppLiteral (CppIntLit start)) (CppLiteral (CppIntLit end)) cppBody
-      _ -> return $ CppComment "For loop not fully implemented"
+    -- Handle range() function calls specifically
+    addComment $ "DEBUG: For loop with iterator: " <> T.pack (show iterExpr)
+    addComment $ "DEBUG: Generated cppIter: " <> T.pack (show cppIter)
+    case locatedValue iterExpr of
+      -- Check if this is a call to range()
+      PyCall (Located _ (PyVar (Identifier "range"))) args -> do
+        addComment $ "DEBUG: Detected range() call with " <> T.pack (show (length args)) <> " arguments"
+        addComment $ "DEBUG: Args details: " <> T.pack (show args)
+        case args of
+          -- range(n) -> for(int varName = 0; varName < n; varName++)
+          [Located _ (ArgPositional (Located _ (PyLiteral (PyInt n))))] -> do
+            addComment $ "DEBUG: range(n) with n=" <> T.pack (show n)
+            let initStmt = Just $ CppDecl $ CppVariable varName CppInt (Just $ CppLiteral $ CppIntLit 0)
+            let condExpr = Just $ CppBinary "<" (CppVar varName) (CppLiteral $ CppIntLit n)
+            let postExpr = Just $ CppUnary "++" (CppVar varName)
+            return $ CppFor initStmt condExpr postExpr cppBody
+          -- Handle variables or expressions as range bounds
+          [Located _ (ArgPositional expr)] -> do
+            cppExpr <- generatePythonExpr expr
+            addComment $ "DEBUG: range(expr) with expr=" <> T.pack (show expr)
+            let initStmt = Just $ CppDecl $ CppVariable varName CppInt (Just $ CppLiteral $ CppIntLit 0)
+            let condExpr = Just $ CppBinary "<" (CppVar varName) cppExpr
+            let postExpr = Just $ CppUnary "++" (CppVar varName)
+            return $ CppFor initStmt condExpr postExpr cppBody
+          -- range(start, end) -> for(int varName = start; varName < end; varName++)
+          [Located _ (ArgPositional (Located _ (PyLiteral (PyInt start)))), Located _ (ArgPositional (Located _ (PyLiteral (PyInt end))))] -> do
+            addComment $ "DEBUG: range(start, end) with start=" <> T.pack (show start) <> " end=" <> T.pack (show end)
+            let initStmt = Just $ CppDecl $ CppVariable varName CppInt (Just $ CppLiteral $ CppIntLit start)
+            let condExpr = Just $ CppBinary "<" (CppVar varName) (CppLiteral $ CppIntLit end)
+            let postExpr = Just $ CppUnary "++" (CppVar varName)
+            return $ CppFor initStmt condExpr postExpr cppBody
+          -- Handle expressions as range bounds (start, end)
+          [Located _ (ArgPositional startExpr), Located _ (ArgPositional endExpr)] -> do
+            cppStart <- generatePythonExpr startExpr
+            cppEnd <- generatePythonExpr endExpr
+            addComment $ "DEBUG: range(start_expr, end_expr)"
+            let initStmt = Just $ CppDecl $ CppVariable varName CppInt (Just cppStart)
+            let condExpr = Just $ CppBinary "<" (CppVar varName) cppEnd
+            let postExpr = Just $ CppUnary "++" (CppVar varName)
+            return $ CppFor initStmt condExpr postExpr cppBody
+          -- range(start, end, step) -> more complex loop
+          [Located _ (ArgPositional (Located _ (PyLiteral (PyInt start)))), Located _ (ArgPositional (Located _ (PyLiteral (PyInt end)))), Located _ (ArgPositional (Located _ (PyLiteral (PyInt step))))] -> do
+            addComment $ "DEBUG: range(start, end, step) with start=" <> T.pack (show start) <> " end=" <> T.pack (show end) <> " step=" <> T.pack (show step)
+            let initStmt = Just $ CppDecl $ CppVariable varName CppInt (Just $ CppLiteral $ CppIntLit start)
+            let condExpr = if step > 0 
+                          then Just $ CppBinary "<" (CppVar varName) (CppLiteral $ CppIntLit end)
+                          else Just $ CppBinary ">" (CppVar varName) (CppLiteral $ CppIntLit end)
+            let postExpr = Just $ CppBinary "+=" (CppVar varName) (CppLiteral $ CppIntLit step)
+            return $ CppFor initStmt condExpr postExpr cppBody
+          -- Handle expressions as range bounds (start, end, step)
+          [Located _ (ArgPositional startExpr), Located _ (ArgPositional endExpr), Located _ (ArgPositional stepExpr)] -> do
+            cppStart <- generatePythonExpr startExpr
+            cppEnd <- generatePythonExpr endExpr
+            cppStep <- generatePythonExpr stepExpr
+            addComment $ "DEBUG: range(start_expr, end_expr, step_expr)"
+            let initStmt = Just $ CppDecl $ CppVariable varName CppInt (Just cppStart)
+            -- For now, assume positive step - would need runtime check for negative
+            let condExpr = Just $ CppBinary "<" (CppVar varName) cppEnd
+            let postExpr = Just $ CppBinary "+=" (CppVar varName) cppStep
+            return $ CppFor initStmt condExpr postExpr cppBody
+          _ -> do
+            addComment $ "DEBUG: Complex range() arguments, falling back to range-based for"
+            return $ CppForRange varName cppIter cppBody
+      -- For other iterables (lists, etc.), use range-based for loop
+      _ -> do
+        addComment $ "DEBUG: Range-based for loop for: " <> T.pack (show iterExpr)
+        return $ CppForRange varName cppIter cppBody
   _ -> return $ CppComment $ "TODO: Implement Python statement: " <> T.pack (show stmt)
 
 -- | Generate C++ from Python expressions
@@ -421,10 +483,26 @@ generatePythonExpr (Located _ expr) = case expr of
     PyFString template exprs -> do
       -- Handle f-string by generating proper C++ stream operations
       addInclude "<iostream>"
+      addInclude "<sstream>"  
+      addInclude "<string>"
+      -- Debug the f-string processing
+      addComment $ "DEBUG: Processing f-string template: " <> template
+      addComment $ "DEBUG: F-string has " <> T.pack (show (length exprs)) <> " expressions"
       -- Convert expressions to C++ expressions
       cppExprs <- mapM generatePythonExpr exprs
-      -- Convert f-string to proper stream expression with actual expressions
-      return $ convertFStringToStreamExprWithExprs template cppExprs
+      
+      -- Process f-string template to extract parts and expressions
+      let parts = parseFStringTemplate template
+      addComment $ "DEBUG: F-string parsed into " <> T.pack (show (length parts)) <> " parts"
+      
+      -- Build streaming expression
+      case parts of
+        [] -> return $ CppLiteral $ CppStringLit ""
+        [LiteralPart text] -> return $ CppLiteral $ CppStringLit text
+        _ -> do
+          -- Build a streaming expression by chaining << operators
+          let streamingExpr = buildFStringStreamExpr parts cppExprs
+          return streamingExpr
     _ -> return $ CppLiteral $ mapPythonLiteral lit
   PyVar (Identifier name) -> return $ CppVar name
   PyBinaryOp op left right -> do
@@ -454,17 +532,33 @@ generatePythonExpr (Located _ expr) = case expr of
         let cppOp = mapPythonBinaryOp op
         return $ CppBinary cppOp cppLeft cppRight
   PyComparison ops exprs -> do
-    -- Handle comparison expressions like n <= 1
+    -- Handle comparison expressions like x > 5
+    addComment $ "DEBUG: PyComparison ops=" <> T.pack (show ops) <> " exprs=" <> T.pack (show exprs)
     case (ops, exprs) of
       ([op], [left, right]) -> do
         cppLeft <- generatePythonExpr left
         cppRight <- generatePythonExpr right
         let cppOp = mapPythonComparisonOp op
+        addComment $ "DEBUG: Single comparison " <> T.pack (show op) <> " -> " <> cppOp
         return $ CppBinary cppOp cppLeft cppRight
       _ -> do
-        -- Fallback for complex comparisons
-        addComment $ "Complex comparison not fully implemented: " <> T.pack (show expr)
-        return $ CppLiteral $ CppIntLit 0
+        -- For chained comparisons like a < b < c, convert to a < b && b < c
+        case exprs of
+          (left:rest) | length ops == length rest -> do
+            cppLeft <- generatePythonExpr left
+            cppExprs <- mapM generatePythonExpr rest
+            let comparisons = zipWith3 (\op leftExpr rightExpr -> 
+                  CppBinary (mapPythonComparisonOp op) leftExpr rightExpr) 
+                  ops (cppLeft : init cppExprs ++ [last cppExprs]) cppExprs
+            -- Chain all comparisons with &&
+            case comparisons of
+              [] -> return $ CppLiteral $ CppBoolLit True
+              [single] -> return single
+              (first:restComps) -> return $ foldl (\acc comp -> CppBinary "&&" acc comp) first restComps
+          _ -> do
+            -- Fallback for malformed comparisons
+            addComment $ "Malformed comparison expression: " <> T.pack (show expr)
+            return $ CppLiteral $ CppBoolLit False
   PyCall func args -> do
     cppFunc <- generatePythonExpr func
     cppArgsWithKeywords <- mapM generatePythonArgument args
@@ -474,36 +568,47 @@ generatePythonExpr (Located _ expr) = case expr of
     case func of
       Located _ (PyVar (Identifier "print")) -> do
         -- Convert print to std::cout, handling the 'end' parameter
+        addComment $ "DEBUG: Generating print with " <> T.pack (show (length cppArgs)) <> " arguments"
         addInclude "<iostream>"
         -- Check if 'end' keyword argument is present
         let endParam = case [expr | (Identifier "end", expr) <- keywordArgs] of
               [CppLiteral (CppStringLit "")] -> ""  -- end=""
               [CppLiteral (CppStringLit " ")] -> " "  -- end=" "
               [CppLiteral (CppStringLit s)] -> s    -- end="something"
-              _ -> "\n"  -- default newline (fixed: was \\n)
+              _ -> "\n"  -- default newline
         let positionalArgs = [arg | (arg, Nothing) <- zip cppArgs maybeKeywordArgs]
         case positionalArgs of
           [] -> 
-            if endParam == "\n"
-            then return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
-            else return $ CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit endParam))
+            -- Empty print() should just print newline
+            return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
           [arg] -> 
+            -- Single argument print
             if endParam == "\n" 
             then return $ CppBinary "<<" (CppBinary "<<" (CppVar "std::cout") arg) (CppVar "std::endl")
             else return $ CppBinary "<<" (CppBinary "<<" (CppVar "std::cout") arg) (CppLiteral (CppStringLit endParam))
           args -> do
-            -- Chain multiple << operators for multiple arguments
-            let chainedOutput = foldl (\acc arg -> CppBinary "<<" (CppBinary "<<" acc arg) (CppLiteral (CppStringLit " "))) (CppVar "std::cout") (init args)
-            let finalOutput = CppBinary "<<" chainedOutput (last args)
+            -- Chain multiple << operators for multiple arguments  
+            -- For print("a", x, "b"), generate: std::cout << "a" << " " << x << " " << "b" << std::endl
+            addComment $ "DEBUG: Multi-argument print with " <> T.pack (show (length args)) <> " args"
+            let buildChain [] acc = acc
+                buildChain (arg:rest) acc = 
+                  let withSpace = if null rest then acc else CppBinary "<<" acc (CppLiteral (CppStringLit " "))
+                      withArg = CppBinary "<<" withSpace arg
+                  in buildChain rest withArg
+            let chainedOutput = buildChain args (CppVar "std::cout")
             if endParam == "\n"
-            then return $ CppBinary "<<" finalOutput (CppVar "std::endl")
-            else return $ CppBinary "<<" finalOutput (CppLiteral (CppStringLit endParam))
+            then return $ CppBinary "<<" chainedOutput (CppVar "std::endl")
+            else return $ CppBinary "<<" chainedOutput (CppLiteral (CppStringLit endParam))
       Located _ (PyVar (Identifier "range")) -> do
-        -- Handle range() function calls
+        -- Handle range() function calls - these should only be processed by for loops
+        -- Don't generate actual range calls since they'll be converted to C++ for loops
+        addComment $ "WARNING: range() call outside of for loop context - this may not work as expected"
         case cppArgs of
-          [CppLiteral (CppIntLit n)] -> return $ CppCall (CppVar "range") [CppLiteral (CppIntLit n)]
-          _ -> return $ CppCall (CppVar "range") cppArgs
-      _ -> return $ CppCall cppFunc cppArgs
+          [arg] -> return $ CppLiteral (CppIntLit 0)  -- Placeholder
+          _ -> return $ CppLiteral (CppIntLit 0)  -- Placeholder
+      _ -> do
+        addComment $ "DEBUG: Fallback case for function: " <> T.pack (show func)
+        return $ CppCall cppFunc cppArgs
   PyList exprs -> do
     addInclude "<vector>"
     cppExprs <- mapM generatePythonExpr exprs
@@ -786,7 +891,7 @@ generateGoStmt (Located _ stmt) = case stmt of
       ([Identifier varName], [expr]) -> do
         -- Single variable assignment
         cppExpr <- generateGoExpr expr
-        -- Infer type from the expression
+        -- Infer type from the expression (fix integer literals)
         let cppType = inferTypeFromExpr expr
         return $ CppDecl $ CppVariable varName cppType (Just cppExpr)
       (multipleNames, multipleExprs) -> do
@@ -1696,7 +1801,7 @@ processFStringTemplate template =
 convertFStringToStreamExprWithExprs :: Text -> [CppExpr] -> CppExpr
 convertFStringToStreamExprWithExprs template exprs =
   -- Simple debugging approach: just handle single variable case first
-  -- "x = {x}" with [x_expr] should become: "x = " << x_expr
+  -- "Hello, {name}!" with [name_expr] should become: "Hello, " << name_expr << "!"
   case exprs of
     [] -> CppLiteral $ CppStringLit template  -- No expressions, return literal
     [expr1] -> 
@@ -1708,13 +1813,14 @@ convertFStringToStreamExprWithExprs template exprs =
         let beforeBrace = T.takeWhile (/= '{') template
             afterBrace = T.dropWhile (/= '}') $ T.dropWhile (/= '{') template
             afterBrace' = if T.null afterBrace then "" else T.tail afterBrace
+            -- Start with the literal part before the brace
             baseExpr = if T.null beforeBrace
-                      then CppVar "std::cout"
-                      else CppBinary "<<" (CppVar "std::cout") (CppLiteral $ CppStringLit beforeBrace)
-            withVar = CppBinary "<<" baseExpr expr1
+                      then expr1  -- If no prefix, start with the expression
+                      else CppBinary "<<" (CppLiteral $ CppStringLit beforeBrace) expr1
+            -- Add the literal part after the brace
         in if T.null afterBrace'
-           then withVar
-           else CppBinary "<<" withVar (CppLiteral $ CppStringLit afterBrace')
+           then baseExpr
+           else CppBinary "<<" baseExpr (CppLiteral $ CppStringLit afterBrace')
       else CppLiteral $ CppStringLit template  -- Fallback if no braces
     _ -> CppLiteral $ CppStringLit template  -- Multiple expressions - fallback for now
 
@@ -1740,6 +1846,53 @@ convertFStringToStreamExpr template =
             (CppVar "result"))
           (CppLiteral $ CppStringLit afterResult)
     _ -> CppLiteral $ CppStringLit template  -- Fallback to literal string
+
+-- | F-string template parsing
+data FStringPart = LiteralPart !Text | ExpressionPart !Int
+  deriving (Eq, Show)
+
+-- | Parse f-string template into parts
+parseFStringTemplate :: Text -> [FStringPart]
+parseFStringTemplate template = go template []
+  where
+    go :: Text -> [FStringPart] -> [FStringPart]
+    go remaining acc
+      | T.null remaining = reverse acc
+      | otherwise =
+          case T.findIndex (== '{') remaining of
+            Nothing -> reverse (LiteralPart remaining : acc)
+            Just startIdx ->
+              case T.findIndex (== '}') (T.drop (startIdx + 1) remaining) of
+                Nothing -> reverse (LiteralPart remaining : acc)
+                Just endIdx ->
+                  let beforeBrace = T.take startIdx remaining
+                      exprText = T.take endIdx (T.drop (startIdx + 1) remaining)
+                      afterBrace = T.drop (startIdx + endIdx + 2) remaining
+                      exprIndex = length $ filter isExpressionPart acc
+                  in go afterBrace (ExpressionPart exprIndex : LiteralPart beforeBrace : acc)
+    
+    isExpressionPart (ExpressionPart _) = True
+    isExpressionPart _ = False
+
+-- | Build C++ streaming expression from f-string parts
+buildFStringStreamExpr :: [FStringPart] -> [CppExpr] -> CppExpr
+buildFStringStreamExpr parts exprs = 
+  case parts of
+    [] -> CppLiteral $ CppStringLit ""
+    [LiteralPart text] -> CppLiteral $ CppStringLit text
+    _ -> 
+      let streamingExpr = foldl buildStreamPart (CppVar "std::cout") parts
+      in CppBinary "<<" streamingExpr (CppVar "std::endl")
+  where
+    buildStreamPart :: CppExpr -> FStringPart -> CppExpr
+    buildStreamPart acc (LiteralPart text) = 
+      if T.null text 
+      then acc 
+      else CppBinary "<<" acc (CppLiteral $ CppStringLit text)
+    buildStreamPart acc (ExpressionPart index) = 
+      if index < length exprs
+      then CppBinary "<<" acc (exprs !! index)
+      else acc  -- Fallback: ignore missing expressions
 
 -- | Convert f-string template to C++ format string (simpler approach)
 convertFStringToCppFormat :: Text -> Text

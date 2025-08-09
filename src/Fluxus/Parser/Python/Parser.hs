@@ -38,6 +38,7 @@ import qualified Control.Applicative as A
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
+import Data.Char (isAlphaNum, isAlpha, isDigit)
 import Text.Megaparsec hiding (many, some)
 import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
@@ -452,7 +453,10 @@ parseLiteral = do
   Located _ token <- anySingle
   case token of
     TokenString text -> return $ PyLiteral $ PyString text
-    TokenFString text exprs -> return $ PyLiteral $ PyFString text []  -- TODO: Parse embedded expressions
+    TokenFString text exprs -> do
+      -- Parse embedded expressions from the f-string
+      embeddedExprs <- mapM parseEmbeddedExpr (parseFStringExpressions text)
+      return $ PyLiteral $ PyFString text embeddedExprs
     TokenNumber text isFloat ->
       if isFloat
         then return $ PyLiteral $ PyFloat (read $ T.unpack text)
@@ -894,3 +898,38 @@ convertPos pos = Common.SourcePos
   { posLine = unPos (sourceLine pos)
   , posColumn = unPos (sourceColumn pos)
   }
+
+-- | Parse f-string embedded expressions
+parseEmbeddedExpr :: Text -> PythonParser (Located PythonExpr)
+parseEmbeddedExpr exprText = do
+  -- For now, just create a variable reference
+  -- A full implementation would need to actually parse the expression text
+  if T.null exprText
+    then return $ located' $ PyLiteral $ PyString ""
+    else do
+      -- Try to parse as a simple variable name first
+      if T.all (\c -> c == '_' || isAlphaNum c) exprText
+        then return $ located' $ PyVar $ Identifier exprText
+        else do
+          -- If it's a complex expression, create a placeholder
+          -- This will be improved in a future version
+          return $ located' $ PyLiteral $ PyString $ "{" <> exprText <> "}"
+
+-- | Extract expressions from f-string content
+-- This is a simple implementation that finds text within {}
+parseFStringExpressions :: Text -> [Text]
+parseFStringExpressions text = extractBraceContent text []
+  where
+    extractBraceContent :: Text -> [Text] -> [Text]
+    extractBraceContent remaining acc
+      | T.null remaining = reverse acc
+      | otherwise =
+          case T.findIndex (== '{') remaining of
+            Nothing -> reverse acc
+            Just startIdx ->
+              case T.findIndex (== '}') (T.drop (startIdx + 1) remaining) of
+                Nothing -> reverse acc
+                Just endIdx ->
+                  let exprText = T.take endIdx (T.drop (startIdx + 1) remaining)
+                      afterExpr = T.drop (startIdx + endIdx + 2) remaining
+                  in extractBraceContent afterExpr (exprText : acc)

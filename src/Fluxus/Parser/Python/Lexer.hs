@@ -361,7 +361,28 @@ stringLiteral = choice
       _ <- lift $ char 'f' <|> char 'F'
       quote <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
       content <- lift $ manyTill L.charLiteral (string quote)
-      return $ TokenFString (T.pack content) []  -- TODO: Parse expressions within {}
+      let contentText = T.pack content
+      -- Extract expressions from within {} braces
+      let expressions = extractFStringExpressions contentText
+      return $ TokenFString contentText expressions
+    
+    -- Extract expressions from f-string content like "Hello, {name}!" -> ["name"]
+    extractFStringExpressions :: Text -> [Text]
+    extractFStringExpressions text = extractBraces text []
+      where
+        extractBraces :: Text -> [Text] -> [Text]
+        extractBraces remaining acc
+          | T.null remaining = reverse acc
+          | otherwise =
+              case T.findIndex (== '{') remaining of
+                Nothing -> reverse acc
+                Just startIdx ->
+                  case T.findIndex (== '}') (T.drop (startIdx + 1) remaining) of
+                    Nothing -> reverse acc  -- Malformed f-string, no closing brace
+                    Just endIdx ->
+                      let exprText = T.take endIdx (T.drop (startIdx + 1) remaining)
+                          afterExpr = T.drop (startIdx + endIdx + 2) remaining
+                      in extractBraces afterExpr (exprText : acc)
 
 -- | Parse bytes literals
 bytesLiteral :: PythonLexer PythonToken

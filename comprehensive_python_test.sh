@@ -28,7 +28,7 @@ run_test() {
     
     # Compile
     echo "Compiling..."
-    if \! $FLUXUS "$source_file" -o "test_${test_name}" 2>/dev/null; then
+    if ! $FLUXUS "$source_file" -o "test_${test_name}" 2>&1; then
         echo "❌ COMPILATION FAILED"
         FAILED=$((FAILED + 1))
         echo
