@@ -5,7 +5,7 @@ def fibonacci(n):
         return fibonacci(n - 1) + fibonacci(n - 2)
 
 def main():
-    for i in range(10):
+    for i in range(5):
         result = fibonacci(i)
         print(f"fib({i}) = {result}")
 

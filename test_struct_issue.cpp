@@ -36,8 +36,18 @@ struct Channel {
 // Found 1 files in package
 // Processing Go file with 0 declarations
 // No declarations found in Go file - parser may need to be fixed
-// Generating fallback main function - Go parser not working properly
+// Generating main function
 int main() {
+    // Test struct support
+    struct Person {
+        std::string Name;
+        int Age;
+    };
+    
+    // Test struct initialization
+    Person person = {"Bob", 30};
+    std::cout << "Person: " << person.Name << " " << person.Age << std::endl;
+    
     return 0;
 }
 

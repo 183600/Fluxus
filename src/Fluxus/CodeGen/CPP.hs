@@ -670,14 +670,8 @@ generateGoFile goFile = do
   let decls = goFileDecls goFile
   addComment $ "Processing Go file with " <> T.pack (show (length decls)) <> " declarations"
   
-  -- Process declarations in correct order - functions first, then others
-  let (funcDecls, otherDecls) = partition isFuncDecl decls
-  
-  -- Process function declarations
-  mapM_ generateGoDecl funcDecls
-  
-  -- Process other declarations (types, variables, constants)
-  mapM_ generateGoDecl otherDecls
+  -- Process all declarations in order
+  mapM_ generateGoDecl decls
   
   -- If this is the main package and we don't have a main function, add one
   hasMainFunc <- gets (any isMainFunction . cgsDeclarations)
@@ -687,9 +681,6 @@ generateGoFile goFile = do
     addDeclaration $ CppFunction "main" CppInt [] [CppReturn (Just (CppLiteral (CppIntLit 0)))]
   
   where
-    isFuncDecl (Located _ (GoFuncDecl _)) = True
-    isFuncDecl _ = False
-    
     isMainFunction (CppFunction "main" _ _ _) = True
     isMainFunction _ = False
     
@@ -708,6 +699,10 @@ generateGoDecl (Located _ decl) = case decl of
   GoVarDecl vars -> do
     addComment $ "Generating variable declaration(s)"
     mapM_ generateGoVariable vars
+  GoMethodDecl receiver func -> do
+    addComment $ "Generating method: " <> maybe "anonymous" (\(Identifier n) -> n) (goFuncName func)
+    -- For now, treat methods as regular functions
+    generateGoFunction func
   _ -> addComment $ "TODO: Implement Go declaration: " <> T.pack (show decl)
 
 -- | Generate C++ functions from Python

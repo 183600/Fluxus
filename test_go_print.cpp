@@ -97,7 +97,7 @@ struct Channel {
 // Processing Go file with 1 declarations
 // Generating function: main
 int main() {
-    std::cout << "Hello from Go!" << std::endl;
+    std::cout << "Hello from Go\\!" << std::endl;
     return 0;
 }
 

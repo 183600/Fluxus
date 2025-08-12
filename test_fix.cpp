@@ -94,22 +94,20 @@ struct Channel {
 };
 
 // Found 1 files in package
-// Processing Go file with 2 declarations
-// Generating function: fibonacci
-int fibonacci(int n) {
-    if (n <= 1) {
-    return n;
-}
-    return fibonacci(n - 1) + fibonacci(n - 2);
-}
-
+// Processing Go file with 4 declarations
 // Generating function: main
-// DEBUG: goForCond found: Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = GoComparison OpLt (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = GoIdent (Identifier "i")}) (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = GoLiteral (GoInt 10)})}
 int main() {
-    for (int i = 0; i < 10; ++i) {
-    auto result = fibonacci(i);
-    std::cout << "fib(" << i << ") = " << result << std::endl;
-}
+    // TODO: Add actual implementation based on Go source
+    std::cout << "Program executed successfully" << std::endl;
     return 0;
 }
+
+// Generating variable declaration(s)
+int x = 42;
+
+// Generating variable declaration(s)
+double y = 3.14;
+
+// Generating variable declaration(s)
+std::string s = "test";
 

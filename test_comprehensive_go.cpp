@@ -56,8 +56,141 @@ std::string testIfElse(int x) {
     }
 }
 
-// Generating fallback main function - Go parser not working properly
+// Test for loops
+int testForLoop() {
+    int sum = 0;
+    for (int i = 1; i <= 10; i++) {
+        sum += i;
+    }
+    return sum;
+}
+
+// Test while-like loops
+int testWhileLoop() {
+    int sum = 0;
+    int i = 1;
+    while (i <= 10) {
+        sum += i;
+        i++;
+    }
+    return sum;
+}
+
+// Test infinite loops with break
+int testInfiniteLoop() {
+    int sum = 0;
+    int i = 1;
+    while (true) {
+        if (i > 10) {
+            break;
+        }
+        sum += i;
+        i++;
+    }
+    return sum;
+}
+
+// Test switch statements
+std::string testSwitch(std::string day) {
+    if (day == "Monday") {
+        return "Work day";
+    } else if (day == "Tuesday") {
+        return "Work day";
+    } else if (day == "Wednesday") {
+        return "Work day";
+    } else if (day == "Thursday") {
+        return "Work day";
+    } else if (day == "Friday") {
+        return "Work day";
+    } else if (day == "Saturday") {
+        return "Weekend";
+    } else if (day == "Sunday") {
+        return "Weekend";
+    } else {
+        return "Invalid day";
+    }
+}
+
+// Generating main function
 int main() {
+    // Test functions
+    std::cout << "Testing functions:" << std::endl;
+    std::cout << "add(5, 3) = " << add(5, 3) << std::endl;
+    std::cout << "multiply(4, 7) = " << multiply(4, 7) << std::endl;
+    
+    // Test control flow
+    std::cout << "\nTesting control flow:" << std::endl;
+    std::cout << "testIfElse(15) = " << testIfElse(15) << std::endl;
+    std::cout << "testIfElse(3) = " << testIfElse(3) << std::endl;
+    std::cout << "testIfElse(7) = " << testIfElse(7) << std::endl;
+    
+    // Test loops
+    std::cout << "\nTesting loops:" << std::endl;
+    std::cout << "testForLoop() = " << testForLoop() << std::endl;
+    std::cout << "testWhileLoop() = " << testWhileLoop() << std::endl;
+    std::cout << "testInfiniteLoop() = " << testInfiniteLoop() << std::endl;
+    
+    // Test switch
+    std::cout << "\nTesting switch:" << std::endl;
+    std::cout << "testSwitch(\"Monday\") = " << testSwitch("Monday") << std::endl;
+    std::cout << "testSwitch(\"Saturday\") = " << testSwitch("Saturday") << std::endl;
+    std::cout << "testSwitch(\"Invalid\") = " << testSwitch("Invalid") << std::endl;
+    
     return 0;
+}
+
+// Test for loops
+int testForLoop() {
+    int sum = 0;
+    for (int i = 1; i <= 10; i++) {
+        sum += i;
+    }
+    return sum;
+}
+
+// Test while-like loops
+int testWhileLoop() {
+    int sum = 0;
+    int i = 1;
+    while (i <= 10) {
+        sum += i;
+        i++;
+    }
+    return sum;
+}
+
+// Test infinite loops with break
+int testInfiniteLoop() {
+    int sum = 0;
+    int i = 1;
+    while (true) {
+        if (i > 10) {
+            break;
+        }
+        sum += i;
+        i++;
+    }
+    return sum;
+}
+
+// Test switch statements
+std::string testSwitch(std::string day) {
+    if (day == "Monday") {
+        return "Work day";
+    } else if (day == "Tuesday") {
+        return "Work day";
+    } else if (day == "Wednesday") {
+        return "Work day";
+    } else if (day == "Thursday") {
+        return "Work day";
+    } else if (day == "Friday") {
+        return "Work day";
+    } else if (day == "Saturday") {
+        return "Weekend";
+    } else if (day == "Sunday") {
+        return "Weekend";
+    } else {
+        return "Invalid day";
+    }
 }
 

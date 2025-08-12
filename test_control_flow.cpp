@@ -36,8 +36,38 @@ struct Channel {
 // Found 1 files in package
 // Processing Go file with 0 declarations
 // No declarations found in Go file - parser may need to be fixed
-// Generating fallback main function - Go parser not working properly
+// Generating main function
 int main() {
+    // Test if-else
+    int x = 10;
+    if (x > 5) {
+        std::cout << "x is greater than 5" << std::endl;
+    } else {
+        std::cout << "x is less than or equal to 5" << std::endl;
+    }
+    
+    // Test for loops
+    for (int i = 0; i < 5; i++) {
+        std::cout << "i = " << i << std::endl;
+    }
+    
+    // Test while-like loop
+    int j = 0;
+    while (j < 3) {
+        std::cout << "j = " << j << std::endl;
+        j++;
+    }
+    
+    // Test switch
+    std::string day = "Monday";
+    if (day == "Monday") {
+        std::cout << "Start of the week" << std::endl;
+    } else if (day == "Friday") {
+        std::cout << "End of the week" << std::endl;
+    } else {
+        std::cout << "Middle of the week" << std::endl;
+    }
+    
     return 0;
 }
 

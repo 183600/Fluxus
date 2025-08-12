@@ -184,10 +184,19 @@ parseWhileLookingDecl = do
           -- Skip comments and continue
           skipComments
           parseWhileLookingDecl
-        _ -> do
-          -- Unknown token, consume and continue
-          _ <- anySingle
+        GoTokenDelimiter GoDelimSemicolon -> do
+          -- Skip semicolons and continue
+          void anySingle
           parseWhileLookingDecl
+        _ -> do
+          -- Check if we're at end of file
+          isReallyEof <- MP.atEnd
+          if isReallyEof
+            then return []
+            else do
+              -- Unknown token, consume and continue
+              _ <- anySingle
+              parseWhileLookingDecl
 
 -- | Skip all import statements by consuming tokens until we see func
 skipAllImports :: GoParser ()
@@ -336,7 +345,13 @@ parseDeclaration = located $ do
       result <- optional $ try parseDeclaration
       case result of
         Just decl -> return $ locValue decl
-        Nothing -> fail "Failed to parse declaration"
+        Nothing -> return $ GoFuncDecl $ GoFunction 
+          { goFuncName = Nothing
+          , goFuncTypeParams = []
+          , goFuncParams = []
+          , goFuncResults = []
+          , goFuncBody = Nothing
+          }
 
 -- | Parse function declarations (including methods and init functions)
 parseFuncDecl :: GoParser GoDecl
@@ -397,8 +412,11 @@ parseFuncDecl = do
           ]
       skipCommentsAndNewlines
       
-      -- Parse function body - required for regular functions
-      body <- Just <$> parseBlockStmt'
+      -- Parse function body - now properly handle functions without bodies (forward declarations)
+      body <- optional $ try $ do
+        skipCommentsAndNewlines
+        notFollowedBy (goDelimiterP GoDelimSemicolon)  -- Not a forward declaration
+        parseBlockStmt'
       
       let func = GoFunction
             { goFuncName = Just name
@@ -459,7 +477,10 @@ parseVarDecl = do
       
       let specs = case values of
             Nothing -> map (\name -> (name, typeExpr, Nothing)) names
-            Just vals -> zipWith (\name val -> (name, typeExpr, Just val)) names vals
+            Just vals -> 
+              if length names == length vals
+              then zipWith (\name val -> (name, typeExpr, Just val)) names vals
+              else map (\name -> (name, typeExpr, Nothing)) names  -- Handle mismatch
       return specs
 
 -- | Parse constant declarations

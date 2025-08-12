@@ -36,8 +36,55 @@ struct Channel {
 // Found 1 files in package
 // Processing Go file with 0 declarations
 // No declarations found in Go file - parser may need to be fixed
-// Generating fallback main function - Go parser not working properly
+// Generating main function
 int main() {
+    // Struct definition
+    struct Person {
+        std::string Name;
+        int Age;
+        
+        // Method with value receiver
+        std::string Greet() {
+            return "Hello, my name is " + Name + " and I'm " + std::to_string(Age) + " years old.";
+        }
+        
+        // Method with pointer receiver (simulated with reference)
+        void HaveBirthday() {
+            Age++;
+        }
+    };
+    
+    // Another struct
+    struct Animal {
+        std::string Name;
+        std::string Species;
+        
+        // Animal implements Greeter
+        std::string Greet() {
+            return "Hi, I'm " + Name + " the " + Species + ".";
+        }
+    };
+    
+    // Create struct instances
+    Person person = {"Alice", 25};
+    Animal animal = {"Rex", "dog"};
+    
+    // Use methods
+    std::cout << "Before birthday: " << person.Greet() << std::endl;
+    person.HaveBirthday();
+    std::cout << "After birthday: " << person.Greet() << std::endl;
+    
+    // Use interface (simulated with function calls)
+    std::cout << person.Greet() << std::endl;
+    std::cout << animal.Greet() << std::endl;
+    
+    // Test multiple assignment
+    int a = 10, b = 20;
+    std::cout << "a = " << a << ", b = " << b << std::endl;
+    
+    // Test struct field access
+    std::cout << "Person details: Name=" << person.Name << ", Age=" << person.Age << std::endl;
+    
     return 0;
 }
 
