@@ -40,7 +40,7 @@ import Control.Monad (unless)
 import Control.Monad.IO.Class
 import Control.Applicative ((<|>))
 import Data.Maybe (fromMaybe)
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf, isInfixOf)
 import GHC.Generics (Generic)
 
 import Fluxus.Compiler.Driver
@@ -242,9 +242,9 @@ checkSystemRequirements config = do
   compilerExists <- doesFileExist (T.unpack $ ccCppCompiler config)
   if compilerExists
     then do
-      -- Check include paths
+      -- Check include paths (only warn for non-platform-specific paths)
       mapM_ checkIncludePath (ccIncludePaths config)
-      -- Check library paths
+      -- Check library paths (only warn for non-platform-specific paths)
       mapM_ checkLibraryPath (ccLibraryPaths config)
       return $ Right ()
     else do
@@ -252,20 +252,28 @@ checkSystemRequirements config = do
       which <- readProcessWithExitCode "which" [T.unpack $ ccCppCompiler config] ""
       case which of
         (ExitSuccess, _, _) -> do
-          -- Check include paths
+          -- Check include paths (only warn for non-platform-specific paths)
           mapM_ checkIncludePath (ccIncludePaths config)
-          -- Check library paths
+          -- Check library paths (only warn for non-platform-specific paths)
           mapM_ checkLibraryPath (ccLibraryPaths config)
           return $ Right ()
         _ -> return $ Left $ "C++ compiler not found: " ++ T.unpack (ccCppCompiler config)
   where
     checkIncludePath path = do
       exists <- doesDirectoryExist path
-      unless exists $ putStrLn $ "Warning: Include path does not exist: " ++ path
+      -- Only warn for paths that are not platform-specific placeholders
+      unless exists $ 
+        if "/opt/homebrew/" `isInfixOf` path
+          then return ()  -- Silently ignore macOS-specific paths on other platforms
+          else putStrLn $ "Warning: Include path does not exist: " ++ path
     
     checkLibraryPath path = do
       exists <- doesDirectoryExist path
-      unless exists $ putStrLn $ "Warning: Library path does not exist: " ++ path
+      -- Only warn for paths that are not platform-specific placeholders
+      unless exists $ 
+        if "/opt/homebrew/" `isInfixOf` path
+          then return ()  -- Silently ignore macOS-specific paths on other platforms
+          else putStrLn $ "Warning: Library path does not exist: " ++ path
 
 -- | Predefined configurations
 developmentConfig :: CompilerConfig
