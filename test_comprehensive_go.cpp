@@ -46,22 +46,14 @@ int multiply(int a, int b) {
 }
 
 // Generating function: testIfElse
-int testIfElse(int x) {
-    if (x > 10.0) {
-    {
-    return "greater than 10";
-}
-} else {
-    if (x < 5.0) {
-    {
-    return "less than 5";
-}
-} else {
-    {
-    return "between 5 and 10";
-}
-}
-}
+std::string testIfElse(int x) {
+    if (x > 10) {
+        return "greater than 10";
+    } else if (x < 5) {
+        return "less than 5";
+    } else {
+        return "between 5 and 10";
+    }
 }
 
 // Generating fallback main function - Go parser not working properly

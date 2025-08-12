@@ -4,7 +4,7 @@
 
 int main() {
     auto x = 42;
-    std::cout << "x = {x}" << std::endl;
+    std::cout << "x = {x}";
     return 0;
 }
 

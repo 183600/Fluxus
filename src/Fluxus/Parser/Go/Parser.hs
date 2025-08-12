@@ -51,6 +51,7 @@ import Data.Maybe (isNothing)
 import Text.Megaparsec hiding (many)
 import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
+import Text.Megaparsec (atEnd)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 
@@ -137,12 +138,56 @@ parseWhileLookingImport = do
 parseWhileLookingDecl :: GoParser [Located GoDecl]
 parseWhileLookingDecl = do
   skipCommentsAndNewlines
-  result <- optional $ try parseDeclaration
-  case result of
-    Just decl -> do
-      rest <- parseWhileLookingDecl
-      return (decl : rest)
-    Nothing -> return []
+  -- Check if we've reached the end of input
+  isEof <- MP.atEnd
+  if isEof
+    then return []
+    else do
+      -- Look ahead to see what kind of token we have
+      nextToken <- lookAhead anySingle
+      case locValue nextToken of
+        GoTokenKeyword kw -> case kw of
+          GoKwFunc -> do
+            -- Found a function declaration
+            decl <- parseDeclaration
+            rest <- parseWhileLookingDecl
+            return (decl : rest)
+          GoKwType -> do
+            -- Found a type declaration
+            decl <- parseDeclaration
+            rest <- parseWhileLookingDecl
+            return (decl : rest)
+          GoKwVar -> do
+            -- Found a variable declaration
+            decl <- parseDeclaration
+            rest <- parseWhileLookingDecl
+            return (decl : rest)
+          GoKwConst -> do
+            -- Found a constant declaration
+            decl <- parseDeclaration
+            rest <- parseWhileLookingDecl
+            return (decl : rest)
+          GoKwImport -> do
+            -- Skip import declarations and continue
+            skipImportsRobust
+            parseWhileLookingDecl
+          _ -> do
+            -- Unknown keyword, consume token and continue
+            _ <- anySingle
+            parseWhileLookingDecl
+        GoTokenDelimiter GoDelimRightBrace -> return []
+        GoTokenNewline -> do
+          -- Skip newlines and continue
+          skipNewlines
+          parseWhileLookingDecl
+        GoTokenComment _ -> do
+          -- Skip comments and continue
+          skipComments
+          parseWhileLookingDecl
+        _ -> do
+          -- Unknown token, consume and continue
+          _ <- anySingle
+          parseWhileLookingDecl
 
 -- | Skip all import statements by consuming tokens until we see func
 skipAllImports :: GoParser ()
@@ -250,12 +295,48 @@ parseDeclaration = located $ do
         -- Debug output for var parsing
         -- liftIO $ putStrLn "Trying to parse variable declaration"
         parseVarDecl
-    , do
+    , try $ do
         -- Debug output for const parsing
         -- liftIO $ putStrLn "Trying to parse constant declaration"
         parseConstDecl
+    , do
+        -- If all specific parsers fail, check what token we're looking at
+        -- and provide a more informative error or skip it
+        nextToken <- lookAhead anySingle
+        case locValue nextToken of
+          GoTokenKeyword kw -> case kw of
+            GoKwPackage -> do
+              -- Skip package declaration (we've already processed it)
+              void $ goKeywordP GoKwPackage
+              parseGoIdentifier  -- Skip package name
+              skipCommentsAndNewlines
+              -- Try to parse the next declaration
+              parseDeclarationNoLocated
+            GoKwImport -> do
+              -- Skip import declarations to avoid confusion
+              skipImportsRobust
+              skipCommentsAndNewlines
+              -- Try to parse the next declaration
+              parseDeclarationNoLocated
+            _ -> fail $ "Unsupported declaration keyword: " ++ show kw
+          GoTokenNewline -> do
+            -- Skip newlines
+            skipNewlines
+            parseDeclarationNoLocated
+          GoTokenComment _ -> do
+            -- Skip comments
+            skipComments
+            parseDeclarationNoLocated
+          _ -> fail $ "Unexpected token in declaration: " ++ show (locValue nextToken)
     ]
   return result
+  where
+    -- Helper function to avoid infinite recursion
+    parseDeclarationNoLocated = do
+      result <- optional $ try parseDeclaration
+      case result of
+        Just decl -> return $ locValue decl
+        Nothing -> fail "Failed to parse declaration"
 
 -- | Parse function declarations (including methods and init functions)
 parseFuncDecl :: GoParser GoDecl
@@ -1176,10 +1257,12 @@ parseInterfaceType = do
     
     parseMethodSpec = do
       name <- parseGoIdentifier
+      void $ goDelimiterP GoDelimLeftParen
+      params <- parseParameterList
+      void $ goDelimiterP GoDelimRightParen
+      returnType <- parseGoType
       skipCommentsAndNewlines
-      typeExpr <- parseGoType
-      skipCommentsAndNewlines
-      return $ GoMethod name typeExpr
+      return $ GoMethod name returnType
 
 -- | Parse type constraints with improved approximation constraint support
 parseTypeConstraint :: GoParser (Located GoConstraint)

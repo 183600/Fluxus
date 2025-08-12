@@ -1,0 +1,13 @@
+package main
+
+func main() {
+    x := 2
+    switch x {
+    case 1:
+        println("one")
+    case 2:
+        println("two")
+    default:
+        println("other")
+    }
+}

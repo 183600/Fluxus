@@ -1,1 +1,2 @@
-my_dict = {"name": "Alice", "age": 30}
+def func0(): return 0
+print(func0())

@@ -209,6 +209,7 @@ parseWhileStmt = do
   void $ delimiterP DelimColon
   body <- parseBlock
   elseBody <- option [] $ do
+    skipNewlinesAndComments
     void $ keywordP KwElse
     void $ delimiterP DelimColon
     parseBlock
@@ -224,6 +225,7 @@ parseForStmt = do
   void $ delimiterP DelimColon
   body <- parseBlock
   elseBody <- option [] $ do
+    skipNewlinesAndComments
     void $ keywordP KwElse
     void $ delimiterP DelimColon
     parseBlock
@@ -455,7 +457,7 @@ parseLiteral = do
     TokenString text -> return $ PyLiteral $ PyString text
     TokenFString text exprs -> do
       -- Parse embedded expressions from the f-string
-      embeddedExprs <- mapM parseEmbeddedExpr (parseFStringExpressions text)
+      embeddedExprs <- mapM parseEmbeddedExpr exprs
       return $ PyLiteral $ PyFString text embeddedExprs
     TokenNumber text isFloat ->
       if isFloat
@@ -465,6 +467,8 @@ parseLiteral = do
     TokenKeyword KwFalse -> return $ PyLiteral $ PyBool False
     TokenKeyword KwNone -> return $ PyLiteral PyNone
     _ -> fail "Expected literal"
+
+-- The parseEmbeddedExpr function is already defined above, so we don't need to redefine it here
 
 parseIdentifierExpr :: PythonParser PythonExpr
 parseIdentifierExpr = PyVar <$> parseIdentifier
@@ -794,11 +798,9 @@ parseComprehension = do
 -- | Parse a block of statements
 parseBlock :: PythonParser [Located PythonStmt]
 parseBlock = do
-  void $ satisfy $ \case
-    Located _ TokenNewline -> True
-    _ -> False
+  skipNewlinesAndComments
   void $ parseIndent
-  stmts <- some (parseBlockStatement)
+  stmts <- many parseBlockStatement
   void $ parseDedent
   return stmts
   where
@@ -902,34 +904,11 @@ convertPos pos = Common.SourcePos
 -- | Parse f-string embedded expressions
 parseEmbeddedExpr :: Text -> PythonParser (Located PythonExpr)
 parseEmbeddedExpr exprText = do
-  -- For now, just create a variable reference
-  -- A full implementation would need to actually parse the expression text
+  -- Handle empty expressions
   if T.null exprText
     then return $ located' $ PyLiteral $ PyString ""
     else do
-      -- Try to parse as a simple variable name first
-      if T.all (\c -> c == '_' || isAlphaNum c) exprText
-        then return $ located' $ PyVar $ Identifier exprText
-        else do
-          -- If it's a complex expression, create a placeholder
-          -- This will be improved in a future version
-          return $ located' $ PyLiteral $ PyString $ "{" <> exprText <> "}"
-
--- | Extract expressions from f-string content
--- This is a simple implementation that finds text within {}
-parseFStringExpressions :: Text -> [Text]
-parseFStringExpressions text = extractBraceContent text []
-  where
-    extractBraceContent :: Text -> [Text] -> [Text]
-    extractBraceContent remaining acc
-      | T.null remaining = reverse acc
-      | otherwise =
-          case T.findIndex (== '{') remaining of
-            Nothing -> reverse acc
-            Just startIdx ->
-              case T.findIndex (== '}') (T.drop (startIdx + 1) remaining) of
-                Nothing -> reverse acc
-                Just endIdx ->
-                  let exprText = T.take endIdx (T.drop (startIdx + 1) remaining)
-                      afterExpr = T.drop (startIdx + endIdx + 2) remaining
-                  in extractBraceContent afterExpr (exprText : acc)
+      -- For now, we'll create a variable reference for all expressions
+      -- A full implementation would need to actually parse the expression text
+      -- For now, we'll just treat the expression text as a variable name
+      return $ located' $ PyVar $ Identifier exprText

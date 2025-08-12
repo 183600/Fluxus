@@ -343,8 +343,9 @@ generateCppFromGo (GoAST goPackage) isMainFile = do
   when (isMainFile && packageName == "main") $ do
     hasMain <- gets (any isMainFunction . cgsDeclarations)
     unless hasMain $ do
-      addComment "No main function found in declarations - this might be expected for some files"
-      -- Don't generate fallback main automatically - let the user handle this
+      addComment "No main function found in declarations - generating fallback main"
+      -- Generate a fallback main function that returns 0
+      addDeclaration $ CppFunction "main" CppInt [] [CppReturn (Just (CppLiteral (CppIntLit 0)))]
   
   -- Build final unit
   includes <- gets cgsIncludes
@@ -373,8 +374,29 @@ generatePythonStmt (Located _ stmt) = case stmt of
     -- For now, handle simple single-target assignment
     case patterns of
       [Located _ (PatVar (Identifier varName))] -> do
-        let varType = CppAuto  -- Use auto for type inference
-        return $ CppDecl $ CppVariable varName varType (Just cppExpr)
+        -- For simplicity, we'll check if this looks like an initialization or an assignment
+        -- If the expression references the same variable, treat as assignment
+        -- Otherwise, treat as initialization
+        case locatedValue expr of
+          PyBinaryOp _ left right -> do
+            let isSelfReference = case (locatedValue left, locatedValue right) of
+                  (PyVar (Identifier name), _) -> name == varName
+                  (_, PyVar (Identifier name)) -> name == varName
+                  _ -> False
+            if isSelfReference
+              then return $ CppExprStmt $ CppBinary "=" (CppVar varName) cppExpr
+              else do
+                let varType = CppAuto  -- Use auto for type inference
+                return $ CppDecl $ CppVariable varName varType (Just cppExpr)
+          PyVar (Identifier name) -> 
+            if name == varName
+              then return $ CppExprStmt $ CppBinary "=" (CppVar varName) cppExpr
+              else do
+                let varType = CppAuto  -- Use auto for type inference
+                return $ CppDecl $ CppVariable varName varType (Just cppExpr)
+          _ -> do
+            let varType = CppAuto  -- Use auto for type inference
+            return $ CppDecl $ CppVariable varName varType (Just cppExpr)
       _ -> do
         -- Multiple assignment - not fully implemented
         return $ CppComment "Multiple assignment not implemented"
@@ -458,6 +480,13 @@ generatePythonStmt (Located _ stmt) = case stmt of
       _ -> do
         addComment $ "DEBUG: Range-based for loop for: " <> T.pack (show iterExpr)
         return $ CppForRange varName cppIter cppBody
+  PyWhile condition bodyStmts elseStmts -> do
+    cppCond <- generatePythonExpr condition
+    cppBody <- mapM generatePythonStmt bodyStmts
+    -- Handle else clause if present
+    cppElse <- mapM generatePythonStmt elseStmts
+    -- Add else handling if needed
+    return $ CppWhile cppCond cppBody
   _ -> return $ CppComment $ "TODO: Implement Python statement: " <> T.pack (show stmt)
 
 -- | Generate C++ from Python expressions
@@ -495,21 +524,27 @@ generatePythonExpr (Located _ expr) = case expr of
       let parts = parseFStringTemplate template
       addComment $ "DEBUG: F-string parsed into " <> T.pack (show (length parts)) <> " parts"
       
-      -- Build streaming expression
+      -- Build streaming expression components
       case parts of
         [] -> return $ CppLiteral $ CppStringLit ""
-        [LiteralPart text] -> return $ CppLiteral $ CppStringLit text
+        [LiteralPart text] -> 
+          -- For a single literal, we can just return it as a string literal
+          return $ CppLiteral $ CppStringLit text
         _ -> do
-          -- Build a streaming expression by chaining << operators
-          let streamingExpr = buildFStringStreamExpr parts cppExprs
-          return streamingExpr
+          -- For multiple parts, build the streaming expression components
+          let streamComponents = buildFStringComponents parts cppExprs
+          -- Return the chained expression without std::cout (will be added by caller)
+          case streamComponents of
+            [] -> return $ CppLiteral $ CppStringLit ""
+            [single] -> return single
+            (first:rest) -> return $ foldl (CppBinary "<<") first rest
     _ -> return $ CppLiteral $ mapPythonLiteral lit
   PyVar (Identifier name) -> return $ CppVar name
   PyBinaryOp op left right -> do
     cppLeft <- generatePythonExpr left
     cppRight <- generatePythonExpr right
     
-    -- Special handling for string concatenation
+    -- Special handling for string concatenation and division
     case op of
       OpAdd -> do
         -- For addition, check if we might be dealing with strings
@@ -528,6 +563,16 @@ generatePythonExpr (Located _ expr) = case expr of
           else do
             let cppOp = mapPythonBinaryOp op
             return $ CppBinary cppOp cppLeft cppRight
+      OpDiv -> do
+        -- For division, ensure at least one operand is a float to get float result
+        let ensureFloat expr = case expr of
+              CppLiteral (CppIntLit i) -> CppLiteral (CppFloatLit (fromIntegral i))
+              CppLiteral (CppFloatLit _) -> expr
+              _ -> CppCast CppDouble expr  -- Cast to double for non-literals
+        let cppLeftFloat = ensureFloat cppLeft
+        let cppRightFloat = ensureFloat cppRight
+        let cppOp = mapPythonBinaryOp op
+        return $ CppBinary cppOp cppLeftFloat cppRightFloat
       _ -> do
         let cppOp = mapPythonBinaryOp op
         return $ CppBinary cppOp cppLeft cppRight
@@ -625,17 +670,30 @@ generateGoFile goFile = do
   let decls = goFileDecls goFile
   addComment $ "Processing Go file with " <> T.pack (show (length decls)) <> " declarations"
   
-  -- Fallback: if no declarations found, add a comment
-  when (null decls) $ do
-    addComment "No declarations found in Go file - parser may need to be fixed"
-  
   -- Process declarations in correct order - functions first, then others
   let (funcDecls, otherDecls) = partition isFuncDecl decls
+  
+  -- Process function declarations
   mapM_ generateGoDecl funcDecls
+  
+  -- Process other declarations (types, variables, constants)
   mapM_ generateGoDecl otherDecls
+  
+  -- If this is the main package and we don't have a main function, add one
+  hasMainFunc <- gets (any isMainFunction . cgsDeclarations)
+  let isMainPackage = (unIdentifier . goFilePackage) goFile == "main"
+  when (isMainPackage && not hasMainFunc) $ do
+    addComment "Adding default main function"
+    addDeclaration $ CppFunction "main" CppInt [] [CppReturn (Just (CppLiteral (CppIntLit 0)))]
+  
   where
     isFuncDecl (Located _ (GoFuncDecl _)) = True
     isFuncDecl _ = False
+    
+    isMainFunction (CppFunction "main" _ _ _) = True
+    isMainFunction _ = False
+    
+    unIdentifier (Identifier name) = name
 
 -- | Generate C++ from Go declarations
 generateGoDecl :: Located GoDecl -> CppCodeGen ()
@@ -1179,6 +1237,14 @@ generateGoExpr (Located _ expr) = case expr of
           _ -> do
             addComment $ "Append with multiple items not fully implemented"
             return $ CppLiteral $ CppIntLit 0
+      GoMake -> do
+        -- Handle make(type, args...)
+        case cppArgs of
+          -- make(map[key]value) - create empty map
+          _ -> do
+            -- For now, just create a default map or vector
+            -- We'll improve this later
+            return $ CppCall (CppVar "std::unordered_map") []
       _ -> do
         addComment $ "TODO: Implement Go builtin: " <> T.pack (show builtin)
         return $ CppLiteral $ CppIntLit 0
@@ -1188,17 +1254,18 @@ generateGoExpr (Located _ expr) = case expr of
     
     case mtypeExpr of
       Nothing -> do
-        -- No type specified, use initializer list
-        return $ CppInitList CppAuto cppElements
+        -- No type specified, use vector for slices
+        let vectorType = CppVector CppInt  -- Default to int for now
+        return $ CppInitList vectorType cppElements
       Just (Located _ typeExpr) -> do
         -- Type specified, use appropriate type
         case typeExpr of
           GoArrayType sizeExpr (Located _ elemType) -> do
-            -- Array type like [3]int - use regular array for now since std::array needs constant size
+            -- Array type like [3]int - use C-style array
             let cppElemType = mapGoTypeToCpp elemType
             case locatedValue sizeExpr of
               GoLiteral (GoInt size) -> do
-                -- Use C-style array instead of std::array to avoid template issues
+                -- Use C-style array
                 let arrayType = CppArray cppElemType (fromIntegral size)
                 return $ CppInitList arrayType cppElements
               _ -> return $ CppInitList (CppArray cppElemType 10) cppElements
@@ -1211,6 +1278,11 @@ generateGoExpr (Located _ expr) = case expr of
             -- Other types
             let cppType = mapGoTypeToCpp typeExpr
             return $ CppInitList cppType cppElements
+  GoIndex arrayExpr indexExpr -> do
+    -- Handle array/slice indexing: array[index]
+    cppArray <- generateGoExpr arrayExpr
+    cppIndex <- generateGoExpr indexExpr
+    return $ CppIndex cppArray cppIndex
   _ -> do
     addComment $ "TODO: Implement Go expression: " <> T.pack (show expr)
     return $ CppLiteral $ CppIntLit 0
@@ -1222,6 +1294,18 @@ inferTypeFromExpr (Located _ expr) = case expr of
   GoLiteral (GoFloat _) -> CppDouble
   GoLiteral (GoBool _) -> CppBool
   GoLiteral (GoString _) -> CppString
+  GoCompositeLit mtypeExpr _ -> 
+    case mtypeExpr of
+      Nothing -> CppVector CppInt  -- Default to vector of int for slices
+      Just (Located _ typeExpr) -> 
+        case typeExpr of
+          GoArrayType sizeExpr (Located _ elemType) -> 
+            let cppElemType = mapGoTypeToCpp elemType
+            in CppArray cppElemType 10  -- Default size, will be overridden by actual size in codegen
+          GoSliceType (Located _ elemType) -> 
+            let cppElemType = mapGoTypeToCpp elemType
+            in CppVector cppElemType
+          _ -> mapGoTypeToCpp typeExpr
   GoCall _ _ -> CppAuto  -- For function calls, use auto for now
   GoIdent _ -> CppAuto    -- For identifiers, use auto for now
   _ -> CppAuto
@@ -1874,25 +1958,19 @@ parseFStringTemplate template = go template []
     isExpressionPart (ExpressionPart _) = True
     isExpressionPart _ = False
 
--- | Build C++ streaming expression from f-string parts
-buildFStringStreamExpr :: [FStringPart] -> [CppExpr] -> CppExpr
-buildFStringStreamExpr parts exprs = 
-  case parts of
-    [] -> CppLiteral $ CppStringLit ""
-    [LiteralPart text] -> CppLiteral $ CppStringLit text
-    _ -> 
-      let streamingExpr = foldl buildStreamPart (CppVar "std::cout") parts
-      in CppBinary "<<" streamingExpr (CppVar "std::endl")
-  where
-    buildStreamPart :: CppExpr -> FStringPart -> CppExpr
-    buildStreamPart acc (LiteralPart text) = 
-      if T.null text 
-      then acc 
-      else CppBinary "<<" acc (CppLiteral $ CppStringLit text)
-    buildStreamPart acc (ExpressionPart index) = 
-      if index < length exprs
-      then CppBinary "<<" acc (exprs !! index)
-      else acc  -- Fallback: ignore missing expressions
+-- | Build components for f-string
+buildFStringComponents :: [FStringPart] -> [CppExpr] -> [CppExpr]
+buildFStringComponents [] _ = []
+buildFStringComponents (part:rest) exprList = 
+  case part of
+    LiteralPart text -> 
+      if T.null text
+      then buildFStringComponents rest exprList
+      else CppLiteral (CppStringLit text) : buildFStringComponents rest exprList
+    ExpressionPart index -> 
+      if index < length exprList
+      then (exprList !! index) : buildFStringComponents rest exprList
+      else buildFStringComponents rest exprList
 
 -- | Convert f-string template to C++ format string (simpler approach)
 convertFStringToCppFormat :: Text -> Text

@@ -366,6 +366,8 @@ stringLiteral = choice
       let expressions = extractFStringExpressions contentText
       return $ TokenFString contentText expressions
     
+    -- Parse characters in f-string, handling escaped characters properly\n    parseFStringChar = choice\n      [ try $ do\n          _ <- char '\\\\'\n          c <- anySingle\n          return ['\\\\', c]\n      , do\n          c <- anySingle\n          return [c]\n      ]
+    
     -- Extract expressions from f-string content like "Hello, {name}!" -> ["name"]
     extractFStringExpressions :: Text -> [Text]
     extractFStringExpressions text = extractBraces text []
@@ -377,12 +379,13 @@ stringLiteral = choice
               case T.findIndex (== '{') remaining of
                 Nothing -> reverse acc
                 Just startIdx ->
-                  case T.findIndex (== '}') (T.drop (startIdx + 1) remaining) of
-                    Nothing -> reverse acc  -- Malformed f-string, no closing brace
-                    Just endIdx ->
-                      let exprText = T.take endIdx (T.drop (startIdx + 1) remaining)
-                          afterExpr = T.drop (startIdx + endIdx + 2) remaining
-                      in extractBraces afterExpr (exprText : acc)
+                  let afterOpen = T.drop (startIdx + 1) remaining
+                  in case T.findIndex (== '}') afterOpen of
+                       Nothing -> reverse acc  -- Malformed f-string, no closing brace
+                       Just endIdx ->
+                         let exprText = T.take endIdx afterOpen
+                             afterExpr = T.drop (endIdx + 1) afterOpen
+                         in extractBraces afterExpr (exprText : acc)
 
 -- | Parse bytes literals
 bytesLiteral :: PythonLexer PythonToken
@@ -436,7 +439,7 @@ comment :: PythonLexer PythonToken
 comment = do
   _ <- lift $ char '#'
   content <- lift $ takeWhileP (Just "comment") (/= '\n')
-  return $ TokenComment content
+  return $ TokenComment $ "#" <> content
 
 -- | Parse newlines and update line start state
 newline :: PythonLexer PythonToken

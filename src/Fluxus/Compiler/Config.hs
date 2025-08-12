@@ -164,6 +164,8 @@ parseCommandLineArgs args = parseArgs defaultConfig args
           Nothing -> Left $ "Unknown target platform: " ++ target
         [] -> Left "Expected target platform after --target"
       
+      "--stop-at-codegen" -> parseArgs (config { ccStopAtCodegen = True }) rest
+      
       "--help" -> Left "Usage: fluxus [options] <input-files>"
       "--version" -> Left "Fluxus Compiler v0.1.0"
       

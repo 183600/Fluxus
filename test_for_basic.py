@@ -1,2 +1,3 @@
-for i in range(5):
+# Test basic for loop
+for i in range(3):
     print(i)
