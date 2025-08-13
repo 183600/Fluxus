@@ -101,12 +101,16 @@ generateStatement config stmt = case stmt of
     in [goExpr]
     
   PyAssign targets (Located _ value) ->
-    case targets of
-      [Located _ (PatVar (Identifier name))] ->
-        let goValue = generateExpression config value
-            goType = inferGoType value
-        in ["var " <> name <> " " <> goType <> " = " <> goValue]
-      _ -> []
+    let goValue = generateExpression config value
+        goType = inferGoType value
+        targetNames = map getTargetName targets
+        getTargetName (Located _ (PatVar (Identifier name))) = name
+        getTargetName _ = "_"
+    in case targetNames of
+      [name] -> ["var " <> name <> " " <> goType <> " = " <> goValue]
+      names -> 
+        let varDecls = map (\name -> "var " <> name <> " " <> goType) names
+        in varDecls ++ ["// Multi-assignment not fully supported in this version"]
       
   PyIf (Located _ cond) thenBody elseBody ->
     let goCond = generateExpression config cond
@@ -172,6 +176,7 @@ generateExpression config expr = case expr of
     PyInt n -> T.pack (show n)
     PyFloat d -> T.pack (show d)
     PyString s -> "\"" <> s <> "\""
+    PyFString s exprs -> generateFString config s exprs
     PyBool b -> if b then "true" else "false"
     PyNone -> "nil"
     
@@ -220,6 +225,12 @@ generateExpression config expr = case expr of
     
   _ -> "0"
 
+-- | Generate f-string
+generateFString :: GoGenConfig -> Text -> [Located PythonExpr] -> Text
+generateFString config _ exprs = 
+  let exprStrs = map (generateExpression config . locatedValue) exprs
+  in "fmt.Sprintf(\"%v" <> T.replicate (length exprs - 1) "%v" <> "\", " <> T.intercalate ", " exprStrs <> ")"
+
 -- | Infer Go type from Python expression
 inferGoType :: PythonExpr -> Text
 inferGoType expr = case expr of
@@ -227,6 +238,7 @@ inferGoType expr = case expr of
     PyInt _ -> "int"
     PyFloat _ -> "float64"
     PyString _ -> "string"
+    PyFString _ _ -> "string"
     PyBool _ -> "bool"
     PyNone -> "interface{}"
     _ -> "interface{}"

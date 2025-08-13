@@ -8,7 +8,7 @@
 // DEBUG: F-string parsed into 2 parts
 // DEBUG: Generating print with 1 arguments
 int main() {
-    auto x = 42;
+    auto x = 10;
     std::cout << "x = " << x << std::endl;
     return 0;
 }

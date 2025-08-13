@@ -34,7 +34,7 @@ module Fluxus.CodeGen.CPP
 
 import Control.Monad.State
 import Control.Monad.Writer
-import Control.Monad (when, unless)
+import Control.Monad (when, unless, forM)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.List (intercalate, partition, sortBy)
@@ -371,8 +371,9 @@ generatePythonStmt (Located _ stmt) = case stmt of
     return $ CppExprStmt cppExpr
   PyAssign patterns expr -> do
     cppExpr <- generatePythonExpr expr
-    -- For now, handle simple single-target assignment
+    -- Handle multiple assignment
     case patterns of
+      -- Single target assignment
       [Located _ (PatVar (Identifier varName))] -> do
         -- For simplicity, we'll check if this looks like an initialization or an assignment
         -- If the expression references the same variable, treat as assignment
@@ -397,9 +398,30 @@ generatePythonStmt (Located _ stmt) = case stmt of
           _ -> do
             let varType = CppAuto  -- Use auto for type inference
             return $ CppDecl $ CppVariable varName varType (Just cppExpr)
+      -- Multiple target assignment
       _ -> do
-        -- Multiple assignment - not fully implemented
-        return $ CppComment "Multiple assignment not implemented"
+        -- For multiple assignment, we need to:
+        -- 1. Evaluate the right-hand side expression
+        -- 2. Assign each element to the corresponding variable
+        -- This is a simplified implementation that assumes the right-hand side is a tuple
+        -- and the number of targets matches the number of elements in the tuple
+        
+        -- Declare temporary variable to hold the right-hand side value
+        tempVarName <- generateTempVar
+        let tempVarDecl = CppDecl $ CppVariable tempVarName CppAuto (Just cppExpr)
+        
+        -- Generate variable declarations with initialization for each target
+        varDecls <- forM (zip patterns [0 :: Int ..]) $ \(pattern, index) -> do
+          case locatedValue pattern of
+            PatVar (Identifier varName) -> do
+              -- Declare the variable with auto type and initialize it directly
+              let varType = CppAuto
+              let initExpr = CppCall (CppVar ("std::get<" <> T.pack (show index) <> ">")) [CppVar tempVarName]
+              return $ CppDecl $ CppVariable varName varType (Just initExpr)
+            _ -> return $ CppComment $ "Unsupported pattern in multiple assignment: " <> T.pack (show pattern)
+        
+        -- Return all statements (without wrapping in a block to maintain scope)
+        return $ CppBlock (tempVarDecl : varDecls)
   PyReturn mexpr -> do
     mcppExpr <- mapM generatePythonExpr mexpr
     return $ CppReturn mcppExpr
@@ -660,6 +682,15 @@ generatePythonExpr (Located _ expr) = case expr of
     -- Generate std::vector initialization with initializer list syntax
     let vectorType = CppVector CppInt  -- For now, assume int type
     return $ CppInitList vectorType cppExprs
+  PyTuple exprs -> do
+    -- Generate std::tuple for Python tuple expressions
+    addInclude "<tuple>"
+    cppExprs <- mapM generatePythonExpr exprs
+    -- For now, we'll use a simple approach and generate a tuple with the correct types
+    -- In a more sophisticated implementation, we would determine the actual types
+    case cppExprs of
+      [] -> return $ CppCall (CppVar "std::make_tuple") []
+      _ -> return $ CppCall (CppVar "std::make_tuple") cppExprs
   _ -> do
     addComment $ "TODO: Implement Python expression: " <> T.pack (show expr)
     return $ CppLiteral $ CppIntLit 0
@@ -1201,7 +1232,7 @@ generateGoExpr (Located _ expr) = case expr of
       GoPrint -> do
         addInclude "<iostream>"
         case cppArgs of
-          [] -> return $ CppCall (CppVar "std::cout") [CppLiteral (CppStringLit "")]
+          [] -> return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
           [arg] -> return $ CppBinary "<<" (CppVar "std::cout") arg
           _ -> do
             -- Multiple arguments to print
@@ -1210,9 +1241,8 @@ generateGoExpr (Located _ expr) = case expr of
       GoPrintln -> do
         addInclude "<iostream>"
         case cppArgs of
-          [] -> return $ CppCall (CppVar "std::cout") [CppLiteral (CppStringLit "")]
-          [arg] -> return $ CppBinary "<<" (CppVar "std::cout") 
-                     (CppBinary "<<" arg (CppVar "std::endl"))
+          [] -> return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
+          [arg] -> return $ CppBinary "<<" (CppBinary "<<" (CppVar "std::cout") arg) (CppVar "std::endl")
           _ -> do
             -- Multiple arguments to println
             let addSpaceBetween acc arg = CppBinary "<<" (CppBinary "<<" acc (CppLiteral (CppStringLit " "))) arg
@@ -1303,7 +1333,7 @@ inferTypeFromExpr (Located _ expr) = case expr of
           _ -> mapGoTypeToCpp typeExpr
   GoCall _ _ -> CppAuto  -- For function calls, use auto for now
   GoIdent _ -> CppAuto    -- For identifiers, use auto for now
-  _ -> CppAuto
+  _ -> CppInt  -- Default to int instead of auto for better type safety
 
 -- | Build streaming expression for printf-like functions
 buildStreamingExpr :: Text -> [CppExpr] -> CppExpr

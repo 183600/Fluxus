@@ -133,10 +133,11 @@ parseExprStmt = do
 parseAssignment :: PythonParser PythonStmt  
 parseAssignment = try $ do
   -- Parse assignment more carefully
-  target <- parsePattern
+  -- Handle multiple targets (a, b, c = ...)
+  targets <- parsePattern `sepBy1` (delimiterP DelimComma <* skipNewlinesAndComments)
   void $ operator' Lexer.OpAssign
   value <- parseExpression
-  return $ PyAssign [target] value
+  return $ PyAssign targets value
 
 -- | Parse augmented assignment
 parseAugAssignment = do
@@ -339,7 +340,19 @@ parseFromImport = do
 
 -- | Parse expressions
 parseExpression :: PythonParser (Located PythonExpr)
-parseExpression = parseOrExpr
+parseExpression = parseTupleExpr
+
+-- | Parse tuple expressions (comma-separated expressions)
+parseTupleExpr :: PythonParser (Located PythonExpr)
+parseTupleExpr = do
+  first <- parseOrExpr
+  rest <- many $ do
+    void $ delimiterP DelimComma
+    skipNewlinesAndComments
+    parseOrExpr
+  case rest of
+    [] -> return first
+    _ -> return $ located' $ PyTuple (first : rest)
 
 parseOrExpr :: PythonParser (Located PythonExpr)
 parseOrExpr = do
@@ -467,6 +480,18 @@ parseLiteral = do
     TokenKeyword KwFalse -> return $ PyLiteral $ PyBool False
     TokenKeyword KwNone -> return $ PyLiteral PyNone
     _ -> fail "Expected literal"
+
+-- | Parse f-string embedded expressions
+parseEmbeddedExpr :: Text -> PythonParser (Located PythonExpr)
+parseEmbeddedExpr exprText = do
+  -- Handle empty expressions
+  if T.null exprText
+    then return $ located' $ PyLiteral $ PyString ""
+    else do
+      -- For now, we'll create a variable reference for all expressions
+      -- A full implementation would need to actually parse the expression text
+      -- For now, we'll just treat the expression text as a variable name
+      return $ located' $ PyVar $ Identifier exprText
 
 -- The parseEmbeddedExpr function is already defined above, so we don't need to redefine it here
 
@@ -900,15 +925,3 @@ convertPos pos = Common.SourcePos
   { posLine = unPos (sourceLine pos)
   , posColumn = unPos (sourceColumn pos)
   }
-
--- | Parse f-string embedded expressions
-parseEmbeddedExpr :: Text -> PythonParser (Located PythonExpr)
-parseEmbeddedExpr exprText = do
-  -- Handle empty expressions
-  if T.null exprText
-    then return $ located' $ PyLiteral $ PyString ""
-    else do
-      -- For now, we'll create a variable reference for all expressions
-      -- A full implementation would need to actually parse the expression text
-      -- For now, we'll just treat the expression text as a variable name
-      return $ located' $ PyVar $ Identifier exprText

@@ -591,21 +591,24 @@ inferStatement (Right goStmt) = inferGoStatement goStmt
 -- | Infer types for Python function definitions
 inferPythonFuncDef :: PythonFuncDef -> TypeInferenceM ()
 inferPythonFuncDef funcDef = do
-  -- Create new scope for function
+  -- Infer parameter types
+  paramTypes <- mapM (inferPythonParameter . locatedValue) (pyFuncParams funcDef)
+  
+  -- Create function type with parameter types and a fresh return type
+  returnType <- freshTypeVar
+  let funcType = TFunction paramTypes returnType
+  
+  -- Bind the function name to its type in the current scope
+  -- This allows recursive calls to find the function
+  bindVarType (pyFuncName funcDef) funcType
+  
+  -- Create new scope for function body
   withNewScope $ do
-    -- Bind parameter types
-    paramTypes <- mapM (inferPythonParameter . locatedValue) (pyFuncParams funcDef)
-    
-    -- Infer return type from function body
+    -- Infer types from function body
     mapM_ (inferPythonStatement . locatedValue) (pyFuncBody funcDef)
     
-    -- Create function type
-    returnType <- case pyFuncReturns funcDef of
-      Just retType -> inferPythonTypeExpr (locatedValue retType)
-      Nothing -> freshTypeVar  -- Infer from return statements
-    
-    let funcType = TFunction paramTypes returnType
-    bindVarType (pyFuncName funcDef) funcType
+    -- Note: In a more complete implementation, we would update the return type 
+    -- based on the actual return statements in the function body
 
 -- | Infer types for Python class definitions
 inferPythonClassDef :: PythonClassDef -> TypeInferenceM ()
@@ -742,8 +745,16 @@ inferPythonExpr expr = case expr of
     operandType <- inferPythonExpr (locatedValue operand)
     inferUnaryOp op operandType
   PyCall func args -> do
-    funcType <- inferPythonExpr (locatedValue func)
-    argTypes <- mapM (const $ return TAny) args  -- Simplified: skip argument inference
+    -- Infer argument types first
+    argTypes <- mapM (inferPythonArgument . locatedValue) args
+    
+    funcType <- case locatedValue func of
+      PyVar var -> do
+        -- First try to look up the function in the current environment
+        envLookup <- lookupVarType var `catchError` (\_ -> freshTypeVar)
+        return envLookup
+      _ -> inferPythonExpr (locatedValue func)
+    
     resultType <- freshTypeVar
     let expectedFuncType = TFunction argTypes resultType
     addConstraint funcType expectedFuncType
@@ -760,15 +771,26 @@ inferPythonExpr expr = case expr of
     return elemType
   _ -> return TAny  -- Simplified: return Any for other expressions
 
+-- | Infer type from Python argument
+inferPythonArgument :: PythonArgument -> TypeInferenceM Type
+inferPythonArgument arg = case arg of
+  ArgPositional expr -> inferPythonExpr (locatedValue expr)
+  ArgKeyword _ expr -> inferPythonExpr (locatedValue expr)
+  ArgStarred expr -> inferPythonExpr (locatedValue expr)
+  ArgKwStarred expr -> inferPythonExpr (locatedValue expr)
+
 -- | Infer type from Python literal
 inferPythonLiteral :: PythonLiteral -> TypeInferenceM Type
 inferPythonLiteral lit = case lit of
   PyInt _ -> return $ TInt 32
   PyFloat _ -> return $ TFloat 64
-  PyBool _ -> return TBool
+  PyComplex _ _ -> return $ TComplex (TFloat 64)
   PyString _ -> return TString
+  PyFString _ _ -> return TString
   PyBytes _ -> return TBytes
+  PyBool _ -> return TBool
   PyNone -> return $ TOptional TAny
+  PyEllipsis -> return TAny
 
 -- | Infer type from Python pattern and bind variables
 inferPythonPattern :: PythonPattern -> Type -> TypeInferenceM ()
