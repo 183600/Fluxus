@@ -31,17 +31,14 @@ module Fluxus.Parser.Python.Parser
   , parsePattern
   ) where
 
-import Control.Monad (void, when)
-import Control.Applicative ((<|>), optional, many, some)
+import Control.Monad (void)
+import Control.Applicative (many)
 import Data.Functor (($>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
-import Data.Char (isAlphaNum, isAlpha, isDigit)
-import Text.Megaparsec hiding (many, some)
-import qualified Text.Megaparsec as MP
-import Text.Megaparsec.Char
-import qualified Data.List.NonEmpty as NE
+import Text.Megaparsec hiding (many)
+
 
 import Fluxus.AST.Common as Common
 import Fluxus.AST.Python
@@ -136,46 +133,6 @@ parseAssignment = try $ do
   void $ operator' Lexer.OpAssign
   value <- parseExpression
   return $ PyAssign targets value
-
--- | Parse augmented assignment
-parseAugAssignment = do
-  -- Use lookAhead to check if this looks like an augmented assignment
-  lookAhead checkAugAssignment
-  -- Now actually parse the augmented assignment
-  target <- parsePattern
-  op <- parseAugOp
-  value <- parseExpression
-  return $ PyAugAssign target op value
-  where
-    -- Check if this looks like an augmented assignment without consuming tokens
-    checkAugAssignment = do
-      -- Check for identifier pattern
-      void $ satisfy $ \case
-        Located _ (TokenIdent _) -> True
-        _ -> False
-      -- Check for augmented assignment operator
-      void $ satisfy isAugOp
-    
-    isAugOp (Located _ (TokenOperator Lexer.OpPlusAssign)) = True
-    isAugOp (Located _ (TokenOperator Lexer.OpMinusAssign)) = True
-    isAugOp (Located _ (TokenOperator Lexer.OpMultAssign)) = True
-    isAugOp (Located _ (TokenOperator Lexer.OpDivAssign)) = True
-    isAugOp (Located _ (TokenOperator Lexer.OpModAssign)) = True
-    isAugOp (Located _ (TokenOperator Lexer.OpPowerAssign)) = True
-    isAugOp (Located _ (TokenOperator Lexer.OpFloorDivAssign)) = True
-    isAugOp _ = False
-    
-    parseAugOp = do
-      Located _ token <- anySingle
-      case token of
-        TokenOperator Lexer.OpPlusAssign -> return OpAdd
-        TokenOperator Lexer.OpMinusAssign -> return OpSub
-        TokenOperator Lexer.OpMultAssign -> return OpMul
-        TokenOperator Lexer.OpDivAssign -> return Common.OpDiv
-        TokenOperator Lexer.OpModAssign -> return Common.OpMod
-        TokenOperator Lexer.OpPowerAssign -> return OpPow
-        TokenOperator Lexer.OpFloorDivAssign -> return Common.OpFloorDiv
-        _ -> fail "Expected augmented assignment operator"
 
 -- | Parse if statements
 parseIfStmt :: PythonParser PythonStmt
@@ -533,71 +490,6 @@ parseTupleLiteral = do
               return (next : rest)
         _ -> return []
 
-parseDictOrSetLiteral :: PythonParser PythonExpr
-parseDictOrSetLiteral = do
-  void $ delimiterP DelimLeftBrace
-  -- Look ahead to see if this is a dict or set
-  input <- getInput
-  case input of
-    (Located _ (TokenDelimiter DelimRightBrace) : _) -> do
-      -- Empty set
-      void $ delimiterP DelimRightBrace
-      return $ PySet []
-    (Located _ TokenNewline : _) -> do
-      -- Handle newline after opening brace
-      void $ skipNewlinesAndComments
-      parseDictOrSetContent
-    _ -> do
-      parseDictOrSetContent
-  where
-    parseDictOrSetContent = do
-      -- Try to parse as dict first by looking for colon
-      firstExpr <- parseExpression
-      input <- getInput
-      case input of
-        (Located _ (TokenDelimiter DelimColon) : _) -> do
-          -- This is a dict
-          void $ delimiterP DelimColon
-          value <- parseExpression
-          pairs <- parseDictPairsRest [(firstExpr, value)]
-          void $ delimiterP DelimRightBrace
-          return $ PyDict pairs
-        _ -> do
-          -- This is a set
-          elements <- parseSetElementsRest [firstExpr]
-          void $ delimiterP DelimRightBrace
-          return $ PySet elements
-    
-    parseDictPairsRest acc = do
-      input <- getInput
-      case input of
-        (Located _ (TokenDelimiter DelimComma) : _) -> do
-          void $ delimiterP DelimComma
-          skipNewlinesAndComments
-          input' <- getInput
-          case input' of
-            (Located _ (TokenDelimiter DelimRightBrace) : _) -> return acc
-            _ -> do
-              key <- parseExpression
-              void $ delimiterP DelimColon
-              value <- parseExpression
-              parseDictPairsRest ((key, value) : acc)
-        _ -> return acc
-    
-    parseSetElementsRest acc = do
-      input <- getInput
-      case input of
-        (Located _ (TokenDelimiter DelimComma) : _) -> do
-          void $ delimiterP DelimComma
-          skipNewlinesAndComments
-          input' <- getInput
-          case input' of
-            (Located _ (TokenDelimiter DelimRightBrace) : _) -> return acc
-            _ -> do
-              expr <- parseExpression
-              parseSetElementsRest (expr : acc)
-        _ -> return acc
-
 parseDictLiteral :: PythonParser PythonExpr
 parseDictLiteral = do
   void $ delimiterP DelimLeftBrace
@@ -749,22 +641,6 @@ parsePattern = located $ choice
   , try (PatWildcard <$ parseUnderscore)
   ]
 
--- | Parse list patterns
-parseListPattern :: PythonParser PythonPattern
-parseListPattern = do
-  void $ delimiterP DelimLeftBracket
-  patterns <- parsePattern `sepBy` delimiterP DelimComma
-  void $ delimiterP DelimRightBracket
-  return $ PatList patterns
-
--- | Parse tuple patterns  
-parseTuplePattern :: PythonParser PythonPattern
-parseTuplePattern = do
-  void $ delimiterP DelimLeftParen
-  patterns <- parsePattern `sepBy` delimiterP DelimComma
-  void $ delimiterP DelimRightParen
-  return $ PatTuple patterns
-
 -- | Parse type expressions
 parseTypeExpr :: PythonParser (Located PythonTypeExpr)
 parseTypeExpr = located $ TypeName <$> parseQualifiedName
@@ -804,19 +680,6 @@ parseArguments = do
       void $ operator' Lexer.OpAssign
       value <- parseExpression
       return $ ArgKeyword name value
-
--- | Parse comprehension clauses
-parseComprehension :: PythonParser PythonComprehension
-parseComprehension = do
-  isAsync <- option False (keywordP KwAsync $> True)
-  void $ keywordP KwFor
-  target <- parsePattern
-  void $ keywordP KwIn
-  iter <- parseExpression
-  filters <- many $ do
-    void $ keywordP KwIf
-    parseExpression
-  return $ PythonComprehension target iter filters isAsync
 
 -- | Parse a block of statements
 parseBlock :: PythonParser [Located PythonStmt]
@@ -884,16 +747,6 @@ parseDedent = void $ satisfy $ \case
   Located _ (TokenDedent _) -> True
   _ -> False
 
-skipNewlines :: PythonParser ()
-skipNewlines = void $ many $ satisfy $ \case
-  Located _ TokenNewline -> True
-  _ -> False
-
-skipComments :: PythonParser ()
-skipComments = void $ many $ satisfy $ \case
-  Located _ (TokenComment _) -> True
-  _ -> False
-
 skipNewlinesAndComments :: PythonParser ()
 skipNewlinesAndComments = void $ many $ satisfy $ \case
   Located _ TokenNewline -> True
@@ -917,9 +770,3 @@ extractDocstring [] = (Nothing, [])
 extractDocstring (stmt:rest) = case locatedValue stmt of
   PyExprStmt (Located _ (PyLiteral (PyString text))) -> (Just text, rest)
   _ -> (Nothing, stmt:rest)
-
-convertPos :: MP.SourcePos -> Common.SourcePos
-convertPos pos = Common.SourcePos
-  { posLine = unPos (sourceLine pos)
-  , posColumn = unPos (sourceColumn pos)
-  }

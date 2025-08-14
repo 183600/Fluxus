@@ -35,7 +35,6 @@ import Data.List (intercalate)
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Except
-import Control.Monad.IO.Class
 import Control.Monad (when, unless)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
@@ -65,7 +64,7 @@ import Fluxus.CodeGen.CPP
   , CppLiteral(..), CppParam(..), CppCase(..), CppGenConfig(..)
   , generateCpp, generateCppMain
   )
-import Fluxus.Utils.Pretty
+import Fluxus.Utils.Pretty ()
 
 -- | Source language selection
 data SourceLanguage = Python | Go
@@ -744,37 +743,6 @@ renderCppUnit (CppUnit includes _ decls) =
         [ "" ] ++
         map renderCppDecl decls
   in renderedCode
-  where
-    -- Temporarily disabled to see if basic changes take effect
-    fixVectorPrinting :: Text -> Text
-    fixVectorPrinting code = code
-    
-    fixVectorLine :: [Text] -> Text -> Text
-    fixVectorLine allLines line =
-      if T.isInfixOf "std::cout <<" line && T.isInfixOf "<< std::endl" line
-      then 
-        -- Check if this line has a variable that might be a vector
-        let parts = T.splitOn " std::cout << " line
-        in case parts of
-          (_:varPart:_) -> 
-            let varName = T.takeWhile (/= ' ') varPart
-            -- Simple heuristic: if variable name suggests it's a vector
-            in if T.isInfixOf "list" varName || T.isInfixOf "vector" varName || T.isInfixOf "arr" varName
-               then fixVectorPrintLine line varName
-               else line
-          _ -> line
-      else line
-    
-    fixVectorPrintLine :: Text -> Text -> Text
-    fixVectorPrintLine line varName =
-      -- Replace "std::cout << my_list << std::endl;" 
-      -- with iteration code that includes necessary headers
-      "#include <algorithm>\n" <>
-      "#include <iterator>\n" <>
-      "std::for_each(" <> varName <> ".begin(), " <> varName <> ".end(), [](const auto& elem) {\n" <>
-      "    std::cout << elem << \" \";\n" <>
-      "});\n" <>
-      "std::cout << std::endl;"
 
 -- | Render a C++ declaration
 renderCppDecl :: CppDecl -> Text
@@ -835,12 +803,12 @@ renderCppDecl = \case
     "};\n"
   _ -> "// TODO: Render other declaration types\n"
 
--- | Render C++ struct member
+-- | Render Cpp struct member
 renderCppMember :: CppDecl -> Text
 renderCppMember = \case
   CppVariable name varType mInit ->
     let initStr = case mInit of
-          Just init -> " = " <> renderCppExpr init
+          Just initExpr -> " = " <> renderCppExpr initExpr
           Nothing -> ""
     in renderCppType varType <> " " <> name <> initStr <> ";"
   CppConstructor name params body ->
@@ -922,7 +890,7 @@ renderCppStmt = \case
     "while (" <> renderCppExpr cond <> ") {\n" <>
     T.unlines (map ("    " <>) (map renderCppStmt body)) <>
     "}"
-  CppFor init cond incr body ->
+  CppFor forInit forCond forIncr forBody ->
     "for (" <> 
     (maybe "" (\case
         CppDecl (CppVariable name varType mexpr) -> 
@@ -935,10 +903,10 @@ renderCppStmt = \case
         stmt -> 
           -- For statements, strip semicolon
           T.strip $ T.dropWhileEnd (\c -> c == ';' || c == '\n') $ renderCppStmt stmt
-     ) init) <> "; " <>
-    (maybe "" renderCppExpr cond) <> "; " <>
-    (maybe "" renderCppExpr incr) <> ") {\n" <>
-    T.unlines (map ("    " <>) (map renderCppStmt body)) <>
+     ) forInit) <> "; " <>
+    (maybe "" renderCppExpr forCond) <> "; " <>
+    (maybe "" renderCppExpr forIncr) <> ") {\n" <>
+    T.unlines (map ("    " <>) (map renderCppStmt forBody)) <>
     "}"
   CppForRange varName rangeExpr body ->
     "for (int " <> varName <> " = 0; " <> varName <> " < " <> renderCppExpr rangeExpr <> "; ++" <> varName <> ") {\n" <>
@@ -988,7 +956,7 @@ renderCppExpr = \case
   CppDelete expr -> "delete " <> renderCppExpr expr
   CppIndex arr index -> renderCppExpr arr <> "[" <> renderCppExpr index <> "]"
   CppSizeOf cppType -> "sizeof(" <> renderCppType cppType <> ")"
-  CppLambda params body ->
+  CppLambda _ body ->
     -- For lambdas in the context of this usage, we need to capture 'this'
     -- We can check if the body uses 'this' by looking for CppThis in the statements
     let usesThis = hasThisInStmts body

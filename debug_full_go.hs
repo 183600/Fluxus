@@ -37,4 +37,4 @@ main = do
         Right ast -> do
           putStrLn $ "Parse success! AST: " ++ show ast
   where
-    printToken (Located span token) = putStrLn $ "  " ++ show token ++ " at " ++ show span
+    printToken (Located tokenSpan tokenItem) = putStrLn $ "  " ++ show tokenItem ++ " at " ++ show tokenSpan

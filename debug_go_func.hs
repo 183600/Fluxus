@@ -47,9 +47,9 @@ main = do
     findFuncPosition (Located _ (GoTokenKeyword GoKwFunc) : _) = Just 0
     findFuncPosition (_:xs) = fmap (+1) (findFuncPosition xs)
     
-    testToken (Located span token) = case token of
+    testToken (Located tokenSpan tokenItem) = case tokenItem of
         GoTokenIdent text -> putStrLn $ "  Identifier: " ++ T.unpack text
         GoTokenKeyword kw -> putStrLn $ "  Keyword: " ++ show kw
         GoTokenDelimiter delim -> putStrLn $ "  Delimiter: " ++ show delim
         GoTokenOperator op -> putStrLn $ "  Operator: " ++ show op
-        _ -> putStrLn $ "  Other token: " ++ show token
+        _ -> putStrLn $ "  Other token: " ++ show tokenItem

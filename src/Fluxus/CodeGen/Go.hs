@@ -14,8 +14,7 @@ module Fluxus.CodeGen.Go
   , defaultGoConfig
   ) where
 
-import Control.Monad.State
-import Control.Monad.Writer
+
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
@@ -51,35 +50,18 @@ generateGoFromPython (PythonAST module_) config =
   let (header, body) = generateModule module_ config
   in header <> "\n" <> body
 
--- | Generate module header
-generateModuleHeader :: GoGenConfig -> Text
-generateModuleHeader config =
-  T.unlines
-    [ "package " <> ggcPackageName config
-    , ""
-    , "import ("
-    , "\t\"fmt\""
-    , ")"
-    , ""
-    ]
-
 -- | Generate complete module
 generateModule :: PythonModule -> GoGenConfig -> (Text, Text)
 generateModule module_ config =
-  let imports = generateImports module_ config
-      decls = generateDeclarations module_ config
-  in (imports, decls)
-
--- | Generate imports
-generateImports :: PythonModule -> GoGenConfig -> Text
-generateImports module_ config =
   let header = "package " <> ggcPackageName config
       imports = case ggcEnableFmt config of
                   True -> ["\t\"fmt\""]
                   False -> []
-  in if null imports
-     then header
-     else T.unlines (header : "" : "import (" : imports ++ [")"])
+      importSection = if null imports
+                      then header
+                      else T.unlines (header : "" : "import (" : imports ++ [")"])
+      decls = generateDeclarations module_ config
+  in (importSection, decls)
 
 -- | Generate all declarations
 generateDeclarations :: PythonModule -> GoGenConfig -> Text
@@ -114,18 +96,18 @@ generateStatement config stmt = case stmt of
       
   PyIf (Located _ cond) thenBody elseBody ->
     let goCond = generateExpression config cond
-        goThen = concatMap (\(Located _ stmt) -> generateStatement config stmt) thenBody
+        goThen = concatMap (\(Located _ s) -> generateStatement config s) thenBody
         goElse = case elseBody of
                   [] -> []
-                  body -> concatMap (\(Located _ stmt) -> generateStatement config stmt) body
+                  body -> concatMap (\(Located _ s) -> generateStatement config s) body
     in ["if " <> goCond <> " {"] ++
        map ("\t" <>) goThen ++
        ["}"] ++
        (if null goElse then [] else ["else {"] ++ map ("\t" <>) goElse ++ ["}"])
     
-  PyFor (Located _ (PatVar (Identifier varName))) (Located _ iterExpr) body elseBody ->
+  PyFor (Located _ (PatVar (Identifier varName))) (Located _ iterExpr) body _ ->
     let goIter = generateExpression config iterExpr
-        goBody = concatMap (\(Located _ stmt) -> generateStatement config stmt) body
+        goBody = concatMap (\(Located _ s) -> generateStatement config s) body
         rangeHandled = handleRangeLoop varName goIter goBody
     in rangeHandled
     
@@ -142,11 +124,11 @@ generateStatement config stmt = case stmt of
 
 -- | Generate function definition
 generateFunctionDef :: GoGenConfig -> PythonFuncDef -> [Text]
-generateFunctionDef config funcDef =
+generateFunctionDef _ funcDef =
   let Identifier funcName = pyFuncName funcDef
-      params = map (generateParameter config) (pyFuncParams funcDef)
+      params = map (generateParameter undefined) (pyFuncParams funcDef)
       paramStr = if null params then "" else T.intercalate ", " params
-      body = concatMap (\(Located _ stmt) -> generateStatement config stmt) (pyFuncBody funcDef)
+      body = concatMap (\(Located _ s) -> generateStatement undefined s) (pyFuncBody funcDef)
       returnType = if funcName == "main" then "int" else "int"
   in ["func " <> funcName <> "(" <> paramStr <> ") " <> returnType <> " {"] ++
      map ("\t" <>) body ++
@@ -159,7 +141,7 @@ generateFunctionDef config funcDef =
 
 -- | Generate parameter
 generateParameter :: GoGenConfig -> Located PythonParameter -> Text
-generateParameter config (Located _ param) = case param of
+generateParameter _ (Located _ param) = case param of
   ParamNormal (Identifier name) typeAnn _ ->
     let paramType = case typeAnn of
                       Just _ -> "int"
@@ -220,7 +202,7 @@ generateExpression config expr = case expr of
     in exprStr <> "[" <> indexStr <> "]"
     
   PyList elements ->
-    let elemExprs = map (\(Located _ elem) -> generateExpression config elem) elements
+    let elemExprs = map (\(Located _ e) -> generateExpression config e) elements
     in "[]int{" <> T.intercalate ", " elemExprs <> "}"
     
   _ -> "0"

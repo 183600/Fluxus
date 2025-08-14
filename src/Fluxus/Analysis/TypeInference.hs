@@ -759,17 +759,35 @@ inferPythonExpr expr = case expr of
     let expectedFuncType = TFunction argTypes resultType
     addConstraint funcType expectedFuncType
     return resultType
-  PyAttribute obj attr -> do
+  PyAttribute obj _attr -> do
     _ <- inferPythonExpr (locatedValue obj)
     -- For now, return Any for attribute access
     return TAny
   PySubscript obj slice -> do
     objType <- inferPythonExpr (locatedValue obj)
+    _ <- inferPythonSlice (locatedValue slice)
     -- Simplified: assume list indexing
     elemType <- freshTypeVar
     addConstraint objType (TList elemType)
     return elemType
   _ -> return TAny  -- Simplified: return Any for other expressions
+
+-- | Infer type from Python slice
+inferPythonSlice :: Python.PythonSlice -> TypeInferenceM Type
+inferPythonSlice slice = case slice of
+  Python.SliceIndex expr -> inferPythonExpr (locatedValue expr)
+  Python.SliceSlice maybeLower maybeUpper maybeStep -> do
+    -- Infer types for each component if present
+    _ <- mapM (inferPythonExpr . locatedValue) maybeLower
+    _ <- mapM (inferPythonExpr . locatedValue) maybeUpper
+    _ <- mapM (inferPythonExpr . locatedValue) maybeStep
+    -- For now, return Int for slice operations
+    return $ TInt 32
+  Python.SliceExtSlice slices -> do
+    -- Infer types for each slice in the extended slice
+    _ <- mapM (inferPythonSlice . locatedValue) slices
+    -- For now, return Int for extended slice operations
+    return $ TInt 32
 
 -- | Infer type from Python argument
 inferPythonArgument :: PythonArgument -> TypeInferenceM Type
@@ -809,7 +827,7 @@ inferPythonPattern pattern expectedType = case pattern of
 -- | Infer type from Python parameter
 inferPythonParameter :: PythonParameter -> TypeInferenceM Type
 inferPythonParameter param = case param of
-  ParamNormal name maybeType maybeDefault -> do
+  ParamNormal name maybeType _maybeDefault -> do
     paramType <- case maybeType of
       Just typeExpr -> inferPythonTypeExpr (locatedValue typeExpr)
       Nothing -> freshTypeVar
@@ -890,7 +908,7 @@ inferGoExpr expr = case expr of
     let expectedFuncType = TFunction argTypes resultType
     addConstraint funcType expectedFuncType
     return resultType
-  GoSelector obj field -> do
+  GoSelector obj _field -> do
     _ <- inferGoExpr (locatedValue obj)
     -- For now, return Any for field access
     return TAny
@@ -1240,7 +1258,7 @@ inferGoConstDecl (name, maybeType, expr) = do
 
 -- | Infer Go function (simplified)
 inferGoFunction :: GoFunction -> TypeInferenceM ()
-inferGoFunction func = do
+inferGoFunction _func = do
   -- Simplified implementation - would need to access GoFunction fields properly
   return ()
 

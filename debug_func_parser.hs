@@ -23,12 +23,12 @@ main = do
     
     case runGoLexer "simple_test.go" content of
         Left err -> putStrLn $ "Lexer error: " ++ show err
-        Right tokens -> do
-            putStrLn $ "Total tokens: " ++ show (length tokens)
+        Right lexedTokens -> do
+            putStrLn $ "Total tokens: " ++ show (length lexedTokens)
             
             -- Try to parse the entire file normally
             putStrLn "=== Testing Full File Parse ==="
-            case runGoParser "simple_test.go" tokens of
+            case runGoParser "simple_test.go" lexedTokens of
                 Left err -> putStrLn $ "Full parse error: " ++ show err
                 Right ast -> do
                     putStrLn $ "Full parse success!"
@@ -41,19 +41,20 @@ main = do
                             putStrLn $ "Imports: " ++ show (length (goFileImports file))
                             
                             -- Show what tokens are at each position
-                            putStrLn "\n=== Token Positions ==="
+                            putStrLn ""
+                            putStrLn "=== Token Positions ==="
                             putStrLn "All tokens:"
-                            mapM_ (\(i, token) -> putStrLn $ show i ++ ": " ++ show token) (zip [0..] tokens)
+                            mapM_ (\(i, tokenItem) -> putStrLn $ show i ++ ": " ++ show tokenItem) (zip [0..] lexedTokens)
                             
                             -- Try to find where the func declaration is
-                            let funcIndex = findIndex (\(Located _ t) -> t == GoTokenKeyword GoKwFunc) tokens
+                            let funcIndex = findIndex (\(Located _ t) -> t == GoTokenKeyword GoKwFunc) lexedTokens
                             case funcIndex of
                                 Nothing -> putStrLn "No 'func' keyword found in tokens!"
                                 Just idx -> do
                                     putStrLn $ "'func' keyword found at position " ++ show idx
                                     
                                     -- Try to parse just the function declaration from that position
-                                    let funcTokens = drop idx tokens
+                                    let funcTokens = drop idx lexedTokens
                                     putStrLn $ "Tokens from func position: " ++ show (length funcTokens)
                                     case runParser parseFuncDeclDirect "test" funcTokens of
                                         Left err -> putStrLn $ "Direct func parse error: " ++ show err
