@@ -109,19 +109,19 @@ data GoOperator
   
   -- Channels
   | GoOpArrow                                           -- <-
-  
+
   -- Increment/Decrement
   | GoOpIncrement | GoOpDecrement                       -- ++ and --
-  
+
   -- Address/Dereference
   | GoOpAddress | GoOpDeref                             -- & and *
-  
+
   -- Ellipsis
   | GoOpEllipsis                                        -- ...
-  
+
   -- Approximation constraint (Go 1.18+)
   | GoOpTilde                                           -- ~
-  
+
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
   deriving anyclass (Hashable, NFData)
 
@@ -324,7 +324,7 @@ goNumberLiteral = choice
             GoTokenInt t -> t
             _ -> ""
       return $ GoTokenImag (numText <> "i")
-    
+
     goFloat = do
       intPart <- MP.some digitChar
       fractPart <- optional $ do
@@ -335,29 +335,29 @@ goNumberLiteral = choice
         sign <- optional (char '+' <|> char '-')
         exp <- MP.some digitChar
         return $ 'e' : maybe "" (:[]) sign ++ exp
-      
+
       -- At least one of fractPart or expPart must be present for a float
       case (fractPart, expPart) of
         (Nothing, Nothing) -> fail "Not a float - missing fractional or exponent part"
         _ -> do
           let result = intPart ++ maybe "" ('.':) fractPart ++ maybe "" id expPart
           return $ GoTokenFloat (T.pack result)
-    
+
     goHexInt = do
       _ <- string "0x" <|> string "0X"
       digits <- MP.some hexDigitChar
       return $ GoTokenInt ("0x" <> T.pack digits)
-    
+
     goOctInt = do
       _ <- string "0o" <|> string "0O" <|> string "0"
       digits <- MP.some octDigitChar
       return $ GoTokenInt ("0o" <> T.pack digits)
-    
+
     goBinInt = do
       _ <- string "0b" <|> string "0B"
       digits <- MP.some binDigitChar
       return $ GoTokenInt ("0b" <> T.pack digits)
-    
+
     goDecInt = do
       digits <- MP.some digitChar
       return $ GoTokenInt (T.pack digits)
@@ -377,7 +377,7 @@ goComment = choice
       _ <- string "//"
       content <- takeWhileP (Just "comment") (/= '\n')
       return $ GoTokenComment content
-    
+
     blockComment = do
       _ <- string "/*"
       content <- manyTill anySingle (string "*/")

@@ -43,7 +43,6 @@ module Fluxus.Parser.Go.Parser
 import Control.Monad (void, when)
 import Control.Applicative ((<|>), some, optional, many, (<$))
 import Data.Functor (($>))
-import qualified Control.Applicative as A
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
@@ -51,8 +50,6 @@ import Data.Maybe (isNothing)
 import Text.Megaparsec hiding (many)
 import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
-import Text.Megaparsec (atEnd)
-import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 
 import Fluxus.AST.Common as Common

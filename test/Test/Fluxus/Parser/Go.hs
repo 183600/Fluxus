@@ -44,9 +44,11 @@ lexerSpec = describe "Go Lexer" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right tokens -> do
         length tokens `shouldBe` 1
-        case locatedValue (head tokens) of
-          GoTokenString content -> content `shouldBe` "hello world"
-          _ -> expectationFailure "Expected string token"
+        case tokens of
+          (token:_) -> case locatedValue token of
+            GoTokenString content -> content `shouldBe` "hello world"
+            _ -> expectationFailure "Expected string token"
+          [] -> expectationFailure "No tokens produced"
   
   it "tokenizes raw string literals" $ do
     let input = "`hello\nworld`"
@@ -54,9 +56,11 @@ lexerSpec = describe "Go Lexer" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right tokens -> do
         length tokens `shouldBe` 1
-        case locatedValue (head tokens) of
-          GoTokenRawString content -> content `shouldBe` "hello\nworld"
-          _ -> expectationFailure "Expected raw string token"
+        case tokens of
+          (token:_) -> case locatedValue token of
+            GoTokenRawString content -> content `shouldBe` "hello\nworld"
+            _ -> expectationFailure "Expected raw string token"
+          [] -> expectationFailure "No tokens produced"
   
   it "tokenizes number literals" $ do
     let input = "42 3.14 1e10"
@@ -100,13 +104,18 @@ parserSpec = describe "Go Parser" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (head files)
-        length decls `shouldBe` 1
-        case locatedValue (head decls) of
-          GoFuncDecl func -> case goFuncName func of
-            Just (Identifier name) -> name `shouldBe` "test_func"
-            Nothing -> expectationFailure "Function should have a name"
-          _ -> expectationFailure "Expected function declaration"
+        case files of
+          (file:_) -> do
+            let decls = goFileDecls file
+            length decls `shouldBe` 1
+            case decls of
+              (decl:_) -> case locatedValue decl of
+                GoFuncDecl func -> case goFuncName func of
+                  Just (Identifier name) -> name `shouldBe` "test_func"
+                  Nothing -> expectationFailure "Function should have a name"
+                _ -> expectationFailure "Expected function declaration"
+              [] -> expectationFailure "No declarations in file"
+          [] -> expectationFailure "No files in package"
   
   it "parses variable declarations" $ do
     let tokens = mockGoTokens 
@@ -122,11 +131,16 @@ parserSpec = describe "Go Parser" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (head files)
-        length decls `shouldBe` 1
-        case locatedValue (head decls) of
-          GoVarDecl vars -> length vars `shouldBe` 1
-          _ -> expectationFailure "Expected variable declaration"
+        case files of
+          (file:_) -> do
+            let decls = goFileDecls file
+            length decls `shouldBe` 1
+            case decls of
+              (decl:_) -> case locatedValue decl of
+                GoVarDecl vars -> length vars `shouldBe` 1
+                _ -> expectationFailure "Expected variable declaration"
+              [] -> expectationFailure "No declarations in file"
+          [] -> expectationFailure "No files in package"
   
   it "parses type declarations" $ do
     let tokens = mockGoTokens 
@@ -142,11 +156,16 @@ parserSpec = describe "Go Parser" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (head files)
-        length decls `shouldBe` 1
-        case locatedValue (head decls) of
-          GoTypeDecl (Identifier name) _ -> name `shouldBe` "MyInt"
-          _ -> expectationFailure "Expected type declaration"
+        case files of
+          (file:_) -> do
+            let decls = goFileDecls file
+            length decls `shouldBe` 1
+            case decls of
+              (decl:_) -> case locatedValue decl of
+                GoTypeDecl (Identifier name) _ -> name `shouldBe` "MyInt"
+                _ -> expectationFailure "Expected type declaration"
+              [] -> expectationFailure "No declarations in file"
+          [] -> expectationFailure "No files in package"
 
 -- Helper functions
 mockGoTokens :: [GoToken] -> [Located GoToken]

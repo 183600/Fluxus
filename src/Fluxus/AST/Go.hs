@@ -41,7 +41,7 @@ module Fluxus.AST.Go
 
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.HashMap.Strict (HashMap)
+import Data.HashMap.Strict ()
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)

@@ -44,9 +44,11 @@ lexerSpec = describe "Python Lexer" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right tokens -> do
         length tokens `shouldBe` 1
-        case locatedValue (head tokens) of
-          TokenString content -> content `shouldBe` "hello world"
-          _ -> expectationFailure "Expected string token"
+        case tokens of
+          (token:_) -> case locatedValue token of
+            TokenString content -> content `shouldBe` "hello world"
+            _ -> expectationFailure "Expected string token"
+          [] -> expectationFailure "No tokens produced"
   
   it "tokenizes number literals" $ do
     let input = "42 3.14 1e10"
@@ -85,10 +87,13 @@ parserSpec = describe "Python Parser" $ do
       Left _ -> expectationFailure "Parser failed"
       Right ast -> do
         let PythonAST module_ = ast
-        length (pyModuleBody module_) `shouldBe` 1
-        case locatedValue (head $ pyModuleBody module_) of
-          PyFuncDef funcDef -> pyFuncName funcDef `shouldBe` Identifier "test_func"
-          _ -> expectationFailure "Expected function definition"
+        let body = pyModuleBody module_
+        length body `shouldBe` 1
+        case body of
+          (item:_) -> case locatedValue item of
+            PyFuncDef funcDef -> pyFuncName funcDef `shouldBe` Identifier "test_func"
+            _ -> expectationFailure "Expected function definition"
+          [] -> expectationFailure "Module body is empty"
   
   it "parses class definitions" $ do
     let tokens = mockTokens 
@@ -105,10 +110,13 @@ parserSpec = describe "Python Parser" $ do
       Left _ -> expectationFailure "Parser failed"
       Right ast -> do
         let PythonAST module_ = ast
-        length (pyModuleBody module_) `shouldBe` 1
-        case locatedValue (head $ pyModuleBody module_) of
-          PyClassDef classDef -> pyClassName classDef `shouldBe` Identifier "TestClass"
-          _ -> expectationFailure "Expected class definition"
+        let body = pyModuleBody module_
+        length body `shouldBe` 1
+        case body of
+          (item:_) -> case locatedValue item of
+            PyClassDef classDef -> pyClassName classDef `shouldBe` Identifier "TestClass"
+            _ -> expectationFailure "Expected class definition"
+          [] -> expectationFailure "Module body is empty"
   
   it "parses if statements" $ do
     let tokens = mockTokens 
@@ -125,10 +133,13 @@ parserSpec = describe "Python Parser" $ do
       Left _ -> expectationFailure "Parser failed"
       Right ast -> do
         let PythonAST module_ = ast
-        length (pyModuleBody module_) `shouldBe` 1
-        case locatedValue (head $ pyModuleBody module_) of
-          PyIf _ _ _ -> return ()
-          _ -> expectationFailure "Expected if statement"
+        let body = pyModuleBody module_
+        length body `shouldBe` 1
+        case body of
+          (item:_) -> case locatedValue item of
+            PyIf _ _ _ -> return ()
+            _ -> expectationFailure "Expected if statement"
+          [] -> expectationFailure "Module body is empty"
 
 -- Helper functions
 mockTokens :: [PythonToken] -> [Located PythonToken]

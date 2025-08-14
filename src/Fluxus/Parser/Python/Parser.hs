@@ -34,7 +34,6 @@ module Fluxus.Parser.Python.Parser
 import Control.Monad (void, when)
 import Control.Applicative ((<|>), optional, many, some)
 import Data.Functor (($>))
-import qualified Control.Applicative as A
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
@@ -42,7 +41,6 @@ import Data.Char (isAlphaNum, isAlpha, isDigit)
 import Text.Megaparsec hiding (many, some)
 import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
-import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 
 import Fluxus.AST.Common as Common

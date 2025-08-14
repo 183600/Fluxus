@@ -33,7 +33,7 @@ module Fluxus.AST.Python
   ) where
 
 import Data.Text (Text)
-import Data.HashMap.Strict (HashMap)
+import Data.HashMap.Strict ()
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
