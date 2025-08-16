@@ -3,18 +3,13 @@
 #include <string>
 #include <iostream>
 
-auto add(auto a, auto b) {
-    return a + b;
+auto add(auto x, auto y) {
+    return x + y;
 }
 
 // DEBUG: Fallback case for function: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "add")}
-// DEBUG: Function name: CppVar "add"
-// DEBUG: Number of arguments: 1
-// DEBUG: Arguments: [CppCall (CppVar "std::make_tuple") [CppLiteral (CppIntLit 1),CppLiteral (CppIntLit 2)]]
-// DEBUG: Generating print with 1 arguments
 int main() {
     auto result = add(std::make_tuple(1, 2));
-    std::cout << result << std::endl;
     return 0;
 }
 

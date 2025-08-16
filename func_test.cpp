@@ -2,8 +2,11 @@
 #include <string>
 #include <iostream>
 
+auto add(auto x, auto y) {
+    return x + y;
+}
+
 int main() {
-    auto result = 1 + 2;
     return 0;
 }
 

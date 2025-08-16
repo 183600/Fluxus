@@ -674,8 +674,11 @@ generatePythonExpr (Located _ expr) = case expr of
           [arg] -> return $ CppLiteral (CppIntLit 0)  -- Placeholder
           _ -> return $ CppLiteral (CppIntLit 0)  -- Placeholder
       _ -> do
-        addComment $ "DEBUG: Fallback case for function: " <> T.pack (show func)
-        return $ CppCall cppFunc cppArgs
+        -- Check if we have a single argument that is a tuple call and unpack it
+        case cppArgs of
+          [CppCall (CppVar "std::make_tuple") tupleArgs] -> 
+            return $ CppCall cppFunc tupleArgs
+          _ -> return $ CppCall cppFunc cppArgs
   PyList exprs -> do
     addInclude "<vector>"
     cppExprs <- mapM generatePythonExpr exprs

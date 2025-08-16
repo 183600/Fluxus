@@ -1,1 +1,1 @@
-print(42)
+result = 1 + 2

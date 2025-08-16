@@ -11,9 +11,10 @@ auto add(auto a, auto b) {
 // DEBUG: Function name: CppVar "add"
 // DEBUG: Number of arguments: 1
 // DEBUG: Arguments: [CppCall (CppVar "std::make_tuple") [CppLiteral (CppIntLit 1),CppLiteral (CppIntLit 2)]]
+// DEBUG: Unpacking tuple arguments: [CppLiteral (CppIntLit 1),CppLiteral (CppIntLit 2)]
 // DEBUG: Generating print with 1 arguments
 int main() {
-    auto result = add(std::make_tuple(1, 2));
+    auto result = add(1, 2);
     std::cout << result << std::endl;
     return 0;
 }

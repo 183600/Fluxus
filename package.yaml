@@ -1,0 +1,182 @@
+name: fluxus
+version: 0.1.0.0
+synopsis: High-performance hybrid C++ AOT compiler for Python and Go
+description: |
+  Fluxus is an experimental hybrid Ahead-of-Time (AOT) compiler 
+  that translates high-level languages (initially Python and Go) into 
+  highly optimized modern C++ (C++20/23) while maintaining full language 
+  compatibility through runtime interoperability.
+license: Apache-2.0
+license-file: LICENSE
+author: Fluxus Team
+maintainer: fluxus@example.com
+copyright: 2024 Fluxus Team
+category: Compiler
+
+extra-source-files:
+  - CHANGELOG.md
+  - README.md
+
+dependencies:
+  - base >= 4.17 && < 5
+
+ghc-options:
+  - -Wall
+  - -Wcompat
+  - -Widentities
+  - -Wincomplete-record-updates
+  - -Wincomplete-uni-patterns
+  - -Wmissing-export-lists
+  - -Wmissing-home-modules
+  - -Wpartial-fields
+  - -Wredundant-constraints
+  - -O2
+
+library:
+  source-dirs: src
+  exposed-modules:
+    - Fluxus.AST.Common
+    - Fluxus.AST.Python
+    - Fluxus.AST.Go
+    - Fluxus.Parser.Python.Lexer
+    - Fluxus.Parser.Python.Parser
+    - Fluxus.Parser.Go.Lexer
+    - Fluxus.Parser.Go.Parser
+    - Fluxus.Analysis.TypeInference
+    - Fluxus.Analysis.EscapeAnalysis
+    - Fluxus.Analysis.ShapeAnalysis
+    - Fluxus.Analysis.OwnershipInference
+    - Fluxus.Optimization.Monomorphization
+    - Fluxus.Optimization.Devirtualization
+    - Fluxus.CodeGen.CPP
+    - Fluxus.CodeGen.Go
+    - Fluxus.Runtime.Python
+    - Fluxus.Runtime.Go
+    - Fluxus.Compiler.Driver
+    - Fluxus.Compiler.Config
+    - Fluxus.Utils.Pretty
+    - Fluxus.Utils.Graph
+  other-modules:
+    - Fluxus.Internal.Types
+    - Fluxus.Internal.Monad
+  dependencies:
+    - containers >= 0.6.7
+    - text >= 2.0
+    - bytestring >= 0.11
+    - mtl >= 2.3
+    - transformers >= 0.6
+    - parsec >= 3.1.16
+    - megaparsec >= 9.5
+    - parser-combinators >= 1.3
+    - prettyprinter >= 1.7
+    - prettyprinter-ansi-terminal >= 1.1
+    - hashable >= 1.4
+    - unordered-containers >= 0.2.19
+    - vector >= 0.13
+    - array >= 0.5
+    - deepseq >= 1.4
+    - filepath >= 1.4
+    - directory >= 1.3
+    - process >= 1.6
+    - temporary >= 1.3
+    - optparse-applicative >= 0.17
+    - aeson >= 2.1
+    - yaml >= 0.11
+    - scientific >= 0.3
+    - lens >= 5.2
+    - fgl >= 5.8
+    - monad-logger >= 0.3.40
+    - fast-logger >= 3.2
+    - ansi-terminal >= 1.1
+    - time >= 1.12
+    - stm >= 2.5
+
+executables:
+  fluxus:
+    main: Main.hs
+    source-dirs: app
+    dependencies:
+      - fluxus
+      - optparse-applicative
+      - text
+      - monad-logger
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+
+tests:
+  fluxus-test:
+    main: Spec.hs
+    source-dirs: test
+    other-modules:
+      - Test.Fluxus.Parser.Python
+      - Test.Fluxus.Parser.Go
+      - Test.Fluxus.Analysis.TypeInference
+      - Test.Fluxus.CodeGen.CPP
+    dependencies:
+      - fluxus
+      - hspec >= 2.10
+      - QuickCheck >= 2.14
+      - text
+      - containers
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+
+benchmarks:
+  fluxus-bench:
+    main: Bench.hs
+    source-dirs: bench
+    dependencies:
+      - fluxus
+      - criterion >= 1.6
+      - text
+      - deepseq
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+
+# Debug executables
+      - -with-rtsopts=-N
+
+  simple-go-test:
+    main: simple_go_test2.hs
+    source-dirs: .
+    dependencies:
+      - fluxus
+      - text
+      - megaparsec
+      - parser-combinators
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+
+  debug-full-go:
+    main: debug_full_go.hs
+    source-dirs: .
+    dependencies:
+      - fluxus
+      - text
+      - megaparsec
+      - parser-combinators
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+
+  debug-simple-full-go:
+    main: debug_simple_full_go.hs
+    source-dirs: .
+    dependencies:
+      - fluxus
+      - text
+      - megaparsec
+      - parser-combinators
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
