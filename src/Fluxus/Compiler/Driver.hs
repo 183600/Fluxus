@@ -64,6 +64,12 @@ import Fluxus.CodeGen.CPP
   , CppLiteral(..), CppParam(..), CppCase(..), CppGenConfig(..)
   , generateCpp, generateCppMain
   )
+import Fluxus.Optimization.ConstantFolding (constantFolding)
+import Fluxus.Optimization.DeadCodeElimination (deadCodeElimination)
+import Fluxus.Optimization.ConstantPropagation (constantPropagation)
+import Fluxus.Optimization.Inlining (inlineFunctions)
+import Fluxus.Optimization.Vectorization (vectorizeLoops)
+import Fluxus.Optimization.SizeReduction (reduceCodeSize)
 import Fluxus.Utils.Pretty ()
 
 -- | Source language selection
@@ -538,37 +544,65 @@ optimizationStage ast = do
       return ast
     O1 -> do
       logInfo "Basic optimizations (O1)"
-      runBasicOptimizations ast
+      -- Apply basic optimizations
+      optimizedAst <- runBasicOptimizations ast
+      return optimizedAst
     O2 -> do
       logInfo "Standard optimizations (O2)"
-      runStandardOptimizations ast
+      -- Apply standard optimizations
+      optimizedAst <- runStandardOptimizations ast
+      return optimizedAst
     O3 -> do
       logInfo "Aggressive optimizations (O3)"
-      runAggressiveOptimizations ast
+      -- Apply aggressive optimizations
+      optimizedAst <- runAggressiveOptimizations ast
+      return optimizedAst
     Os -> do
       logInfo "Size optimizations (Os)"
-      runSizeOptimizations ast
+      -- Apply size optimizations
+      optimizedAst <- runSizeOptimizations ast
+      return optimizedAst
   
   where
     -- Basic optimizations (constant folding, dead code elimination)
-    runBasicOptimizations optimizedAst = do
+    runBasicOptimizations :: Either PythonAST GoAST -> CompilerM (Either PythonAST GoAST)
+    runBasicOptimizations astToOptimize = do
+      -- Apply constant folding
+      foldedAst <- liftIO $ constantFolding astToOptimize
+      -- Apply dead code elimination
+      optimizedAst <- liftIO $ deadCodeElimination foldedAst
       addWarning $ OptimizationWarning "Applied basic optimizations (constant folding, dead code elimination)"
       return optimizedAst
     
     -- Standard optimizations (includes all basic + more)
-    runStandardOptimizations optimizedAst = do
+    runStandardOptimizations :: Either PythonAST GoAST -> CompilerM (Either PythonAST GoAST)
+    runStandardOptimizations astToOptimize = do
+      -- Apply basic optimizations first
+      basicOptimized <- runBasicOptimizations astToOptimize
+      -- Apply constant propagation
+      propagatedAst <- liftIO $ constantPropagation basicOptimized
       addWarning $ OptimizationWarning "Applied standard optimizations (constant folding, dead code elimination, constant propagation)"
-      return optimizedAst
+      return propagatedAst
     
     -- Aggressive optimizations (includes all standard + aggressive passes)
-    runAggressiveOptimizations optimizedAst = do
+    runAggressiveOptimizations :: Either PythonAST GoAST -> CompilerM (Either PythonAST GoAST)
+    runAggressiveOptimizations astToOptimize = do
+      -- Apply standard optimizations first
+      standardOptimized <- runStandardOptimizations astToOptimize
+      -- Apply function inlining
+      inlinedAst <- liftIO $ inlineFunctions standardOptimized
+      -- Apply vectorization
+      vectorizedAst <- liftIO $ vectorizeLoops inlinedAst
       addWarning $ OptimizationWarning "Applied aggressive optimizations (all standard optimizations + inlining, vectorization)"
-      return optimizedAst
+      return vectorizedAst
     
     -- Size optimizations (focus on reducing code size)
-    runSizeOptimizations optimizedAst = do
+    runSizeOptimizations :: Either PythonAST GoAST -> CompilerM (Either PythonAST GoAST)
+    runSizeOptimizations astToOptimize = do
+      -- Apply size reduction optimizations
+      sizeOptimizedAst <- liftIO $ reduceCodeSize astToOptimize
       addWarning $ OptimizationWarning "Applied size optimizations (focus on reducing binary size)"
-      return optimizedAst
+      return sizeOptimizedAst
 
 -- | Code generation stage
 codeGenStage :: Either PythonAST GoAST -> CompilerM CppUnit
@@ -1009,6 +1043,6 @@ renderCppLiteral = \case
         escapeChar '\t' = "\\t"
         escapeChar '\r' = "\\r"
         escapeChar '\\' = "\\\\"
-        escapeChar '\"' = "\\\""
+        escapeChar '"' = "\\\""
         escapeChar '\'' = "\\'"
         escapeChar c = T.singleton c

@@ -37,6 +37,12 @@ library
       Fluxus.Analysis.OwnershipInference
       Fluxus.Optimization.Monomorphization
       Fluxus.Optimization.Devirtualization
+      Fluxus.Optimization.ConstantFolding
+      Fluxus.Optimization.DeadCodeElimination
+      Fluxus.Optimization.ConstantPropagation
+      Fluxus.Optimization.Inlining
+      Fluxus.Optimization.Vectorization
+      Fluxus.Optimization.SizeReduction
       Fluxus.CodeGen.CPP
       Fluxus.CodeGen.Go
       Fluxus.Runtime.Python
@@ -108,6 +114,7 @@ test-suite fluxus-test
       Test.Fluxus.Parser.Go
       Test.Fluxus.Analysis.TypeInference
       Test.Fluxus.CodeGen.CPP
+      TestOptimizationStage
   hs-source-dirs:
       test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
@@ -199,5 +206,19 @@ benchmark simple-go-test
     , fluxus
     , megaparsec
     , parser-combinators
+    , text
+  default-language: Haskell2010
+
+test-suite optimization-test
+  type: exitcode-stdio-1.0
+  main-is: TestOptimizationMain.hs
+  other-modules:
+      TestOptimizationStage
+  hs-source-dirs:
+      test
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.17 && <5
+    , fluxus
     , text
   default-language: Haskell2010
