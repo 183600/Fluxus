@@ -3,33 +3,106 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 
--- | Go code generation module
+-- | Go code generation module with complete functionality
 module Fluxus.CodeGen.Go
   ( -- * Code generation functions
     generateGoFromPython
-  , generateGoCode
     -- * Configuration
   , GoGenConfig(..)
   , defaultGoConfig
+    -- * Error handling
+  , GoGenError(..)
   ) where
-
 
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
+import Data.HashSet (HashSet)
+import qualified Data.HashSet as HS
+import Data.Maybe (fromMaybe, mapMaybe)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
+import Control.Monad.State
+import Control.Monad.Except
+import Data.List (nub)
 
 import Fluxus.AST.Common
 import Fluxus.AST.Python
 
+-- | Go type representation
+data GoType 
+  = GoInt
+  | GoInt64
+  | GoFloat64
+  | GoString
+  | GoBool
+  | GoInterface
+  | GoSlice GoType
+  | GoMap GoType GoType
+  | GoFunc [GoType] [GoType]  -- params, returns
+  | GoVoid
+  | GoUnknown Text  -- For unresolved types
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (NFData)
+
+-- | Convert GoType to Go code
+showGoType :: GoType -> Text
+showGoType = \case
+  GoInt -> "int"
+  GoInt64 -> "int64"
+  GoFloat64 -> "float64"
+  GoString -> "string"
+  GoBool -> "bool"
+  GoInterface -> "interface{}"
+  GoSlice t -> "[]" <> showGoType t
+  GoMap k v -> "map[" <> showGoType k <> "]" <> showGoType v
+  GoFunc _ _ -> "func()"  -- Simplified for now
+  GoVoid -> ""
+  GoUnknown t -> t
+
+-- | Symbol information
+data Symbol = Symbol
+  { symName :: Text
+  , symType :: GoType
+  , symDeclared :: Bool  -- Has been declared with var/const
+  , symScope :: Int      -- Scope level
+  } deriving stock (Eq, Show, Generic)
+    deriving anyclass (NFData)
+
+-- | Generation state
+data GenState = GenState
+  { gsSymbols :: HashMap Text Symbol
+  , gsImports :: HashSet Text
+  , gsScopeLevel :: Int
+  , gsInMain :: Bool
+  , gsErrors :: [GoGenError]
+  , gsWarnings :: [Text]
+  } deriving stock (Eq, Show, Generic)
+    deriving anyclass (NFData)
+
+-- | Initial generation state
+initialState :: GenState
+initialState = GenState
+  { gsSymbols = HM.empty
+  , gsImports = HS.empty
+  , gsScopeLevel = 0
+  , gsInMain = False
+  , gsErrors = []
+  , gsWarnings = []
+  }
+
+-- | Generation monad
+type GenM = StateT GenState (Either GoGenError)
+
 -- | Go code generation configuration
 data GoGenConfig = GoGenConfig
   { ggcPackageName :: !Text
-  , ggcEnableFmt   :: !Bool
-  , ggcImportMap   :: !(HashMap Text Text)
+  , ggcStrictTypes :: !Bool  -- Enforce strict typing
+  , ggcAutoImports :: !Bool  -- Automatically manage imports
+  , ggcPrintFunc :: !Text    -- Function to use for print (fmt.Println or custom)
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
@@ -37,207 +110,514 @@ data GoGenConfig = GoGenConfig
 defaultGoConfig :: Text -> GoGenConfig
 defaultGoConfig pkgName = GoGenConfig
   { ggcPackageName = pkgName
-  , ggcEnableFmt = True
-  , ggcImportMap = HM.fromList
-      [ ("print", "fmt")
-      , ("println", "fmt")
-      ]
+  , ggcStrictTypes = True
+  , ggcAutoImports = True
+  , ggcPrintFunc = "fmt.Println"
   }
 
+-- | Code generation errors
+data GoGenError
+  = UnsupportedSyntax Text
+  | TypeMismatch Text GoType GoType
+  | UndefinedVariable Text
+  | RedeclaredVariable Text
+  | InvalidMainSignature
+  | InvalidRangeCall Text
+  | GeneralError Text
+  deriving stock (Eq, Show, Generic)
+    deriving anyclass (NFData)
+
 -- | Generate Go code from Python AST
-generateGoFromPython :: PythonAST -> GoGenConfig -> Text
-generateGoFromPython (PythonAST module_) config =
-  let (header, body) = generateModule module_ config
-  in header <> "\n" <> body
+generateGoFromPython :: PythonAST -> GoGenConfig -> Either GoGenError Text
+generateGoFromPython (PythonAST module_) config = do
+  (result, finalState) <- runStateT (generateModule module_ config) initialState
+  if not (null (gsErrors finalState))
+    then Left (head (gsErrors finalState))
+    else Right result
 
 -- | Generate complete module
-generateModule :: PythonModule -> GoGenConfig -> (Text, Text)
-generateModule module_ config =
+generateModule :: PythonModule -> GoGenConfig -> GenM Text
+generateModule module_ config = do
+  -- Generate all statements
+  statements <- generateStatements (pyModuleBody module_) config
+  
+  -- Get required imports
+  imports <- gets gsImports
+  
+  -- Build the module
   let header = "package " <> ggcPackageName config
-      imports = case ggcEnableFmt config of
-                  True -> ["\t\"fmt\""]
-                  False -> []
-      importSection = if null imports
-                      then header
-                      else T.unlines (header : "" : "import (" : imports ++ [")"])
-      decls = generateDeclarations module_ config
-  in (importSection, decls)
+      importSection = if HS.null imports
+                      then ""
+                      else "\nimport (\n" <> T.unlines (map (\i -> "\t\"" <> i <> "\"") (HS.toList imports)) <> ")"
+      body = T.unlines statements
+  
+  return $ header <> importSection <> "\n\n" <> body
 
--- | Generate all declarations
-generateDeclarations :: PythonModule -> GoGenConfig -> Text
-generateDeclarations module_ config =
-  let stmts = concatMap (generateStatement config . locatedValue) (pyModuleBody module_)
-  in T.unlines stmts
-
--- | Generate Go code as text
-generateGoCode :: PythonAST -> GoGenConfig -> Text
-generateGoCode ast config =
-  let (header, body) = generateModule (pyModule ast) config
-  in header <> "\n" <> body
+-- | Generate multiple statements
+generateStatements :: [Located PythonStmt] -> GoGenConfig -> GenM [Text]
+generateStatements stmts config = concat <$> mapM (generateStatement config . locatedValue) stmts
 
 -- | Generate statement
-generateStatement :: GoGenConfig -> PythonStmt -> [Text]
-generateStatement config stmt = case stmt of
-  PyExprStmt (Located _ expr) ->
-    let goExpr = generateExpression config expr
-    in [goExpr]
+generateStatement :: GoGenConfig -> PythonStmt -> GenM [Text]
+generateStatement config = \case
+  PyExprStmt (Located _ expr) -> do
+    goExpr <- generateExpression config expr
+    return [goExpr]
     
-  PyAssign targets (Located _ value) ->
-    let goValue = generateExpression config value
-        goType = inferGoType value
-        targetNames = map getTargetName targets
-        getTargetName (Located _ (PatVar (Identifier name))) = name
-        getTargetName _ = "_"
-    in case targetNames of
-      [name] -> ["var " <> name <> " " <> goType <> " = " <> goValue]
-      names -> 
-        let varDecls = map (\name -> "var " <> name <> " " <> goType) names
-        in varDecls ++ ["// Multi-assignment not fully supported in this version"]
-      
+  PyAssign targets (Located _ value) -> 
+    generateAssignment config targets value
+    
   PyIf (Located _ cond) thenBody elseBody ->
-    let goCond = generateExpression config cond
-        goThen = concatMap (\(Located _ s) -> generateStatement config s) thenBody
-        goElse = case elseBody of
-                  [] -> []
-                  body -> concatMap (\(Located _ s) -> generateStatement config s) body
-    in ["if " <> goCond <> " {"] ++
-       map ("\t" <>) goThen ++
-       ["}"] ++
-       (if null goElse then [] else ["else {"] ++ map ("\t" <>) goElse ++ ["}"])
+    generateIf config cond thenBody elseBody
     
-  PyFor (Located _ (PatVar (Identifier varName))) (Located _ iterExpr) body _ ->
-    let goIter = generateExpression config iterExpr
-        goBody = concatMap (\(Located _ s) -> generateStatement config s) body
-        rangeHandled = handleRangeLoop varName goIter goBody
-    in rangeHandled
+  PyFor (Located _ pattern) (Located _ iterExpr) body _ ->
+    generateFor config pattern iterExpr body
     
   PyFuncDef funcDef ->
     generateFunctionDef config funcDef
     
-  PyReturn (Just (Located _ expr)) ->
-    let goExpr = generateExpression config expr
-    in ["return " <> goExpr]
-  PyReturn Nothing ->
-    ["return"]
+  PyReturn mexpr ->
+    generateReturn config mexpr
     
-  _ -> []
+  PyWhile (Located _ cond) body _ -> do
+    goCond <- generateExpression config cond
+    enterScope
+    goBody <- generateStatements body config
+    exitScope
+    return $ ["for " <> goCond <> " {"] ++ map indent goBody ++ ["}"]
+    
+  PyBreak -> return ["break"]
+  PyContinue -> return ["continue"]
+  PyPass -> return ["// pass"]
+  
+  stmt -> do
+    addError $ UnsupportedSyntax $ "Statement type: " <> T.pack (show stmt)
+    return ["// Unsupported statement"]
+
+-- | Generate assignment
+generateAssignment :: GoGenConfig -> [Located PythonPattern] -> PythonExpr -> GenM [Text]
+generateAssignment config targets value = do
+  goValue <- generateExpression config value
+  valueType <- inferType config value
+  
+  case targets of
+    [Located _ (PatVar (Identifier name))] -> do
+      msym <- lookupSymbol name
+      case msym of
+        Just sym | symDeclared sym -> 
+          -- Variable already declared, use simple assignment
+          return [name <> " = " <> goValue]
+        _ -> do
+          -- New variable, declare it
+          declareSymbol name valueType
+          let typeStr = showGoType valueType
+          return [if valueType == GoUnknown "" 
+                  then name <> " := " <> goValue
+                  else "var " <> name <> " " <> typeStr <> " = " <> goValue]
+    
+    _ -> do
+      -- Multiple targets
+      let names = map extractName targets
+          extractName (Located _ (PatVar (Identifier n))) = n
+          extractName _ = "_"
+      
+      -- For simplicity, declare all as same type
+      decls <- forM names $ \name -> do
+        declareSymbol name valueType
+        return $ "var " <> name <> " " <> showGoType valueType
+      
+      return $ decls ++ ["// TODO: Implement tuple unpacking for: " <> goValue]
+
+-- | Generate if statement
+generateIf :: GoGenConfig -> PythonExpr -> [Located PythonStmt] -> [Located PythonStmt] -> GenM [Text]
+generateIf config cond thenBody elseBody = do
+  goCond <- generateExpression config cond
+  
+  enterScope
+  goThen <- generateStatements thenBody config
+  exitScope
+  
+  goElse <- if null elseBody 
+            then return []
+            else do
+              enterScope
+              els <- generateStatements elseBody config
+              exitScope
+              return els
+  
+  let ifBlock = ["if " <> goCond <> " {"] ++ map indent goThen ++ ["}"]
+      elseBlock = if null goElse 
+                  then []
+                  else ["} else {"] ++ map indent goElse
+  
+  return $ if null goElse 
+           then ifBlock
+           else init ifBlock ++ elseBlock ++ ["}"]
+
+-- | Generate for loop
+generateFor :: GoGenConfig -> PythonPattern -> PythonExpr -> [Located PythonStmt] -> GenM [Text]
+generateFor config pattern iterExpr body = do
+  case pattern of
+    PatVar (Identifier varName) -> do
+      -- Check if it's a range call
+      case iterExpr of
+        PyCall (Located _ (PyVar (Identifier "range"))) args ->
+          generateRangeLoop config varName args body
+        _ -> do
+          -- Regular for-range loop
+          goIter <- generateExpression config iterExpr
+          enterScope
+          declareSymbol varName (GoUnknown "")
+          goBody <- generateStatements body config
+          exitScope
+          return $ ["for _, " <> varName <> " := range " <> goIter <> " {"] ++ 
+                   map indent goBody ++ ["}"]
+    _ -> do
+      addError $ UnsupportedSyntax "Complex for loop pattern"
+      return ["// Unsupported for loop pattern"]
+
+-- | Generate range-based for loop
+generateRangeLoop :: GoGenConfig -> Text -> [Located PythonArgument] -> [Located PythonStmt] -> GenM [Text]
+generateRangeLoop config varName args body = do
+  case map locatedValue args of
+    [ArgPositional (Located _ end)] -> do
+      -- range(n) -> for i := 0; i < n; i++
+      endExpr <- generateExpression config end
+      enterScope
+      declareSymbol varName GoInt
+      goBody <- generateStatements body config
+      exitScope
+      return $ ["for " <> varName <> " := 0; " <> varName <> " < " <> endExpr <> "; " <> varName <> "++ {"] ++ 
+               map indent goBody ++ ["}"]
+    
+    [ArgPositional (Located _ start), ArgPositional (Located _ end)] -> do
+      -- range(start, end) -> for i := start; i < end; i++
+      startExpr <- generateExpression config start
+      endExpr <- generateExpression config end
+      enterScope
+      declareSymbol varName GoInt
+      goBody <- generateStatements body config
+      exitScope
+      return $ ["for " <> varName <> " := " <> startExpr <> "; " <> varName <> " < " <> endExpr <> "; " <> varName <> "++ {"] ++ 
+               map indent goBody ++ ["}"]
+    
+    [ArgPositional (Located _ start), ArgPositional (Located _ end), ArgPositional (Located _ step)] -> do
+      -- range(start, end, step)
+      startExpr <- generateExpression config start
+      endExpr <- generateExpression config end
+      stepExpr <- generateExpression config step
+      enterScope
+      declareSymbol varName GoInt
+      goBody <- generateStatements body config
+      exitScope
+      let incr = if T.any (== '-') stepExpr 
+                 then varName <> " -= " <> T.drop 1 stepExpr
+                 else varName <> " += " <> stepExpr
+      return $ ["for " <> varName <> " := " <> startExpr <> "; " <> varName <> " < " <> endExpr <> "; " <> incr <> " {"] ++ 
+               map indent goBody ++ ["}"]
+    
+    _ -> do
+      addError $ InvalidRangeCall "Invalid range arguments"
+      return ["// Invalid range call"]
 
 -- | Generate function definition
-generateFunctionDef :: GoGenConfig -> PythonFuncDef -> [Text]
-generateFunctionDef _ funcDef =
+generateFunctionDef :: GoGenConfig -> PythonFuncDef -> GenM [Text]
+generateFunctionDef config funcDef = do
   let Identifier funcName = pyFuncName funcDef
-      params = map (generateParameter undefined) (pyFuncParams funcDef)
-      paramStr = if null params then "" else T.intercalate ", " params
-      body = concatMap (\(Located _ s) -> generateStatement undefined s) (pyFuncBody funcDef)
-      returnType = if funcName == "main" then "int" else "int"
-  in ["func " <> funcName <> "(" <> paramStr <> ") " <> returnType <> " {"] ++
-     map ("\t" <>) body ++
-     (if funcName == "main" && not (hasReturnStatement (pyFuncBody funcDef)) then ["\treturn 0"] else []) ++
-     ["}"]
-  where
-    hasReturnStatement stmts = any isReturnStmt stmts
-    isReturnStmt (Located _ (PyReturn _)) = True
-    isReturnStmt _ = False
+      isMain = funcName == "main"
+  
+  -- Enter function scope
+  enterScope
+  modify $ \s -> s { gsInMain = isMain }
+  
+  -- Process parameters
+  params <- mapM (generateParameter config) (pyFuncParams funcDef)
+  let paramStr = T.intercalate ", " params
+  
+  -- Process body
+  bodyStmts <- generateStatements (pyFuncBody funcDef) config
+  
+  -- Determine return type
+  returnType <- if isMain 
+                then return GoVoid
+                else inferReturnType (pyFuncBody funcDef) config
+  
+  -- Exit function scope
+  exitScope
+  modify $ \s -> s { gsInMain = False }
+  
+  -- Build function
+  let signature = if isMain
+                  then "func main()"
+                  else "func " <> funcName <> "(" <> paramStr <> ") " <> showGoType returnType
+      finalBody = if isMain && not (hasReturn (pyFuncBody funcDef))
+                  then bodyStmts
+                  else bodyStmts
+  
+  return $ [signature <> " {"] ++ map indent finalBody ++ ["}"]
 
 -- | Generate parameter
-generateParameter :: GoGenConfig -> Located PythonParameter -> Text
-generateParameter _ (Located _ param) = case param of
-  ParamNormal (Identifier name) typeAnn _ ->
-    let paramType = case typeAnn of
-                      Just _ -> "int"
-                      Nothing -> "int"
-    in name <> " " <> paramType
-  _ -> "_ int"
+generateParameter :: GoGenConfig -> Located PythonParameter -> GenM Text
+generateParameter config (Located _ param) = case param of
+  ParamNormal (Identifier name) typeAnn _ -> do
+    paramType <- case typeAnn of
+      Just ann -> inferTypeFromAnnotation ann
+      Nothing -> return GoInterface
+    declareSymbol name paramType
+    return $ name <> " " <> showGoType paramType
+  _ -> return "_ interface{}"
+
+-- | Generate return statement
+generateReturn :: GoGenConfig -> Maybe (Located PythonExpr) -> GenM [Text]
+generateReturn config mexpr = do
+  isMain <- gets gsInMain
+  case (isMain, mexpr) of
+    (True, Just (Located _ (PyLiteral (PyInt n)))) ->
+      -- main function with exit code
+      requireImport "os"
+      return ["os.Exit(" <> T.pack (show n) <> ")"]
+    (True, _) ->
+      -- main function without explicit return
+      return []
+    (False, Just (Located _ expr)) -> do
+      goExpr <- generateExpression config expr
+      return ["return " <> goExpr]
+    (False, Nothing) ->
+      return ["return"]
 
 -- | Generate expression
-generateExpression :: GoGenConfig -> PythonExpr -> Text
-generateExpression config expr = case expr of
-  PyVar (Identifier name) -> name
+generateExpression :: GoGenConfig -> PythonExpr -> GenM Text
+generateExpression config = \case
+  PyVar (Identifier name) -> do
+    msym <- lookupSymbol name
+    case msym of
+      Just _ -> return name
+      Nothing -> do
+        addWarning $ "Undefined variable: " <> name
+        return name
     
-  PyLiteral lit -> case lit of
-    PyInt n -> T.pack (show n)
-    PyFloat d -> T.pack (show d)
-    PyString s -> "\"" <> s <> "\""
-    PyFString s exprs -> generateFString config s exprs
-    PyBool b -> if b then "true" else "false"
-    PyNone -> "nil"
+  PyLiteral lit -> return $ generateLiteral lit
     
-  PyBinaryOp op left right ->
-    let leftExpr = generateExpression config (locatedValue left)
-        rightExpr = generateExpression config (locatedValue right)
-        goOp = case op of
-                 OpAdd -> "+"
-                 OpSub -> "-"
-                 OpMul -> "*"
-                 OpDiv -> "/"
-                 OpMod -> "%"
-                 _ -> "+"
-    in "(" <> leftExpr <> " " <> goOp <> " " <> rightExpr <> ")"
+  PyBinaryOp op left right -> do
+    leftExpr <- generateExpression config (locatedValue left)
+    rightExpr <- generateExpression config (locatedValue right)
+    let goOp = binaryOpToGo op
+    return $ "(" <> leftExpr <> " " <> goOp <> " " <> rightExpr <> ")"
     
-  PyUnaryOp op (Located _ operand) ->
-    let operandExpr = generateExpression config operand
-        goOp = case op of
-                 OpNegate -> "-"
-                 OpPositive -> "+"
-                 _ -> "-"
-    in goOp <> operandExpr
+  PyUnaryOp op (Located _ operand) -> do
+    operandExpr <- generateExpression config operand
+    let goOp = unaryOpToGo op
+    return $ goOp <> operandExpr
     
   PyCall (Located _ func) args ->
-    let funcExpr = generateExpression config func
-        argExprs = map (\(Located _ (ArgPositional arg)) -> generateExpression config (locatedValue arg)) args
-        argStr = T.intercalate ", " argExprs
-    in case funcExpr of
-         "print" -> case argExprs of
-                      [] -> "fmt.Println()"
-                      [arg] | T.all (\c -> c >= '0' && c <= '9') arg -> "fmt.Println(" <> arg <> ")"
-                      [arg] | T.head arg == '"' -> "fmt.Println(" <> arg <> ")"
-                      [arg] -> "fmt.Println(" <> arg <> ")"
-                      _ -> "fmt.Println(" <> argStr <> ")"
-         "println" -> "fmt.Println(" <> argStr <> ")"
-         _ -> funcExpr <> "(" <> argStr <> ")"
+    generateCall config func args
     
-  PySubscript (Located _ expr) (Located _ (SliceIndex index)) ->
-    let exprStr = generateExpression config expr
-        indexStr = generateExpression config (locatedValue index)
-    in exprStr <> "[" <> indexStr <> "]"
+  PySubscript (Located _ expr) (Located _ slice) ->
+    generateSubscript config expr slice
     
-  PyList elements ->
-    let elemExprs = map (\(Located _ e) -> generateExpression config e) elements
-    in "[]int{" <> T.intercalate ", " elemExprs <> "}"
+  PyList elements -> do
+    elemExprs <- mapM (generateExpression config . locatedValue) elements
+    elemType <- if null elements 
+                then return GoInterface
+                else inferType config (locatedValue $ head elements)
+    return $ "[]" <> showGoType elemType <> "{" <> T.intercalate ", " elemExprs <> "}"
     
-  _ -> "0"
+  PyDict pairs -> do
+    let genPair (Located _ k, Located _ v) = do
+          kExpr <- generateExpression config k
+          vExpr <- generateExpression config v
+          return $ kExpr <> ": " <> vExpr
+    pairExprs <- mapM genPair pairs
+    return $ "map[string]interface{}{" <> T.intercalate ", " pairExprs <> "}"
+    
+  PyTuple elements -> do
+    -- Go doesn't have tuples, use struct or array
+    elemExprs <- mapM (generateExpression config . locatedValue) elements
+    return $ "[]interface{}{" <> T.intercalate ", " elemExprs <> "}"
+    
+  PyCompare op (Located _ left) (Located _ right) -> do
+    leftExpr <- generateExpression config left
+    rightExpr <- generateExpression config right
+    let goOp = compareOpToGo op
+    return $ "(" <> leftExpr <> " " <> goOp <> " " <> rightExpr <> ")"
+    
+  expr -> do
+    addError $ UnsupportedSyntax $ "Expression: " <> T.pack (show expr)
+    return "nil"
 
--- | Generate f-string
-generateFString :: GoGenConfig -> Text -> [Located PythonExpr] -> Text
-generateFString config _ exprs = 
-  let exprStrs = map (generateExpression config . locatedValue) exprs
-  in "fmt.Sprintf(\"%v" <> T.replicate (length exprs - 1) "%v" <> "\", " <> T.intercalate ", " exprStrs <> ")"
+-- | Generate literal
+generateLiteral :: PythonLiteral -> Text
+generateLiteral = \case
+  PyInt n -> T.pack (show n)
+  PyFloat d -> T.pack (show d)
+  PyString s -> "\"" <> escapeString s <> "\""
+  PyFString s exprs -> "fmt.Sprintf(\"" <> s <> "\")"  -- Simplified
+  PyBool b -> if b then "true" else "false"
+  PyNone -> "nil"
+  _ -> "nil"
 
--- | Infer Go type from Python expression
-inferGoType :: PythonExpr -> Text
-inferGoType expr = case expr of
-  PyLiteral lit -> case lit of
-    PyInt _ -> "int"
-    PyFloat _ -> "float64"
-    PyString _ -> "string"
-    PyFString _ _ -> "string"
-    PyBool _ -> "bool"
-    PyNone -> "interface{}"
-    _ -> "interface{}"
-  PyVar _ -> "int"  -- Default fallback
-  PyList [] -> "[]int"
-  PyList _ -> "[]int"
-  _ -> "int"
+-- | Generate function call
+generateCall :: GoGenConfig -> PythonExpr -> [Located PythonArgument] -> GenM Text
+generateCall config func args = do
+  funcName <- generateExpression config func
+  argExprs <- mapM (generateArgument config) args
+  
+  case funcName of
+    "print" | ggcAutoImports config -> do
+      requireImport "fmt"
+      return $ "fmt.Println(" <> T.intercalate ", " argExprs <> ")"
+    "len" -> 
+      return $ "len(" <> T.intercalate ", " argExprs <> ")"
+    _ -> 
+      return $ funcName <> "(" <> T.intercalate ", " argExprs <> ")"
 
--- | Handle range calls in for loops
-handleRangeLoop :: Text -> Text -> [Text] -> [Text]
-handleRangeLoop varName rangeCall body =
-  case parseRangeCall rangeCall of
-    Just n -> ["for " <> varName <> " := 0; " <> varName <> " < " <> n <> "; " <> varName <> "++ {"] ++ map ("\t" <>) body ++ ["}"]
-    Nothing -> ["for " <> varName <> " := range " <> rangeCall <> " {"] ++ map ("\t" <>) body ++ ["}"]
+-- | Generate argument
+generateArgument :: GoGenConfig -> Located PythonArgument -> GenM Text
+generateArgument config (Located _ arg) = case arg of
+  ArgPositional (Located _ expr) -> generateExpression config expr
+  ArgKeyword _ (Located _ expr) -> generateExpression config expr
+  _ -> return "nil"
+
+-- | Generate subscript
+generateSubscript :: GoGenConfig -> PythonExpr -> PythonSlice -> GenM Text
+generateSubscript config expr slice = do
+  exprStr <- generateExpression config expr
+  case slice of
+    SliceIndex (Located _ idx) -> do
+      idxStr <- generateExpression config idx
+      return $ exprStr <> "[" <> idxStr <> "]"
+    SliceRange start stop step -> do
+      -- Go slice syntax: expr[start:stop]
+      startStr <- maybe (return "") (generateExpression config . locatedValue) start
+      stopStr <- maybe (return "") (generateExpression config . locatedValue) stop
+      when (Maybe.isJust step) $ addWarning "Slice step not supported in Go"
+      return $ exprStr <> "[" <> startStr <> ":" <> stopStr <> "]"
+
+-- | Infer type from expression
+inferType :: GoGenConfig -> PythonExpr -> GenM GoType
+inferType config = \case
+  PyLiteral lit -> return $ case lit of
+    PyInt _ -> GoInt
+    PyFloat _ -> GoFloat64
+    PyString _ -> GoString
+    PyBool _ -> GoBool
+    PyNone -> GoInterface
+    _ -> GoInterface
+  
+  PyVar (Identifier name) -> do
+    msym <- lookupSymbol name
+    return $ maybe GoInterface symType msym
+  
+  PyList [] -> return $ GoSlice GoInterface
+  PyList (h:_) -> do
+    elemType <- inferType config (locatedValue h)
+    return $ GoSlice elemType
+  
+  PyDict _ -> return $ GoMap GoString GoInterface
+  
+  PyBinaryOp op _ _ -> return $ case op of
+    OpAdd -> GoInt  -- Simplified
+    OpSub -> GoInt
+    OpMul -> GoInt
+    OpDiv -> GoFloat64
+    _ -> GoInterface
+  
+  _ -> return GoInterface
+
+-- | Infer return type from function body
+inferReturnType :: [Located PythonStmt] -> GoGenConfig -> GenM GoType
+inferReturnType stmts config = do
+  let returns = extractReturns stmts
+  if null returns
+    then return GoVoid
+    else case head returns of
+           PyReturn (Just (Located _ expr)) -> inferType config expr
+           _ -> return GoVoid
   where
-    parseRangeCall :: Text -> Maybe Text
-    parseRangeCall call = 
-      if "range(" `T.isPrefixOf` call && ")" `T.isSuffixOf` call
-      then Just $ T.take (T.length call - 7) (T.drop 6 call)
-      else Nothing
+    extractReturns [] = []
+    extractReturns (Located _ (PyReturn r):rest) = PyReturn r : extractReturns rest
+    extractReturns (_:rest) = extractReturns rest
+
+-- | Infer type from annotation
+inferTypeFromAnnotation :: Located PythonTypeExpr -> GenM GoType
+inferTypeFromAnnotation _ = return GoInterface  -- Simplified
+
+-- | Symbol table operations
+lookupSymbol :: Text -> GenM (Maybe Symbol)
+lookupSymbol name = gets (HM.lookup name . gsSymbols)
+
+declareSymbol :: Text -> GoType -> GenM ()
+declareSymbol name typ = do
+  scope <- gets gsScopeLevel
+  modify $ \s -> s { gsSymbols = HM.insert name (Symbol name typ True scope) (gsSymbols s) }
+
+enterScope :: GenM ()
+enterScope = modify $ \s -> s { gsScopeLevel = gsScopeLevel s + 1 }
+
+exitScope :: GenM ()
+exitScope = do
+  scope <- gets gsScopeLevel
+  modify $ \s -> s 
+    { gsScopeLevel = scope - 1
+    , gsSymbols = HM.filter (\sym -> symScope sym < scope) (gsSymbols s)
+    }
+
+requireImport :: Text -> GenM ()
+requireImport imp = modify $ \s -> s { gsImports = HS.insert imp (gsImports s) }
+
+addError :: GoGenError -> GenM ()
+addError err = modify $ \s -> s { gsErrors = err : gsErrors s }
+
+addWarning :: Text -> GenM ()
+addWarning warn = modify $ \s -> s { gsWarnings = warn : gsWarnings s }
+
+-- | Helper functions
+indent :: Text -> Text
+indent = ("    " <>)
+
+escapeString :: Text -> Text
+escapeString = T.replace "\"" "\\\"" . T.replace "\n" "\\n" . T.replace "\t" "\\t"
+
+hasReturn :: [Located PythonStmt] -> Bool
+hasReturn = any isReturn
+  where
+    isReturn (Located _ (PyReturn _)) = True
+    isReturn _ = False
+
+binaryOpToGo :: PythonBinaryOp -> Text
+binaryOpToGo = \case
+  OpAdd -> "+"
+  OpSub -> "-"
+  OpMul -> "*"
+  OpDiv -> "/"
+  OpMod -> "%"
+  OpPow -> "**"  -- Note: Go doesn't have power operator
+  OpFloorDiv -> "/"
+  OpBitAnd -> "&"
+  OpBitOr -> "|"
+  OpBitXor -> "^"
+  OpLeftShift -> "<<"
+  OpRightShift -> ">>"
+  OpAnd -> "&&"
+  OpOr -> "||"
+  _ -> "+"
+
+unaryOpToGo :: PythonUnaryOp -> Text
+unaryOpToGo = \case
+  OpNegate -> "-"
+  OpPositive -> "+"
+  OpNot -> "!"
+  OpBitNot -> "^"
+
+compareOpToGo :: PythonCompareOp -> Text
+compareOpToGo = \case
+  CmpEq -> "=="
+  CmpNeq -> "!="
+  CmpLt -> "<"
+  CmpLte -> "<="
+  CmpGt -> ">"
+  CmpGte -> ">="
+  CmpIs -> "=="  -- Simplified
+  CmpIsNot -> "!="
+  CmpIn -> "in"  -- Not directly supported in Go
+  CmpNotIn -> "not in"

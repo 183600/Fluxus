@@ -180,3 +180,14 @@ benchmarks:
       - -threaded
       - -rtsopts
       - -with-rtsopts=-N
+
+  test-build-streaming-expr:
+    main: test_buildStreamingExpr.hs
+    source-dirs: .
+    dependencies:
+      - fluxus
+      - text
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N

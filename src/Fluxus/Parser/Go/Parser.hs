@@ -284,7 +284,7 @@ parseDeclaration = located $ do
         parseConstDecl
     , do
         -- If all specific parsers fail, check what token we're looking at
-        -- and provide a more informative error or skip it
+        -- and report a proper error instead of silently skipping
         nextToken <- lookAhead anySingle
         case locValue nextToken of
           GoTokenKeyword kw -> case kw of
@@ -301,7 +301,7 @@ parseDeclaration = located $ do
               skipCommentsAndNewlines
               -- Try to parse the next declaration
               parseDeclarationNoLocated
-            _ -> fail $ "Unsupported declaration keyword: " ++ show kw
+            _ -> fail $ "Syntax error: Unsupported declaration keyword '" ++ show kw ++ "'"
           GoTokenNewline -> do
             -- Skip newlines
             skipNewlines
@@ -310,22 +310,41 @@ parseDeclaration = located $ do
             -- Skip comments
             skipComments
             parseDeclarationNoLocated
-          _ -> fail $ "Unexpected token in declaration: " ++ show (locValue nextToken)
+          _ -> fail $ "Syntax error: Unexpected token '" ++ show (locValue nextToken) ++ "' in declaration context"
     ]
   return result
   where
-    -- Helper function to avoid infinite recursion
+    -- Helper function to avoid infinite recursion - now properly reports errors
     parseDeclarationNoLocated = do
-      result <- optional $ try parseDeclaration
-      case result of
-        Just decl -> return $ locValue decl
-        Nothing -> return $ GoFuncDecl $ GoFunction 
-          { goFuncName = Nothing
-          , goFuncTypeParams = []
-          , goFuncParams = []
-          , goFuncResults = []
-          , goFuncBody = Nothing
-          }
+      -- Look ahead to see if we have any valid declaration tokens
+      nextToken <- lookAhead anySingle
+      case locValue nextToken of
+        GoTokenKeyword kw -> case kw of
+          GoKwFunc -> parseFuncDecl
+          GoKwType -> parseTypeDecl
+          GoKwVar -> parseVarDecl
+          GoKwConst -> parseConstDecl
+          GoKwPackage -> do
+            void $ goKeywordP GoKwPackage
+            _ <- parseGoIdentifier
+            skipCommentsAndNewlines
+            parseDeclarationNoLocated
+          GoKwImport -> do
+            skipImportsRobust
+            skipCommentsAndNewlines
+            parseDeclarationNoLocated
+          _ -> fail $ "Syntax error: Expected declaration (func, type, var, const), found keyword '" ++ show kw ++ "'"
+        GoTokenNewline -> do
+          skipNewlines
+          parseDeclarationNoLocated
+        GoTokenComment _ -> do
+          skipComments
+          parseDeclarationNoLocated
+        GoTokenDelimiter GoDelimRightBrace -> fail "Syntax error: Unexpected closing brace in declaration context"
+        GoTokenDelimiter GoDelimSemicolon -> do
+          void anySingle
+          parseDeclarationNoLocated
+        _ -> fail $ "Syntax error: Expected declaration, found '" ++ show (locValue nextToken) ++ "'"
 
 -- | Parse function declarations (including methods and init functions)
 parseFuncDecl :: GoParser GoDecl
@@ -588,7 +607,10 @@ parseForStmt = do
     ]
   where
     parseRangeLoop = do
-      -- Parse range loop: for k, v := range expr or for v := range expr or for range n
+      -- Parse range loop: for k, v := range expr or for v := range expr or for range n (Go 1.22+)
+      -- Also support: for k, v = range expr, for k := range expr, etc.
+      
+      -- Try to parse key and value variables
       key <- optional parseGoIdentifier
       value <- optional $ do
         case key of
@@ -597,13 +619,18 @@ parseForStmt = do
             parseGoIdentifier
           Nothing -> parseGoIdentifier
       
-      void $ goOperatorP GoOpDefine
+      -- Check if we have an assignment operator (:= or =)
+      isDefine <- choice
+        [ goOperatorP GoOpDefine $> True
+        , goOperatorP GoOpAssign $> False
+        ]
+      
       void $ goKeywordP GoKwRange
       
       -- Parse range expression or integer (Go 1.22+)
       rangeTarget <- choice
         [ try $ do
-            -- Integer range: for range 10
+            -- Integer range: for range 10 (Go 1.22+)
             Located _ (GoTokenInt text) <- satisfy $ \case
               Located _ (GoTokenInt _) -> True
               _ -> False
@@ -612,19 +639,34 @@ parseForStmt = do
             let rangeClause = GoRangeClause
                   { goRangeKey = key
                   , goRangeValue = value
-                  , goRangeDefine = True
+                  , goRangeDefine = isDefine
                   , goRangeExpr = located' $ GoLiteral $ GoInt intVal
                   , goRangeInteger = Just intVal
                   }
             return $ GoRange rangeClause body
+        , try $ do
+            -- Float range: for range 10.5 (Go 1.22+)
+            Located _ (GoTokenFloat text) <- satisfy $ \case
+              Located _ (GoTokenFloat _) -> True
+              _ -> False
+            let floatVal = read $ T.unpack text
+            body <- located parseBlockStmt'
+            let rangeClause = GoRangeClause
+                  { goRangeKey = key
+                  , goRangeValue = value
+                  , goRangeDefine = isDefine
+                  , goRangeExpr = located' $ GoLiteral $ GoFloat floatVal
+                  , goRangeInteger = Nothing
+                  }
+            return $ GoRange rangeClause body
         , do
-            -- Expression range: for range slice
+            -- Expression range: for range slice, for range channel, etc.
             expr <- parseExpression
             body <- located parseBlockStmt'
             let rangeClause = GoRangeClause
                   { goRangeKey = key
                   , goRangeValue = value
-                  , goRangeDefine = True
+                  , goRangeDefine = isDefine
                   , goRangeExpr = expr
                   , goRangeInteger = Nothing
                   }
