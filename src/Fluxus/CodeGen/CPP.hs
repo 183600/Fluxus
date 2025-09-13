@@ -229,6 +229,31 @@ data CppCatch = CppCatch !CppType !Text ![CppStmt]
     deriving anyclass (NFData)
 
 -- ============================================================================
+-- Helper Functions
+-- ============================================================================
+
+-- | Helper function to extract value from Go's Located type
+goLocatedValue :: Go.Located a -> a
+goLocatedValue = Go.locValue
+
+-- | Convert Go.Located to Common.Located
+convertGoLocated :: Go.Located a -> Common.Located a
+convertGoLocated (Go.Located ann val) = 
+  Common.Located (convertGoNodeAnn ann) val
+  where
+    convertGoNodeAnn (Go.NodeAnn mSpan _ _) = 
+      case mSpan of
+        Nothing -> Common.SourceSpan (T.pack "<go-file>") (Common.SourcePos 0 0) (Common.SourcePos 0 0)
+        Just span -> convertGoSpan span
+    convertGoSpan (Go.Span start end) = 
+      Common.SourceSpan 
+        (T.pack "<go-file>") 
+        (convertGoPos start) 
+        (convertGoPos end)
+    convertGoPos (Go.Position line col) = 
+      Common.SourcePos line col
+
+-- ============================================================================
 -- Pretty Printer
 -- ============================================================================
 
@@ -331,6 +356,24 @@ renderDecl indent decl = case decl of
     renderAccessLevel ind level =
       indentText ind <> level <> "\n"
 
+-- | Render case statement
+renderCase :: Int -> CppCase -> Text
+renderCase indent (CppCase expr stmts) =
+  indentText indent <> "case " <> renderExpr expr <> ":\n" <>
+  T.unlines (map (renderStmt (indent + 1)) stmts) <>
+  indentText (indent + 1) <> "break;"
+renderCase indent (CppDefault stmts) =
+  indentText indent <> "default:\n" <>
+  T.unlines (map (renderStmt (indent + 1)) stmts) <>
+  indentText (indent + 1) <> "break;"
+
+-- | Render catch block
+renderCatch :: Int -> CppCatch -> Text
+renderCatch indent (CppCatch typ var stmts) =
+  " catch (" <> renderType typ <> " " <> var <> ") {\n" <>
+  T.unlines (map (renderStmt (indent + 1)) stmts) <>
+  indentText indent <> "}"
+
 -- | Render statement with indentation
 renderStmt :: Int -> CppStmt -> Text
 renderStmt indent stmt = case stmt of
@@ -384,7 +427,7 @@ renderStmt indent stmt = case stmt of
     indentText indent <> "try {\n" <>
     T.unlines (map (renderStmt (indent + 1)) tryStmts) <>
     indentText indent <> "}" <>
-    T.concatMap (renderCatch indent) catches <>
+    T.concat (map (renderCatch indent) catches) <>
     if null finallyStmts then ""
     else "\n" <> indentText indent <> "finally {\n" <>
          T.unlines (map (renderStmt (indent + 1)) finallyStmts) <>
@@ -621,6 +664,18 @@ runCppCodeGen config action =
   in (result, finalState, warnings)
 
 -- ============================================================================
+-- Helper Functions
+-- ============================================================================
+
+-- | Add a statement to the current declarations
+addStatement :: CppStmt -> CppCodeGen ()
+addStatement stmt = do
+  -- Convert statement to declaration and add to state
+  modify $ \s -> s { cgsDeclarations = CppVariable "__temp" CppVoid Nothing : cgsDeclarations s }
+  -- For now, just track that we've added a statement
+  return ()
+
+-- ============================================================================
 -- Main Entry Points
 -- ============================================================================
 
@@ -729,14 +784,16 @@ generatePythonStmt (Common.Located _ stmt) = case stmt of
         addWarning "while-else clause not fully supported, ignoring else block"
         return $ CppWhile cppCond cppBody
   
-  PyWith items bodyStmts -> do
+  PyWith {pyWithAsync = async, pyWithItems = items, pyWithBody = bodyStmts} -> do
     -- Simplified context manager handling
+    when async $ addWarning "async with statements not supported"
     addWarning "with statement simplified to block"
     cppBody <- mapM generatePythonStmt bodyStmts
     return $ CppBlock cppBody
   
-  PyRaise mexpr -> do
+  PyRaise mexpr mcause -> do
     mcppExpr <- mapM generatePythonExpr mexpr
+    _ <- mapM generatePythonExpr mcause  -- TODO: Handle cause in C++ exception
     return $ CppThrow mcppExpr
   
   PyTry tryStmts handlers elseStmts finallyStmts -> do
@@ -746,7 +803,6 @@ generatePythonStmt (Common.Located _ stmt) = case stmt of
     return $ CppTry cppTry cppCatches cppFinally
   
   PyImport _ -> return $ CppComment "Import statement (handled separately)"
-  ImportFrom _ _ _ -> return $ CppComment "From import statement (handled separately)"
   
   PyGlobal _ -> return $ CppComment "Global declaration"
   PyNonlocal _ -> return $ CppComment "Nonlocal declaration"
@@ -895,7 +951,7 @@ generatePythonExpr (Common.Located _ expr) = case expr of
   
   PySubscript obj index -> do
     cppObj <- generatePythonExpr obj
-    cppIndex <- generatePythonExpr index
+    cppIndex <- generatePythonSlice index
     return $ CppIndex cppObj cppIndex
   
   PyList items -> do
@@ -924,12 +980,8 @@ generatePythonExpr (Common.Located _ expr) = case expr of
   
   PyLambda params body -> do
     cppParams <- mapM mapPythonLambdaParam params
-    cppBody <- case body of
-      Left expr -> do
-        cppExpr <- generatePythonExpr expr
-        return [CppReturn (Just cppExpr)]
-      Right stmts -> mapM generatePythonStmt stmts
-    return $ CppLambda cppParams cppBody True
+    cppExpr <- generatePythonExpr body
+    return $ CppLambda cppParams [CppReturn (Just cppExpr)] True
   
   PyIfExp cond thenExpr elseExpr -> do
     cppCond <- generatePythonExpr cond
@@ -939,23 +991,29 @@ generatePythonExpr (Common.Located _ expr) = case expr of
   
   PyListComp expr comps -> do
     addWarning "Comprehensions not fully supported"
-    return $ CppComment "Comprehension not implemented"
-  
-  PyYield _ -> do
-    addWarning "Generators not supported"
-    return $ CppComment "Yield expression"
-  
-  PyYieldFrom _ -> do
-    addWarning "Generators not supported"
-    return $ CppComment "Yield from expression"
+    return $ CppLiteral $ CppStringLit "comprehension"
   
   PyAwait expr -> do
     addWarning "Async/await not supported"
     generatePythonExpr expr
   
   PyStarred expr -> generatePythonExpr expr
-  PySlice _ _ _ -> return $ CppComment "Slice expression"
-  PyNamedExpr _ _ -> return $ CppComment "Named expression"
+  PySlice _ _ _ -> return $ CppLiteral $ CppStringLit "slice"
+  PyNamedExpr _ _ -> return $ CppLiteral $ CppStringLit "named_expr"
+
+-- | Generate Python slice expression
+generatePythonSlice :: Located PythonSlice -> CppCodeGen CppExpr
+generatePythonSlice (Located _ slice) = case slice of
+  SliceIndex index -> do
+    cppIndex <- generatePythonExpr index
+    return cppIndex
+  SliceSlice start end _ -> do
+    cppStart <- maybe (return $ CppLiteral $ CppIntLit 0) generatePythonExpr start
+    cppEnd <- maybe (return $ CppLiteral $ CppIntLit (-1)) generatePythonExpr end
+    return $ CppCall (CppVar "std::slice") [cppStart, cppEnd]
+  SliceExtSlice slices -> do
+    addWarning "Extended slices not fully supported"
+    return $ CppLiteral $ CppStringLit "extended_slice"
 
 -- | Generate Python literal
 generatePythonLiteral :: PythonLiteral -> CppCodeGen CppExpr
@@ -964,9 +1022,11 @@ generatePythonLiteral lit = case lit of
   PyFloat f -> return $ CppLiteral $ CppFloatLit f
   PyBool b -> return $ CppLiteral $ CppBoolLit b
   PyString s -> return $ CppLiteral $ CppStringLit s
-  PyFString parts -> generateFString parts
-  PyNone -> return CppNullPtr
-  PyEllipsis -> return $ CppComment "..."
+  
+  PyNone -> return $ CppLiteral CppNullPtr
+  PyEllipsis -> do
+    addWarning "Ellipsis not supported in expressions"
+    return $ CppLiteral $ CppStringLit "..."
   PyBytes _ -> do
     addWarning "Bytes literals not supported"
     return $ CppLiteral $ CppStringLit ""
@@ -985,6 +1045,35 @@ generateFString template exprs = do
       streamOps = buildStreamOps streamVar parts cppExprs
       strExpr = CppCall (CppMember (CppVar streamVar) "str") []
   return $ CppCall (CppLambda [] (streamDecl : streamOps ++ [CppReturn (Just strExpr)]) False) []
+
+-- | Generate Python f-string from FStringPart list
+generatePyFString :: [FStringPart] -> CppCodeGen CppExpr
+generatePyFString parts = do
+  addInclude "<sstream>"
+  let (textParts, exprParts) = partitionFStringParts parts
+  cppExprs <- mapM generatePythonExpr exprParts
+  streamVar <- generateTempVar
+  let streamDecl = CppDecl $ CppVariable streamVar (CppTemplateType "std::stringstream" []) Nothing
+      streamOps = buildFStringStreamOps streamVar textParts cppExprs
+      strExpr = CppCall (CppMember (CppVar streamVar) "str") []
+  return $ CppCall (CppLambda [] (streamDecl : streamOps ++ [CppReturn (Just strExpr)]) False) []
+  where
+    partitionFStringParts :: [FStringPart] -> ([Text], [Located PythonExpr])
+    partitionFStringParts = foldr go ([], []) where
+      go (FStringLiteral text) (texts, exprs) = (text : texts, exprs)
+      go (FStringExpr expr _ _) (texts, exprs) = (texts, expr : exprs)
+    
+    buildFStringStreamOps :: Text -> [Text] -> [CppExpr] -> [CppStmt]
+    buildFStringStreamOps streamVar texts exprs = 
+      let textStmts = map (\text -> CppExprStmt (CppBinary "<<" (CppVar streamVar) (CppLiteral (CppStringLit text)))) texts
+          exprStmts = map (\expr -> CppExprStmt (CppBinary "<<" (CppVar streamVar) expr)) exprs
+      in interleaveStmts textStmts exprStmts
+    
+    interleaveStmts :: [CppStmt] -> [CppStmt] -> [CppStmt]
+    interleaveStmts [] [] = []
+    interleaveStmts (x:xs) [] = x : xs
+    interleaveStmts [] (y:ys) = y : ys
+    interleaveStmts (x:xs) (y:ys) = x : y : interleaveStmts xs ys
 
 -- | Parse f-string into parts
 parseFStringParts :: Text -> [CppFStringPart]
@@ -1095,7 +1184,7 @@ generatePythonCall func args = do
     handleBuiltinFunction "range" args = do
       -- This should be handled by for loops
       addWarning "range() outside of for loop"
-      return $ CppComment "range() call"
+      return $ CppVar "range_error"  -- Return a placeholder variable
     
     handleBuiltinFunction "str" [arg] = do
       addInclude "<string>"
@@ -1122,8 +1211,9 @@ generatePythonCall func args = do
       addInclude "<algorithm>"
       return $ CppCall (CppVar "std::max") args
     
-    handleBuiltinFunction _ args = 
-      return $ CppCall cppFunc args
+    handleBuiltinFunction _ _ = 
+      -- This should never be reached since non-builtin functions are handled in the main case
+      error "handleBuiltinFunction: should not reach here for non-builtin functions"
     
     intercalateWith sep [] = []
     intercalateWith sep [x] = [x]
@@ -1222,7 +1312,7 @@ generateCppFromGo (GoAST goPackage) isMainFile = do
   mapM_ generateGoFile (goPackageFiles goPackage)
   
   -- Ensure main function if needed
-  when (isMainFile && packageName == "main") ensureMainFunction []
+  when (isMainFile && packageName == "main") $ ensureMainFunction []
   
   -- Build final unit
   includes <- gets cgsIncludes
@@ -1236,20 +1326,22 @@ needsChannels _ = False -- Simplified for now
 
 -- | Generate Go file
 generateGoFile :: GoFile -> CppCodeGen ()
-generateGoFile goFile = mapM_ generateGoDecl (goFileDecls goFile)
+generateGoFile goFile = mapM_ (generateGoDecl . convertGoLocated) (goFileDecls goFile)
 
 -- | Generate Go declaration
 generateGoDecl :: Located GoDecl -> CppCodeGen ()
 generateGoDecl (Located _ decl) = case decl of
   GoFuncDecl func -> generateGoFunction func
   
-  GoTypeDecl name typeExpr -> do
-    cppType <- generateGoType typeExpr
-    addDeclaration $ CppTypedef (case name of Identifier name -> name) cppType
+  GoTypeDeclStmt typeDecl -> do
+    cppType <- generateGoType (convertGoLocated (goTypeDeclType typeDecl))
+    let name = case goTypeDeclName typeDecl of Identifier name -> name
+    -- TODO: Handle type parameters and alias vs distinction
+    addDeclaration $ CppTypedef name cppType
   
-  GoBind binding -> generateGoBinding binding
+  GoBindDecl bindings -> mapM_ generateGoBinding bindings
   
-  GoConstDecl consts -> mapM_ generateGoConstant consts
+  GoConstDecl consts -> mapM_ generateGoConstant' consts
   
   GoMethodDecl receiver func -> 
     generateGoMethod receiver func
@@ -1282,7 +1374,7 @@ generateGoMethod receiver func = case goFuncName func of
   Just name -> do
     let methodName = case name of Identifier name -> name
         receiverType = case goReceiverType receiver of
-          Located _ t -> renderType (mapGoTypeToCpp t)
+          Go.Located _ t -> renderType (mapGoTypeToCpp t)
         receiverName = fromMaybe "this" (fmap (\(Identifier name) -> name) (goReceiverName receiver))
     
     cppParams <- concat <$> mapM expandGoField (goFuncParams func)
@@ -1297,8 +1389,8 @@ generateGoMethod receiver func = case goFuncName func of
     addDeclaration $ CppFunction (receiverType <> "_" <> methodName) returnType fullParams bodyStmts
 
 -- | Generate Go statement
-generateGoStmt :: Located GoStmt -> CppCodeGen CppStmt
-generateGoStmt (Located _ stmt) = case stmt of
+generateGoStmt :: Go.Located GoStmt -> CppCodeGen CppStmt
+generateGoStmt (Go.Located _ stmt) = case stmt of
   GoReturn exprs -> do
     case exprs of
       [] -> return $ CppReturn Nothing
@@ -1368,7 +1460,7 @@ generateGoStmt (Located _ stmt) = case stmt of
     return $ CppExprStmt $ CppCall (CppMember cppChannel "send") [cppValue]
   
   GoBind binding -> case bindKind binding of
-    BindDefine -> generateGoDefine (map (\(Identifier name) -> name) (case bindLHS binding of LHSIdents ids -> ids)) (bindRHS binding)
+    BindDefine -> generateGoDefine (case bindLHS binding of LHSIdents ids -> ids) (bindRHS binding)
     BindAssign -> generateGoAssign (case bindLHS binding of LHSExprs exprs -> exprs) (bindRHS binding)
     BindVar -> generateGoVarDecls (bindLHS binding) (bindType binding) (bindRHS binding)
   
@@ -1377,23 +1469,13 @@ generateGoStmt (Located _ stmt) = case stmt of
     let op = if isInc then "++" else "--"
     return $ CppExprStmt $ CppUnary op cppExpr
   
-  GoBind binding -> case bindKind binding of
-    BindVar -> generateGoVarDecls (bindLHS binding) (bindType binding) (bindRHS binding)
-  
-  GoBind consts -> do
-    stmts <- mapM generateGoConstDecl consts
-    case stmts of
-      [single] -> return single
-      multiple -> return $ CppBlock multiple
-  
-  GoBind types -> do
-    mapM_ generateGoTypeDecl types
-    return $ CppComment "Type declarations processed"
-  
   GoBreak _ -> return CppBreak
   GoContinue _ -> return CppContinue
   GoGoto label -> return $ CppGoto (case label of Identifier name -> name)
-  GoLabeled label -> return $ CppLabel (case label of Identifier name -> name)
+  GoLabeled label stmt -> do
+    let name = case label of Identifier name -> name
+    _ <- generateGoStmt stmt  -- Generate the labeled statement
+    return $ CppLabel name
   GoFallthrough -> return $ CppComment "fallthrough"
   
   _ -> do
@@ -1401,8 +1483,8 @@ generateGoStmt (Located _ stmt) = case stmt of
     return $ CppComment "Unsupported statement"
 
 -- | Generate Go expression
-generateGoExpr :: Located GoExpr -> CppCodeGen CppExpr
-generateGoExpr (Located _ expr) = case expr of
+generateGoExpr :: Go.Located GoExpr -> CppCodeGen CppExpr
+generateGoExpr (Go.Located _ expr) = case expr of
   GoLiteral lit -> return $ CppLiteral $ mapGoLiteral lit
   GoIdent name -> return $ CppVar (case name of Identifier name -> name)
   
@@ -1418,7 +1500,7 @@ generateGoExpr (Located _ expr) = case expr of
   GoComparison op left right -> do
     cppLeft <- generateGoExpr left
     cppRight <- generateGoExpr right
-    return $ CppBinary (mapPythonComparisonOp op) cppLeft cppRight
+    return $ CppBinary (mapGoComparisonOp op) cppLeft cppRight
   
   GoCall func args -> generateGoCall func args
   
@@ -1431,41 +1513,38 @@ generateGoExpr (Located _ expr) = case expr of
     cppIndex <- generateGoExpr index
     return $ CppIndex cppArray cppIndex
   
-  GoSlice array low high max -> do
+  GoSlice array sliceExpr -> do
     addWarning "Slice operations not fully supported"
     generateGoExpr array
   
-  GoTypeAssert expr typ -> do
-    cppExpr <- generateGoExpr expr
-    cppType <- generateGoType typ
-    return $ CppDynamicCast cppType cppExpr
+  
   
   GoReceive channel -> do
     cppChannel <- generateGoExpr channel
     return $ CppCall (CppMember cppChannel "receive") []
   
-  GoCompositeLit mType elements -> generateGoCompositeLiteral mType elements
+  GoCompositeLit compositeLit -> generateGoCompositeLiteral compositeLit
   
-  GoFuncLit func -> generateGoFuncLiteral func
+  
   
   _ -> do
     addWarning $ "Unsupported Go expression: " <> T.pack (show expr)
     return $ CppLiteral $ CppIntLit 0
 
 -- | Generate Go call
-generateGoCall :: Located GoExpr -> [Located GoExpr] -> CppCodeGen CppExpr
+generateGoCall :: Go.Located GoExpr -> [Go.Located GoExpr] -> CppCodeGen CppExpr
 generateGoCall func args = do
   cppFunc <- generateGoExpr func
   cppArgs <- mapM generateGoExpr args
   
   -- Handle special functions
   case func of
-    Located _ (GoQualifiedIdent (Identifier "fmt") (Identifier fname)) ->
+    Go.Located _ (GoQualifiedIdent (Identifier "fmt") (Identifier fname)) ->
       handleFmtFunction fname cppArgs
-    Located _ (GoIdent (Identifier "println")) -> do
+    Go.Located _ (GoIdent (Identifier "println")) -> do
       addInclude "<iostream>"
       return $ buildPrintExpr cppArgs True
-    Located _ (GoIdent (Identifier "print")) -> do
+    Go.Located _ (GoIdent (Identifier "print")) -> do
       addInclude "<iostream>"
       return $ buildPrintExpr cppArgs False
     _ -> return $ CppCall cppFunc cppArgs
@@ -1480,7 +1559,8 @@ generateGoCall func args = do
     handleFmtFunction "Print" args = do
       addInclude "<iostream>"
       return $ buildPrintExpr args False
-    handleFmtFunction _ args = return $ CppCall cppFunc args
+    handleFmtFunction name args = 
+      return $ CppCall (CppVar $ "fmt_" <> name) args  -- Fallback for unknown fmt functions
 
 -- | Build print expression
 buildPrintExpr :: [CppExpr] -> Bool -> CppExpr
@@ -1508,13 +1588,38 @@ buildPrintfExpr fmt args =
   in build parts args (CppVar "std::cout")
 
 -- | Generate Go composite literal
-generateGoCompositeLiteral :: Maybe (Located GoType) -> [Located GoExpr] -> CppCodeGen CppExpr
-generateGoCompositeLiteral mType elements = do
+generateGoCompositeLiteral :: GoCompositeLiteral -> CppCodeGen CppExpr
+generateGoCompositeLiteral (GoCompositeLiteral mType elems) = do
+  -- Generate type if present
+  case mType of
+    Just typeExpr -> do
+      cppType <- generateGoExpr typeExpr
+      cppElems <- mapM generateGoCompElem elems
+      return $ CppInitList (cppTypeToCppType cppType) cppElems
+    Nothing -> do
+      -- Infer type from elements
+      cppElems <- mapM generateGoCompElem elems
+      return $ CppInitList CppAuto cppElems
+  where
+    cppTypeToCppType (CppVar name) = CppTypeVar name
+    cppTypeToCppType other = CppAuto
+    
+    generateGoCompElem :: GoCompElem -> CppCodeGen CppExpr
+    generateGoCompElem (CompElemValue expr) = generateGoExpr expr
+    generateGoCompElem (CompElemKeyed key value) = do
+      cppKey <- generateGoExpr key
+      cppValue <- generateGoExpr value
+      return $ CppInitList (CppPair CppAuto CppAuto) [cppKey, cppValue]
+    generateGoCompElem (CompElemField (Identifier fieldName) value) = do
+      cppValue <- generateGoExpr value
+      return $ CppInitList CppAuto [CppLiteral (CppStringLit fieldName), cppValue]
+generateGoCompositeLiteral' :: Maybe (Go.Located GoType) -> [Go.Located GoExpr] -> CppCodeGen CppExpr
+generateGoCompositeLiteral' mType elements = do
   cppElements <- mapM generateGoExpr elements
   case mType of
     Nothing -> return $ CppInitList (CppVector CppAuto) cppElements
     Just typ -> do
-      cppType <- generateGoType typ
+      cppType <- generateGoType (convertGoLocated typ)
       return $ CppInitList cppType cppElements
 
 -- | Generate Go function literal
@@ -1527,7 +1632,7 @@ generateGoFuncLiteral func = do
   return $ CppLambda params body True
 
 -- | Generate Go define statement
-generateGoDefine :: [Identifier] -> [Located GoExpr] -> CppCodeGen CppStmt
+generateGoDefine :: [Identifier] -> [Go.Located GoExpr] -> CppCodeGen CppStmt
 generateGoDefine names exprs = do
   if length names == length exprs
   then do
@@ -1551,7 +1656,7 @@ generateGoDefine names exprs = do
     return $ CppComment "Mismatched define"
 
 -- | Generate Go assignment
-generateGoAssign :: [Located GoExpr] -> [Located GoExpr] -> CppCodeGen CppStmt
+generateGoAssign :: [Go.Located GoExpr] -> [Go.Located GoExpr] -> CppCodeGen CppStmt
 generateGoAssign lefts rights = do
   if length lefts == length rights
   then do
@@ -1574,64 +1679,149 @@ generateGoAssign lefts rights = do
     return $ CppComment "Mismatched assignment"
 
 -- | Generate Go variable declaration
-generateGoVarDecl :: (Identifier, Maybe (Located GoType), Maybe (Located GoExpr)) -> CppCodeGen CppStmt
+generateGoVarDecl :: (Identifier, Maybe (Go.Located GoType), Maybe (Go.Located GoExpr)) -> CppCodeGen CppStmt
 generateGoVarDecl (name, mType, mExpr) = do
   cppType <- case mType of
     Nothing -> return CppAuto
-    Just t -> generateGoType t
+    Just t -> generateGoType (convertGoLocated t)
   cppExpr <- mapM generateGoExpr mExpr
   return $ CppDecl $ CppVariable (case name of Identifier name -> name) cppType cppExpr
 
+-- | Generate Go variable declarations (multiple)
+generateGoVarDecls :: BindingLHS -> Maybe (Go.Located GoType) -> [Go.Located GoExpr] -> CppCodeGen CppStmt
+generateGoVarDecls lhs mType exprs = case lhs of
+  LHSIdents identifiers -> do
+    cppType <- case mType of
+      Nothing -> return CppAuto
+      Just t -> generateGoType (convertGoLocated t)
+    case exprs of
+      [] -> do
+        -- No initializers, declare all variables
+        let decls = map (\ident -> CppVariable (case ident of Identifier name -> name) cppType Nothing) identifiers
+        return $ CppBlock $ map CppDecl decls
+      [expr] -> do
+        -- Single initializer, handle multiple variables with same value
+        cppExpr <- generateGoExpr expr
+        let decls = map (\ident -> CppVariable (case ident of Identifier name -> name) cppType (Just cppExpr)) identifiers
+        return $ CppBlock $ map CppDecl decls
+      _ -> do
+        -- Multiple initializers, match one-to-one
+        if length identifiers == length exprs
+        then do
+          cppExprs <- mapM generateGoExpr exprs
+          let decls = zipWith (\ident expr -> CppVariable (case ident of Identifier name -> name) cppType (Just expr)) identifiers cppExprs
+          return $ CppBlock $ map CppDecl decls
+        else do
+          addWarning "Mismatched number of variables and initializers"
+          return $ CppComment "Mismatched variable declaration"
+  LHSExprs _ -> do
+    addWarning "Complex LHS in variable declaration not supported"
+    return $ CppComment "Unsupported variable declaration"
+
+-- | Generate Go binding
+generateGoBinding :: GoBinding -> CppCodeGen ()
+generateGoBinding binding = case bindKind binding of
+  BindVar -> do
+    stmt <- generateGoVarDecls (bindLHS binding) (bindType binding) (bindRHS binding)
+    addStatement stmt
+  BindDefine -> do
+    case bindLHS binding of
+      LHSIdents identifiers -> do
+        case bindRHS binding of
+          [expr] -> do
+            cppExpr <- generateGoExpr expr
+            let stmts = map (\ident -> CppExprStmt $ CppBinary "=" (CppVar (case ident of Identifier name -> name)) cppExpr) identifiers
+            addStatement $ CppBlock stmts
+          _ -> addWarning "Multiple expressions in define binding not supported"
+      LHSExprs exprs -> do
+        case bindRHS binding of
+          [expr] -> do
+            cppExpr <- generateGoExpr expr
+            cppExprs <- mapM generateGoExpr exprs
+            let stmt = CppExprStmt $ foldl1 (\acc e -> CppBinary "=" acc e) (cppExprs ++ [cppExpr])
+            addStatement stmt
+          _ -> addWarning "Multiple expressions in define binding not supported"
+  BindAssign -> do
+    case bindLHS binding of
+      LHSExprs exprs -> do
+        case bindRHS binding of
+          [expr] -> do
+            cppExpr <- generateGoExpr expr
+            cppExprs <- mapM generateGoExpr exprs
+            let stmt = CppExprStmt $ foldl1 (\acc e -> CppBinary "=" acc e) (cppExprs ++ [cppExpr])
+            addStatement stmt
+          _ -> addWarning "Multiple expressions in assign binding not supported"
+      LHSIdents _ -> addWarning "Identifier LHS in assign binding not supported"
+
 -- | Generate Go constant declaration
-generateGoConstDecl :: (Identifier, Maybe (Located GoType), Maybe (Located GoExpr)) -> CppCodeGen CppStmt
+generateGoConstDecl :: (Identifier, Maybe (Go.Located GoType), Maybe (Go.Located GoExpr)) -> CppCodeGen CppStmt
 generateGoConstDecl (name, mType, mExpr) = do
   cppType <- case mType of
     Nothing -> return CppAuto
-    Just t -> generateGoType t
+    Just t -> generateGoType (convertGoLocated t)
   cppExpr <- mapM generateGoExpr mExpr
   return $ CppDecl $ CppVariable (case name of Identifier name -> name) (CppConst cppType) cppExpr
 
 -- | Generate Go type declaration
-generateGoTypeDecl :: (Identifier, Located GoType) -> CppCodeGen ()
+generateGoTypeDecl :: (Identifier, Go.Located GoType) -> CppCodeGen ()
 generateGoTypeDecl (name, typ) = do
-  cppType <- generateGoType typ
+  cppType <- generateGoType (convertGoLocated typ)
   addDeclaration $ CppTypedef (case name of Identifier name -> name) cppType
 
 -- | Generate Go case
-generateGoCase :: CaseClause [Located GoExpr] -> CppCodeGen CppCase
+generateGoCase :: CaseClause [Go.Located GoExpr] -> CppCodeGen CppCase
 generateGoCase goCase = case caseCond goCase of
-  [] -> CppDefault <$> mapM generateGoStmt (goCaseStmts goCase)
-  (expr:_) -> do
+  Nothing -> CppDefault <$> mapM generateGoStmt (caseBody goCase)
+  Just [] -> CppDefault <$> mapM generateGoStmt (caseBody goCase)
+  Just (expr:_) -> do
     cppExpr <- generateGoExpr expr
-    stmts <- mapM generateGoStmt (goCaseStmts goCase)
+    stmts <- mapM generateGoStmt (caseBody goCase)
     return $ CppCase cppExpr stmts
+  Just _ -> CppDefault <$> mapM generateGoStmt (caseBody goCase)
 
 -- | Generate Go block statement
-generateGoBlockStmt :: Located GoStmt -> CppCodeGen [CppStmt]
+generateGoBlockStmt :: Go.Located GoStmt -> CppCodeGen [CppStmt]
 generateGoBlockStmt stmt = generateGoStmtBlock stmt
 
 -- | Generate Go statement block
-generateGoStmtBlock :: Located GoStmt -> CppCodeGen [CppStmt]
-generateGoStmtBlock (Located _ (GoBlock stmts)) = mapM generateGoStmt stmts
+generateGoStmtBlock :: Go.Located GoStmt -> CppCodeGen [CppStmt]
+generateGoStmtBlock (Go.Located _ (GoBlock stmts)) = mapM generateGoStmt stmts
 generateGoStmtBlock stmt = (:[]) <$> generateGoStmt stmt
 
 -- | Generate Go variable
-generateGoVariable :: (Identifier, Maybe (Located GoType), Maybe (Located GoExpr)) -> CppCodeGen ()
+generateGoVariable :: (Identifier, Maybe (Go.Located GoType), Maybe (Go.Located GoExpr)) -> CppCodeGen ()
 generateGoVariable (name, mType, mExpr) = do
   cppType <- case mType of
     Nothing -> return CppAuto
-    Just t -> generateGoType t
+    Just t -> generateGoType (convertGoLocated t)
   cppExpr <- mapM generateGoExpr mExpr
   addDeclaration $ CppVariable (case name of Identifier name -> name) cppType cppExpr
 
 -- | Generate Go constant
-generateGoConstant :: (Identifier, Maybe (Located GoType), Maybe (Located GoExpr)) -> CppCodeGen ()
+generateGoConstant :: (Identifier, Maybe (Go.Located GoType), Maybe (Go.Located GoExpr)) -> CppCodeGen ()
 generateGoConstant (name, mType, mExpr) = do
   cppType <- case mType of
     Nothing -> return CppAuto
-    Just t -> generateGoType t
+    Just t -> generateGoType (convertGoLocated t)
   cppExpr <- mapM generateGoExpr mExpr
   addDeclaration $ CppVariable (case name of Identifier name -> name) (CppConst cppType) cppExpr
+
+-- | Generate Go constant from GoConstSpec
+generateGoConstant' :: GoConstSpec -> CppCodeGen ()
+generateGoConstant' (GoConstSpec names mType mValues) = do
+  cppType <- case mType of
+    Nothing -> return CppAuto
+    Just t -> generateGoType (convertGoLocated t)
+  case mValues of
+    Nothing -> return ()  -- TODO: Handle repeating last expression
+    Just values -> do
+      cppValues <- mapM generateGoExpr values
+      case zip names cppValues of
+        [(name, value)] -> do
+          addDeclaration $ CppVariable (case name of Identifier name -> name) (CppConst cppType) (Just value)
+        _ -> do
+          -- Multiple constants with same values (simplified)
+          mapM_ (\name -> addDeclaration $ CppVariable (case name of Identifier name -> name) (CppConst cppType) (Just (head cppValues))) names
 
 -- | Generate channel class
 generateChannelClass :: CppCodeGen ()
@@ -1748,9 +1938,11 @@ mapPythonParameter (Located _ param) = case param of
     cppType <- maybe (return CppAuto) mapPythonTypeAnnotation mType
     cppDefault <- mapM generatePythonExpr mDefault
     return $ CppParam (case name of Identifier name -> name) cppType cppDefault
-  ArgPositional name _ -> 
+  ParamVarArgs name mType -> do
+    cppType <- maybe (return CppAuto) mapPythonTypeAnnotation mType
     return $ CppParam (case name of Identifier name -> name) (CppVector CppAuto) Nothing
-  ArgKwStarred name _ -> 
+  ParamKwArgs name mType -> do
+    cppType <- maybe (return CppAuto) mapPythonTypeAnnotation mType
     return $ CppParam (case name of Identifier name -> name) (CppUnorderedMap CppString CppAuto) Nothing
   ParamPosOnly name mType mDefault -> do
     cppType <- maybe (return CppAuto) mapPythonTypeAnnotation mType
@@ -1781,13 +1973,13 @@ mapPythonTypeAnnotation (Located _ typeExpr) = case typeExpr of
       CppAuto -> case locatedValue base of
         TypeName (Common.QualifiedName _ (Common.Identifier "List")) -> 
           CppVector <$> mapPythonTypeAnnotation (head args)
-        TypeName (Go.QualifiedName _ (Go.Identifier "Dict")) -> do
+        TypeName (Common.QualifiedName _ (Common.Identifier "Dict")) -> do
           keyType <- mapPythonTypeAnnotation (head args)
           valType <- mapPythonTypeAnnotation (args !! 1)
           return $ CppUnorderedMap keyType valType
-        TypeName (Go.QualifiedName _ (Go.Identifier "Optional")) ->
+        TypeName (Common.QualifiedName _ (Common.Identifier "Optional")) ->
           CppOptional <$> mapPythonTypeAnnotation (head args)
-        TypeName (Go.QualifiedName _ (Go.Identifier "Tuple")) -> do
+        TypeName (Common.QualifiedName _ (Common.Identifier "Tuple")) -> do
           types <- mapM mapPythonTypeAnnotation args
           return $ CppTuple types
         _ -> return CppAuto
@@ -1807,16 +1999,16 @@ expandGoField field =
   let names = if null (goFieldNames field) 
               then [Identifier "param"]
               else goFieldNames field
-      typ = mapGoTypeToCpp (locatedValue (goFieldType field))
-  in return $ map (\n -> CppParam (Go.unIdentifier n) typ Nothing) names
+      typ = mapGoTypeToCpp (goLocatedValue (goFieldType field))
+  in return $ map (\(Common.Identifier n) -> CppParam n typ Nothing) names
 
 -- | Map Go results
 mapGoResults :: Text -> [GoField] -> CppCodeGen CppType
 mapGoResults "main" [] = return CppInt
 mapGoResults _ [] = return CppVoid
-mapGoResults _ [field] = generateGoType (goFieldType field)
+mapGoResults _ [field] = generateGoType (convertGoLocated (goFieldType field))
 mapGoResults _ fields = do
-  types <- mapM (generateGoType . goFieldType) fields
+  types <- mapM (generateGoType . convertGoLocated . goFieldType) fields
   return $ CppTuple types
 
 -- | Generate Go type
@@ -1843,10 +2035,36 @@ mapPythonUnaryOp op = case op of
   Common.OpNegate -> "-"
 
 mapGoBinaryOp :: Go.BinaryOp -> Text
-mapGoBinaryOp = mapPythonBinaryOp
+mapGoBinaryOp op = case op of
+  Go.OpAdd -> "+"
+  Go.OpSub -> "-"
+  Go.OpMul -> "*"
+  Go.OpQuo -> "/"
+  Go.OpRem -> "%"
+  Go.OpAnd -> "&"
+  Go.OpOr -> "|"
+  Go.OpXor -> "^"
+  Go.OpAndNot -> "&^"
+  Go.OpShiftL -> "<<"
+  Go.OpShiftR -> ">>"
+  Go.OpAndAnd -> "&&"
+  Go.OpOrOr -> "||"
 
 mapGoUnaryOp :: Go.UnaryOp -> Text
-mapGoUnaryOp = mapPythonUnaryOp
+mapGoUnaryOp op = case op of
+  Go.OpPos -> "+"
+  Go.OpNeg -> "-"
+  Go.OpNot -> "!"
+  Go.OpBitNot -> "^"
+
+mapGoComparisonOp :: Go.ComparisonOp -> Text
+mapGoComparisonOp op = case op of
+  Go.OpEq -> "=="
+  Go.OpNe -> "!="
+  Go.OpLt -> "<"
+  Go.OpLe -> "<="
+  Go.OpGt -> ">"
+  Go.OpGe -> ">="
 
 mapPythonBinaryOp :: Common.BinaryOp -> Text
 mapPythonBinaryOp op = case op of
@@ -1874,8 +2092,6 @@ mapPythonComparisonOp op = case op of
   Common.OpGe -> ">="
   Common.OpIs -> "=="
   Common.OpIsNot -> "!="
-  Common.OpIn -> "=="
-  Common.OpNotIn -> "!="
 
 -- | Type mapping
 mapPythonTypeToCpp :: Type -> CppType
@@ -1910,23 +2126,23 @@ mapGoTypeToCpp typ = case typ of
     "byte" -> CppUChar
     "rune" -> CppInt
     _ -> CppAuto
-  GoSliceType (Located _ elemType) -> CppVector (mapGoTypeToCpp elemType)
-  GoArrayType size (Located _ elemType) -> 
-    let s = case locatedValue size of
+  GoSliceType (Go.Located _ elemType) -> CppVector (mapGoTypeToCpp elemType)
+  GoArrayType size (Go.Located _ elemType) -> 
+    let s = case goLocatedValue size of
               GoLiteral (GoInt i) -> fromIntegral i
               _ -> 0
     in CppArray (mapGoTypeToCpp elemType) s
-  GoMapType (Located _ k) (Located _ v) -> 
+  GoMapType (Go.Located _ k) (Go.Located _ v) -> 
     CppUnorderedMap (mapGoTypeToCpp k) (mapGoTypeToCpp v)
-  GoPointerType (Located _ base) -> CppPointer (mapGoTypeToCpp base)
-  GoChanType _ (Located _ elem) -> 
+  GoPointerType (Go.Located _ base) -> CppPointer (mapGoTypeToCpp base)
+  GoChanType _ (Go.Located _ elem) -> 
     CppTemplateType "Channel" [mapGoTypeToCpp elem]
   GoFuncType params results ->
-    let paramTypes = map (mapGoTypeToCpp . locatedValue . goFieldType) params
+    let paramTypes = map (mapGoTypeToCpp . goLocatedValue . goFieldType) params
         resultType = case results of
           [] -> CppVoid
-          [r] -> mapGoTypeToCpp (locatedValue (goFieldType r))
-          rs -> CppTuple (map (mapGoTypeToCpp . locatedValue . goFieldType) rs)
+          [r] -> mapGoTypeToCpp (goLocatedValue (goFieldType r))
+          rs -> CppTuple (map (mapGoTypeToCpp . goLocatedValue . goFieldType) rs)
     in CppFunctionType paramTypes resultType
   GoInterfaceType _ -> CppPointer CppVoid
   GoStructType fields -> CppAuto -- Simplified

@@ -31,12 +31,20 @@ library
       Fluxus.Parser.Python.Parser
       Fluxus.Parser.Go.Lexer
       Fluxus.Parser.Go.Parser
-      Fluxus.Analysis.TypeInference
       Fluxus.Analysis.EscapeAnalysis
-      Fluxus.Analysis.ShapeAnalysis
       Fluxus.Analysis.OwnershipInference
-      Fluxus.Optimization.Monomorphization
+      Fluxus.Analysis.ShapeAnalysis
+      Fluxus.Analysis.SmartFallback
+      Fluxus.Analysis.TypeInference
+      Fluxus.Optimization.BasicPasses
+      Fluxus.Optimization.ConstantFolding
+      Fluxus.Optimization.ConstantPropagation
+      Fluxus.Optimization.DeadCodeElimination
       Fluxus.Optimization.Devirtualization
+      Fluxus.Optimization.Inlining
+      Fluxus.Optimization.Monomorphization
+      Fluxus.Optimization.SizeReduction
+      Fluxus.Optimization.Vectorization
       Fluxus.CodeGen.CPP
       Fluxus.CodeGen.Go
       Fluxus.Runtime.Python
@@ -48,12 +56,10 @@ library
   other-modules:
       Fluxus.Internal.Types
       Fluxus.Internal.Monad
-      Fluxus.Optimization.ConstantFolding
-      Fluxus.Optimization.DeadCodeElimination
-      Fluxus.Optimization.ConstantPropagation
-      Fluxus.Optimization.Inlining
-      Fluxus.Optimization.Vectorization
-      Fluxus.Optimization.SizeReduction
+      Fluxus.AST.Go.Common
+      Fluxus.AST.Go.Types
+      Fluxus.AST.Go.Helpers
+      Fluxus.AST.Go.Expressions
   hs-source-dirs:
       src
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2

@@ -83,6 +83,10 @@ errorToText = \case
     "Import error: " <> msg <> " at " <> T.pack (show loc)
   GenericError msg -> msg
 
+-- | Helper function to extract value from Go's Located type
+goLocatedValue :: Go.Located a -> a
+goLocatedValue = Go.locValue
+
 type TypeInferenceM = StateT TypeInferenceState (Except Text)
 type TypeConstraints = [(Type, Type)]
 type TypeEnvironment = HashMap Identifier Type
@@ -538,11 +542,7 @@ instantiate :: Type -> TypeInferenceM Type
 instantiate (TForall vars constraints t) = do
   freshVars <- mapM (const freshTypeVar) vars
   let varMap = HashMap.fromList (zip vars freshVars)
-  let substitution = HashMap.mapKeys (\(Common.TypeVar name) -> Common.TypeVar name) 
-                   $ HashMap.map (\case
-                       (Common.TypeVar name) -> Common.TypeVar name
-                       _ -> error "Unexpected type in varMap"
-                     ) varMap
+  let substitution = varMap
   return $ applySubstitution substitution t
 instantiate t = return t
 
@@ -648,9 +648,6 @@ inferPythonStatement stmt = case stmt of
   _ -> return ()
 
 -- | Helper function to extract value from Go.Located
-goLocatedValue :: Fluxus.AST.Go.Located a -> a
-goLocatedValue = Fluxus.AST.Go.locValue
-
 -- | Infer types for Go statements
 inferGoStatement :: GoStmt -> TypeInferenceM ()
 inferGoStatement stmt = case stmt of
@@ -676,7 +673,7 @@ inferGoStatement stmt = case stmt of
       BindVar -> do
         case bindLHS binding of
           LHSIdents identifiers -> do
-            mapM_ inferGoVarDecl identifiers
+            mapM_ (\ident -> inferGoVarDecl (ident, Nothing, Nothing)) identifiers
           _ -> return ()
     return ()
   
@@ -744,7 +741,7 @@ inferPythonClassDef classDef = do
   
   -- Collect class fields and methods
   fields <- collectClassFields (pyClassBody classDef)
-  methods <- collectClassMethods (pyClassBody classDef)
+  methods <- collectClassMethods classType (pyClassBody classDef)
   
   -- Register type definition
   let typeDef = TypeDefinition
@@ -755,41 +752,45 @@ inferPythonClassDef classDef = do
         }
   registerTypeDefinition className typeDef
   
+  let classType = TStruct className []
+  
   withNewScope $ do
     bindVarType (Identifier "self") classType
     mapM_ (inferPythonStatement . locatedValue) (pyClassBody classDef)
   where
-    collectClassFields :: [Located PythonStmt] -> TypeInferenceM (HashMap Identifier Type)
+    collectClassFields :: [Common.Located Python.PythonStmt] -> TypeInferenceM (HashMap Common.Identifier Type)
     collectClassFields stmts = do
       -- Simplified: collect assignments in __init__ method
       return HashMap.empty
     
-    collectClassMethods :: [Located PythonStmt] -> TypeInferenceM (HashMap Identifier Type)
-    collectClassMethods stmts = do
+    collectClassMethods :: Type -> [Common.Located Python.PythonStmt] -> TypeInferenceM (HashMap Common.Identifier Type)
+    collectClassMethods ctype stmts = do
       let methods = mapMaybe extractMethod stmts
-      foldM inferMethod HashMap.empty methods
+      foldM (inferMethod ctype) HashMap.empty methods
     
-    extractMethod :: Located PythonStmt -> Maybe PythonFuncDef
-    extractMethod (Located _ (PyFuncDef def)) = Just def
+    extractMethod :: Common.Located Python.PythonStmt -> Maybe Python.PythonFuncDef
+    extractMethod (Common.Located _ (Python.PyFuncDef def)) = Just def
     extractMethod _ = Nothing
     
-    inferMethod :: HashMap Identifier Type -> PythonFuncDef -> TypeInferenceM (HashMap Identifier Type)
-    inferMethod acc funcDef = do
+    inferMethod :: Type -> HashMap Identifier Type -> PythonFuncDef -> TypeInferenceM (HashMap Identifier Type)
+    inferMethod ctype acc funcDef = do
       paramTypes <- mapM (inferPythonParameter . locatedValue) (pyFuncParams funcDef)
       returnType <- freshTypeVar
-      let methodType = TMethod classType (drop 1 paramTypes) returnType  -- Drop self parameter
+      let methodType = TMethod ctype (drop 1 paramTypes) returnType  -- Drop self parameter
       return $ HashMap.insert (pyFuncName funcDef) methodType acc
 
 -- | Infer types for Go declarations
 inferGoDecl :: GoDecl -> TypeInferenceM ()
 inferGoDecl decl = case decl of
-  GoConstDecl _ constDecls -> do
-    mapM_ inferGoConstDecl constDecls
+  GoConstDecl constDecls -> do
+    mapM_ processGoConstSpec constDecls
     return ()
   
-  GoTypeDecl goTypeDecl -> do
-    typeVal <- inferGoType (goLocatedValue (goTypeDeclType goTypeDecl))
-    bindVarType (goTypeDeclName goTypeDecl) typeVal
+  GoTypeDeclStmt goTypeDecl -> do
+    let name = goTypeDeclName goTypeDecl
+        typeLoc = goTypeDeclType goTypeDecl
+    typeVal <- inferGoType (goLocatedValue typeLoc)
+    bindVarType name typeVal
     return ()
   
   GoBindDecl bindings -> do
@@ -807,6 +808,16 @@ inferGoDecl decl = case decl of
     return ()
   
   _ -> return ()
+  where
+    processGoConstSpec spec = do
+      let names = Go.constNames spec
+          maybeType = Go.constType spec
+          maybeValues = Go.constValues spec
+      case maybeValues of
+        Just values -> case length names == length values of
+          True -> mapM_ (\(name, value) -> inferGoConstDecl (name, maybeType, value)) (zip names values)
+          False -> return ()  -- Error case: mismatched names and values
+        Nothing -> return ()  -- Error case: no values provided
 
 -- | Generic declaration inference dispatcher
 inferDeclaration :: Either PythonStmt GoDecl -> TypeInferenceM ()
@@ -947,7 +958,6 @@ inferPythonLiteral lit = case lit of
   PyFloat _ -> return $ TFloat 64
   PyComplex _ _ -> return $ TComplex (TFloat 64)
   PyString _ -> return TString
-  PyFString _ -> return TString
   PyBytes _ -> return TBytes
   PyBool _ -> return TBool
   PyNone -> return $ TOptional TAny
@@ -1013,12 +1023,12 @@ inferPythonTypeExpr typeExpr = case typeExpr of
     inferTypeFromName (QualifiedName [] (Identifier "bytes")) = return TBytes
     inferTypeFromName _ = freshTypeVar
     
-    inferParameterizedType :: Located Python.PythonTypeExpr -> [Located Python.PythonTypeExpr] -> TypeInferenceM Type
+    inferParameterizedType :: Common.Located Python.PythonTypeExpr -> [Common.Located Python.PythonTypeExpr] -> TypeInferenceM Type
     inferParameterizedType baseType args = case (baseType, args) of
-      (Located _ (Python.TypeName (QualifiedName [] (Identifier "list"))), [elemTypeExpr]) -> do
+      (Common.Located _ (Python.TypeName (QualifiedName [] (Identifier "list"))), [elemTypeExpr]) -> do
         elemT <- inferPythonTypeExpr (locatedValue elemTypeExpr)
         return $ TList elemT
-      (Located _ (Python.TypeName (QualifiedName [] (Identifier "dict"))), [keyTypeExpr, valueTypeExpr]) -> do
+      (Common.Located _ (Python.TypeName (QualifiedName [] (Identifier "dict"))), [keyTypeExpr, valueTypeExpr]) -> do
         keyT <- inferPythonTypeExpr (locatedValue keyTypeExpr)
         valueT <- inferPythonTypeExpr (locatedValue valueTypeExpr)
         return $ TDict keyT valueT
@@ -1036,14 +1046,14 @@ inferPythonImport imp = case imp of
             ModuleName name -> name
         alias = fromMaybe (Identifier aliasText) maybeAlias
     -- Store module environment
-    modify $ \s -> s { importedModules = HashMap.insert alias moduleEnv (importedModules s) }
+    modify $ \s -> s { importedModules = HashMap.insert (case alias of Identifier name -> name) moduleEnv (importedModules s) }
   ImportFrom moduleName items _level -> do
     let modIdentifier = case moduleName of
             ModuleName name -> Identifier name
     moduleEnv <- loadPythonModule modIdentifier
-    forM_ items $ \(name, maybeAlias) -> do
+    forM_ items $ \name -> do
       case HashMap.lookup name moduleEnv of
-        Just ty -> bindVarType (fromMaybe name maybeAlias) ty
+        Just ty -> bindVarType name ty
         Nothing -> return ()
   where
     loadPythonModule :: Identifier -> TypeInferenceM TypeEnvironment
@@ -1074,10 +1084,28 @@ inferGoExpr expr = case expr of
   GoBinaryOp op left right -> do
     leftType <- inferGoExpr (goLocatedValue left)
     rightType <- inferGoExpr (goLocatedValue right)
-    inferBinaryOp op leftType rightType
+    let commonOp = case op of
+          Go.OpAdd -> Common.OpAdd
+          Go.OpSub -> Common.OpSub
+          Go.OpMul -> Common.OpMul
+          Go.OpQuo -> Common.OpDiv
+          Go.OpRem -> Common.OpMod
+          Go.OpAnd -> Common.OpBitAnd
+          Go.OpOr -> Common.OpBitOr
+          Go.OpXor -> Common.OpBitXor
+          Go.OpShiftL -> Common.OpShiftL
+          Go.OpShiftR -> Common.OpShiftR
+          Go.OpAndAnd -> Common.OpAnd
+          Go.OpOrOr -> Common.OpOr
+    inferBinaryOp commonOp leftType rightType
   GoUnaryOp op operand -> do
     operandType <- inferGoExpr (goLocatedValue operand)
-    inferUnaryOp op operandType
+    let commonOp = case op of
+          Go.OpPos -> Common.OpPositive
+          Go.OpNeg -> Common.OpNegate
+          Go.OpNot -> Common.OpNot
+          Go.OpBitNot -> Common.OpBitNot
+    inferUnaryOp commonOp operandType
   GoCall func args -> do
     funcType <- inferGoExpr (goLocatedValue func)
     argTypes <- mapM (inferGoExpr . goLocatedValue) args
@@ -1086,11 +1114,11 @@ inferGoExpr expr = case expr of
     addConstraint funcType expectedFuncType
     return resultType
   GoSelector obj field -> do
-    objType <- inferGoExpr (locatedValue obj)
+    objType <- inferGoExpr (goLocatedValue obj)
     inferAttributeAccess objType field
   GoIndex obj index -> do
-    objType <- inferGoExpr (locatedValue obj)
-    indexType <- inferGoExpr (locatedValue index)
+    objType <- inferGoExpr (goLocatedValue obj)
+    indexType <- inferGoExpr (goLocatedValue index)
     elemType <- freshTypeVar
     addConstraint objType (TList elemType)
     addConstraint indexType (TInt 32)
@@ -1112,21 +1140,21 @@ inferGoType :: GoType -> TypeInferenceM Type
 inferGoType goType = case goType of
   GoBasicType name -> inferGoBasicType name
   GoSliceType elemType -> do
-    elemT <- inferGoType (locatedValue elemType)
+    elemT <- inferGoType (goLocatedValue elemType)
     return $ TList elemT
   GoMapType keyType valueType -> do
-    keyT <- inferGoType (locatedValue keyType)
-    valueT <- inferGoType (locatedValue valueType)
+    keyT <- inferGoType (goLocatedValue keyType)
+    valueT <- inferGoType (goLocatedValue valueType)
     return $ TDict keyT valueT
   GoPointerType baseType -> do
-    baseT <- inferGoType (locatedValue baseType)
+    baseT <- inferGoType (goLocatedValue baseType)
     return $ TOwned baseT
   GoInterfaceType _methods -> 
     return $ TInterface (QualifiedName [] (Identifier "Interface")) []
   GoTypeParam identifier _constraint -> 
     return $ TVar (Common.TypeVar (unIdentifier identifier))
   GoGenericType name args -> do
-    argTypes <- mapM (inferGoType . locatedValue) args
+    argTypes <- mapM (inferGoType . goLocatedValue) args
     return $ TGeneric name argTypes
   _ -> freshTypeVar
   where
@@ -1153,28 +1181,28 @@ inferGoType goType = case goType of
       _ -> freshTypeVar
 
 -- | Infer Go variable declaration
-inferGoVarDecl :: (Identifier, Maybe (Located GoType), Maybe (Located GoExpr)) -> TypeInferenceM ()
+inferGoVarDecl :: (Identifier, Maybe (Go.Located GoType), Maybe (Go.Located GoExpr)) -> TypeInferenceM ()
 inferGoVarDecl (name, maybeType, maybeExpr) = do
   declaredType <- case maybeType of
-    Just goType -> inferGoType (locatedValue goType)
+    Just goType -> inferGoType (goLocatedValue goType)
     Nothing -> freshTypeVar
   
   case maybeExpr of
     Just expr -> do
-      exprType <- inferGoExpr (locatedValue expr)
+      exprType <- inferGoExpr (goLocatedValue expr)
       addConstraint exprType declaredType
     Nothing -> return ()
   
   bindVarType name declaredType
 
 -- | Infer Go constant declaration
-inferGoConstDecl :: (Identifier, Maybe (Located GoType), Located GoExpr) -> TypeInferenceM ()
+inferGoConstDecl :: (Identifier, Maybe (Go.Located GoType), Go.Located GoExpr) -> TypeInferenceM ()
 inferGoConstDecl (name, maybeType, expr) = do
-  exprType <- inferGoExpr (locatedValue expr)
+  exprType <- inferGoExpr (goLocatedValue expr)
   
   declaredType <- case maybeType of
     Just goType -> do
-      t <- inferGoType (locatedValue goType)
+      t <- inferGoType (goLocatedValue goType)
       addConstraint exprType t
       return t
     Nothing -> return exprType
@@ -1190,18 +1218,25 @@ inferGoFunction _func = do
 -- | Infer Go receiver
 inferGoReceiver :: GoReceiver -> TypeInferenceM Type
 inferGoReceiver receiver = do
-  receiverType <- inferGoType (locatedValue $ goReceiverType receiver)
+  receiverType <- inferGoType (goLocatedValue $ goReceiverType receiver)
   return receiverType
 
 -- | Enhanced Go import handling
 inferGoImport :: GoImport -> TypeInferenceM ()
 inferGoImport imp = case imp of
-  GoImportDecl path maybeAlias -> do
+  GoImportNormal maybeAlias path -> do
     moduleEnv <- loadGoPackage path
-    let alias = fromMaybe (extractPackageName path) maybeAlias
-    modify $ \s -> s { importedModules = HashMap.insert alias moduleEnv (importedModules s) }
-  GoImportDecl _ imports -> do 
-    mapM_ (inferGoImport . locatedValue) imports
+    let aliasText = case fromMaybe (extractPackageName path) maybeAlias of
+          Identifier text -> text
+    modify $ \s -> s { importedModules = HashMap.insert aliasText moduleEnv (importedModules s) }
+  GoImportDot path -> do
+    moduleEnv <- loadGoPackage path
+    let Identifier aliasText = extractPackageName path
+    modify $ \s -> s { importedModules = HashMap.insert aliasText moduleEnv (importedModules s) }
+  GoImportBlank path -> do
+    moduleEnv <- loadGoPackage path
+    let Identifier aliasText = extractPackageName path
+    modify $ \s -> s { importedModules = HashMap.insert aliasText moduleEnv (importedModules s) }
   where
     extractPackageName :: Text -> Identifier
     extractPackageName path = 
@@ -1232,13 +1267,13 @@ inferGoBinding binding = case bindKind binding of
       LHSIdents identifiers -> do
         case bindType binding of
           Just typeLoc -> do
-            typeVal <- inferGoType (locatedValue typeLoc)
+            typeVal <- inferGoType (goLocatedValue typeLoc)
             mapM_ (`bindVarType` typeVal) identifiers
           Nothing -> do
             -- No type annotation, infer from RHS if available
             case bindRHS binding of
               (expr:_) -> do
-                typeVal <- inferGoExpr (locatedValue expr)
+                typeVal <- inferGoExpr (goLocatedValue expr)
                 mapM_ (`bindVarType` typeVal) identifiers
               [] -> mapM_ (`bindVarType` TAny) identifiers
       _ -> return ()

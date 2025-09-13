@@ -54,7 +54,7 @@ import qualified Data.List.NonEmpty as NE ()
 
 import qualified Fluxus.AST.Common as Common
 import Fluxus.AST.Go hiding (Located, Identifier, QualifiedName)
-import Fluxus.AST.Common (SourceSpan, Located, Identifier)
+import Fluxus.AST.Common (SourceSpan, Located(..), Identifier)
 import Fluxus.Parser.Go.Lexer
 
 -- | Simple chainl1 implementation for left-associative operators
@@ -143,7 +143,7 @@ parseWhileLookingDecl = do
     else do
       -- Look ahead to see what kind of token we have
       nextToken <- lookAhead anySingle
-      case locValue nextToken of
+      case Common.locValue nextToken of
         GoTokenKeyword kw -> case kw of
           GoKwFunc -> do
             -- Found a function declaration
@@ -211,7 +211,7 @@ skipImportsRobust = do
     skipUntilFunc = do
       skipCommentsAndNewlines
       currentToken <- lookAhead anySingle
-      case locValue currentToken of
+      case Common.locValue currentToken of
         GoTokenKeyword GoKwFunc -> return ()  -- Stop here
         GoTokenKeyword GoKwImport -> skipUntilFunc  -- Skip more imports
         _ -> do
@@ -287,7 +287,7 @@ parseDeclaration = located $ do
         -- If all specific parsers fail, check what token we're looking at
         -- and report a proper error instead of silently skipping
         nextToken <- lookAhead anySingle
-        case locValue nextToken of
+        case Common.locValue nextToken of
           GoTokenKeyword kw -> case kw of
             GoKwPackage -> do
               -- Skip package declaration (we've already processed it)
@@ -311,7 +311,7 @@ parseDeclaration = located $ do
             -- Skip comments
             skipComments
             parseDeclarationNoLocated
-          _ -> fail $ "Syntax error: Unexpected token '" ++ show (locValue nextToken) ++ "' in declaration context"
+          _ -> fail $ "Syntax error: Unexpected token '" ++ show (Common.locValue nextToken) ++ "' in declaration context"
     ]
   return result
   where
@@ -319,7 +319,7 @@ parseDeclaration = located $ do
     parseDeclarationNoLocated = do
       -- Look ahead to see if we have any valid declaration tokens
       nextToken <- lookAhead anySingle
-      case locValue nextToken of
+      case Common.locValue nextToken of
         GoTokenKeyword kw -> case kw of
           GoKwFunc -> parseFuncDecl
           GoKwType -> parseTypeDecl
@@ -345,7 +345,7 @@ parseDeclaration = located $ do
         GoTokenDelimiter GoDelimSemicolon -> do
           void anySingle
           parseDeclarationNoLocated
-        _ -> fail $ "Syntax error: Expected declaration, found '" ++ show (locValue nextToken) ++ "'"
+        _ -> fail $ "Syntax error: Expected declaration, found '" ++ show (Common.locValue nextToken) ++ "'"
 
 -- | Parse function declarations (including methods and init functions)
 parseFuncDecl :: GoParser GoDecl
@@ -685,7 +685,7 @@ parseForStmt = do
       -- Check if this is a while-style for loop: for condition { ... }
       -- Look ahead to see if there's a semicolon after the first expression
       firstToken <- lookAhead anySingle
-      case locValue firstToken of
+      case Common.locValue firstToken of
         GoTokenDelimiter GoDelimLeftBrace -> do
           -- This is just "for { ... }" - infinite loop
           body <- located parseBlockStmt'
@@ -705,7 +705,7 @@ parseForStmt = do
                 expr <- parseExpression
                 -- Look ahead to see what comes next
                 nextToken <- lookAhead anySingle
-                case locValue nextToken of
+                case Common.locValue nextToken of
                   GoTokenDelimiter GoDelimSemicolon -> do
                     void $ goDelimiterP GoDelimSemicolon
                     return expr
@@ -1021,7 +1021,7 @@ parseGoLiteral = do
     Located _ (GoTokenRawString _) -> True
     Located _ (GoTokenRune _) -> True
     _ -> False
-  case locValue literalToken of
+  case Common.locValue literalToken of
     GoTokenInt text -> return $ GoLiteral $ GoInt (read (T.unpack text) :: Integer)
     GoTokenFloat text -> return $ GoLiteral $ GoFloat (read $ T.unpack text)
     GoTokenImag text -> return $ GoLiteral $ GoImag (read $ T.unpack $ T.init text)  -- Remove 'i'
@@ -1035,9 +1035,9 @@ parseGoIdentifierExpr :: GoParser GoExpr
 parseGoIdentifierExpr = do
   ident <- parseGoIdentifier
   case ident of
-    Identifier "true" -> return $ GoLiteral $ GoBool True
-    Identifier "false" -> return $ GoLiteral $ GoBool False
-    Identifier "nil" -> return $ GoLiteral GoNil
+    Common.Identifier "true" -> return $ GoLiteral $ GoBool True
+    Common.Identifier "false" -> return $ GoLiteral $ GoBool False
+    Common.Identifier "nil" -> return $ GoLiteral GoNil
     _ -> return $ GoIdent ident
 
 -- | Parse parenthesized expressions
@@ -1081,18 +1081,18 @@ parseCall = do
       _ -> located' $ GoCall expr args
 
 -- | Check if an identifier is a built-in function
-parseBuiltinFunction :: Identifier -> Maybe GoBuiltin
-parseBuiltinFunction (Identifier name) = case name of
-  "make" -> Just GoMake
-  "new" -> Just GoNew
-  "len" -> Just GoLen
-  "cap" -> Just GoCap
-  "append" -> Just GoAppend
-  "copy" -> Just GoCopy
-  "delete" -> Just GoDelete
-  "close" -> Just GoClose
-  "panic" -> Just GoPanic
-  "recover" -> Just GoRecover
+parseBuiltinFunction :: Common.Identifier -> Maybe Text
+parseBuiltinFunction (Common.Identifier name) = case name of
+  "make" -> Just "make"
+  "new" -> Just "new"
+  "len" -> Just "len"
+  "cap" -> Just "cap"
+  "append" -> Just "append"
+  "copy" -> Just "copy"
+  "delete" -> Just "delete"
+  "close" -> Just "close"
+  "panic" -> Just "panic"
+  "recover" -> Just "recover"
   "real" -> Just GoReal
   "imag" -> Just GoImagBuiltin
   "complex" -> Just GoComplex
@@ -1326,14 +1326,14 @@ parseTypeConstraint = located $ do
       result <- optional $ choice
         [ try $ do
             constraintToken <- lookAhead anySingle
-            case locValue constraintToken of
+            case Common.locValue constraintToken of
               GoTokenIdent "comparable" -> do
                 void anySingle
                 return GoComparableConstraint
               _ -> fail "Not comparable"
         , try $ do
             constraintToken <- lookAhead anySingle
-            case locValue constraintToken of
+            case Common.locValue constraintToken of
               GoTokenIdent "Ordered" -> do
                 void anySingle
                 return GoOrderedConstraint
@@ -1360,7 +1360,7 @@ parseConstraintType = located $ do
     ]
   where
     parseQualifiedType = do
-      Identifier pkgName <- parseGoIdentifier
+      Common.Identifier pkgName <- parseGoIdentifier
       void $ goDelimiterP GoDelimDot  
       skipCommentsAndNewlines
       typeName <- parseGoIdentifier
@@ -1462,14 +1462,14 @@ parseGoIdentifier = do
   identifierToken <- satisfy $ \case
     Located _ (GoTokenIdent _) -> True
     _ -> False
-  case locValue identifierToken of
+  case Common.locValue identifierToken of
     GoTokenIdent text -> return $ Identifier text
     _ -> fail "Expected identifier"
 
 parseGoString :: GoParser Text
 parseGoString = do
   stringToken <- anySingle
-  case locValue stringToken of
+  case Common.locValue stringToken of
     GoTokenString text -> return text
     GoTokenRawString text -> return text
     _ -> fail "Expected string"
@@ -1509,33 +1509,33 @@ parseParameterList = do
 -- | Token matching utilities
 goKeywordP :: GoKeyword -> GoParser ()
 goKeywordP kw = void $ satisfy $ \case
-  Common.Located _ (GoTokenKeyword kw') -> kw == kw'
+  Located _ (GoTokenKeyword kw') -> kw == kw'
   _ -> False
 
 goOperatorP :: GoOperator -> GoParser ()
 goOperatorP op = void $ satisfy $ \case
-  Common.Located _ (GoTokenOperator op') -> op == op'
+  Located _ (GoTokenOperator op') -> op == op'
   _ -> False
 
 goDelimiterP :: GoDelimiter -> GoParser ()
 goDelimiterP delim = void $ satisfy $ \case
-  Common.Located _ (GoTokenDelimiter delim') -> delim == delim'
+  Located _ (GoTokenDelimiter delim') -> delim == delim'
   _ -> False
 
 skipNewlines :: GoParser ()
 skipNewlines = void $ MP.many $ satisfy $ \case
-  Common.Located _ GoTokenNewline -> True
+  Located _ GoTokenNewline -> True
   _ -> False
 
 skipComments :: GoParser ()
 skipComments = void $ MP.many $ satisfy $ \case
-  Common.Located _ (GoTokenComment _) -> True
+  Located _ (GoTokenComment _) -> True
   _ -> False
 
 skipCommentsAndNewlines :: GoParser ()
 skipCommentsAndNewlines = void $ MP.many $ satisfy $ \case
-  Common.Located _ GoTokenNewline -> True
-  Common.Located _ (GoTokenComment _) -> True
+  Located _ GoTokenNewline -> True
+  Located _ (GoTokenComment _) -> True
   _ -> False
 
 -- | Helper for creating located expressions

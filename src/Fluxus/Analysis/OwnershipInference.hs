@@ -11,9 +11,8 @@ module Fluxus.Analysis.OwnershipInference where
 import Control.Monad.State
 import Control.Monad.Reader
 import Control.Monad.Except
-import Control.Monad (void, when, unless, foldM, forM_)
+import Control.Monad (void, when, unless, forM_)
 import Data.Text (Text)
-import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Set (Set)
@@ -143,8 +142,6 @@ data OwnershipResult = OwnershipResult
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
-type OwnershipInferenceM = ReaderT OwnershipContext (StateT OwnershipInferenceState (Except Text))
-
 -- Initial states
 initialContext :: OwnershipContext
 initialContext = OwnershipContext
@@ -176,6 +173,9 @@ initialState = OwnershipInferenceState
   , oisOptimizationHints = []
   , oisSharedReferences = HashMap.empty
   }
+
+-- Type alias for the ownership inference monad
+type OwnershipInferenceM = ReaderT OwnershipContext (StateT OwnershipInferenceState (Except Text))
 
 -- Core functions
 runOwnershipInference :: OwnershipInferenceM a -> Either Text (a, OwnershipInferenceState)
@@ -305,7 +305,7 @@ analyzeExpression (CELet var bindExpr body) = do
 
 analyzeExpression (CEBlock exprs) = do
   -- Create a new scope
-  originalState <- get
+  void $ get
   
   -- Analyze each expression in sequence (flow-sensitive)
   results <- mapM (analyzeExpression . locatedValue) exprs
@@ -379,8 +379,8 @@ analyzeExpression (CEUnaryOp op operand) = do
     _ -> return operandOwnership
 
 analyzeExpression (CECall func args) = do
-  funcOwnership <- analyzeExpression (locatedValue func)
-  argOwnerships <- mapM (analyzeExpression . locatedValue) args
+  void $ analyzeExpression (locatedValue func)
+  void $ mapM (analyzeExpression . locatedValue) args
   
   -- Look up function summary
   context <- ask
@@ -397,7 +397,7 @@ analyzeExpression (CECall func args) = do
           return $ OwnershipInfo True True (Just 1) EscapeToHeap Heap True Nothing
     _ -> return $ OwnershipInfo True True (Just 1) EscapeToHeap Heap True Nothing
   where
-    handleParamMove funcName idx (arg, moves) = when moves $ do
+    handleParamMove _ _ (arg, moves) = when moves $ do
       case locatedValue arg of
         CEVar var -> invalidateVariable var
         _ -> return ()
@@ -492,8 +492,8 @@ analyzeExpression (CEIf cond thenBranch elseBranch) = do
   return $ unifyOwnership thenOwnership elseOwnership
   where
     voidOwnership = OwnershipInfo False False Nothing NoEscape Stack True Nothing
-    mergeStates s1 s2 = s1  -- Simplified
-    unifyOwnership o1 o2 = o1  -- Simplified
+    mergeStates _ _ = undefined  -- Simplified
+    unifyOwnership o1 _ = o1  -- Simplified
 
 analyzeExpression (CEReturn expr) = do
   ownership <- analyzeExpression (locatedValue expr)
@@ -586,7 +586,7 @@ generateCppType expr ownership strategy = do
 
 -- Generate optimization hints
 generateOptimizationHints :: CommonExpr -> OwnershipInfo -> OwnershipStrategy -> OwnershipInferenceM [Text]
-generateOptimizationHints expr ownership strategy = do
+generateOptimizationHints _ ownership strategy = do
   hints <- case strategy of
     UniqueOwnership -> return ["Use std::make_unique for exception safety"]
     SharedOwnership -> return ["Use std::make_shared for single allocation"]

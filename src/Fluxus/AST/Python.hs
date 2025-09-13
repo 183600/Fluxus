@@ -192,9 +192,8 @@ data FStringPart
     { fstrExpr       :: !(Located PythonExpr)
     , fstrConversion :: !(Maybe ConversionFlag)
     , fstrFormatSpec :: !(Maybe Text)
-    }
-  deriving stock (Eq, Show, Generic)
-  deriving anyclass (Hashable, NFData)
+    } deriving stock (Eq, Show, Generic)
+    deriving anyclass (Hashable, NFData)
 
 -- | F-string conversion flags
 data ConversionFlag

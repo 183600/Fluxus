@@ -24,6 +24,7 @@ import Control.Monad.State
 import Control.Monad.Reader
 import Control.Monad.Except
 import Control.Monad.Writer
+import Control.Monad (void, when)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
@@ -32,6 +33,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.List (foldl')
+import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 
@@ -57,7 +59,7 @@ data Located a = Located
 
 newtype Identifier = Identifier Text
   deriving stock (Eq, Ord, Show, Generic)
-  deriving anyclass (NFData)
+  deriving anyclass (Hashable, NFData)
 
 data Literal
   = LInt !Integer
@@ -66,7 +68,7 @@ data Literal
   | LBool !Bool
   | LNull
   deriving stock (Eq, Ord, Show, Generic)
-  deriving anyclass (NFData)
+  deriving anyclass (Hashable, NFData)
 
 data BinaryOp = Add | Sub | Mul | Div | Mod | And | Or
   deriving stock (Eq, Ord, Show, Generic)
@@ -188,7 +190,7 @@ data VariableInfo = VariableInfo
 data FallbackState = FallbackState
   { fsGlobalDynamismMap :: !(HashMap Identifier DynamismLevel)
   , fsFallbackDecisions :: ![FallbackDecision]
-  , fsAnalysisCache :: !(HashMap CommonExpr AnalysisResult)
+  , fsAnalysisCache :: !(HashMap Text AnalysisResult)
   , fsCurrentDepth :: !Int
   , fsStatistics :: !AnalysisStatistics
   } deriving stock (Show, Generic)
@@ -426,12 +428,46 @@ collectExpressions = \case
 -- Expression Analysis
 -- ============================================================================
 
+-- | Convert expression to a text key for caching
+expressionToKey :: CommonExpr -> Text
+expressionToKey = \case
+  CELiteral lit -> "literal:" <> case lit of
+    LInt i -> T.pack $ show i
+    LFloat f -> T.pack $ show f
+    LString s -> "str:" <> s
+    LBool b -> if b then "true" else "false"
+    LNull -> "null"
+  CEVar (Identifier name) -> "var:" <> name
+  CEBinaryOp op left right -> 
+    "bin:" <> T.pack (show op) <> "(" <> expressionToKey (locatedValue left) <> "," <> expressionToKey (locatedValue right) <> ")"
+  CEUnaryOp op operand -> 
+    "unary:" <> T.pack (show op) <> "(" <> expressionToKey (locatedValue operand) <> ")"
+  CEComparison op left right -> 
+    "cmp:" <> T.pack (show op) <> "(" <> expressionToKey (locatedValue left) <> "," <> expressionToKey (locatedValue right) <> ")"
+  CECall func args -> 
+    "call:" <> expressionToKey (locatedValue func) <> "(" <> T.intercalate "," (map (expressionToKey . locatedValue) args) <> ")"
+  CEIndex container index -> 
+    "index:" <> expressionToKey (locatedValue container) <> "[" <> expressionToKey (locatedValue index) <> "]"
+  CESlice container start end -> 
+    "slice:" <> expressionToKey (locatedValue container) <> "[" <> 
+    maybe "" (expressionToKey . locatedValue) start <> ":" <> 
+    maybe "" (expressionToKey . locatedValue) end <> "]"
+  CEAttribute obj (Identifier attr) -> 
+    "attr:" <> expressionToKey (locatedValue obj) <> "." <> attr
+  CELambda params body -> 
+    "lambda:" <> T.intercalate "," (map (\(Identifier name) -> name) params) <> "->" <> expressionToKey (locatedValue body)
+  CEList elements -> 
+    "list:[" <> T.intercalate "," (map (expressionToKey . locatedValue) elements) <> "]"
+  CERecord fields -> 
+    "record:{" <> T.intercalate "," (map (\(Identifier name, val) -> name <> "=" <> expressionToKey (locatedValue val)) fields) <> "}"
+
 -- | Analyze an expression and return detailed result
 analyzeExpression :: CommonExpr -> SmartFallbackM AnalysisResult
 analyzeExpression expr = do
+  let key = expressionToKey expr
   -- Check cache first
   cache <- gets fsAnalysisCache
-  case HashMap.lookup expr cache of
+  case HashMap.lookup key cache of
     Just result -> do
       updateStatistics True
       return result
@@ -452,7 +488,7 @@ analyzeExpression expr = do
       
       -- Cache result
       modify $ \s -> s 
-        { fsAnalysisCache = HashMap.insert expr result (fsAnalysisCache s)
+        { fsAnalysisCache = HashMap.insert key result (fsAnalysisCache s)
         , fsCurrentDepth = depth
         }
       

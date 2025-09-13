@@ -8,6 +8,7 @@ import qualified Test.Fluxus.Analysis.TypeInference as TypeInferenceTests
 import qualified Test.Fluxus.CodeGen.CPP as CodeGenTests
 import qualified Test.Fluxus.Optimization as OptimizationTests
 import qualified Test.Fluxus.Integration as IntegrationTests
+import qualified Test.Fluxus.EndToEnd as EndToEndTests
 
 main :: IO ()
 main = hspec $ do
@@ -18,3 +19,4 @@ main = hspec $ do
     CodeGenTests.spec
     OptimizationTests.spec
     IntegrationTests.spec
+    EndToEndTests.spec

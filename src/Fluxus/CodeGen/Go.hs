@@ -27,6 +27,7 @@ import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Control.Monad.State
 import Control.Monad.Except
+import Control.Monad (forM, when)
 import Data.List (nub)
 
 import Fluxus.AST.Common
@@ -372,7 +373,7 @@ generateReturn :: GoGenConfig -> Maybe (Located PythonExpr) -> GenM [Text]
 generateReturn config mexpr = do
   isMain <- gets gsInMain
   case (isMain, mexpr) of
-    (True, Just (Located _ (PyLiteral (PyInt n)))) ->
+    (True, Just (Located _ (PyLiteral (PyInt n)))) -> do
       -- main function with exit code
       requireImport "os"
       return ["os.Exit(" <> T.pack (show n) <> ")"]
@@ -451,7 +452,7 @@ generateLiteral = \case
   PyInt n -> T.pack (show n)
   PyFloat d -> T.pack (show d)
   PyString s -> "\"" <> escapeString s <> "\""
-  PyFString parts -> "fmt.Sprintf(\"%v\")"  -- Simplified
+  
   PyBool b -> if b then "true" else "false"
   PyNone -> "nil"
   _ -> "nil"
@@ -619,5 +620,4 @@ compareOpToGo = \case
   OpGe -> ">="
   OpIs -> "=="  -- Simplified
   OpIsNot -> "!="
-  OpIn -> "in"  -- Not directly supported in Go
-  OpNotIn -> "not in"
+  
