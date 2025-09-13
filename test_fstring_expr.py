@@ -1,1 +1,0 @@
-print(f"Result: {5 + 3}")

@@ -185,7 +185,7 @@ parseForStmt = do
     void $ keywordP KwElse
     void $ delimiterP DelimColon
     parseBlock
-  return $ PyFor target iter body elseBody
+  return $ PyFor False target iter body elseBody
 
 -- | Parse function definitions
 parseFuncDef :: PythonParser PythonStmt
@@ -208,6 +208,7 @@ parseFuncDef = do
   let funcDef = PythonFuncDef
         { pyFuncName = name
         , pyFuncDecorators = []  -- TODO: Parse decorators
+        , pyFuncTypeParams = []  -- TODO: Parse type parameters
         , pyFuncParams = params
         , pyFuncReturns = returnType
         , pyFuncBody = bodyStmts
@@ -215,7 +216,7 @@ parseFuncDef = do
         , pyFuncIsAsync = isAsync
         }
   
-  return $ if isAsync then PyAsyncFuncDef funcDef else PyFuncDef funcDef
+  return $ PyFuncDef funcDef
 
 -- | Parse class definitions
 parseClassDef :: PythonParser PythonStmt
@@ -235,6 +236,7 @@ parseClassDef = do
   return $ PyClassDef $ PythonClassDef
     { pyClassName = name
     , pyClassDecorators = []  -- TODO: Parse decorators
+    , pyClassTypeParams = []  -- TODO: Parse type parameters
     , pyClassBases = bases
     , pyClassKeywords = []    -- TODO: Parse keywordP arguments
     , pyClassBody = bodyStmts
@@ -426,7 +428,8 @@ parseLiteral = do
     TokenFString text exprs -> do
       -- Parse embedded expressions from the f-string
       embeddedExprs <- mapM parseEmbeddedExpr exprs
-      return $ PyLiteral $ PyFString text embeddedExprs
+      let fStringParts = map (\e -> FStringExpr e Nothing Nothing) embeddedExprs
+      return $ PyFString fStringParts
     TokenNumber text isFloat ->
       if isFloat
         then return $ PyLiteral $ PyFloat (read $ T.unpack text)

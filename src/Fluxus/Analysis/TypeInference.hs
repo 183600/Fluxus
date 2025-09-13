@@ -38,10 +38,11 @@ import Fluxus.AST.Common
 import qualified Fluxus.AST.Common as Common
 import qualified Fluxus.AST.Python as Python
 import Fluxus.AST.Python (PythonAST(..), PythonModule(..), pyModule, PythonStmt(..), PythonExpr(..), PythonPattern(..), PythonLiteral(..), PythonFuncDef(..), PythonClassDef(..), PythonParameter(..), PythonImport(..), PythonArgument(..))
-import Fluxus.AST.Go (GoAST(..), GoPackage(..), goPackage, GoStmt(..), GoExpr(..), GoType(..), GoLiteral(..), GoDecl(..), GoFunction(..), GoReceiver(..), GoImport(..), GoField(..), GoFile(..), GoForClause(..), GoRangeClause(..), GoConstraint(..), GoBuiltin(..))
+import Fluxus.AST.Go (GoAST(..), GoPackage(..), goPackage, GoStmt(..), GoExpr(..), GoType(..), GoLiteral(..), GoDecl(..), GoTypeDecl(..), GoFunction(..), GoReceiver(..), GoImport(..), GoField(..), GoFile(..), GoForClause(..), GoRangeClause(..), GoConstraint(..), GoBinding(..), BindingLHS(..), BindKind(..), Located(..))
+import qualified Fluxus.AST.Go as Go
 import Control.Monad.State
 import Control.Monad.Except
-import Control.Monad (foldM, forM, forM_, when, unless)
+import Control.Monad (foldM, forM, forM_, when, unless, zipWithM_)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
@@ -54,12 +55,12 @@ import Control.DeepSeq (NFData)
 
 -- | Enhanced error type for better error reporting
 data InferenceError
-  = UnificationError Type Type SourceLocation
-  | OccursCheckFailed TypeVar Type SourceLocation  
-  | UndefinedVariable Identifier SourceLocation
-  | TypeMismatch Type Type Text SourceLocation
-  | AttributeNotFound Identifier Type SourceLocation
-  | ImportError Text SourceLocation
+  = UnificationError Type Type SourceSpan
+  | OccursCheckFailed TypeVar Type SourceSpan  
+  | UndefinedVariable Identifier SourceSpan
+  | TypeMismatch Type Type Text SourceSpan
+  | AttributeNotFound Identifier Type SourceSpan
+  | ImportError Text SourceSpan
   | GenericError Text
   deriving (Show, Eq, Generic)
 
@@ -148,7 +149,7 @@ lookupVarType var = do
       -- Apply current substitution to the type
       subst <- gets substitution
       return $ applySubstitution subst t
-    Nothing -> throwError $ errorToText $ UndefinedVariable var NoLocation
+    Nothing -> throwError $ errorToText $ UndefinedVariable var (SourceSpan (T.pack "<no-file>") (SourcePos 0 0) (SourcePos 0 0))
   where
     lookupInScopes :: Identifier -> [TypeEnvironment] -> Maybe Type
     lookupInScopes _ [] = Nothing
@@ -270,7 +271,7 @@ inferAttributeAccess objType attr = case objType of
           Nothing -> 
             case HashMap.lookup attr (typeDefMethods typeDef) of
               Just methodType -> return methodType
-              Nothing -> throwError $ errorToText $ AttributeNotFound attr objType NoLocation
+              Nothing -> throwError $ errorToText $ AttributeNotFound attr objType (SourceSpan (T.pack "<no-file>") (SourcePos 0 0) (SourcePos 0 0))
       Nothing -> freshTypeVar  -- Type definition not found, return fresh var
   _ -> freshTypeVar  -- For other types, return fresh type variable
 
@@ -431,7 +432,7 @@ unifyList ((t1, t2):rest) = do
   case s1 of
     Left err -> return $ Left err
     Right subst1 -> do
-      let restWithSubst = map (KATEX_INLINE_OPENa, b) -> (applySubstitution subst1 a, applySubstitution subst1 b)) rest
+      let restWithSubst = map (\(a, b) -> (applySubstitution subst1 a, applySubstitution subst1 b)) rest
       s2 <- unifyList restWithSubst
       case s2 of
         Left err -> return $ Left err
@@ -446,7 +447,7 @@ applySubstitutionToState :: Substitution -> TypeInferenceM ()
 applySubstitutionToState newSubst = do
   state <- get
   let composedSubst = composeSubst newSubst (substitution state)
-  let updatedConstraints = map (KATEX_INLINE_OPENt1, t2) -> 
+  let updatedConstraints = map (\(t1, t2) -> 
         (applySubstitution newSubst t1, applySubstitution newSubst t2)) 
         (constraints state)
   let updatedScopes = map (HashMap.map (applySubstitution newSubst)) (scopeStack state)
@@ -525,7 +526,7 @@ solveConstraints = do
         Left err -> throwError err
         Right newSubst -> do
           -- Apply new substitution to remaining constraints
-          let rest' = map (KATEX_INLINE_OPENa, b) -> 
+          let rest' = map (\(a, b) -> 
                 (applySubstitution newSubst a, applySubstitution newSubst b)) rest
           -- Update state with new substitution
           applySubstitutionToState newSubst
@@ -536,9 +537,12 @@ solveConstraints = do
 instantiate :: Type -> TypeInferenceM Type
 instantiate (TForall vars constraints t) = do
   freshVars <- mapM (const freshTypeVar) vars
-  let varMap = HashMap.fromList (zip vars (map (KATEX_INLINE_OPENTVar v) -> v) freshVars))
-  let substitution = HashMap.mapKeys (KATEX_INLINE_OPENCommon.TypeVar name) -> Common.TypeVar name) 
-                   $ HashMap.map TVar varMap
+  let varMap = HashMap.fromList (zip vars freshVars)
+  let substitution = HashMap.mapKeys (\(Common.TypeVar name) -> Common.TypeVar name) 
+                   $ HashMap.map (\case
+                       (Common.TypeVar name) -> Common.TypeVar name
+                       _ -> error "Unexpected type in varMap"
+                     ) varMap
   return $ applySubstitution substitution t
 instantiate t = return t
 
@@ -624,7 +628,7 @@ inferPythonStatement stmt = case stmt of
     mapM_ (inferPythonStatement . locatedValue) elseClause
     return ()
   
-  PyFor target iter body elseClause -> do
+  PyFor { pyForTarget = target, pyForIter = iter, pyForBody = body, pyForElse = elseClause } -> do
     iterType <- inferPythonExpr (locatedValue iter)
     elemType <- freshTypeVar
     addConstraint iterType (TList elemType)
@@ -643,39 +647,50 @@ inferPythonStatement stmt = case stmt of
   
   _ -> return ()
 
+-- | Helper function to extract value from Go.Located
+goLocatedValue :: Fluxus.AST.Go.Located a -> a
+goLocatedValue = Fluxus.AST.Go.locValue
+
 -- | Infer types for Go statements
 inferGoStatement :: GoStmt -> TypeInferenceM ()
 inferGoStatement stmt = case stmt of
   GoExprStmt expr -> do
-    _ <- inferGoExpr (locatedValue expr)
+    _ <- inferGoExpr (goLocatedValue expr)
     return ()
   
-  GoAssign lvalues rvalues -> do
-    lvalueTypes <- mapM (inferGoExpr . locatedValue) lvalues
-    rvalueTypes <- mapM (inferGoExpr . locatedValue) rvalues
-    mapM_ (uncurry addConstraint) (zip lvalueTypes rvalueTypes)
-    return ()
-  
-  GoDefine identifiers rvalues -> do
-    rvalueTypes <- mapM (inferGoExpr . locatedValue) rvalues
-    mapM_ (uncurry bindVarType) (zip identifiers rvalueTypes)
-    return ()
-  
-  GoVarStmt varDecls -> do
-    mapM_ inferGoVarDecl varDecls
+  GoBind binding -> do
+    case bindKind binding of
+      BindAssign -> do
+        case bindLHS binding of
+          LHSExprs lvalues -> do
+            lvalueTypes <- mapM (inferGoExpr . goLocatedValue) lvalues
+            rvalueTypes <- mapM (inferGoExpr . goLocatedValue) (bindRHS binding)
+            mapM_ (uncurry addConstraint) (zip lvalueTypes rvalueTypes)
+          _ -> return ()
+      BindDefine -> do
+        case bindLHS binding of
+          LHSIdents identifiers -> do
+            rvalueTypes <- mapM (inferGoExpr . goLocatedValue) (bindRHS binding)
+            mapM_ (uncurry bindVarType) (zip identifiers rvalueTypes)
+          _ -> return ()
+      BindVar -> do
+        case bindLHS binding of
+          LHSIdents identifiers -> do
+            mapM_ inferGoVarDecl identifiers
+          _ -> return ()
     return ()
   
   GoReturn exprs -> do
-    _ <- mapM (inferGoExpr . locatedValue) exprs
+    _ <- mapM (inferGoExpr . goLocatedValue) exprs
     return ()
   
   GoIf maybeInit condition thenStmt maybeElseStmt -> do
-    condType <- inferGoExpr (locatedValue condition)
+    condType <- inferGoExpr (goLocatedValue condition)
     addConstraint condType TBool
-    _ <- inferGoStatement (locatedValue thenStmt)
+    _ <- inferGoStatement (goLocatedValue thenStmt)
     case maybeElseStmt of
       Just elseStmt -> do
-        _ <- inferGoStatement (locatedValue elseStmt)
+        _ <- inferGoStatement (goLocatedValue elseStmt)
         return ()
       Nothing -> return ()
     return ()
@@ -685,11 +700,11 @@ inferGoStatement stmt = case stmt of
       Just clause -> do
         case goForCond clause of
           Just cond -> do
-            condType <- inferGoExpr (locatedValue cond)
+            condType <- inferGoExpr (goLocatedValue cond)
             addConstraint condType TBool
           Nothing -> return ()
       Nothing -> return ()
-    _ <- inferGoStatement (locatedValue body)
+    _ <- inferGoStatement (goLocatedValue body)
     return ()
   
   _ -> return ()
@@ -768,17 +783,17 @@ inferPythonClassDef classDef = do
 -- | Infer types for Go declarations
 inferGoDecl :: GoDecl -> TypeInferenceM ()
 inferGoDecl decl = case decl of
-  GoConstDecl constDecls -> do
+  GoConstDecl _ constDecls -> do
     mapM_ inferGoConstDecl constDecls
     return ()
   
-  GoTypeDecl name goType -> do
-    typeVal <- inferGoType (locatedValue goType)
-    bindVarType name typeVal
+  GoTypeDecl goTypeDecl -> do
+    typeVal <- inferGoType (goLocatedValue (goTypeDeclType goTypeDecl))
+    bindVarType (goTypeDeclName goTypeDecl) typeVal
     return ()
   
-  GoVarDecl varDecls -> do
-    mapM_ inferGoVarDecl varDecls
+  GoBindDecl bindings -> do
+    mapM_ inferGoBinding bindings
     return ()
   
   GoFuncDecl func -> do
@@ -816,8 +831,8 @@ inferProgram (Right goAST) = do
   where
     inferGoFile :: GoFile -> TypeInferenceM ()
     inferGoFile file = do
-      mapM_ (inferGoImport . locatedValue) (goFileImports file)
-      mapM_ (inferGoDecl . locatedValue) (goFileDecls file)
+      mapM_ (inferGoImport . goLocatedValue) (goFileImports file)
+      mapM_ (inferGoDecl . goLocatedValue) (goFileDecls file)
 
 -- | Top-level AST type inference
 inferASTType :: Either PythonAST GoAST -> TypeInferenceM ()
@@ -896,7 +911,7 @@ inferPythonExpr expr = case expr of
   PyDict entries -> do
     keyType <- freshTypeVar
     valueType <- freshTypeVar
-    forM_ entries $ KATEX_INLINE_OPENk, v) -> do
+    forM_ entries $ \(k, v) -> do
       kType <- inferPythonExpr (locatedValue k)
       vType <- inferPythonExpr (locatedValue v)
       addConstraint kType keyType
@@ -932,7 +947,7 @@ inferPythonLiteral lit = case lit of
   PyFloat _ -> return $ TFloat 64
   PyComplex _ _ -> return $ TComplex (TFloat 64)
   PyString _ -> return TString
-  PyFString _ _ -> return TString
+  PyFString _ -> return TString
   PyBytes _ -> return TBytes
   PyBool _ -> return TBool
   PyNone -> return $ TOptional TAny
@@ -1012,15 +1027,21 @@ inferPythonTypeExpr typeExpr = case typeExpr of
 -- | Enhanced Python import handling
 inferPythonImport :: PythonImport -> TypeInferenceM ()
 inferPythonImport imp = case imp of
-  PyImportModule moduleName maybeAlias -> do
+  ImportModule moduleName maybeAlias -> do
     -- Load module types (simplified: add standard library types)
-    moduleEnv <- loadPythonModule moduleName
-    let alias = fromMaybe moduleName maybeAlias
+    let modIdentifier = case moduleName of
+            ModuleName name -> Identifier name
+    moduleEnv <- loadPythonModule modIdentifier
+    let aliasText = case moduleName of
+            ModuleName name -> name
+        alias = fromMaybe (Identifier aliasText) maybeAlias
     -- Store module environment
     modify $ \s -> s { importedModules = HashMap.insert alias moduleEnv (importedModules s) }
-  PyImportFrom moduleName items _level -> do
-    moduleEnv <- loadPythonModule moduleName
-    forM_ items $ KATEX_INLINE_OPENname, maybeAlias) -> do
+  ImportFrom moduleName items _level -> do
+    let modIdentifier = case moduleName of
+            ModuleName name -> Identifier name
+    moduleEnv <- loadPythonModule modIdentifier
+    forM_ items $ \(name, maybeAlias) -> do
       case HashMap.lookup name moduleEnv of
         Just ty -> bindVarType (fromMaybe name maybeAlias) ty
         Nothing -> return ()
@@ -1048,17 +1069,18 @@ inferPythonImport imp = case imp of
 inferGoExpr :: GoExpr -> TypeInferenceM Type
 inferGoExpr expr = case expr of
   GoLiteral lit -> inferGoLiteral lit
-  GoIdent var -> lookupVarType var
+  GoIdent var -> case var of
+        Go.Identifier name -> lookupVarType (Identifier name)
   GoBinaryOp op left right -> do
-    leftType <- inferGoExpr (locatedValue left)
-    rightType <- inferGoExpr (locatedValue right)
+    leftType <- inferGoExpr (goLocatedValue left)
+    rightType <- inferGoExpr (goLocatedValue right)
     inferBinaryOp op leftType rightType
   GoUnaryOp op operand -> do
-    operandType <- inferGoExpr (locatedValue operand)
+    operandType <- inferGoExpr (goLocatedValue operand)
     inferUnaryOp op operandType
   GoCall func args -> do
-    funcType <- inferGoExpr (locatedValue func)
-    argTypes <- mapM (inferGoExpr . locatedValue) args
+    funcType <- inferGoExpr (goLocatedValue func)
+    argTypes <- mapM (inferGoExpr . goLocatedValue) args
     resultType <- freshTypeVar
     let expectedFuncType = TFunction argTypes resultType
     addConstraint funcType expectedFuncType
@@ -1178,7 +1200,7 @@ inferGoImport imp = case imp of
     moduleEnv <- loadGoPackage path
     let alias = fromMaybe (extractPackageName path) maybeAlias
     modify $ \s -> s { importedModules = HashMap.insert alias moduleEnv (importedModules s) }
-  GoImportGroup imports -> 
+  GoImportDecl _ imports -> do 
     mapM_ (inferGoImport . locatedValue) imports
   where
     extractPackageName :: Text -> Identifier
@@ -1201,3 +1223,23 @@ inferGoImport imp = case imp of
       [ (Identifier "Sqrt", TFunction [TFloat 64] (TFloat 64))
       , (Identifier "Sin", TFunction [TFloat 64] (TFloat 64))
       ]
+
+-- | Infer types for Go bindings
+inferGoBinding :: GoBinding -> TypeInferenceM ()
+inferGoBinding binding = case bindKind binding of
+  BindVar -> do
+    case bindLHS binding of
+      LHSIdents identifiers -> do
+        case bindType binding of
+          Just typeLoc -> do
+            typeVal <- inferGoType (locatedValue typeLoc)
+            mapM_ (`bindVarType` typeVal) identifiers
+          Nothing -> do
+            -- No type annotation, infer from RHS if available
+            case bindRHS binding of
+              (expr:_) -> do
+                typeVal <- inferGoExpr (locatedValue expr)
+                mapM_ (`bindVarType` typeVal) identifiers
+              [] -> mapM_ (`bindVarType` TAny) identifiers
+      _ -> return ()
+  _ -> return ()

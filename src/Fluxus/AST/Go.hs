@@ -49,6 +49,11 @@ module Fluxus.AST.Go
   , GoRangeBinding(..)
   , GoRangeClause(..)
   , GoTypeSwitchClause(..)
+  
+    -- * Go bindings
+  , GoBinding(..)
+  , BindKind(..)
+  , BindingLHS(..)
 
     -- * Case clauses (unified)
   , CaseClause(..)
@@ -218,7 +223,7 @@ data GoTypeDecl = GoTypeDecl
 data GoDecl
   = GoImportDecl ![Located GoImport]
   | GoConstDecl  ![GoConstSpec]
-  | GoTypeDeclD  !GoTypeDecl
+  GoTypeDecl !GoTypeDecl
   | GoBindDecl   ![GoBinding]              -- top-level 'var' bindings (BindVar only by convention)
   | GoFuncDecl   !GoFunction
   | GoMethodDecl !GoReceiver !GoFunction

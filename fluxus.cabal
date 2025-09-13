@@ -48,6 +48,12 @@ library
   other-modules:
       Fluxus.Internal.Types
       Fluxus.Internal.Monad
+      Fluxus.Optimization.ConstantFolding
+      Fluxus.Optimization.DeadCodeElimination
+      Fluxus.Optimization.ConstantPropagation
+      Fluxus.Optimization.Inlining
+      Fluxus.Optimization.Vectorization
+      Fluxus.Optimization.SizeReduction
   hs-source-dirs:
       src
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2
@@ -124,13 +130,6 @@ benchmark debug-full-go
   type: exitcode-stdio-1.0
   main-is: debug_full_go.hs
   other-modules:
-      RealParserTest
-      Test
-      TestComprehensiveControl
-      TestGoParser
-      TestGoParserSimple
-      TestParser
-      TestParserWhile
       Paths_fluxus
   hs-source-dirs:
       ./
@@ -147,13 +146,6 @@ benchmark debug-simple-full-go
   type: exitcode-stdio-1.0
   main-is: debug_simple_full_go.hs
   other-modules:
-      RealParserTest
-      Test
-      TestComprehensiveControl
-      TestGoParser
-      TestGoParserSimple
-      TestParser
-      TestParserWhile
       Paths_fluxus
   hs-source-dirs:
       ./
@@ -186,13 +178,6 @@ benchmark simple-go-test
   type: exitcode-stdio-1.0
   main-is: simple_go_test2.hs
   other-modules:
-      RealParserTest
-      Test
-      TestComprehensiveControl
-      TestGoParser
-      TestGoParserSimple
-      TestParser
-      TestParserWhile
       Paths_fluxus
   hs-source-dirs:
       ./
@@ -209,13 +194,6 @@ benchmark test-build-streaming-expr
   type: exitcode-stdio-1.0
   main-is: test_buildStreamingExpr.hs
   other-modules:
-      RealParserTest
-      Test
-      TestComprehensiveControl
-      TestGoParser
-      TestGoParserSimple
-      TestParser
-      TestParserWhile
       Paths_fluxus
   hs-source-dirs:
       ./

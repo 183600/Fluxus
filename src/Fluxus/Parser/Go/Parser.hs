@@ -52,8 +52,9 @@ import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char ()
 import qualified Data.List.NonEmpty as NE ()
 
-import Fluxus.AST.Common as Common
-import Fluxus.AST.Go
+import qualified Fluxus.AST.Common as Common
+import Fluxus.AST.Go hiding (Located, Identifier, QualifiedName)
+import Fluxus.AST.Common (SourceSpan, Located, Identifier)
 import Fluxus.Parser.Go.Lexer
 
 -- | Simple chainl1 implementation for left-associative operators
@@ -637,9 +638,11 @@ parseForStmt = do
             let intVal = read $ T.unpack text
             body <- located parseBlockStmt'
             let rangeClause = GoRangeClause
-                  { goRangeKey = key
-                  , goRangeValue = value
-                  , goRangeDefine = isDefine
+                  { goRangeBinding = Just $ GoRangeBinding
+                    { rangeKey = key
+                    , rangeValue = value
+                    , rangeDefine = isDefine
+                    }
                   , goRangeExpr = located' $ GoLiteral $ GoInt intVal
                   , goRangeInteger = Just intVal
                   }
@@ -652,9 +655,11 @@ parseForStmt = do
             let floatVal = read $ T.unpack text
             body <- located parseBlockStmt'
             let rangeClause = GoRangeClause
-                  { goRangeKey = key
-                  , goRangeValue = value
-                  , goRangeDefine = isDefine
+                  { goRangeBinding = Just $ GoRangeBinding
+                    { rangeKey = key
+                    , rangeValue = value
+                    , rangeDefine = isDefine
+                    }
                   , goRangeExpr = located' $ GoLiteral $ GoFloat floatVal
                   , goRangeInteger = Nothing
                   }
@@ -664,9 +669,11 @@ parseForStmt = do
             expr <- parseExpression
             body <- located parseBlockStmt'
             let rangeClause = GoRangeClause
-                  { goRangeKey = key
-                  , goRangeValue = value
-                  , goRangeDefine = isDefine
+                  { goRangeBinding = Just $ GoRangeBinding
+                    { rangeKey = key
+                    , rangeValue = value
+                    , rangeDefine = isDefine
+                    }
                   , goRangeExpr = expr
                   , goRangeInteger = Nothing
                   }
@@ -1502,33 +1509,33 @@ parseParameterList = do
 -- | Token matching utilities
 goKeywordP :: GoKeyword -> GoParser ()
 goKeywordP kw = void $ satisfy $ \case
-  Located _ (GoTokenKeyword kw') -> kw == kw'
+  Common.Located _ (GoTokenKeyword kw') -> kw == kw'
   _ -> False
 
 goOperatorP :: GoOperator -> GoParser ()
 goOperatorP op = void $ satisfy $ \case
-  Located _ (GoTokenOperator op') -> op == op'
+  Common.Located _ (GoTokenOperator op') -> op == op'
   _ -> False
 
 goDelimiterP :: GoDelimiter -> GoParser ()
 goDelimiterP delim = void $ satisfy $ \case
-  Located _ (GoTokenDelimiter delim') -> delim == delim'
+  Common.Located _ (GoTokenDelimiter delim') -> delim == delim'
   _ -> False
 
 skipNewlines :: GoParser ()
 skipNewlines = void $ MP.many $ satisfy $ \case
-  Located _ GoTokenNewline -> True
+  Common.Located _ GoTokenNewline -> True
   _ -> False
 
 skipComments :: GoParser ()
 skipComments = void $ MP.many $ satisfy $ \case
-  Located _ (GoTokenComment _) -> True
+  Common.Located _ (GoTokenComment _) -> True
   _ -> False
 
 skipCommentsAndNewlines :: GoParser ()
 skipCommentsAndNewlines = void $ MP.many $ satisfy $ \case
-  Located _ GoTokenNewline -> True
-  Located _ (GoTokenComment _) -> True
+  Common.Located _ GoTokenNewline -> True
+  Common.Located _ (GoTokenComment _) -> True
   _ -> False
 
 -- | Helper for creating located expressions

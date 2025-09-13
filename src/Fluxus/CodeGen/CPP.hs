@@ -49,8 +49,10 @@ import Control.DeepSeq (NFData)
 import Data.Maybe (fromMaybe, mapMaybe, catMaybes)
 
 import Fluxus.AST.Common
+import qualified Fluxus.AST.Common as Common
 import Fluxus.AST.Python
-import Fluxus.AST.Go
+import Fluxus.AST.Go hiding (Located, Identifier)
+import qualified Fluxus.AST.Go as Go
 
 -- ============================================================================
 -- Core Types
@@ -654,7 +656,7 @@ generateCppFromPython (PythonAST pyModule) isMainFile = do
   addInclude "<sstream>"
   addInclude "<tuple>"
   
-  let moduleName = fromMaybe "main" $ fmap (KATEX_INLINE_OPENModuleName n) -> n) (pyModuleName pyModule)
+  let moduleName = fromMaybe "main" $ fmap (\(ModuleName n) -> n) (pyModuleName pyModule)
   
   -- Process module body
   let (funcDefs, moduleStmts) = partitionStmts (pyModuleBody pyModule)
@@ -675,11 +677,11 @@ generateCppFromPython (PythonAST pyModule) isMainFile = do
   return $ CppUnit includes [] (reverse decls)
   where
     partitionStmts = partition isFuncDef
-    isFuncDef (Located _ (PyFuncDef _)) = True
+    isFuncDef (Common.Located _ (PyFuncDef _)) = True
     isFuncDef _ = False
 
 -- | Generate C++ from Python statement (returning Maybe to filter comments)
-generatePythonStmtMaybe :: Located PythonStmt -> CppCodeGen (Maybe CppStmt)
+generatePythonStmtMaybe :: Common.Located PythonStmt -> CppCodeGen (Maybe CppStmt)
 generatePythonStmtMaybe stmt = do
   result <- generatePythonStmt stmt
   case result of
@@ -687,8 +689,8 @@ generatePythonStmtMaybe stmt = do
     other -> return (Just other)
 
 -- | Generate C++ from Python statement
-generatePythonStmt :: Located PythonStmt -> CppCodeGen CppStmt
-generatePythonStmt (Located _ stmt) = case stmt of
+generatePythonStmt :: Common.Located PythonStmt -> CppCodeGen CppStmt
+generatePythonStmt (Common.Located _ stmt) = case stmt of
   PyFuncDef funcDef -> do
     generatePythonFunction funcDef
     return $ CppComment "Function definition processed"
@@ -714,7 +716,7 @@ generatePythonStmt (Located _ stmt) = case stmt of
     cppElse <- mapM generatePythonStmt elseStmts
     return $ CppIf cppCond cppThen cppElse
   
-  PyFor pattern iterExpr bodyStmts elseStmts -> 
+  PyFor {pyForAsync = False, pyForTarget = pattern, pyForIter = iterExpr, pyForBody = bodyStmts, pyForElse = elseStmts} -> do
     generatePythonForLoop pattern iterExpr bodyStmts elseStmts
   
   PyWhile condition bodyStmts elseStmts -> do
@@ -744,7 +746,7 @@ generatePythonStmt (Located _ stmt) = case stmt of
     return $ CppTry cppTry cppCatches cppFinally
   
   PyImport _ -> return $ CppComment "Import statement (handled separately)"
-  PyFromImport _ _ -> return $ CppComment "From import statement (handled separately)"
+  ImportFrom _ _ _ -> return $ CppComment "From import statement (handled separately)"
   
   PyGlobal _ -> return $ CppComment "Global declaration"
   PyNonlocal _ -> return $ CppComment "Nonlocal declaration"
@@ -753,7 +755,7 @@ generatePythonStmt (Located _ stmt) = case stmt of
   PyBreak -> return CppBreak
   PyContinue -> return CppContinue
   
-  PyDelete exprs -> do
+  PyDel exprs -> do
     cppExprs <- mapM generatePythonExpr exprs
     return $ CppBlock $ map (CppExprStmt . CppDelete) cppExprs
   
@@ -766,31 +768,31 @@ generatePythonStmt (Located _ stmt) = case stmt of
     -- Type annotated assignment
     cppValue <- mapM generatePythonExpr value
     case locatedValue target of
-      PatVar (Identifier name) -> do
+      PatVar (Common.Identifier name) -> do
         cppType <- mapPythonTypeAnnotation annotation
         return $ CppDecl $ CppVariable name cppType cppValue
       _ -> do
         addWarning "Complex annotated assignment pattern not supported"
         return $ CppComment "Complex annotated assignment"
   
-  PyAsyncDef _ -> do
+  PyFuncDef funcDef -> do
     addWarning "Async functions not supported"
     return $ CppComment "Async function (not supported)"
   
-  PyAsyncFor {} -> do
+  PyFor {pyForAsync = True} -> do
     addWarning "Async for loops not supported"
     return $ CppComment "Async for loop (not supported)"
   
-  PyAsyncWith {} -> do
+  PyWith {pyWithAsync = True} -> do
     addWarning "Async with statements not supported"
     return $ CppComment "Async with (not supported)"
 
 -- | Generate Python assignment
-generatePythonAssignment :: [Located PythonPattern] -> Located PythonExpr -> CppCodeGen CppStmt
+generatePythonAssignment :: [Common.Located PythonPattern] -> Common.Located PythonExpr -> CppCodeGen CppStmt
 generatePythonAssignment patterns expr = do
   cppExpr <- generatePythonExpr expr
   case patterns of
-    [Located _ (PatVar (Identifier varName))] -> do
+    [Common.Located _ (PatVar (Common.Identifier varName))] -> do
       -- Single variable assignment
       symTable <- gets cgsSymbolTable
       if HM.member varName symTable
@@ -803,9 +805,9 @@ generatePythonAssignment patterns expr = do
       -- Multiple assignment with tuple unpacking
       tempVar <- generateTempVar
       let tempDecl = CppDecl $ CppVariable tempVar CppAuto (Just cppExpr)
-      assignments <- forM (zip patterns [0..]) $ KATEX_INLINE_OPENpat, idx) ->
+      assignments <- forM (zip patterns [0..]) $ \(pat, idx) ->
         case locatedValue pat of
-          PatVar (Identifier name) -> do
+          PatVar (Common.Identifier name) -> do
             let getExpr = CppCall (CppVar $ "std::get<" <> T.pack (show idx) <> ">") [CppVar tempVar]
             symTable <- gets cgsSymbolTable
             if HM.member name symTable
@@ -819,16 +821,16 @@ generatePythonAssignment patterns expr = do
       return $ CppBlock (tempDecl : assignments)
 
 -- | Generate Python for loop
-generatePythonForLoop :: Located PythonPattern -> Located PythonExpr -> [Located PythonStmt] -> [Located PythonStmt] -> CppCodeGen CppStmt
+generatePythonForLoop :: Common.Located PythonPattern -> Common.Located PythonExpr -> [Common.Located PythonStmt] -> [Common.Located PythonStmt] -> CppCodeGen CppStmt
 generatePythonForLoop pattern iterExpr bodyStmts elseStmts = do
   case locatedValue pattern of
-    PatVar (Identifier varName) -> do
+    PatVar (Common.Identifier varName) -> do
       cppIter <- generatePythonExpr iterExpr
       cppBody <- mapM generatePythonStmt bodyStmts
       
       -- Handle range() specially
       case locatedValue iterExpr of
-        PyCall (Located _ (PyVar (Identifier "range"))) args -> 
+        PyCall (Common.Located _ (PyVar (Common.Identifier "range"))) args -> 
           generateRangeForLoop varName args cppBody
         _ -> return $ CppForRange varName cppIter cppBody
     
@@ -867,10 +869,10 @@ generatePythonForLoop pattern iterExpr bodyStmts elseStmts = do
           return $ CppComment "Unsupported range() call"
 
 -- | Generate Python expression
-generatePythonExpr :: Located PythonExpr -> CppCodeGen CppExpr
-generatePythonExpr (Located _ expr) = case expr of
+generatePythonExpr :: Common.Located PythonExpr -> CppCodeGen CppExpr
+generatePythonExpr (Common.Located _ expr) = case expr of
   PyLiteral lit -> generatePythonLiteral lit
-  PyVar (Identifier name) -> return $ CppVar name
+  PyVar (Common.Identifier name) -> return $ CppVar name
   
   PyBinaryOp op left right -> do
     cppLeft <- generatePythonExpr left
@@ -889,7 +891,7 @@ generatePythonExpr (Located _ expr) = case expr of
   
   PyAttribute obj attr -> do
     cppObj <- generatePythonExpr obj
-    return $ CppMember cppObj (unIdentifier attr)
+    return $ CppMember cppObj (case attr of Identifier name -> name)
   
   PySubscript obj index -> do
     cppObj <- generatePythonExpr obj
@@ -929,13 +931,13 @@ generatePythonExpr (Located _ expr) = case expr of
       Right stmts -> mapM generatePythonStmt stmts
     return $ CppLambda cppParams cppBody True
   
-  PyIfExpr cond thenExpr elseExpr -> do
+  PyIfExp cond thenExpr elseExpr -> do
     cppCond <- generatePythonExpr cond
     cppThen <- generatePythonExpr thenExpr
     cppElse <- generatePythonExpr elseExpr
     return $ CppTernary cppCond cppThen cppElse
   
-  PyComprehension kind comp -> do
+  PyListComp expr comps -> do
     addWarning "Comprehensions not fully supported"
     return $ CppComment "Comprehension not implemented"
   
@@ -953,7 +955,7 @@ generatePythonExpr (Located _ expr) = case expr of
   
   PyStarred expr -> generatePythonExpr expr
   PySlice _ _ _ -> return $ CppComment "Slice expression"
-  PyNamed _ _ -> return $ CppComment "Named expression"
+  PyNamedExpr _ _ -> return $ CppComment "Named expression"
 
 -- | Generate Python literal
 generatePythonLiteral :: PythonLiteral -> CppCodeGen CppExpr
@@ -962,7 +964,7 @@ generatePythonLiteral lit = case lit of
   PyFloat f -> return $ CppLiteral $ CppFloatLit f
   PyBool b -> return $ CppLiteral $ CppBoolLit b
   PyString s -> return $ CppLiteral $ CppStringLit s
-  PyFString template exprs -> generateFString template exprs
+  PyFString parts -> generateFString parts
   PyNone -> return CppNullPtr
   PyEllipsis -> return $ CppComment "..."
   PyBytes _ -> do
@@ -985,7 +987,7 @@ generateFString template exprs = do
   return $ CppCall (CppLambda [] (streamDecl : streamOps ++ [CppReturn (Just strExpr)]) False) []
 
 -- | Parse f-string into parts
-parseFStringParts :: Text -> [FStringPart]
+parseFStringParts :: Text -> [CppFStringPart]
 parseFStringParts = go [] where
   go acc "" = reverse acc
   go acc text = case T.breakOn "{" text of
@@ -997,10 +999,10 @@ parseFStringParts = go [] where
             acc'' = ExprPart (T.strip expr) : acc'
         in go acc'' (T.drop 1 after)
 
-data FStringPart = TextPart Text | ExprPart Text
+data CppFStringPart = TextPart Text | ExprPart Text
 
 -- | Build stream operations for f-string
-buildStreamOps :: Text -> [FStringPart] -> [CppExpr] -> [CppStmt]
+buildStreamOps :: Text -> [CppFStringPart] -> [CppExpr] -> [CppStmt]
 buildStreamOps streamVar parts exprs = go parts 0 where
   go [] _ = []
   go (TextPart text : rest) idx = 
@@ -1011,11 +1013,11 @@ buildStreamOps streamVar parts exprs = go parts 0 where
     else go rest idx
 
 -- | Generate binary operation
-generateBinaryOp :: BinaryOp -> CppExpr -> CppExpr -> CppCodeGen CppExpr
+generateBinaryOp :: Common.BinaryOp -> CppExpr -> CppExpr -> CppCodeGen CppExpr
 generateBinaryOp op left right = case op of
-  OpAdd -> handleAddition left right
-  OpSub -> return $ CppBinary "-" left right
-  OpMul -> return $ CppBinary "*" left right
+  Common.OpAdd -> handleAddition left right
+  Common.OpSub -> return $ CppBinary "-" left right
+  Common.OpMul -> return $ CppBinary "*" left right
   OpDiv -> handleDivision left right
   OpFloorDiv -> do
     addInclude "<cmath>"
@@ -1024,14 +1026,14 @@ generateBinaryOp op left right = case op of
   OpPow -> do
     addInclude "<cmath>"
     return $ CppCall (CppVar "std::pow") [left, right]
-  OpLShift -> return $ CppBinary "<<" left right
-  OpRShift -> return $ CppBinary ">>" left right
+  Common.OpShiftL -> return $ CppBinary "<<" left right
+  Common.OpShiftR -> return $ CppBinary ">>" left right
   OpBitOr -> return $ CppBinary "|" left right
   OpBitXor -> return $ CppBinary "^" left right
   OpBitAnd -> return $ CppBinary "&" left right
-  OpAnd -> return $ CppBinary "&&" left right
-  OpOr -> return $ CppBinary "||" left right
-  OpMatMul -> do
+  Common.OpAnd -> return $ CppBinary "&&" left right
+  Common.OpOr -> return $ CppBinary "||" left right
+  _ -> do
     addWarning "Matrix multiplication not supported"
     return $ CppBinary "*" left right
   where
@@ -1054,7 +1056,7 @@ generateBinaryOp op left right = case op of
     isStringExpr _ = False
 
 -- | Generate comparison
-generatePythonComparison :: [ComparisonOp] -> [Located PythonExpr] -> CppCodeGen CppExpr
+generatePythonComparison :: [Common.ComparisonOp] -> [Located PythonExpr] -> CppCodeGen CppExpr
 generatePythonComparison ops exprs = do
   cppExprs <- mapM generatePythonExpr exprs
   case (ops, cppExprs) of
@@ -1063,7 +1065,7 @@ generatePythonComparison ops exprs = do
     _ -> do
       -- Chain comparisons with &&
       let pairs = zip3 ops cppExprs (tail cppExprs)
-          comparisons = map (KATEX_INLINE_OPENop, l, r) -> CppBinary (mapPythonComparisonOp op) l r) pairs
+          comparisons = map (\(op, l, r) -> CppBinary (mapPythonComparisonOp op) l r) pairs
       return $ foldr1 (CppBinary "&&") comparisons
 
 -- | Generate function call
@@ -1138,7 +1140,7 @@ generatePythonArgument (Located _ arg) = case arg of
 -- | Generate Python function
 generatePythonFunction :: PythonFuncDef -> CppCodeGen ()
 generatePythonFunction funcDef = do
-  let funcName = unIdentifier (pyFuncName funcDef)
+  let funcName = case pyFuncName funcDef of Identifier name -> name
   cppParams <- mapM mapPythonParameter (pyFuncParams funcDef)
   
   returnType <- case pyFuncReturns funcDef of
@@ -1159,7 +1161,7 @@ generatePythonFunction funcDef = do
 -- | Generate Python class
 generatePythonClass :: PythonClassDef -> CppCodeGen ()
 generatePythonClass classDef = do
-  let className = unIdentifier (pyClassName classDef)
+  let className = case pyClassName classDef of Identifier name -> name
   baseClasses <- mapM extractBaseClassName (pyClassBases classDef)
   
   -- Process class body
@@ -1169,7 +1171,7 @@ generatePythonClass classDef = do
   where
     generateClassMember className stmt = case locatedValue stmt of
       PyFuncDef funcDef -> do
-        let methodName = unIdentifier (pyFuncName funcDef)
+        let methodName = case pyFuncName funcDef of Identifier name -> name
         cppParams <- mapM mapPythonParameter (pyFuncParams funcDef)
         returnType <- inferReturnType (pyFuncBody funcDef)
         bodyStmts <- mapM generatePythonStmt (pyFuncBody funcDef)
@@ -1185,11 +1187,11 @@ generatePythonClass classDef = do
       _ -> return []
 
 -- | Generate exception handler
-generatePythonExceptHandler :: Located PythonExceptHandler -> CppCodeGen CppCatch
-generatePythonExceptHandler (Located _ (ExceptHandler mtype mname body)) = do
+generatePythonExceptHandler :: Located PythonExcept -> CppCodeGen CppCatch
+generatePythonExceptHandler (Located _ (PythonExcept mtype mname body _)) = do
   let exType = fromMaybe (CppClassType "std::exception" []) 
                         (fmap (const $ CppClassType "std::exception" []) mtype)
-      varName = fromMaybe "e" (fmap unIdentifier mname)
+      varName = fromMaybe "e" (fmap (\(Identifier name) -> name) mname)
   bodyStmts <- mapM generatePythonStmt body
   return $ CppCatch exType varName bodyStmts
 
@@ -1211,7 +1213,7 @@ generateCppFromGo (GoAST goPackage) isMainFile = do
   addInclude "<tuple>"
   addInclude "<chrono>"
   
-  let packageName = unIdentifier (goPackageName goPackage)
+  let packageName = case goPackageName goPackage of Identifier name -> name
   
   -- Generate channel implementation if needed
   when (needsChannels goPackage) generateChannelClass
@@ -1243,9 +1245,9 @@ generateGoDecl (Located _ decl) = case decl of
   
   GoTypeDecl name typeExpr -> do
     cppType <- generateGoType typeExpr
-    addDeclaration $ CppTypedef (unIdentifier name) cppType
+    addDeclaration $ CppTypedef (case name of Identifier name -> name) cppType
   
-  GoVarDecl vars -> mapM_ generateGoVariable vars
+  GoBind binding -> generateGoBinding binding
   
   GoConstDecl consts -> mapM_ generateGoConstant consts
   
@@ -1259,7 +1261,7 @@ generateGoFunction :: GoFunction -> CppCodeGen ()
 generateGoFunction func = case goFuncName func of
   Nothing -> return () -- Anonymous function
   Just name -> do
-    let funcName = unIdentifier name
+    let funcName = case name of Identifier name -> name
     cppParams <- concat <$> mapM expandGoField (goFuncParams func)
     returnType <- mapGoResults funcName (goFuncResults func)
     
@@ -1278,10 +1280,10 @@ generateGoMethod :: GoReceiver -> GoFunction -> CppCodeGen ()
 generateGoMethod receiver func = case goFuncName func of
   Nothing -> return ()
   Just name -> do
-    let methodName = unIdentifier name
+    let methodName = case name of Identifier name -> name
         receiverType = case goReceiverType receiver of
           Located _ t -> renderType (mapGoTypeToCpp t)
-        receiverName = fromMaybe "this" (fmap unIdentifier (goReceiverName receiver))
+        receiverName = fromMaybe "this" (fmap (\(Identifier name) -> name) (goReceiverName receiver))
     
     cppParams <- concat <$> mapM expandGoField (goFuncParams func)
     returnType <- mapGoResults methodName (goFuncResults func)
@@ -1365,35 +1367,33 @@ generateGoStmt (Located _ stmt) = case stmt of
     cppValue <- generateGoExpr value
     return $ CppExprStmt $ CppCall (CppMember cppChannel "send") [cppValue]
   
-  GoDefine names exprs -> generateGoDefine names exprs
-  
-  GoAssign leftExprs rightExprs -> generateGoAssign leftExprs rightExprs
+  GoBind binding -> case bindKind binding of
+    BindDefine -> generateGoDefine (map (\(Identifier name) -> name) (case bindLHS binding of LHSIdents ids -> ids)) (bindRHS binding)
+    BindAssign -> generateGoAssign (case bindLHS binding of LHSExprs exprs -> exprs) (bindRHS binding)
+    BindVar -> generateGoVarDecls (bindLHS binding) (bindType binding) (bindRHS binding)
   
   GoIncDec expr isInc -> do
     cppExpr <- generateGoExpr expr
     let op = if isInc then "++" else "--"
     return $ CppExprStmt $ CppUnary op cppExpr
   
-  GoVarStmt vars -> do
-    stmts <- mapM generateGoVarDecl vars
-    case stmts of
-      [single] -> return single
-      multiple -> return $ CppBlock multiple
+  GoBind binding -> case bindKind binding of
+    BindVar -> generateGoVarDecls (bindLHS binding) (bindType binding) (bindRHS binding)
   
-  GoConstStmt consts -> do
+  GoBind consts -> do
     stmts <- mapM generateGoConstDecl consts
     case stmts of
       [single] -> return single
       multiple -> return $ CppBlock multiple
   
-  GoTypeStmt types -> do
+  GoBind types -> do
     mapM_ generateGoTypeDecl types
     return $ CppComment "Type declarations processed"
   
   GoBreak _ -> return CppBreak
   GoContinue _ -> return CppContinue
-  GoGoto label -> return $ CppGoto (unIdentifier label)
-  GoLabel label -> return $ CppLabel (unIdentifier label)
+  GoGoto label -> return $ CppGoto (case label of Identifier name -> name)
+  GoLabeled label -> return $ CppLabel (case label of Identifier name -> name)
   GoFallthrough -> return $ CppComment "fallthrough"
   
   _ -> do
@@ -1404,7 +1404,7 @@ generateGoStmt (Located _ stmt) = case stmt of
 generateGoExpr :: Located GoExpr -> CppCodeGen CppExpr
 generateGoExpr (Located _ expr) = case expr of
   GoLiteral lit -> return $ CppLiteral $ mapGoLiteral lit
-  GoIdent name -> return $ CppVar (unIdentifier name)
+  GoIdent name -> return $ CppVar (case name of Identifier name -> name)
   
   GoBinaryOp op left right -> do
     cppLeft <- generateGoExpr left
@@ -1424,7 +1424,7 @@ generateGoExpr (Located _ expr) = case expr of
   
   GoSelector obj member -> do
     cppObj <- generateGoExpr obj
-    return $ CppMember cppObj (unIdentifier member)
+    return $ CppMember cppObj (case member of Identifier name -> name)
   
   GoIndex array index -> do
     cppArray <- generateGoExpr array
@@ -1435,7 +1435,7 @@ generateGoExpr (Located _ expr) = case expr of
     addWarning "Slice operations not fully supported"
     generateGoExpr array
   
-  GoTypeAssertion expr typ -> do
+  GoTypeAssert expr typ -> do
     cppExpr <- generateGoExpr expr
     cppType <- generateGoType typ
     return $ CppDynamicCast cppType cppExpr
@@ -1531,9 +1531,9 @@ generateGoDefine :: [Identifier] -> [Located GoExpr] -> CppCodeGen CppStmt
 generateGoDefine names exprs = do
   if length names == length exprs
   then do
-    decls <- forM (zip names exprs) $ KATEX_INLINE_OPENname, expr) -> do
+    decls <- forM (zip names exprs) $ \(name, expr) -> do
       cppExpr <- generateGoExpr expr
-      return $ CppDecl $ CppVariable (unIdentifier name) CppAuto (Just cppExpr)
+      return $ CppDecl $ CppVariable (case name of Identifier name -> name) CppAuto (Just cppExpr)
     case decls of
       [single] -> return single
       multiple -> return $ CppBlock multiple
@@ -1541,7 +1541,7 @@ generateGoDefine names exprs = do
   then do
     -- Tuple unpacking
     cppExpr <- generateGoExpr (head exprs)
-    let varNames = map unIdentifier names
+    let varNames = map (\(Identifier name) -> name) names
         decls = map (\n -> CppDecl $ CppVariable n CppAuto Nothing) varNames
         tie = CppCall (CppVar "std::tie") (map CppVar varNames)
         assign = CppExprStmt $ CppBinary "=" tie cppExpr
@@ -1555,7 +1555,7 @@ generateGoAssign :: [Located GoExpr] -> [Located GoExpr] -> CppCodeGen CppStmt
 generateGoAssign lefts rights = do
   if length lefts == length rights
   then do
-    assigns <- forM (zip lefts rights) $ KATEX_INLINE_OPENleft, right) -> do
+    assigns <- forM (zip lefts rights) $ \(left, right) -> do
       cppLeft <- generateGoExpr left
       cppRight <- generateGoExpr right
       return $ CppExprStmt $ CppBinary "=" cppLeft cppRight
@@ -1580,7 +1580,7 @@ generateGoVarDecl (name, mType, mExpr) = do
     Nothing -> return CppAuto
     Just t -> generateGoType t
   cppExpr <- mapM generateGoExpr mExpr
-  return $ CppDecl $ CppVariable (unIdentifier name) cppType cppExpr
+  return $ CppDecl $ CppVariable (case name of Identifier name -> name) cppType cppExpr
 
 -- | Generate Go constant declaration
 generateGoConstDecl :: (Identifier, Maybe (Located GoType), Maybe (Located GoExpr)) -> CppCodeGen CppStmt
@@ -1589,17 +1589,17 @@ generateGoConstDecl (name, mType, mExpr) = do
     Nothing -> return CppAuto
     Just t -> generateGoType t
   cppExpr <- mapM generateGoExpr mExpr
-  return $ CppDecl $ CppVariable (unIdentifier name) (CppConst cppType) cppExpr
+  return $ CppDecl $ CppVariable (case name of Identifier name -> name) (CppConst cppType) cppExpr
 
 -- | Generate Go type declaration
 generateGoTypeDecl :: (Identifier, Located GoType) -> CppCodeGen ()
 generateGoTypeDecl (name, typ) = do
   cppType <- generateGoType typ
-  addDeclaration $ CppTypedef (unIdentifier name) cppType
+  addDeclaration $ CppTypedef (case name of Identifier name -> name) cppType
 
 -- | Generate Go case
-generateGoCase :: GoCase -> CppCodeGen CppCase
-generateGoCase goCase = case goCaseExprs goCase of
+generateGoCase :: CaseClause [Located GoExpr] -> CppCodeGen CppCase
+generateGoCase goCase = case caseCond goCase of
   [] -> CppDefault <$> mapM generateGoStmt (goCaseStmts goCase)
   (expr:_) -> do
     cppExpr <- generateGoExpr expr
@@ -1622,7 +1622,7 @@ generateGoVariable (name, mType, mExpr) = do
     Nothing -> return CppAuto
     Just t -> generateGoType t
   cppExpr <- mapM generateGoExpr mExpr
-  addDeclaration $ CppVariable (unIdentifier name) cppType cppExpr
+  addDeclaration $ CppVariable (case name of Identifier name -> name) cppType cppExpr
 
 -- | Generate Go constant
 generateGoConstant :: (Identifier, Maybe (Located GoType), Maybe (Located GoExpr)) -> CppCodeGen ()
@@ -1631,7 +1631,7 @@ generateGoConstant (name, mType, mExpr) = do
     Nothing -> return CppAuto
     Just t -> generateGoType t
   cppExpr <- mapM generateGoExpr mExpr
-  addDeclaration $ CppVariable (unIdentifier name) (CppConst cppType) cppExpr
+  addDeclaration $ CppVariable (case name of Identifier name -> name) (CppConst cppType) cppExpr
 
 -- | Generate channel class
 generateChannelClass :: CppCodeGen ()
@@ -1747,19 +1747,19 @@ mapPythonParameter (Located _ param) = case param of
   ParamNormal name mType mDefault -> do
     cppType <- maybe (return CppAuto) mapPythonTypeAnnotation mType
     cppDefault <- mapM generatePythonExpr mDefault
-    return $ CppParam (unIdentifier name) cppType cppDefault
-  ParamArgs name _ -> 
-    return $ CppParam (unIdentifier name) (CppVector CppAuto) Nothing
-  ParamKwargs name _ -> 
-    return $ CppParam (unIdentifier name) (CppUnorderedMap CppString CppAuto) Nothing
+    return $ CppParam (case name of Identifier name -> name) cppType cppDefault
+  ArgPositional name _ -> 
+    return $ CppParam (case name of Identifier name -> name) (CppVector CppAuto) Nothing
+  ArgKwStarred name _ -> 
+    return $ CppParam (case name of Identifier name -> name) (CppUnorderedMap CppString CppAuto) Nothing
   ParamPosOnly name mType mDefault -> do
     cppType <- maybe (return CppAuto) mapPythonTypeAnnotation mType
     cppDefault <- mapM generatePythonExpr mDefault
-    return $ CppParam (unIdentifier name) cppType cppDefault
+    return $ CppParam (case name of Identifier name -> name) cppType cppDefault
   ParamKwOnly name mType mDefault -> do
     cppType <- maybe (return CppAuto) mapPythonTypeAnnotation mType
     cppDefault <- mapM generatePythonExpr mDefault
-    return $ CppParam (unIdentifier name) cppType cppDefault
+    return $ CppParam (case name of Identifier name -> name) cppType cppDefault
 
 -- | Map Python lambda parameter
 mapPythonLambdaParam :: Located PythonParameter -> CppCodeGen CppParam
@@ -1768,7 +1768,7 @@ mapPythonLambdaParam = mapPythonParameter
 -- | Map Python type annotation
 mapPythonTypeAnnotation :: Located PythonTypeExpr -> CppCodeGen CppType
 mapPythonTypeAnnotation (Located _ typeExpr) = case typeExpr of
-  TypeName (QualifiedName _ (Identifier name)) -> return $ case name of
+  TypeName (Common.QualifiedName _ (Common.Identifier name)) -> return $ case name of
     "int" -> CppInt
     "float" -> CppDouble
     "bool" -> CppBool
@@ -1779,15 +1779,15 @@ mapPythonTypeAnnotation (Located _ typeExpr) = case typeExpr of
     baseType <- mapPythonTypeAnnotation base
     case baseType of
       CppAuto -> case locatedValue base of
-        TypeName (QualifiedName _ (Identifier "List")) -> 
+        TypeName (Common.QualifiedName _ (Common.Identifier "List")) -> 
           CppVector <$> mapPythonTypeAnnotation (head args)
-        TypeName (QualifiedName _ (Identifier "Dict")) -> do
+        TypeName (Go.QualifiedName _ (Go.Identifier "Dict")) -> do
           keyType <- mapPythonTypeAnnotation (head args)
           valType <- mapPythonTypeAnnotation (args !! 1)
           return $ CppUnorderedMap keyType valType
-        TypeName (QualifiedName _ (Identifier "Optional")) ->
+        TypeName (Go.QualifiedName _ (Go.Identifier "Optional")) ->
           CppOptional <$> mapPythonTypeAnnotation (head args)
-        TypeName (QualifiedName _ (Identifier "Tuple")) -> do
+        TypeName (Go.QualifiedName _ (Go.Identifier "Tuple")) -> do
           types <- mapM mapPythonTypeAnnotation args
           return $ CppTuple types
         _ -> return CppAuto
@@ -1808,7 +1808,7 @@ expandGoField field =
               then [Identifier "param"]
               else goFieldNames field
       typ = mapGoTypeToCpp (locatedValue (goFieldType field))
-  in return $ map (\n -> CppParam (unIdentifier n) typ Nothing) names
+  in return $ map (\n -> CppParam (Go.unIdentifier n) typ Nothing) names
 
 -- | Map Go results
 mapGoResults :: Text -> [GoField] -> CppCodeGen CppType
@@ -1835,47 +1835,47 @@ mapGoLiteral lit = case lit of
   _ -> CppIntLit 0
 
 -- | Map operators
-mapPythonUnaryOp :: UnaryOp -> Text
+mapPythonUnaryOp :: Common.UnaryOp -> Text
 mapPythonUnaryOp op = case op of
-  OpNot -> "!"
-  OpInvert -> "~"
-  OpUAdd -> "+"
-  OpUSub -> "-"
+  Common.OpNot -> "!"
+  Common.OpBitNot -> "~"
+  Common.OpPositive -> "+"
+  Common.OpNegate -> "-"
 
-mapGoBinaryOp :: BinaryOp -> Text
+mapGoBinaryOp :: Go.BinaryOp -> Text
 mapGoBinaryOp = mapPythonBinaryOp
 
-mapGoUnaryOp :: UnaryOp -> Text
+mapGoUnaryOp :: Go.UnaryOp -> Text
 mapGoUnaryOp = mapPythonUnaryOp
 
-mapPythonBinaryOp :: BinaryOp -> Text
+mapPythonBinaryOp :: Common.BinaryOp -> Text
 mapPythonBinaryOp op = case op of
-  OpAdd -> "+"
-  OpSub -> "-"
-  OpMul -> "*"
-  OpDiv -> "/"
-  OpMod -> "%"
-  OpAnd -> "&&"
-  OpOr -> "||"
-  OpBitAnd -> "&"
-  OpBitOr -> "|"
-  OpBitXor -> "^"
-  OpLShift -> "<<"
-  OpRShift -> ">>"
+  Common.OpAdd -> "+"
+  Common.OpSub -> "-"
+  Common.OpMul -> "*"
+  Common.OpDiv -> "/"
+  Common.OpMod -> "%"
+  Common.OpAnd -> "&&"
+  Common.OpOr -> "||"
+  Common.OpBitAnd -> "&"
+  Common.OpBitOr -> "|"
+  Common.OpBitXor -> "^"
+  Common.OpShiftL -> "<<"
+  Common.OpShiftR -> ">>"
   _ -> "+"
 
-mapPythonComparisonOp :: ComparisonOp -> Text
+mapPythonComparisonOp :: Common.ComparisonOp -> Text
 mapPythonComparisonOp op = case op of
-  OpEq -> "=="
-  OpNe -> "!="
-  OpLt -> "<"
-  OpLe -> "<="
-  OpGt -> ">"
-  OpGe -> ">="
-  OpIs -> "=="
-  OpIsNot -> "!="
-  OpIn -> "=="
-  OpNotIn -> "!="
+  Common.OpEq -> "=="
+  Common.OpNe -> "!="
+  Common.OpLt -> "<"
+  Common.OpLe -> "<="
+  Common.OpGt -> ">"
+  Common.OpGe -> ">="
+  Common.OpIs -> "=="
+  Common.OpIsNot -> "!="
+  Common.OpIn -> "=="
+  Common.OpNotIn -> "!="
 
 -- | Type mapping
 mapPythonTypeToCpp :: Type -> CppType

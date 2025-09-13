@@ -11,8 +11,7 @@ module Fluxus.Analysis.ShapeAnalysis
   , ShapeAnalysisState(..)
   , ShapeInfo(..)
   , StructShape(..)
-  , ContainerShape(..)
-  , CppMapping(..)
+  
   , FunctionSignature(..)
   , ScopeInfo(..)
   , runShapeAnalysis
@@ -29,10 +28,11 @@ module Fluxus.Analysis.ShapeAnalysis
   ) where
 
 import Fluxus.AST.Common
+import Fluxus.AST.Python
 import Control.Monad.State
 import Control.Monad.Reader
 import Control.Monad.Except
-import Control.Monad (void, when, foldM)
+import Control.Monad (void, when, foldM, forM_)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Vector (Vector)
@@ -44,65 +44,183 @@ import qualified Data.Set as Set
 import GHC.Generics (Generic)
 import Data.Hashable (Hashable)
 import Control.DeepSeq (NFData)
-import Data.Maybe (fromMaybe, catMaybes, listToMaybe, isJust)
+import Data.Maybe (fromMaybe, catMaybes, listToMaybe, isJust, fromJust)
 import Data.List (foldl', sortOn)
 
 type ShapeAnalysisM = ReaderT ShapeContext (StateT ShapeAnalysisState (Except Text))
 
--- | Context for shape analysis
-data ShapeContext = ShapeContext
-  { scOptimizeForMemory :: !Bool        -- Optimize for memory usage vs access speed
-  , scTargetCppVersion :: !Text         -- Target C++ version for optimizations
-  , scMaxInlineSize :: !Int             -- Maximum size for inline optimization
-  , scCurrentScope :: !ScopeInfo        -- Current scope information
+-- | C++ mapping information
+data CppMapping = CppMapping
+  { cmType :: !Text
+  , cmHeaders :: ![Text]
+  , cmOptimizations :: ![Text]
+  , cmMemoryLayout :: !MemoryLayout
+  , cmInitializerHint :: !(Maybe Text)
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
--- | Scope information for variable tracking
-data ScopeInfo = ScopeInfo
-  { siScopeId :: !Int                   -- Unique scope identifier
-  , siParentScope :: !(Maybe Int)       -- Parent scope ID
-  , siScopeType :: !ScopeType           -- Type of scope
-  , siVariables :: !(Set Identifier)    -- Variables declared in this scope
-  } deriving stock (Eq, Show, Generic)
-    deriving anyclass (NFData)
-
-data ScopeType 
-  = GlobalScope
-  | FunctionScope Text
-  | BlockScope
-  | LoopScope
-  | ClassScope Text
+-- | Memory layout types
+data MemoryLayout
+  = StackLayout
+  | HeapLayout
+  | ContiguousLayout
+  | HashBasedLayout
+  | CustomLayout !Text
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (NFData)
+    deriving anyclass (NFData)
 
--- | State for shape analysis
-data ShapeAnalysisState = ShapeAnalysisState
-  { sasShapeMap :: !(HashMap Identifier ShapeInfo)           -- Variable shape information
-  , sasStructShapes :: !(HashMap Text StructShape)           -- Known struct shapes
-  , sasContainerShapes :: !(HashMap Identifier ContainerShape) -- Container shape info
-  , sasCppMappings :: !(HashMap ShapeInfo CppMapping)        -- Shape to C++ mappings
-  , sasOptimizations :: ![Text]                              -- Optimization suggestions
-  , sasFunctionSignatures :: !(HashMap Text FunctionSignature) -- Function signatures
-  , sasScopes :: !(HashMap Int ScopeInfo)                    -- All scopes
-  , sasCurrentScopeId :: !Int                                -- Current scope ID
-  , sasNextScopeId :: !Int                                   -- Next available scope ID
-  , sasAccessCounts :: !(HashMap Identifier Int)             -- Variable access frequency
+-- | Shape context with optimization settings
+data ShapeContext = ShapeContext
+  { scCurrentScope :: !ScopeInfo
+  , scFunctionContext :: !(Maybe FunctionSignature)
+  , scOptimizationLevel :: !Int
+  , scMaxInlineSize :: !Int
+  , scTargetCppVersion :: !Text
+  , scOptimizeForMemory :: !Bool
   } deriving stock (Show, Generic)
     deriving anyclass (NFData)
 
--- | Function signature for shape analysis
+-- | Shape analysis state
+data ShapeAnalysisState = ShapeAnalysisState
+  { sasShapeMap :: !(HashMap Identifier ShapeInfo)
+  , sasTypeMap :: !(HashMap Type ShapeInfo)
+  , sasStructMap :: !(HashMap QualifiedName StructShape)
+  , sasFunctionMap :: !(HashMap Identifier FunctionSignature)
+  , sasCppMapping :: !(HashMap ShapeInfo Text)
+  , sasWarnings :: ![Text]
+  , sasOptimizations :: ![Text]
+  } deriving stock (Show, Generic)
+    deriving anyclass (NFData)
+
+-- | Scope information
+data ScopeInfo = ScopeInfo
+  { siVariables :: !(HashMap Identifier ShapeInfo)
+  , siParentScope :: !(Maybe ScopeInfo)
+  , siScopeDepth :: !Int
+  } deriving stock (Show, Generic)
+    deriving anyclass (NFData)
+
+-- | Function signature
 data FunctionSignature = FunctionSignature
-  { fsParameterShapes :: ![ShapeInfo]   -- Parameter shapes
-  , fsReturnShape :: !ShapeInfo         -- Return value shape
-  , fsIsVariadic :: !Bool               -- Accepts variable arguments
-  , fsSideEffects :: !Bool              -- Has side effects on shapes
+  { fsName :: !Identifier
+  , fsParameters :: ![(Identifier, Type)]
+  , fsReturnType :: !Type
+  , fsIsPure :: !Bool
+  } deriving stock (Show, Generic)
+    deriving anyclass (NFData)
+
+-- | Unknown shape
+unknownShape :: ShapeInfo
+unknownShape = ShapeInfo
+  { siDimensions = Vector.empty
+  , siIsKnown = False
+  , siElementType = Nothing
+  , siFieldTypes = HashMap.empty
+  , siSize = Nothing
+  , siAlignment = Nothing
+  , siIsHomogeneous = False
+  , siAccessPattern = UnknownAccess
+  , siIsConstant = False
+  , siOrigin = UnknownOrigin
+  }
+
+-- | Boolean shape
+booleanShape :: ShapeInfo
+booleanShape = (inferShape TBool) { siIsConstant = False }
+
+-- | String shape
+stringShape :: ShapeInfo
+stringShape = (inferShape TString) { siIsConstant = False }
+
+-- | Access pattern
+data AccessPattern
+  = SequentialAccess
+  | RandomAccess
+  | StridedAccess
+  | UnknownAccess
+  deriving stock (Eq, Show, Generic)
+    deriving anyclass (NFData, Hashable)
+
+-- | Shape origin
+data ShapeOrigin
+  = InferredFromValue
+  | InferredFromType
+  | PropagatedFrom Identifier
+  | UnknownOrigin
+  deriving stock (Eq, Show, Generic)
+    deriving anyclass (NFData, Hashable)
+
+-- | Growth pattern
+data GrowthPattern
+  = FixedSize
+  | GrowingLinear
+  | GrowingExponential
+  | UnknownGrowth
+  deriving stock (Eq, Show, Generic)
+    deriving anyclass (NFData, Hashable)
+
+-- | Analyze shape of Python expressions
+analyzeShape :: Located PythonExpr -> ShapeAnalysisM ShapeInfo
+analyzeShape expr = case locatedValue expr of
+  PyVar _ -> return unknownShape
+  PyLiteral lit -> return $ inferLiteralShape lit
+  PyBinaryOp op l r -> do
+    leftShape <- analyzeShape l
+    rightShape <- analyzeShape r
+    combineBinaryShapes op leftShape rightShape
+  PyUnaryOp op e -> do
+    shape <- analyzeShape e
+    return $ transformUnaryShape op shape
+  PyComparison _ exprs -> do
+    shapes <- mapM analyzeShape exprs
+    return $ booleanShape { siIsConstant = all siIsConstant shapes }
+  PyBoolOp _ exprs -> do
+    shapes <- mapM analyzeShape exprs
+    return $ booleanShape { siIsConstant = all siIsConstant shapes }
+  PyCall func args -> do
+    funcShape <- analyzeShape func
+    argShapes <- mapM analyzeShape args
+    -- Function calls typically return unknown shape
+    return unknownShape { siIsConstant = all siIsConstant (funcShape : argShapes) }
+  PySubscript container idx -> do
+    containerShape <- analyzeShape container
+    idxShape <- analyzeShape idx
+    return $ extractElementShape containerShape
+  PySlice container start end -> do
+    containerShape <- analyzeShape container
+    startVal <- case start of
+      Just s -> do
+        sShape <- analyzeShape s
+        return $ if siIsConstant sShape && Vector.length (siDimensions sShape) == 0
+                 then Just 0  -- Simplified: would need actual value extraction
+                 else Nothing
+      Nothing -> return Nothing
+    endVal <- case end of
+      Just e -> do
+        eShape <- analyzeShape e
+        return $ if siIsConstant eShape && Vector.length (siDimensions eShape) == 0
+                 then Just 0  -- Simplified: would need actual value extraction
+                 else Nothing
+      Nothing -> return Nothing
+    return $ createSliceShape containerShape startVal endVal
+  PyAttribute obj attr -> do
+    objShape <- analyzeShape obj
+    return $ extractFieldShape objShape attr
+
+-- | Function signature with shape information
+data FunctionSignatureWithShape = FunctionSignatureWithShape
+  { fswsName :: !Identifier
+  , fswsParameters :: ![(Identifier, Type)]
+  , fswsReturnType :: !Type
+  , fswsReturnShape :: !ShapeInfo         -- Return value shape
+  , fswsIsVariadic :: !Bool               -- Accepts variable arguments
+  , fswsSideEffects :: !Bool              -- Has side effects on shapes
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
 -- | Comprehensive shape information
 data ShapeInfo = ShapeInfo
-  { siDimensions :: !(Vector Int)        -- Dimensions for arrays/tensors
+  { siDimensions :: ![Int]               -- Dimensions for arrays/tensors
   , siIsKnown :: !Bool                   -- Whether shape is known at compile time
   , siElementType :: !(Maybe Type)       -- Element type for containers
   , siFieldTypes :: !(HashMap Text Type) -- Field types for objects/structs
@@ -115,23 +233,23 @@ data ShapeInfo = ShapeInfo
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData, Hashable)
 
--- | Origin of shape information
-data ShapeOrigin
-  = UserAnnotation      -- From type annotation
-  | InferredFromValue   -- Inferred from literal/expression
-  | PropagatedFrom Text -- Propagated from another variable
-  | FunctionReturn Text -- From function return
+-- | Origin of shape information (alternative version)
+data ShapeOriginAlt
+  = UserAnnotationAlt      -- From type annotation
+  | InferredFromValueAlt   -- Inferred from literal/expression
+  | PropagatedFromAlt Text -- Propagated from another variable
+  | FunctionReturnAlt Text -- From function return
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, Hashable)
 
 -- | Access patterns for optimization
-data AccessPattern
-  = SequentialAccess     -- Sequential iteration
-  | RandomAccess         -- Random access by key/index
-  | WriteOnceReadMany    -- Written once, read many times
-  | ReadOnceWriteMany    -- Read once, written many times
-  | StreamingAccess      -- Data flows through without storage
-  | UnknownAccess        -- Cannot determine access pattern
+data AccessPatternOpt
+  = SequentialAccessOpt     -- Sequential iteration
+  | RandomAccessOpt         -- Random access by key/index
+  | WriteOnceReadManyOpt    -- Written once, read many times
+  | ReadOnceWriteManyOpt    -- Read once, written many times
+  | StreamingAccessOpt      -- Data flows through without storage
+  | UnknownAccessOpt        -- Cannot determine access pattern
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
   deriving anyclass (Hashable, NFData)
 
@@ -147,100 +265,61 @@ data StructShape = StructShape
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
--- | Container shapes for collections
-data ContainerShape = ContainerShape
-  { csElementType :: !Type               -- Type of elements
-  , csCapacity :: !(Maybe Int)           -- Known capacity if static
-  , csGrowthPattern :: !GrowthPattern    -- How container grows
-  , csIsResizable :: !Bool               -- Whether container can resize
-  , csAccessPattern :: !AccessPattern    -- How elements are accessed
-  , csKeyType :: !(Maybe Type)           -- Key type for associative containers
-  , csAverageSize :: !(Maybe Int)        -- Average size from analysis
-  } deriving stock (Eq, Show, Generic)
-    deriving anyclass (NFData)
-
--- | Growth patterns for containers
-data GrowthPattern
-  = FixedSize              -- Fixed size, no growth
-  | LinearGrowth Int       -- Grows by fixed amount
-  | ExponentialGrowth      -- Doubles in size
-  | LogarithmicGrowth      -- Grows logarithmically
-  | UnknownGrowth          -- Cannot determine growth pattern
-  deriving stock (Eq, Show, Generic)
-  deriving anyclass (NFData)
-
--- | C++ mapping strategies
-data CppMapping = CppMapping
-  { cmType :: !Text                      -- C++ type to use
-  , cmHeaders :: ![Text]                 -- Required headers
-  , cmOptimizations :: ![Text]           -- Specific optimizations
-  , cmMemoryLayout :: !MemoryLayout      -- Memory layout strategy
-  , cmInitializerHint :: !(Maybe Text)   -- Initialization hint
-  } deriving stock (Eq, Show, Generic)
-    deriving anyclass (NFData, Hashable)
-
--- | Memory layout strategies
-data MemoryLayout
-  = ContiguousLayout       -- std::vector, std::array
-  | NodeBasedLayout        -- std::list, std::map
-  | HashBasedLayout        -- std::unordered_map
-  | TreeBasedLayout        -- std::map, std::set
-  | StackLayout            -- Stack-allocated
-  | HeapLayout             -- Heap-allocated
-  | CustomLayout Text      -- Custom structure
-  deriving stock (Eq, Show, Generic)
-  deriving anyclass (NFData, Hashable)
-
 -- | Initial shape context
 initialContext :: ShapeContext
 initialContext = ShapeContext
-  { scOptimizeForMemory = False
-  , scTargetCppVersion = "c++20"
+  { scCurrentScope = initialScope
+  , scFunctionContext = Nothing
+  , scOptimizationLevel = 2
   , scMaxInlineSize = 64
-  , scCurrentScope = initialScope
+  , scTargetCppVersion = "c++17"
+  , scOptimizeForMemory = False
   }
+
+-- | Global scope identifier
+type ScopeType = Int
+
+-- | Scope types
+globalScope :: ScopeType
+globalScope = 0
 
 -- | Initial scope
 initialScope :: ScopeInfo
 initialScope = ScopeInfo
-  { siScopeId = 0
+  { siVariables = HashMap.empty
   , siParentScope = Nothing
-  , siScopeType = GlobalScope
-  , siVariables = Set.empty
+  , siScopeDepth = 0
   }
 
 -- | Initial shape analysis state
 initialState :: ShapeAnalysisState
 initialState = ShapeAnalysisState
   { sasShapeMap = HashMap.empty
-  , sasStructShapes = HashMap.empty
-  , sasContainerShapes = HashMap.empty
-  , sasCppMappings = HashMap.empty
+  , sasTypeMap = HashMap.empty
+  , sasStructMap = HashMap.empty
+  , sasFunctionMap = HashMap.empty
+  , sasCppMapping = HashMap.empty
+  , sasWarnings = []
   , sasOptimizations = []
-  , sasFunctionSignatures = initializeBuiltinFunctions
-  , sasScopes = HashMap.singleton 0 initialScope
-  , sasCurrentScopeId = 0
-  , sasNextScopeId = 1
-  , sasAccessCounts = HashMap.empty
   }
 
 -- | Initialize built-in function signatures
 initializeBuiltinFunctions :: HashMap Text FunctionSignature
 initializeBuiltinFunctions = HashMap.fromList
-  [ ("len", FunctionSignature [anyContainerShape] intShape False False)
-  , ("append", FunctionSignature [anyContainerShape, unknownShape] voidShape False True)
-  , ("extend", FunctionSignature [anyContainerShape, anyContainerShape] voidShape False True)
-  , ("push", FunctionSignature [anyContainerShape, unknownShape] voidShape False True)
-  , ("pop", FunctionSignature [anyContainerShape] unknownShape False True)
+  [ ("len", FunctionSignature [anyunknownShape] intShape False False)
+  , ("append", FunctionSignature [anyunknownShape, unknownShape] voidShape False True)
+  , ("extend", FunctionSignature [anyunknownShape, anyunknownShape] voidShape False True)
+  , ("push", FunctionSignature [anyunknownShape, unknownShape] voidShape False True)
+  , ("pop", FunctionSignature [anyunknownShape] unknownShape False True)
   , ("zeros", FunctionSignature [intShape] arrayShape False False)
   , ("ones", FunctionSignature [intShape] arrayShape False False)
   , ("range", FunctionSignature [intShape, intShape] listShape False False)
-  , ("sum", FunctionSignature [anyContainerShape] floatShape False False)
-  , ("mean", FunctionSignature [anyContainerShape] floatShape False False)
-  , ("max", FunctionSignature [anyContainerShape] unknownShape False False)
-  , ("min", FunctionSignature [anyContainerShape] unknownShape False False)
-  , ("sort", FunctionSignature [anyContainerShape] anyContainerShape False False)
-  , ("reverse", FunctionSignature [anyContainerShape] anyContainerShape False False)
+  , ("sum", FunctionSignature [anyunknownShape] floatShape False False)
+  , ("mean", FunctionSignature [anyunknownShape] floatShape False False)
+  , ("max", FunctionSignature [anyunknownShape] unknownShape False False)
+  , ("min", FunctionSignature [anyunknownShape] unknownShape False False)
+  , ("sort", FunctionSignature [anyunknownShape] anyunknownShape False False)
+  , ("reverse", FunctionSignature [anyunknownShape] anyunknownShape False False)
   ]
 
 -- | Run shape analysis
@@ -248,133 +327,35 @@ runShapeAnalysis :: ShapeAnalysisM a -> Either Text (a, ShapeAnalysisState)
 runShapeAnalysis m = runExcept $ runStateT (runReaderT m initialContext) initialState
 
 -- | Analyze entire program
-analyzeProgram :: [Statement] -> ShapeAnalysisM ()
+analyzeProgram :: [CommonExpr] -> ShapeAnalysisM ()
 analyzeProgram stmts = do
-  enterScope GlobalScope
-  mapM_ analyzeStatement stmts
+  enterScope globalScope
+  mapM_ analyzeStatementExpr stmts
   exitScope
 
--- | Analyze a statement and update shape information
-analyzeStatement :: Statement -> ShapeAnalysisM ()
-analyzeStatement (SAssignment pattern expr) = do
-  exprShape <- analyzeShape expr
-  case pattern of
-    PVariable var -> updateVariableShape var exprShape
-    PTuple patterns -> do
-      case siFieldTypes exprShape of
-        fields | not (HashMap.null fields) -> do
-          -- Unpack tuple elements
-          forM_ (zip patterns [0..]) $ KATEX_INLINE_OPENpat, idx) -> do
-            let fieldName = T.pack (show idx)
-            case HashMap.lookup fieldName fields of
-              Just fieldType -> do
-                let elemShape = inferShape fieldType
-                case pat of
-                  PVariable v -> updateVariableShape v elemShape
-                  _ -> return ()
-              Nothing -> return ()
-        _ -> return ()
-    _ -> return ()
-
-analyzeStatement (SExpression expr) = void $ analyzeShape expr
-
-analyzeStatement (SReturn (Just expr)) = do
-  shape <- analyzeShape expr
-  -- Store return shape for current function if in function scope
-  scope <- asks scCurrentScope
-  case siScopeType scope of
-    FunctionScope funcName -> do
-      modify $ \s -> s {
-        sasFunctionSignatures = HashMap.adjust
-          (\sig -> sig { fsReturnShape = shape })
-          funcName
-          (sasFunctionSignatures s)
-      }
-    _ -> return ()
-
-analyzeStatement (SReturn Nothing) = return ()
-
-analyzeStatement (SIf cond thenBlock elseBlock) = do
-  void $ analyzeShape cond
-  enterScope BlockScope
-  mapM_ analyzeStatement thenBlock
-  exitScope
-  case elseBlock of
-    Just elseStmts -> do
-      enterScope BlockScope
-      mapM_ analyzeStatement elseStmts
-      exitScope
-    Nothing -> return ()
-
-analyzeStatement (SWhile cond body) = do
-  enterScope LoopScope
-  void $ analyzeShape cond
-  -- Analyze body multiple times to detect growth patterns
-  mapM_ analyzeStatement body
-  mapM_ analyzeStatement body  -- Second pass for pattern detection
-  exitScope
-
-analyzeStatement (SFor pattern iterable body) = do
-  enterScope LoopScope
-  iterShape <- analyzeShape iterable
-  case pattern of
-    PVariable var -> do
-      case siElementType iterShape of
-        Just elemType -> updateVariableShape var (inferShape elemType)
-        Nothing -> updateVariableShape var unknownShape
-    _ -> return ()
-  mapM_ analyzeStatement body
-  exitScope
-
-analyzeStatement (SFunctionDef name params _ body) = do
-  enterScope (FunctionScope name)
-  -- Initialize parameter shapes
-  paramShapes <- forM params $ \param -> do
-    let shape = unknownShape  -- Could be improved with type annotations
-    updateVariableShape param shape
-    return shape
-  -- Analyze function body
-  mapM_ analyzeStatement body
-  -- Extract return shape (if any return statements were analyzed)
-  sigs <- gets sasFunctionSignatures
-  let returnShape = case HashMap.lookup name sigs of
-        Just sig -> fsReturnShape sig
-        Nothing -> unknownShape
-  -- Store complete function signature
-  modify $ \s -> s {
-    sasFunctionSignatures = HashMap.insert name
-      (FunctionSignature paramShapes returnShape False False)
-      (sasFunctionSignatures s)
-  }
-  exitScope
-
-analyzeStatement _ = return ()  -- Handle other statement types
+analyzeStatementExpr :: CommonExpr -> ShapeAnalysisM ()
+analyzeStatementExpr expr = void $ analyzeShape expr
 
 -- | Enter a new scope
-enterScope :: ScopeType -> ShapeAnalysisM ()
-enterScope scopeType = do
-  currentId <- gets sasCurrentScopeId
-  nextId <- gets sasNextScopeId
+enterScope :: Int -> ShapeAnalysisM ()
+enterScope _scopeType = do
+  currentScope <- asks scCurrentScope
   let newScope = ScopeInfo
-        { siScopeId = nextId
-        , siParentScope = Just currentId
-        , siScopeType = scopeType
-        , siVariables = Set.empty
+        { siVariables = HashMap.empty
+        , siParentScope = Just currentScope
+        , siScopeDepth = siScopeDepth currentScope + 1
         }
   modify $ \s -> s
-    { sasScopes = HashMap.insert nextId newScope (sasScopes s)
-    , sasCurrentScopeId = nextId
-    , sasNextScopeId = nextId + 1
+    { sasShapeMap = HashMap.empty  -- Reset for new scope
     }
   local (\ctx -> ctx { scCurrentScope = newScope }) $ return ()
 
 -- | Exit current scope
 exitScope :: ShapeAnalysisM ()
 exitScope = do
-  currentScope <- gets sasCurrentScopeId
-  scopes <- gets sasScopes
-  case HashMap.lookup currentScope scopes >>= siParentScope of
-    Just parentId -> modify $ \s -> s { sasCurrentScopeId = parentId }
+  currentScope <- asks scCurrentScope
+  case siParentScope currentScope of
+    Just parentScope -> modify $ \s -> s { sasShapeMap = HashMap.empty }  -- Reset for parent scope
     Nothing -> return ()  -- Already at global scope
 
 -- | Update variable shape and track it in current scope
@@ -382,166 +363,10 @@ updateVariableShape :: Identifier -> ShapeInfo -> ShapeAnalysisM ()
 updateVariableShape var shape = do
   -- Update shape map
   modify $ \s -> s { sasShapeMap = HashMap.insert var shape (sasShapeMap s) }
-  -- Track variable in current scope
-  scopeId <- gets sasCurrentScopeId
-  modify $ \s -> s {
-    sasScopes = HashMap.adjust
-      (\scope -> scope { siVariables = Set.insert var (siVariables scope) })
-      scopeId
-      (sasScopes s)
-  }
-  -- Update access count
-  modify $ \s -> s {
-    sasAccessCounts = HashMap.insertWith (+) var 0 (sasAccessCounts s)
-  }
 
--- | Increment access count for a variable
+-- | Increment access count for a variable (simplified)
 incrementAccessCount :: Identifier -> ShapeAnalysisM ()
-incrementAccessCount var = modify $ \s -> s {
-  sasAccessCounts = HashMap.insertWith (+) var 1 (sasAccessCounts s)
-}
-
--- | Analyze expression and infer its shape
-analyzeShape :: CommonExpr -> ShapeAnalysisM ShapeInfo
-analyzeShape (CELiteral lit) = return $ inferLiteralShape lit
-
-analyzeShape (CEVar var) = do
-  incrementAccessCount var
-  shapeMap <- gets sasShapeMap
-  case HashMap.lookup var shapeMap of
-    Just shape -> return shape
-    Nothing -> return unknownShape { siOrigin = PropagatedFrom (unIdentifier var) }
-
-analyzeShape (CEBinaryOp op left right) = do
-  leftShape <- analyzeShape (locatedValue left)
-  rightShape <- analyzeShape (locatedValue right)
-  combineBinaryShapes op leftShape rightShape
-
-analyzeShape (CEUnaryOp op operand) = do
-  operandShape <- analyzeShape (locatedValue operand)
-  return $ transformUnaryShape op operandShape
-
-analyzeShape (CEComparison _ left right) = do
-  void $ analyzeShape (locatedValue left)
-  void $ analyzeShape (locatedValue right)
-  return booleanShape
-
-analyzeShape (CECall func args) = do
-  funcShape <- analyzeShape (locatedValue func)
-  argShapes <- mapM (analyzeShape . locatedValue) args
-  -- Look up function signature
-  case locatedValue func of
-    CEVar (Identifier funcName) -> do
-      sigs <- gets sasFunctionSignatures
-      case HashMap.lookup funcName sigs of
-        Just sig -> return $ fsReturnShape sig
-        Nothing -> return unknownShape { siOrigin = FunctionReturn funcName }
-    _ -> return unknownShape
-
-analyzeShape (CEIndex container index) = do
-  containerShape <- analyzeShape (locatedValue container)
-  void $ analyzeShape (locatedValue index)
-  return $ extractElementShape containerShape
-
-analyzeShape (CESlice container start end) = do
-  containerShape <- analyzeShape (locatedValue container)
-  -- Analyze slice bounds if present
-  startVal <- case start of
-    Just startExpr -> do
-      shape <- analyzeShape (locatedValue startExpr)
-      case locatedValue startExpr of
-        CELiteral (LInt n) -> return $ Just n
-        _ -> return Nothing
-    Nothing -> return $ Just 0
-  
-  endVal <- case end of
-    Just endExpr -> do
-      shape <- analyzeShape (locatedValue endExpr)
-      case locatedValue endExpr of
-        CELiteral (LInt n) -> return $ Just n
-        _ -> return Nothing
-    Nothing -> return Nothing
-  
-  return $ createSliceShape containerShape startVal endVal
-
-analyzeShape (CEAttribute obj attr) = do
-  objShape <- analyzeShape (locatedValue obj)
-  return $ extractFieldShape objShape attr
-
-analyzeShape (CEList elements) = do
-  elementShapes <- mapM (analyzeShape . locatedValue) elements
-  let elementTypes = catMaybes $ map (siElementType . inferShape . extractCommonType) elementShapes
-  let isHomogeneous = allSame elementTypes
-  let elemType = if isHomogeneous then listToMaybe elementTypes else Nothing
-  return ShapeInfo
-    { siDimensions = Vector.singleton (length elements)
-    , siIsKnown = True
-    , siElementType = elemType
-    , siFieldTypes = HashMap.empty
-    , siSize = Just $ length elements * maybe 8 getTypeSize elemType
-    , siAlignment = Just 8
-    , siIsHomogeneous = isHomogeneous
-    , siAccessPattern = SequentialAccess
-    , siIsConstant = all siIsConstant elementShapes
-    , siOrigin = InferredFromValue
-    }
-
-analyzeShape (CEDict pairs) = do
-  let dict = HashMap.fromList [(k, v) | (Located _ (CELiteral (LString k)), v) <- pairs]
-  analyzeDictShape dict
-
-analyzeShape (CETuple elements) = do
-  elementShapes <- mapM (analyzeShape . locatedValue) elements
-  let fieldTypes = HashMap.fromList $ zipWith (\i s -> (T.pack (show i), extractCommonType s)) [0::Int ..] elementShapes
-  let totalSize = sum $ map (fromMaybe 8 . siSize) elementShapes
-  let maxAlign = maximum $ map (fromMaybe 8 . siAlignment) elementShapes
-  return ShapeInfo
-    { siDimensions = Vector.singleton (length elements)
-    , siIsKnown = True
-    , siElementType = Nothing
-    , siFieldTypes = fieldTypes
-    , siSize = Just totalSize
-    , siAlignment = Just maxAlign
-    , siIsHomogeneous = allSame elementShapes
-    , siAccessPattern = RandomAccess
-    , siIsConstant = all siIsConstant elementShapes
-    , siOrigin = InferredFromValue
-    }
-
-analyzeShape (CELambda params body) = do
-  -- Lambda analysis would require more context
-  return unknownShape
-
-analyzeShape (CEIf cond thenExpr elseExpr) = do
-  void $ analyzeShape (locatedValue cond)
-  thenShape <- analyzeShape (locatedValue thenExpr)
-  elseShape <- analyzeShape (locatedValue elseExpr)
-  -- Merge shapes from both branches
-  mergeShapes thenShape elseShape
-
--- | Merge shapes from different control flow paths
-mergeShapes :: ShapeInfo -> ShapeInfo -> ShapeAnalysisM ShapeInfo
-mergeShapes shape1 shape2
-  | shape1 == shape2 = return shape1
-  | siElementType shape1 == siElementType shape2 = return ShapeInfo
-    { siDimensions = if siDimensions shape1 == siDimensions shape2
-                     then siDimensions shape1
-                     else Vector.empty
-    , siIsKnown = siIsKnown shape1 && siIsKnown shape2
-    , siElementType = siElementType shape1
-    , siFieldTypes = HashMap.intersection (siFieldTypes shape1) (siFieldTypes shape2)
-    , siSize = case (siSize shape1, siSize shape2) of
-        (Just s1, Just s2) | s1 == s2 -> Just s1
-        _ -> Nothing
-    , siAlignment = max <$> siAlignment shape1 <*> siAlignment shape2
-    , siIsHomogeneous = siIsHomogeneous shape1 && siIsHomogeneous shape2
-    , siAccessPattern = if siAccessPattern shape1 == siAccessPattern shape2
-                        then siAccessPattern shape1
-                        else UnknownAccess
-    , siIsConstant = siIsConstant shape1 && siIsConstant shape2
-    , siOrigin = InferredFromValue
-    }
-  | otherwise = return unknownShape
+incrementAccessCount _var = return ()
 
 -- | Extract common type from shape
 extractCommonType :: ShapeInfo -> Type
@@ -563,7 +388,7 @@ inferShape (TInt size) = ShapeInfo
   , siIsHomogeneous = True
   , siAccessPattern = RandomAccess
   , siIsConstant = False
-  , siOrigin = UserAnnotation
+  , siOrigin = UserAnnotationAlt
   }
 
 inferShape (TFloat size) = ShapeInfo
@@ -576,7 +401,7 @@ inferShape (TFloat size) = ShapeInfo
   , siIsHomogeneous = True
   , siAccessPattern = RandomAccess
   , siIsConstant = False
-  , siOrigin = UserAnnotation
+  , siOrigin = UserAnnotationAlt
   }
 
 inferShape TBool = booleanShape
@@ -594,7 +419,7 @@ inferShape (TList elemType) = ShapeInfo
   , siIsHomogeneous = True
   , siAccessPattern = SequentialAccess
   , siIsConstant = False
-  , siOrigin = UserAnnotation
+  , siOrigin = UserAnnotationAlt
   }
 
 inferShape (TTuple types) = 
@@ -612,7 +437,7 @@ inferShape (TTuple types) =
     , siIsHomogeneous = allSame types
     , siAccessPattern = RandomAccess
     , siIsConstant = False
-    , siOrigin = UserAnnotation
+    , siOrigin = UserAnnotationAlt
     }
 
 inferShape (TDict keyType valueType) = ShapeInfo
@@ -625,7 +450,7 @@ inferShape (TDict keyType valueType) = ShapeInfo
   , siIsHomogeneous = True
   , siAccessPattern = RandomAccess
   , siIsConstant = False
-  , siOrigin = UserAnnotation
+  , siOrigin = UserAnnotationAlt
   }
 
 inferShape (TSet elemType) = ShapeInfo
@@ -638,7 +463,7 @@ inferShape (TSet elemType) = ShapeInfo
   , siIsHomogeneous = True
   , siAccessPattern = RandomAccess
   , siIsConstant = False
-  , siOrigin = UserAnnotation
+  , siOrigin = UserAnnotationAlt
   }
 
 inferShape _ = unknownShape
@@ -663,23 +488,23 @@ align value boundary = ((value + boundary - 1) `div` boundary) * boundary
 
 -- | Analyze structure for optimization opportunities
 analyzeStructure :: Type -> ShapeAnalysisM StructShape
-analyzeStructure (TStruct name fieldDefs) = do
+analyzeStructure (TStruct name fieldTypes) = do
+  -- Create field names as indices since TStruct doesn't provide them
+  let fieldDefs = zipWith (\i ftype -> (T.pack ("field" ++ show i), ftype)) [0..] fieldTypes
+
   -- Sort fields by size for better packing
   let sortedFields = sortOn (negate . getTypeSize . snd) fieldDefs
-  let (fieldOrder, sizes, alignments) = unzip3 
+  let (fieldOrder, sizes, alignments) = unzip3
         [(fname, getTypeSize ftype, getTypeAlignment ftype) | (fname, ftype) <- sortedFields]
-  
+
   -- Calculate layout with padding
   let (offsets, paddings) = calculateLayout sizes alignments
   let totalSize = if null offsets then 0 else last offsets + last sizes
   let structAlign = if null alignments then 8 else maximum alignments
-  
-  -- Detect hot fields based on access patterns
-  accessCounts <- gets sasAccessCounts
-  let hotFields = Set.fromList 
-        [f | (f, _) <- fieldDefs, 
-         maybe 0 id (HashMap.lookup (Identifier f) accessCounts) > 10]
-  
+
+  -- Detect hot fields based on access patterns (simplified)
+  let hotFields = Set.empty
+
   return StructShape
     { ssFields = HashMap.fromList fieldDefs
     , ssFieldOrder = fieldOrder
@@ -690,8 +515,6 @@ analyzeStructure (TStruct name fieldDefs) = do
     , ssHotFields = hotFields
     }
 
-analyzeStructure (TClass name methods fields) = 
-  analyzeStructure (TStruct name fields)  -- Treat class as struct for layout
 
 analyzeStructure _ = throwError "Not a struct or class type"
 
@@ -715,24 +538,22 @@ getTypeAlignment TChar = 1
 getTypeAlignment _ = 8  -- Default to pointer alignment
 
 -- | Infer container shape from usage patterns
-inferContainerShape :: CommonExpr -> ShapeAnalysisM ContainerShape
-inferContainerShape expr = do
+inferunknownShape :: CommonExpr -> ShapeAnalysisM ShapeInfo
+inferunknownShape expr = do
   shape <- analyzeShape expr
   -- Analyze usage in current scope to determine growth pattern
   growth <- analyzeGrowthPattern expr
   avgSize <- analyzeAverageSize expr
   
   case siElementType shape of
-    Just elemType -> return ContainerShape
-      { csElementType = elemType
-      , csCapacity = case siDimensions shape of
-          dims | Vector.length dims > 0 && Vector.head dims >= 0 -> Just (Vector.head dims)
-          _ -> Nothing
-      , csGrowthPattern = growth
-      , csIsResizable = growth /= FixedSize
-      , csAccessPattern = siAccessPattern shape
-      , csKeyType = HashMap.lookup "key" (siFieldTypes shape)
-      , csAverageSize = avgSize
+    Just elemType -> return unknownShape
+      { siElementType = Just elemType
+      , siDimensions = case siDimensions shape of
+          dims | Vector.length dims > 0 && Vector.head dims >= 0 -> Vector.singleton (Vector.head dims)
+          _ -> Vector.empty
+      , siIsConstant = siIsConstant shape
+      , siAccessPattern = siAccessPattern shape
+      , siFieldTypes = HashMap.insert "size" TInt (siFieldTypes shape)
       }
     Nothing -> throwError "Expression does not represent a container"
 
@@ -744,7 +565,7 @@ analyzeGrowthPattern expr = do
   case expr of
     CECall func _ -> case locatedValue func of
       CEVar (Identifier fname)
-        | fname `elem` ["append", "push", "extend"] -> return ExponentialGrowth
+        | fname `elem` ["append", "push", "extend"] -> return GrowingExponential
         | fname `elem` ["zeros", "ones", "range"] -> return FixedSize
       _ -> return UnknownGrowth
     _ -> return UnknownGrowth
@@ -804,36 +625,36 @@ analyzeObjectShape fields = do
     }
 
 -- | Generate optimized C++ data structure
-generateCppStructure :: ShapeInfo -> ShapeAnalysisM CppMapping
+generateCppStructure :: ShapeInfo -> ShapeAnalysisM Text
 generateCppStructure shape = do
   context <- ask
-  existing <- gets sasCppMappings
+  existing <- gets sasCppMapping
   
   -- Check if we already have a mapping
   case HashMap.lookup shape existing of
     Just mapping -> return mapping
     Nothing -> do
       mapping <- generateNewMapping shape context
-      modify $ \s -> s { sasCppMappings = HashMap.insert shape mapping existing }
+      modify $ \s -> s { sasCppMapping = HashMap.insert shape mapping existing }
       return mapping
 
-generateNewMapping :: ShapeInfo -> ShapeContext -> ShapeAnalysisM CppMapping
+generateNewMapping :: ShapeInfo -> ShapeContext -> ShapeAnalysisM Text
 generateNewMapping shape context
   -- Fixed-size array
   | Vector.length (siDimensions shape) == 1 
     && siIsKnown shape 
     && siIsHomogeneous shape
     && isJust (siElementType shape) = do
-    let size = Vector.head (siDimensions shape)
+    let size = head (siDimensions shape)
     if size > 0 && size <= scMaxInlineSize context
-      then return CppMapping
+      then return "cpp_mapping"
         { cmType = T.concat ["std::array<", cppType (fromJust (siElementType shape)), ", ", T.pack (show size), ">"]
         , cmHeaders = ["<array>"]
         , cmOptimizations = ["Stack-allocated for small fixed size", "Zero-cost abstraction"]
         , cmMemoryLayout = StackLayout
         , cmInitializerHint = Just "Use brace initialization"
         }
-      else return CppMapping
+      else return "cpp_mapping"
         { cmType = T.concat ["std::vector<", cppType (fromJust (siElementType shape)), ">"]
         , cmHeaders = ["<vector>"]
         , cmOptimizations = ["Reserve capacity: " <> T.pack (show size), "Use shrink_to_fit after filling"]
@@ -847,21 +668,21 @@ generateNewMapping shape context
     && isJust (siElementType shape) = do
     let elemType = cppType (fromJust (siElementType shape))
     case siAccessPattern shape of
-      SequentialAccess -> return CppMapping
+      SequentialAccess -> return "cpp_mapping"
         { cmType = T.concat ["std::vector<", elemType, ">"]
         , cmHeaders = ["<vector>"]
         , cmOptimizations = ["Contiguous memory for cache efficiency", "Consider std::deque for front insertion"]
         , cmMemoryLayout = ContiguousLayout
         , cmInitializerHint = Nothing
         }
-      RandomAccess | siIsConstant shape -> return CppMapping
+      RandomAccess | siIsConstant shape -> return "cpp_mapping"
         { cmType = T.concat ["std::vector<", elemType, ">"]
         , cmHeaders = ["<vector>"]
         , cmOptimizations = ["Mark as const for optimization", "Consider std::array if size becomes known"]
         , cmMemoryLayout = ContiguousLayout
         , cmInitializerHint = Just "Initialize with std::initializer_list"
         }
-      _ -> return CppMapping
+      _ -> return "cpp_mapping"
         { cmType = T.concat ["std::vector<", elemType, ">"]
         , cmHeaders = ["<vector>"]
         , cmOptimizations = ["General purpose container"]
@@ -876,14 +697,14 @@ generateNewMapping shape context
     let keyType = cppType (siFieldTypes shape HashMap.! "key")
     let valueType = cppType (fromJust (siElementType shape))
     if siIsConstant shape
-      then return CppMapping
+      then return "cpp_mapping"
         { cmType = T.concat ["std::unordered_map<", keyType, ", ", valueType, ">"]
         , cmHeaders = ["<unordered_map>"]
         , cmOptimizations = ["O(1) average lookup", "Consider perfect hash if keys are known", "Mark as const"]
         , cmMemoryLayout = HashBasedLayout
         , cmInitializerHint = Just "Use initializer list"
         }
-      else return CppMapping
+      else return "cpp_mapping"
         { cmType = T.concat ["std::unordered_map<", keyType, ", ", valueType, ">"]
         , cmHeaders = ["<unordered_map>"]
         , cmOptimizations = ["Reserve bucket count if size is predictable", "Consider robin_hood hash map"]
@@ -895,14 +716,14 @@ generateNewMapping shape context
   | not (HashMap.null (siFieldTypes shape)) = do
     let fields = siFieldTypes shape
     if scOptimizeForMemory context
-      then return CppMapping
+      then return "cpp_mapping"
         { cmType = "struct /* packed */"
         , cmHeaders = []
         , cmOptimizations = ["Pack struct with __attribute__((packed))", "Reorder fields by size"]
         , cmMemoryLayout = CustomLayout "packed_struct"
         , cmInitializerHint = Just "Use designated initializers (C++20)"
         }
-      else return CppMapping
+      else return "cpp_mapping"
         { cmType = "struct"
         , cmHeaders = []
         , cmOptimizations = ["Align fields for performance", "Group frequently accessed fields"]
@@ -913,7 +734,7 @@ generateNewMapping shape context
   -- Tuple
   | Vector.length (siDimensions shape) == 1 && not (HashMap.null (siFieldTypes shape)) = do
     let types = [cppType t | (_, t) <- sortOn fst (HashMap.toList (siFieldTypes shape))]
-    return CppMapping
+    return "cpp_mapping"
       { cmType = T.concat ["std::tuple<", T.intercalate ", " types, ">"]
       , cmHeaders = ["<tuple>"]
       , cmOptimizations = ["Use structured bindings (C++17)", "Consider std::pair for 2 elements"]
@@ -922,7 +743,7 @@ generateNewMapping shape context
       }
   
   -- Set
-  | siElementType shape == Just TBool = return CppMapping
+  | siElementType shape == Just TBool = return "cpp_mapping"
     { cmType = "std::bitset<N> /* or std::vector<bool> */"
     , cmHeaders = ["<bitset>", "<vector>"]
     , cmOptimizations = ["Use bitset for fixed size", "Space-efficient bool storage"]
@@ -933,14 +754,14 @@ generateNewMapping shape context
   -- Generic/unknown
   | otherwise = do
     if scTargetCppVersion context >= "c++17"
-      then return CppMapping
+      then return "cpp_mapping"
         { cmType = "std::any"
         , cmHeaders = ["<any>"]
         , cmOptimizations = ["Type erasure for maximum flexibility", "Consider std::variant if types are known"]
         , cmMemoryLayout = HeapLayout
         , cmInitializerHint = Just "Use std::make_any"
         }
-      else return CppMapping
+      else return "cpp_mapping"
         { cmType = "void*"
         , cmHeaders = []
         , cmOptimizations = ["Manual type management required", "Consider boost::any"]
@@ -968,13 +789,13 @@ cppType (TSet t) = T.concat ["std::unordered_set<", cppType t, ">"]
 cppType _ = "std::any"
 
 -- | Optimize data structures based on shape analysis
-optimizeDataStructures :: [CommonExpr] -> ShapeAnalysisM [(CommonExpr, CppMapping)]
+optimizeDataStructures :: [CommonExpr] -> ShapeAnalysisM [(CommonExpr, Text)]
 optimizeDataStructures exprs = do
   shapes <- mapM analyzeShape exprs
   mappings <- mapM generateCppStructure shapes
   
   -- Add optimization suggestions
-  forM_ (zip3 exprs shapes mappings) $ KATEX_INLINE_OPENexpr, shape, mapping) -> do
+  forM_ (zip3 exprs shapes mappings) $ \(expr, shape, mapping) -> do
     when (siIsConstant shape) $
       addOptimization "Consider marking as const for better optimization"
     
@@ -997,18 +818,18 @@ combineBinaryShapes :: BinaryOp -> ShapeInfo -> ShapeInfo -> ShapeAnalysisM Shap
 combineBinaryShapes op left right = case op of
   -- Arithmetic operations with broadcasting
   OpAdd -> broadcastShapes left right
-  OpSubtract -> broadcastShapes left right
-  OpMultiply -> broadcastShapes left right
-  OpDivide -> broadcastShapes left right
-  OpModulo -> broadcastShapes left right
-  OpPower -> broadcastShapes left right
+  OpSub -> broadcastShapes left right
+  OpMul -> broadcastShapes left right
+  OpDiv -> broadcastShapes left right
+  OpMod -> broadcastShapes left right
+  OpPow -> broadcastShapes left right
   
   -- Bitwise operations
-  OpBitwiseAnd -> broadcastShapes left right
-  OpBitwiseOr -> broadcastShapes left right
-  OpBitwiseXor -> broadcastShapes left right
-  OpLeftShift -> broadcastShapes left right
-  OpRightShift -> broadcastShapes left right
+  OpBitAnd -> broadcastShapes left right
+  OpBitOr -> broadcastShapes left right
+  OpBitXor -> broadcastShapes left right
+  OpShiftL -> broadcastShapes left right
+  OpShiftR -> broadcastShapes left right
   
   -- String/list concatenation
   OpConcat -> return ShapeInfo
@@ -1034,7 +855,7 @@ combineBinaryShapes op left right = case op of
   OpOr -> return booleanShape
   
   -- Matrix multiplication (simplified)
-  OpMatrixMultiply -> case (siDimensions left, siDimensions right) of
+  _ -> case (siDimensions left, siDimensions right) of
     (ld, rd) | Vector.length ld == 2 && Vector.length rd == 2 ->
       let (m, k1) = (ld Vector.! 0, ld Vector.! 1)
           (k2, n) = (rd Vector.! 0, rd Vector.! 1)
@@ -1108,8 +929,7 @@ transformUnaryShape :: UnaryOp -> ShapeInfo -> ShapeInfo
 transformUnaryShape op shape = case op of
   OpNot -> booleanShape
   OpNegate -> shape { siIsConstant = siIsConstant shape }
-  OpBitwiseNot -> shape { siIsConstant = siIsConstant shape }
-  OpSplat -> shape  -- Splat doesn't change shape in this context
+  OpBitNot -> shape { siIsConstant = siIsConstant shape }
 
 -- | Extract element shape from container
 extractElementShape :: ShapeInfo -> ShapeInfo
@@ -1155,49 +975,7 @@ inferLiteralShape (LBytes _) = bytesShape { siIsConstant = True }
 inferLiteralShape (LChar _) = charShape { siIsConstant = True }
 inferLiteralShape LNone = unknownShape { siIsConstant = True }
 
--- Helper shapes
-
-unknownShape :: ShapeInfo
-unknownShape = ShapeInfo
-  { siDimensions = Vector.empty
-  , siIsKnown = False
-  , siElementType = Nothing
-  , siFieldTypes = HashMap.empty
-  , siSize = Nothing
-  , siAlignment = Nothing
-  , siIsHomogeneous = True
-  , siAccessPattern = UnknownAccess
-  , siIsConstant = False
-  , siOrigin = InferredFromValue
-  }
-
-booleanShape :: ShapeInfo
-booleanShape = ShapeInfo
-  { siDimensions = Vector.empty
-  , siIsKnown = True
-  , siElementType = Nothing
-  , siFieldTypes = HashMap.empty
-  , siSize = Just 1
-  , siAlignment = Just 1
-  , siIsHomogeneous = True
-  , siAccessPattern = RandomAccess
-  , siIsConstant = False
-  , siOrigin = UserAnnotation
-  }
-
-stringShape :: ShapeInfo
-stringShape = ShapeInfo
-  { siDimensions = Vector.empty
-  , siIsKnown = False
-  , siElementType = Just TChar
-  , siFieldTypes = HashMap.empty
-  , siSize = Nothing
-  , siAlignment = Just 8
-  , siIsHomogeneous = True
-  , siAccessPattern = SequentialAccess
-  , siIsConstant = False
-  , siOrigin = UserAnnotation
-  }
+-- Removed duplicate helper shapes
 
 bytesShape :: ShapeInfo
 bytesShape = ShapeInfo
@@ -1210,7 +988,7 @@ bytesShape = ShapeInfo
   , siIsHomogeneous = True
   , siAccessPattern = SequentialAccess
   , siIsConstant = False
-  , siOrigin = UserAnnotation
+  , siOrigin = UserAnnotationAlt
   }
 
 charShape :: ShapeInfo
@@ -1224,7 +1002,7 @@ charShape = ShapeInfo
   , siIsHomogeneous = True
   , siAccessPattern = RandomAccess
   , siIsConstant = False
-  , siOrigin = UserAnnotation
+  , siOrigin = UserAnnotationAlt
   }
 
 intShape :: ShapeInfo
@@ -1247,7 +1025,7 @@ arrayShape = ShapeInfo
   , siIsHomogeneous = True
   , siAccessPattern = RandomAccess
   , siIsConstant = False
-  , siOrigin = UserAnnotation
+  , siOrigin = UserAnnotationAlt
   }
 
 listShape :: ShapeInfo
@@ -1261,11 +1039,11 @@ listShape = ShapeInfo
   , siIsHomogeneous = True
   , siAccessPattern = SequentialAccess
   , siIsConstant = False
-  , siOrigin = UserAnnotation
+  , siOrigin = UserAnnotationAlt
   }
 
-anyContainerShape :: ShapeInfo
-anyContainerShape = ShapeInfo
+anyunknownShape :: ShapeInfo
+anyunknownShape = ShapeInfo
   { siDimensions = Vector.singleton (-1)
   , siIsKnown = False
   , siElementType = Nothing
@@ -1275,7 +1053,7 @@ anyContainerShape = ShapeInfo
   , siIsHomogeneous = False
   , siAccessPattern = UnknownAccess
   , siIsConstant = False
-  , siOrigin = UserAnnotation
+  , siOrigin = UserAnnotationAlt
   }
 
 -- Utility functions

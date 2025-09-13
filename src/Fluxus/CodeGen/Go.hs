@@ -22,7 +22,7 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HS
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe, isJust)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Control.Monad.State
@@ -170,7 +170,7 @@ generateStatement config = \case
   PyIf (Located _ cond) thenBody elseBody ->
     generateIf config cond thenBody elseBody
     
-  PyFor (Located _ pattern) (Located _ iterExpr) body _ ->
+  PyFor {pyForAsync = False, pyForTarget = Located _ pattern, pyForIter = Located _ iterExpr, pyForBody = body, pyForElse = _} ->
     generateFor config pattern iterExpr body
     
   PyFuncDef funcDef ->
@@ -435,10 +435,10 @@ generateExpression config = \case
     elemExprs <- mapM (generateExpression config . locatedValue) elements
     return $ "[]interface{}{" <> T.intercalate ", " elemExprs <> "}"
     
-  PyCompare op (Located _ left) (Located _ right) -> do
+  PyBinaryOp op (Located _ left) (Located _ right) -> do
     leftExpr <- generateExpression config left
     rightExpr <- generateExpression config right
-    let goOp = compareOpToGo op
+    let goOp = binaryOpToGo op
     return $ "(" <> leftExpr <> " " <> goOp <> " " <> rightExpr <> ")"
     
   expr -> do
@@ -451,7 +451,7 @@ generateLiteral = \case
   PyInt n -> T.pack (show n)
   PyFloat d -> T.pack (show d)
   PyString s -> "\"" <> escapeString s <> "\""
-  PyFString s exprs -> "fmt.Sprintf(\"" <> s <> "\")"  -- Simplified
+  PyFString parts -> "fmt.Sprintf(\"%v\")"  -- Simplified
   PyBool b -> if b then "true" else "false"
   PyNone -> "nil"
   _ -> "nil"
@@ -486,11 +486,11 @@ generateSubscript config expr slice = do
     SliceIndex (Located _ idx) -> do
       idxStr <- generateExpression config idx
       return $ exprStr <> "[" <> idxStr <> "]"
-    SliceRange start stop step -> do
+    SliceSlice start stop step -> do
       -- Go slice syntax: expr[start:stop]
       startStr <- maybe (return "") (generateExpression config . locatedValue) start
       stopStr <- maybe (return "") (generateExpression config . locatedValue) stop
-      when (Maybe.isJust step) $ addWarning "Slice step not supported in Go"
+      when (isJust step) $ addWarning "Slice step not supported in Go"
       return $ exprStr <> "[" <> startStr <> ":" <> stopStr <> "]"
 
 -- | Infer type from expression
@@ -584,7 +584,7 @@ hasReturn = any isReturn
     isReturn (Located _ (PyReturn _)) = True
     isReturn _ = False
 
-binaryOpToGo :: PythonBinaryOp -> Text
+binaryOpToGo :: BinaryOp -> Text
 binaryOpToGo = \case
   OpAdd -> "+"
   OpSub -> "-"
@@ -596,28 +596,28 @@ binaryOpToGo = \case
   OpBitAnd -> "&"
   OpBitOr -> "|"
   OpBitXor -> "^"
-  OpLeftShift -> "<<"
-  OpRightShift -> ">>"
+  OpShiftL -> "<<"
+  OpShiftR -> ">>"
   OpAnd -> "&&"
   OpOr -> "||"
   _ -> "+"
 
-unaryOpToGo :: PythonUnaryOp -> Text
+unaryOpToGo :: UnaryOp -> Text
 unaryOpToGo = \case
   OpNegate -> "-"
   OpPositive -> "+"
   OpNot -> "!"
   OpBitNot -> "^"
 
-compareOpToGo :: PythonCompareOp -> Text
+compareOpToGo :: ComparisonOp -> Text
 compareOpToGo = \case
-  CmpEq -> "=="
-  CmpNeq -> "!="
-  CmpLt -> "<"
-  CmpLte -> "<="
-  CmpGt -> ">"
-  CmpGte -> ">="
-  CmpIs -> "=="  -- Simplified
-  CmpIsNot -> "!="
-  CmpIn -> "in"  -- Not directly supported in Go
-  CmpNotIn -> "not in"
+  OpEq -> "=="
+  OpNe -> "!="
+  OpLt -> "<"
+  OpLe -> "<="
+  OpGt -> ">"
+  OpGe -> ">="
+  OpIs -> "=="  -- Simplified
+  OpIsNot -> "!="
+  OpIn -> "in"  -- Not directly supported in Go
+  OpNotIn -> "not in"

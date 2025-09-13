@@ -105,7 +105,7 @@ newtype TypeVar = TypeVar Text
 -- | Bit width for numeric types
 newtype BitWidth = BitWidth Int
   deriving stock (Eq, Ord, Show, Generic)
-  deriving newtype (Hashable, NFData)
+  deriving newtype (Hashable, NFData, Num)
 
 -- | Type constraints/bounds
 data TypeConstraint = TypeConstraint

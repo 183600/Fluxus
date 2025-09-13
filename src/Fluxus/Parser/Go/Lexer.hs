@@ -149,12 +149,12 @@ lexGo = do
   where
     locatedToken = do
       -- Skip whitespace (but not newlines)
-      many (satisfy (\c -> c == ' ' || c == '\t'))
+      void $ many (satisfy (\c -> c == ' ' || c == '\t'))
       start <- getSourcePos
       token <- goToken
       end <- getSourcePos
-      let span = SourceSpan "<input>" (convertPos start) (convertPos end)
-      return $ Located span token
+      let sourceSpan = SourceSpan "<input>" (convertPos start) (convertPos end)
+      return $ Located sourceSpan token
 
 -- | Convert Megaparsec SourcePos to our SourcePos
 convertPos :: MP.SourcePos -> SourcePos
@@ -332,9 +332,9 @@ goNumberLiteral = choice
         MP.some digitChar
       expPart <- optional $ do
         _ <- char 'e' <|> char 'E'
-        sign <- optional (char '+' <|> char '-')
-        exp <- MP.some digitChar
-        return $ 'e' : maybe "" (:[]) sign ++ exp
+        signChar <- optional (char '+' <|> char '-')
+        expDigits <- MP.some digitChar
+        return $ 'e' : maybe "" (:[]) signChar ++ expDigits
 
       -- At least one of fractPart or expPart must be present for a float
       case (fractPart, expPart) of

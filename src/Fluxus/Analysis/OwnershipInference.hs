@@ -11,7 +11,7 @@ module Fluxus.Analysis.OwnershipInference where
 import Control.Monad.State
 import Control.Monad.Reader
 import Control.Monad.Except
-import Control.Monad (void, when, unless, foldM)
+import Control.Monad (void, when, unless, foldM, forM_)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
@@ -554,7 +554,7 @@ checkLifetimeConstraints = do
   constraints <- gets oisLifetimeConstraints
   ownershipMap <- gets oisOwnershipMap
   
-  forM_ constraints $ KATEX_INLINE_OPENoutlives, depends) -> do
+  forM_ constraints $ \(outlives, depends) -> do
     case (HashMap.lookup outlives ownershipMap, HashMap.lookup depends ownershipMap) of
       (Just outlivesInfo, Just dependsInfo) -> do
         when (not (isValid outlivesInfo) && isValid dependsInfo) $

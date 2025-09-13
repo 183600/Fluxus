@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup GHC and Cabal
+        uses: haskell/actions/setup@v2
+        with:
+          ghc-version: '9.4.8'
+          cabal-version: '3.10.1.0'
+      - name: Cache Cabal
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal') }}
+          restore-keys: ${{ runner.os }}-cabal-
+      - name: Install tools
+        run: |
+          cabal update
+          cabal install hlint ormolu weeder stan doctest --installdir=$HOME/.local/bin --overwrite-policy=always
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Build with coverage
+        run: |
+          cabal build --enable-tests --enable-coverage
+      - name: Run quality gate
+        run: |
+          chmod +x scripts/*.sh || true
+          cabal test fluxus-quality-gate --test-show-details=direct

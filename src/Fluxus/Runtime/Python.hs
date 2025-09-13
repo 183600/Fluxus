@@ -234,7 +234,7 @@ convertToPython (LInt i) = RVInt i
 convertToPython (LUInt u) = RVUInt u
 convertToPython (LFloat f) = RVFloat f
 convertToPython (LString s) = RVString s
-convertToPython (LBytes b) = RVBytes (T.encodeUtf8 b)
+convertToPython (LBytes b) = RVBytes b
 convertToPython (LBool b) = RVBool b
 convertToPython (LChar c) = RVString (T.singleton c)
 convertToPython LNone = RVNone
@@ -245,7 +245,7 @@ convertFromPython (RVInt i) = LInt i
 convertFromPython (RVUInt u) = LUInt u
 convertFromPython (RVFloat f) = LFloat f
 convertFromPython (RVString s) = LString s
-convertFromPython (RVBytes b) = LBytes (T.decodeUtf8 b)
+convertFromPython (RVBytes b) = LBytes b
 convertFromPython (RVBool b) = LBool b
 convertFromPython RVNone = LNone
 convertFromPython _ = LNone  -- Fallback for complex types
@@ -328,7 +328,7 @@ callFallbackFunction runtime funcName args = do
 -- | Create type mapping from Fluxus types to Python types
 createTypeMapping :: HashMap Type Text
 createTypeMapping = HashMap.fromList
-  [ (TInt 32, "int")
+  [ (TAny, "int")
   , (TInt 64, "int")
   , (TFloat 64, "float")
   , (TBool, "bool")

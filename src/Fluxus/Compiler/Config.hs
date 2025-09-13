@@ -8,7 +8,7 @@
 module Fluxus.Compiler.Config where
 
 import Data.Aeson
-import Data.Aeson.Types
+import qualified Data.Aeson.Types as Aeson
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
@@ -222,7 +222,7 @@ showTargetPlatform = \case
 -- Command Line Parser using optparse-applicative
 -- ============================================================================
 
-configParser :: Parser CompilerConfig
+configParser :: Options.Applicative.Parser CompilerConfig
 configParser = CompilerConfig
   <$> languageOption
   <*> optimizationOption
@@ -246,13 +246,13 @@ configParser = CompilerConfig
   <*> stopAtCodegenOption
   <*> inputFilesOption
 
-languageOption :: Parser SourceLanguage
+languageOption :: Options.Applicative.Parser SourceLanguage
 languageOption = 
   flag' Python (long "python" <> help "Use Python as source language") <|>
   flag' Go (long "go" <> help "Use Go as source language") <|>
   pure (ccSourceLanguage defaultConfig)
 
-optimizationOption :: Parser OptimizationLevel
+optimizationOption :: Options.Applicative.Parser OptimizationLevel
 optimizationOption = 
   flag' O0 (short '0' <> long "O0" <> help "No optimization") <|>
   flag' O1 (short '1' <> long "O1" <> help "Basic optimization") <|>
@@ -261,7 +261,7 @@ optimizationOption =
   flag' Os (short 's' <> long "Os" <> help "Size optimization") <|>
   pure (ccOptimizationLevel defaultConfig)
 
-targetOption :: Parser TargetPlatform
+targetOption :: Options.Applicative.Parser TargetPlatform
 targetOption = option (maybeReader parseTargetPlatform)
   ( long "target"
   <> metavar "PLATFORM"
@@ -269,7 +269,7 @@ targetOption = option (maybeReader parseTargetPlatform)
   <> help "Target platform (linux-x86_64, darwin-arm64, etc.)"
   )
 
-outputOption :: Parser (Maybe FilePath)
+outputOption :: Options.Applicative.Parser (Maybe FilePath)
 outputOption = optional $ strOption
   ( short 'o'
   <> long "output"
@@ -277,31 +277,31 @@ outputOption = optional $ strOption
   <> help "Output file path"
   )
 
-interopOption :: Parser Bool
+interopOption :: Options.Applicative.Parser Bool
 interopOption = 
   flag' True (long "enable-interop" <> help "Enable language interoperability") <|>
   flag' False (long "disable-interop" <> help "Disable language interoperability") <|>
   pure (ccEnableInterop defaultConfig)
 
-debugOption :: Parser Bool
+debugOption :: Options.Applicative.Parser Bool
 debugOption = 
   flag' True (long "enable-debug" <> help "Enable debug information") <|>
   flag' False (long "disable-debug" <> help "Disable debug information") <|>
   pure (ccEnableDebugInfo defaultConfig)
 
-profilerOption :: Parser Bool
+profilerOption :: Options.Applicative.Parser Bool
 profilerOption = 
   flag' True (long "enable-profiler" <> help "Enable profiling support") <|>
   flag' False (long "disable-profiler" <> help "Disable profiling support") <|>
   pure (ccEnableProfiler defaultConfig)
 
-parallelOption :: Parser Bool
+parallelOption :: Options.Applicative.Parser Bool
 parallelOption = 
   flag' True (long "enable-parallel" <> help "Enable parallel compilation") <|>
   flag' False (long "disable-parallel" <> help "Disable parallel compilation") <|>
   pure (ccEnableParallel defaultConfig)
 
-concurrencyOption :: Parser Int
+concurrencyOption :: Options.Applicative.Parser Int
 concurrencyOption = option auto
   ( long "max-concurrency"
   <> metavar "N"
@@ -309,7 +309,7 @@ concurrencyOption = option auto
   <> help "Maximum number of concurrent jobs"
   )
 
-includeOptions :: Parser [FilePath]
+includeOptions :: Options.Applicative.Parser [FilePath]
 includeOptions = many $ strOption
   ( short 'I'
   <> long "include"
@@ -317,7 +317,7 @@ includeOptions = many $ strOption
   <> help "Add include path"
   )
 
-libraryPathOptions :: Parser [FilePath]
+libraryPathOptions :: Options.Applicative.Parser [FilePath]
 libraryPathOptions = many $ strOption
   ( short 'L'
   <> long "library-path"
@@ -325,7 +325,7 @@ libraryPathOptions = many $ strOption
   <> help "Add library path"
   )
 
-linkOptions :: Parser [Text]
+linkOptions :: Options.Applicative.Parser [Text]
 linkOptions = fmap (map T.pack) $ many $ strOption
   ( short 'l'
   <> long "link"
@@ -333,7 +333,7 @@ linkOptions = fmap (map T.pack) $ many $ strOption
   <> help "Link with library"
   )
 
-cppStandardOption :: Parser Text
+cppStandardOption :: Options.Applicative.Parser Text
 cppStandardOption = fmap T.pack $ strOption
   ( long "cpp-std"
   <> metavar "STD"
@@ -341,7 +341,7 @@ cppStandardOption = fmap T.pack $ strOption
   <> help "C++ standard (c++17, c++20, etc.)"
   )
 
-cppCompilerOption :: Parser Text
+cppCompilerOption :: Options.Applicative.Parser Text
 cppCompilerOption = fmap T.pack $ strOption
   ( long "cpp-compiler"
   <> metavar "COMPILER"
@@ -349,45 +349,45 @@ cppCompilerOption = fmap T.pack $ strOption
   <> help "C++ compiler to use"
   )
 
-verboseOption :: Parser Int
+verboseOption :: Options.Applicative.Parser Int
 verboseOption = length <$> many
   (flag' () (short 'v' <> long "verbose" <> help "Increase verbosity"))
 
-workDirOption :: Parser (Maybe FilePath)
+workDirOption :: Options.Applicative.Parser (Maybe FilePath)
 workDirOption = optional $ strOption
   ( long "work-dir"
   <> metavar "DIR"
   <> help "Working directory for intermediate files"
   )
 
-keepIntermediatesOption :: Parser Bool
+keepIntermediatesOption :: Options.Applicative.Parser Bool
 keepIntermediatesOption = 
   flag False True
     ( long "keep-intermediates"
     <> help "Keep intermediate files"
     )
 
-strictOption :: Parser Bool
+strictOption :: Options.Applicative.Parser Bool
 strictOption = 
   flag False True
     ( long "strict"
     <> help "Enable strict mode"
     )
 
-analysisOption :: Parser Bool
+analysisOption :: Options.Applicative.Parser Bool
 analysisOption = 
   flag' True (long "enable-analysis" <> help "Enable static analysis") <|>
   flag' False (long "disable-analysis" <> help "Disable static analysis") <|>
   pure (ccEnableAnalysis defaultConfig)
 
-stopAtCodegenOption :: Parser Bool
+stopAtCodegenOption :: Options.Applicative.Parser Bool
 stopAtCodegenOption = 
   flag False True
     ( long "stop-at-codegen"
     <> help "Stop after code generation"
     )
 
-inputFilesOption :: Parser [FilePath]
+inputFilesOption :: Options.Applicative.Parser [FilePath]
 inputFilesOption = many $ argument str
   ( metavar "FILES..."
   <> help "Input source files"
@@ -411,7 +411,7 @@ loadConfig args = do
   -- Parse command line arguments using optparse-applicative
   let parseResult = execParserPure defaultPrefs commandLineInterface args
   case parseResult of
-    Success cliConfig -> do
+    Options.Applicative.Success cliConfig -> do
       -- Load from config file if it exists
       configFromFile <- loadConfigFromFile "fluxus.yaml"
       case configFromFile of
@@ -430,7 +430,7 @@ loadConfig args = do
             
         Right fileConfig -> do
           -- Merge: CLI > Environment > File > Default
-          let mergedConfig = mergeConfigs MergeStrategy fileConfig cliConfig
+          let mergedConfig = mergeConfigs Override fileConfig cliConfig
           finalConfig <- applyEnvironmentOverrides mergedConfig
           -- Validate the configuration
           validation <- checkSystemRequirements finalConfig
@@ -453,7 +453,6 @@ loadConfigFromFile configFile = do
         Right config -> return $ Right config
 
 -- Enhanced merge with strategy parameter
-data MergeStrategy = Replace | Combine
 
 mergeConfigs :: MergeStrategy -> CompilerConfig -> CompilerConfig -> CompilerConfig
 mergeConfigs strategy base override = CompilerConfig
@@ -480,8 +479,9 @@ mergeConfigs strategy base override = CompilerConfig
   , ccInputFiles = mergeLists strategy (ccInputFiles base) (ccInputFiles override)
   }
   where
-    mergeLists Replace _ override = override
-    mergeLists Combine base override = nub (override ++ base)  -- Remove duplicates
+    mergeLists Override _ override = override
+    mergeLists Append base override = nub (override ++ base)  -- Remove duplicates
+    mergeLists Keep base _ = base
 
 -- Enhanced environment variable support
 applyEnvironmentOverrides :: CompilerConfig -> IO CompilerConfig
@@ -490,14 +490,14 @@ applyEnvironmentOverrides config = do
   envVars <- sequence
     [ fmap (fmap T.pack) (lookupEnv "CXX")
     , fmap (fmap T.pack) (lookupEnv "FLUXUS_CPP_STD")
-    , lookupEnv "FLUXUS_VERBOSE"
-    , lookupEnv "FLUXUS_INTEROP"
-    , lookupEnv "FLUXUS_DEBUG"
-    , lookupEnv "FLUXUS_OPTIMIZATION"
-    , lookupEnv "FLUXUS_TARGET"
-    , lookupEnv "FLUXUS_PARALLEL"
-    , lookupEnv "FLUXUS_STRICT"
-    , lookupEnv "FLUXUS_OUTPUT"
+    , fmap (fmap T.pack) (lookupEnv "FLUXUS_VERBOSE")
+    , fmap (fmap T.pack) (lookupEnv "FLUXUS_INTEROP")
+    , fmap (fmap T.pack) (lookupEnv "FLUXUS_DEBUG")
+    , fmap (fmap T.pack) (lookupEnv "FLUXUS_OPTIMIZATION")
+    , fmap (fmap T.pack) (lookupEnv "FLUXUS_TARGET")
+    , fmap (fmap T.pack) (lookupEnv "FLUXUS_PARALLEL")
+    , fmap (fmap T.pack) (lookupEnv "FLUXUS_STRICT")
+    , fmap (fmap T.pack) (lookupEnv "FLUXUS_OUTPUT")
     ]
   
   let [cppCompiler, cppStd, verbose, interop, debug, optLevel, target, parallel, strict, output] = envVars
@@ -505,16 +505,16 @@ applyEnvironmentOverrides config = do
   return config
     { ccCppCompiler = fromMaybe (ccCppCompiler config) cppCompiler
     , ccCppStandard = fromMaybe (ccCppStandard config) cppStd
-    , ccVerboseLevel = maybe (ccVerboseLevel config) (fromMaybe 0 . readMaybe) verbose
+    , ccVerboseLevel = maybe (ccVerboseLevel config) (fromMaybe 0 . readMaybe . T.unpack) verbose
     , ccEnableInterop = maybe (ccEnableInterop config) (== "1") interop
     , ccEnableDebugInfo = maybe (ccEnableDebugInfo config) (== "1") debug
     , ccOptimizationLevel = maybe (ccOptimizationLevel config) 
-                            (fromMaybe (ccOptimizationLevel config) . parseOptLevel) optLevel
+                            (fromMaybe (ccOptimizationLevel config) . parseOptLevel . T.unpack) optLevel
     , ccTargetPlatform = maybe (ccTargetPlatform config)
-                          (fromMaybe (ccTargetPlatform config) . parseTargetPlatform) target
+                          (fromMaybe (ccTargetPlatform config) . parseTargetPlatform . T.unpack) target
     , ccEnableParallel = maybe (ccEnableParallel config) (== "1") parallel
     , ccStrictMode = maybe (ccStrictMode config) (== "1") strict
-    , ccOutputPath = output <|> ccOutputPath config
+    , ccOutputPath = fmap T.unpack output <|> ccOutputPath config
     }
   where
     readMaybe :: Read a => String -> Maybe a
