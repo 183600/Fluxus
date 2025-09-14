@@ -53,20 +53,33 @@ Break through the performance barriers of Python and Go by generating optimized 
 - **Error Handling**: Detailed error reporting and diagnostic information
 - **Test Framework**: Comprehensive unit test coverage
 
-#### 5. Ultimate Static Analysis
-- **Global Program Type Inference**: Analyze codebase to infer the most specific possible types for variables
-- **Aggressive Escape Analysis**: Maximize use of stack allocation for极致 performance
-- **Shape Analysis**: Infer the structure of Python dictionaries and objects, mapping to efficient C++ data structures
+#### 5. Ultimate Static Analysis (Core Technology)
+Fluxus/CXX adopts optimization techniques typically reserved for static language compilers and applies them boldly to Python and Go compilation.
 
-#### 6. Intelligent Ownership Inference
-- **Automatic Memory Management**: Infer the best memory management strategy
-- **Zero-overhead Abstractions**: Avoid reference counting and GC when possible
-- **RAII Optimization**: Fully leverage C++'s RAII pattern
+- **Whole-Program Type Inference (Python)**: Analyzes entire Python codebases to infer the most specific possible types for every variable at every location.
 
-#### 7. Advanced Optimization Techniques
-- **Monomorphization**: Generate specialized code for different type combinations
-- **Devirtualization**: Eliminate dynamic dispatch overhead
-- **Inlining Optimization**: Intelligent function inlining decisions
+- **Aggressive Escape Analysis (Go/Python)**: Determines whether objects will escape their scope. Where safety can be proven, maximizes stack allocation (the fastest memory allocation method).
+
+- **Shape Analysis (Python)**: Infers the structure of Python dictionaries and objects, mapping them to efficient C++ structs or optimized hash tables (like `absl::flat_hash_map`).
+
+#### 6. Ownership Inference ("Simulating Senior C++ Developer" Approach)
+This is our core differentiating advantage. Instead of defaulting to garbage collection (GC), we attempt to infer Rust-like ownership semantics and generate C++-compliant memory management code.
+
+- **Infer `std::move` Semantics**: Detects ownership transfer scenarios (like returning newly created objects) and generates `std::move` semantic code combined with `std::unique_ptr`.
+
+- **Minimize `std::shared_ptr` Usage**: Defaults to exclusive ownership or stack allocation, only falling back to `shared_ptr` (reference counting) when "shared ownership is proven necessary."
+
+#### 7. Specialization and Virtual Function Elimination
+
+- **Monomorphization**: For Python functions called with different types, generates specialized C++ template instances for each type combination, eliminating dynamic dispatch.
+
+- **Virtual Function Elimination (Go interfaces/Python duck typing)**: When the concrete type behind an interface or dynamic call can be statically determined, replaces virtual function calls with direct, inlineable C++ function calls.
+
+#### 8. Concurrency Mapping
+
+- **Go Goroutines → C++20 Coroutines/Fibers**: Translates Go's M:N concurrency model to lightweight C++ mechanisms, avoiding heavyweight OS threads.
+
+- **Python (GIL Challenge)**: For compute-intensive Python code, aims to generate C++ code that runs efficiently without the GIL, achieving true parallel computation.
 
 #### 8. Hybrid Execution and Interoperability
 - **Python Interoperability**: Seamless integration with CPython runtime

@@ -17,7 +17,6 @@ module Fluxus.AST.Go.Expressions
   ) where
 
 import Data.Text (Text)
-import Data.Char (Char)
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
