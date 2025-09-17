@@ -1266,27 +1266,34 @@ needsChannels _ = False -- Simplified for now
 
 -- | Generate Go file
 generateGoFile :: GoFile -> CppCodeGen ()
-generateGoFile goFile = mapM_ (generateGoDecl . convertGoLocated) (goFileDecls goFile)
+generateGoFile goFile = do
+  let decls = goFileDecls goFile
+  -- Debug: Print number of declarations found
+  addWarning $ "Processing Go file with " <> T.pack (show (length decls)) <> " declarations"
+  mapM_ (generateGoDecl . convertGoLocated) decls
 
 -- | Generate Go declaration
 generateGoDecl :: Located GoDecl -> CppCodeGen ()
-generateGoDecl (Located _ decl) = case decl of
-  GoFuncDecl func -> generateGoFunction func
-  
-  GoTypeDeclStmt typeDecl -> do
-    cppType <- generateGoType (convertGoLocated (goTypeDeclType typeDecl))
-    let name = case goTypeDeclName typeDecl of Identifier nameStr -> nameStr
-    -- TODO: Handle type parameters and alias vs distinction
-    addDeclaration $ CppTypedef name cppType
-  
-  GoBindDecl bindings -> mapM_ generateGoBinding bindings
-  
-  GoConstDecl consts -> mapM_ generateGoConstant' consts
-  
-  GoMethodDecl receiver func -> 
-    generateGoMethod receiver func
-  
-  _ -> addWarning $ "Unsupported Go declaration: " <> T.pack (show decl)
+generateGoDecl (Located _ decl) = do
+  -- Debug: Print declaration type
+  addWarning $ "Processing Go declaration: " <> T.pack (show decl)
+  case decl of
+    GoFuncDecl func -> generateGoFunction func
+    
+    GoTypeDeclStmt typeDecl -> do
+      cppType <- generateGoType (convertGoLocated (goTypeDeclType typeDecl))
+      let name = case goTypeDeclName typeDecl of Identifier nameStr -> nameStr
+      -- TODO: Handle type parameters and alias vs distinction
+      addDeclaration $ CppTypedef name cppType
+    
+    GoBindDecl bindings -> mapM_ generateGoBinding bindings
+    
+    GoConstDecl consts -> mapM_ generateGoConstant' consts
+    
+    GoMethodDecl receiver func -> 
+      generateGoMethod receiver func
+    
+    _ -> addWarning $ "Unsupported Go declaration: " <> T.pack (show decl)
 
 -- | Generate Go function
 generateGoFunction :: GoFunction -> CppCodeGen ()
@@ -1420,7 +1427,7 @@ generateGoStmt (Go.Located _ stmt) = case stmt of
   GoBreak _ -> return CppBreak
   GoContinue _ -> return CppContinue
   GoGoto label -> return $ CppGoto (case label of Identifier name -> name)
-  GoLabeled label _stmt -> do
+  GoLabeled label stmt -> do
     let name = case label of Identifier name -> name
     _ <- generateGoStmt stmt  -- Generate the labeled statement
     return $ CppLabel name

@@ -1234,7 +1234,23 @@ needsChannels _ = False -- Simplified for now
 
 -- | Generate Go file
 generateGoFile :: GoFile -> CppCodeGen ()
-generateGoFile goFile = mapM_ generateGoDecl (goFileDecls goFile)
+generateGoFile goFile = do
+  -- DEBUG: Print information about what we're processing
+  let declCount = length (goFileDecls goFile)
+  liftIO $ putStrLn $ "[DEBUG CODEGEN] Processing Go file with " ++ show declCount ++ " declarations"
+  when (declCount == 0) $ liftIO $ putStrLn "[DEBUG CODEGEN] WARNING: No declarations found!"
+  -- Print each declaration type for debugging
+  forM_ (goFileDecls goFile) $ \(Located _ decl) -> case decl of
+    GoFuncDecl _ -> liftIO $ putStrLn "[DEBUG CODEGEN]   Found function declaration"
+    GoMethodDecl _ _ -> liftIO $ putStrLn "[DEBUG CODEGEN]   Found method declaration"
+    GoTypeDecl _ _ -> liftIO $ putStrLn "[DEBUG CODEGEN]   Found type declaration"
+    GoVarDecl _ -> liftIO $ putStrLn "[DEBUG CODEGEN]   Found variable declaration"
+    GoConstDecl _ -> liftIO $ putStrLn "[DEBUG CODEGEN]   Found constant declaration"
+    GoInitDecl _ -> liftIO $ putStrLn "[DEBUG CODEGEN]   Found init declaration"
+    _ -> liftIO $ putStrLn "[DEBUG CODEGEN]   Found other declaration"
+
+  -- Now actually process the declarations
+  mapM_ generateGoDecl (goFileDecls goFile)
 
 -- | Generate Go declaration
 generateGoDecl :: Located GoDecl -> CppCodeGen ()

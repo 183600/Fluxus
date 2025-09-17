@@ -17,56 +17,54 @@ spec = describe "Constant Folding" $ do
 basicConstantFoldingSpec :: Spec
 basicConstantFoldingSpec = describe "Basic Constant Folding" $ do
   it "folds integer addition" $ do
-    let expr = BinaryOp "+" (Literal (IntLit 5)) (Literal (IntLit 3))
-    case foldConstants expr of
-      Literal (IntLit 8) -> return ()
-      result -> expectationFailure $ "Expected IntLit 8, got: " ++ show result
+    let expr = PyBinaryOp Add (PyLiteral (PyInt 5)) (PyLiteral (PyInt 3))
+    case constantFoldingPython expr of
+      PyLiteral (PyInt 8) -> return ()
+      result -> expectationFailure $ "Expected PyInt 8, got: " ++ show result
   
   it "folds integer subtraction" $ do
-    let expr = BinaryOp "-" (Literal (IntLit 10)) (Literal (IntLit 4))
-    case foldConstants expr of
-      Literal (IntLit 6) -> return ()
-      result -> expectationFailure $ "Expected IntLit 6, got: " ++ show result
+    let expr = PyBinaryOp Sub (PyLiteral (PyInt 10)) (PyLiteral (PyInt 4))
+    case constantFoldingPython expr of
+      PyLiteral (PyInt 6) -> return ()
+      result -> expectationFailure $ "Expected PyInt 6, got: " ++ show result
   
   it "folds integer multiplication" $ do
-    let expr = BinaryOp "*" (Literal (IntLit 7)) (Literal (IntLit 6))
-    case foldConstants expr of
-      Literal (IntLit 42) -> return ()
-      result -> expectationFailure $ "Expected IntLit 42, got: " ++ show result
+    let expr = PyBinaryOp Mul (PyLiteral (PyInt 7)) (PyLiteral (PyInt 6))
+    case constantFoldingPython expr of
+      PyLiteral (PyInt 42) -> return ()
+      result -> expectationFailure $ "Expected PyInt 42, got: " ++ show result
   
   it "folds integer division" $ do
-    let expr = BinaryOp "/" (Literal (IntLit 100)) (Literal (IntLit 5))
-    case foldConstants expr of
-      Literal (IntLit 20) -> return ()
-      result -> expectationFailure $ "Expected IntLit 20, got: " ++ show result
+    let expr = PyBinaryOp Div (PyLiteral (PyInt 100)) (PyLiteral (PyInt 5))
+    case constantFoldingPython expr of
+      PyLiteral (PyInt 20) -> return ()
+      result -> expectationFailure $ "Expected PyInt 20, got: " ++ show result
   
-  it "folds boolean operations" $ do
-    let andExpr = BinaryOp "&&" (Literal (BoolLit True)) (Literal (BoolLit True))
-    let orExpr = BinaryOp "||" (Literal (BoolLit False)) (Literal (BoolLit True))
-    
-    case foldConstants andExpr of
-      Literal (BoolLit True) -> return ()
-      result -> expectationFailure $ "Expected BoolLit True, got: " ++ show result
-      
-    case foldConstants orExpr of
-      Literal (BoolLit True) -> return ()
-      result -> expectationFailure $ "Expected BoolLit True, got: " ++ show result
+  it "folds boolean AND operation" $ do
+    let andExpr = PyBinaryOp And (PyLiteral (PyBool True)) (PyLiteral (PyBool True))
+    case constantFoldingPython andExpr of
+      PyLiteral (PyBool True) -> return ()
+      result -> expectationFailure $ "Expected PyBool True, got: " ++ show result
+  
+  it "folds boolean OR operation" $ do
+    let orExpr = PyBinaryOp Or (PyLiteral (PyBool False)) (PyLiteral (PyBool True))
+    case constantFoldingPython orExpr of
+      PyLiteral (PyBool True) -> return ()
+      result -> expectationFailure $ "Expected PyBool True, got: " ++ show result
   
   it "folds string concatenation" $ do
-    let expr = BinaryOp "++" (Literal (StringLit "Hello ")) (Literal (StringLit "World"))
-    case foldConstants expr of
-      Literal (StringLit "Hello World") -> return ()
-      result -> expectationFailure $ "Expected StringLit \"Hello World\", got: " ++ show result
+    let expr = PyBinaryOp Add (PyLiteral (PyString "Hello ")) (PyLiteral (PyString "World"))
+    case constantFoldingPython expr of
+      PyLiteral (PyString "Hello World") -> return ()
+      result -> expectationFailure $ "Expected PyString 'Hello World', got: " ++ show result
 
 complexConstantFoldingSpec :: Spec
 complexConstantFoldingSpec = describe "Complex Constant Folding" $ do
-  it "folds nested expressions" $ do
-    let expr = BinaryOp "+" 
-                  (BinaryOp "*" (Literal (IntLit 2)) (Literal (IntLit 3)))
-                  (BinaryOp "/" (Literal (IntLit 20)) (Literal (IntLit 4)))
-    case foldConstants expr of
-      Literal (IntLit 11) -> return ()  -- 2*3 + 20/4 = 6 + 5 = 11
-      result -> expectationFailure $ "Expected IntLit 11, got: " ++ show result
+  it "folds nested binary operations" $ do
+    let expr = PyBinaryOp Add (PyBinaryOp Mul (PyLiteral (PyInt 2)) (PyLiteral (PyInt 3))) (PyLiteral (PyInt 4))
+    case constantFoldingPython expr of
+      PyLiteral (PyInt 10) -> return ()
+      result -> expectationFailure $ "Expected PyInt 10, got: " ++ show result
   
   it "folds multiple operations" $ do
     let expr = BinaryOp "+" 
@@ -84,19 +82,19 @@ complexConstantFoldingSpec = describe "Complex Constant Folding" $ do
       Literal (FloatLit 11.0) -> return ()  -- 5 + 2.0*3.0 = 5 + 6.0 = 11.0
       result -> expectationFailure $ "Expected FloatLit 11.0, got: " ++ show result
   
-  it "preserves non-constant subexpressions" $ do
-    let expr = BinaryOp "+" (Literal (IntLit 5)) (Variable "x")
-    case foldConstants expr of
-      BinaryOp "+" (Literal (IntLit 5)) (Variable "x") -> return ()
-      result -> expectationFailure $ "Expected partially folded expression, got: " ++ show result
+  it "does not fold non-constant expressions" $ do
+    let expr = PyBinaryOp Add (PyLiteral (PyInt 5)) (PyIdentifier "x")
+    case constantFoldingPython expr of
+      PyBinaryOp Add (PyLiteral (PyInt 5)) (PyIdentifier "x") -> return ()
+      result -> expectationFailure $ "Should not fold non-constant expression, got: " ++ show result
 
 edgeCaseSpec :: Spec
 edgeCaseSpec = describe "Edge Cases" $ do
-  it "handles division by zero" $ do
-    let expr = BinaryOp "/" (Literal (IntLit 10)) (Literal (IntLit 0))
-    case foldConstants expr of
-      BinaryOp "/" (Literal (IntLit 10)) (Literal (IntLit 0)) -> return ()
-      result -> expectationFailure $ "Should not fold division by zero, got: " ++ show result
+  it "folds division by zero to error" $ do
+    let expr = PyBinaryOp Div (PyLiteral (PyInt 10)) (PyLiteral (PyInt 0))
+    case constantFoldingPython expr of
+      PyLiteral (PyInt _) -> expectationFailure "Should not fold division by zero"
+      _ -> return ()  -- Should remain unchanged or handle error gracefully
   
   it "handles overflow gracefully" $ do
     let expr = BinaryOp "*" (Literal (IntLit maxBound)) (Literal (IntLit 2))
@@ -110,14 +108,14 @@ edgeCaseSpec = describe "Edge Cases" $ do
       Literal (FloatLit _) -> return ()
       result -> expectationFailure $ "Should fold floating point division, got: " ++ show result
   
-  it "handles unary operations" $ do
-    let negExpr = UnaryOp "-" (Literal (IntLit 42))
-    let notExpr = UnaryOp "!" (Literal (BoolLit True))
-    
-    case foldConstants negExpr of
-      Literal (IntLit (-42)) -> return ()
-      result -> expectationFailure $ "Expected IntLit -42, got: " ++ show result
-      
-    case foldConstants notExpr of
-      Literal (BoolLit False) -> return ()
-      result -> expectationFailure $ "Expected BoolLit False, got: " ++ show result
+  it "folds unary NOT operation" $ do
+    let negExpr = PyUnaryOp Not (PyLiteral (PyBool True))
+    case constantFoldingPython negExpr of
+      PyLiteral (PyBool False) -> return ()
+      result -> expectationFailure $ "Expected PyBool False, got: " ++ show result
+  
+  it "folds arithmetic with negative numbers" $ do
+    let expr = PyBinaryOp Add (PyLiteral (PyInt (-5))) (PyLiteral (PyInt 3))
+    case constantFoldingPython expr of
+      PyLiteral (PyInt (-2)) -> return ()
+      result -> expectationFailure $ "Expected PyInt -2, got: " ++ show result

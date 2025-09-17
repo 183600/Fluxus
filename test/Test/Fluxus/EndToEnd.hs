@@ -292,7 +292,7 @@ runtimeBehaviorSpec = describe "Runtime Behavior Tests" $ do
           , "    "
           , "    # Add tasks"
           , "    for i in range(10):"
-          , "        task_queue.put(i)
+          , "        task_queue.put(i)"
           , "    "
           , "    # Create and start workers"
           , "    workers = []"

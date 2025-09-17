@@ -61,6 +61,7 @@ import Parser.Python.Lexer (runPythonLexer)
 import Parser.Python.Parser (runPythonParser)
 import Parser.Go.Lexer (runGoLexer)
 import Parser.Go.Parser (runGoParser)
+import Text.PrettyPrint (ppShow)  -- For AST debugging
 import Analysis.TypeInference (runTypeInference, inferASTType, solveConstraints, checkTypes)
 import CodeGen.CPP
   ( CppUnit(..), CppDecl(..), CppStmt(..), CppExpr(..), CppType(..)
@@ -466,11 +467,37 @@ parseStage inputFile = do
         Right toks -> return toks
       
       case runGoParser (T.pack inputFile) tokens of
-        Left err -> 
+        Left err ->
           let (line, col) = extractPosFromError err
               span = SourceSpan (T.pack inputFile) (SourcePos line col) (SourcePos line col)
           in throwError $ ParseError (T.pack $ show err) span
-        Right ast -> return $ Right ast
+        Right ast -> do
+          -- Debug: Print detailed AST information
+          liftIO $ putStrLn $ "[DEBUG] Go AST structure:"
+          liftIO $ putStrLn $ "[DEBUG] Package name: " ++ T.unpack (unIdentifier (goPackageName ast))
+          liftIO $ putStrLn $ "[DEBUG] Number of files: " ++ show (length (goPackageFiles ast))
+          liftIO $ putStrLn $ "[DEBUG] Declarations per file:"
+          forM_ (goPackageFiles ast) $ \file -> do
+            let fileName = goFileName file
+                packageName = goFilePackage file
+                imports = goFileImports file
+                decls = goFileDecls file
+            liftIO $ putStrLn $ "[DEBUG]   File: " ++ fileName
+            liftIO $ putStrLn $ "[DEBUG]   Package: " ++ T.unpack (unIdentifier packageName)
+            liftIO $ putStrLn $ "[DEBUG]   Imports: " ++ show (length imports)
+            liftIO $ putStrLn $ "[DEBUG]   Declarations: " ++ show (length decls)
+            when (null decls) $ liftIO $ putStrLn "[DEBUG]   WARNING: No declarations found!"
+            -- Print declaration types
+            forM_ decls $ \decl -> do
+              case locValue decl of
+                GoFuncDecl _ -> liftIO $ putStrLn $ "[DEBUG]     Found function declaration"
+                GoMethodDecl _ _ -> liftIO $ putStrLn $ "[DEBUG]     Found method declaration"
+                GoTypeDecl _ _ -> liftIO $ putStrLn $ "[DEBUG]     Found type declaration"
+                GoVarDecl _ -> liftIO $ putStrLn $ "[DEBUG]     Found variable declaration"
+                GoConstDecl _ -> liftIO $ putStrLn $ "[DEBUG]     Found constant declaration"
+                GoInitDecl _ -> liftIO $ putStrLn $ "[DEBUG]     Found init declaration"
+                _ -> liftIO $ putStrLn $ "[DEBUG]     Found other declaration"
+          return $ Right ast
   where
     -- Helper to extract position from error (stub - should parse actual error)
     extractPosFromError :: Show a => a -> (Int, Int)

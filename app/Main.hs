@@ -13,8 +13,8 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.List (isPrefixOf, isSuffixOf)
 
-import Fluxus.Compiler.Driver
-import Fluxus.Compiler.Config
+import Fluxus.Compiler.Driver as Driver
+import Fluxus.Compiler.Config as Config
 import Fluxus.AST.Common (SourceSpan(..), SourcePos(..))
 
 -- | Main entry point
@@ -33,16 +33,17 @@ main = do
           exitFailure
         Right config -> do
           -- Validate configuration
-          case validateConfig config of
+          let driverConfig = Driver.convertConfigToDriver config
+          case Driver.validateConfig driverConfig of
             Left (ConfigurationError msg) -> do
               hPutStrLn stderr $ "Invalid configuration: " ++ T.unpack msg
               exitFailure
-            Right validConfig -> runCompilerMain validConfig args
+            Right validConfig -> runCompilerMain (Driver.convertDriverToConfig validConfig) args
 
 -- | Run the main compiler workflow
-runCompilerMain :: CompilerConfig -> [String] -> IO ()
+runCompilerMain :: Config.CompilerConfig -> [String] -> IO ()
 runCompilerMain config args = do
-  when (ccVerboseLevel config >= 2) $
+  when (Config.ccVerboseLevel config >= 2) $
     printConfig config
   
   -- Extract input files from arguments
@@ -62,7 +63,8 @@ runCompilerMain config args = do
     Right () -> return ()
   
   -- Run the compiler
-  result <- runCompiler config $ do
+  let driverConfig = Driver.convertConfigToDriver config
+  result <- Driver.runCompiler driverConfig $ do
     setupCompilerEnvironment
     
     case inputFiles of
@@ -74,7 +76,7 @@ runCompilerMain config args = do
       hPutStrLn stderr $ "Compilation failed: " ++ formatCompilerError compilerError
       exitFailure
     Right (outputPath, finalState) -> do
-      when (ccVerboseLevel config >= 1) $ do
+      when (Config.ccVerboseLevel config >= 1) $ do
         TIO.putStrLn $ "Compilation successful!"
         TIO.putStrLn $ "Output: " <> T.pack outputPath
         printCompilationStats finalState
@@ -98,10 +100,10 @@ formatCompilerError = \case
     "Parse error at " ++ formatSourceSpan span ++ ": " ++ T.unpack msg
   TypeError msg span -> 
     "Type error at " ++ formatSourceSpan span ++ ": " ++ T.unpack msg
-  OptimizationError msg -> 
-    "Optimization error: " ++ T.unpack msg
-  CodeGenError msg -> 
-    "Code generation error: " ++ T.unpack msg
+  OptimizationError msg span -> 
+    "Optimization error at " ++ formatSourceSpan span ++ ": " ++ T.unpack msg
+  CodeGenError msg span -> 
+    "Code generation error at " ++ formatSourceSpan span ++ ": " ++ T.unpack msg
   LinkError msg -> 
     "Link error: " ++ T.unpack msg
   FileSystemError msg path -> 
@@ -139,8 +141,8 @@ printWarning :: CompilerWarning -> IO ()
 printWarning warning = case warning of
   TypeWarning msg span -> 
     TIO.putStrLn $ "  Warning: " <> msg <> " at " <> T.pack (formatSourceSpan span)
-  OptimizationWarning msg -> 
-    TIO.putStrLn $ "  Warning: " <> msg
+  OptimizationWarning msg span -> 
+    TIO.putStrLn $ "  Warning: " <> msg <> " at " <> T.pack (formatSourceSpan span)
   DeprecationWarning msg span -> 
     TIO.putStrLn $ "  Deprecation warning: " <> msg <> " at " <> T.pack (formatSourceSpan span)
   PerformanceWarning msg span -> 

@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Test.Fluxus.Analysis.TypeInference (spec) where
 
@@ -197,13 +198,23 @@ unifyTypes t1 t2
       (TVar _, t) -> Just t
       (t, TVar _) -> Just t
       (TList t1', TList t2') -> TList <$> unifyTypes t1' t2'
-      (TFunction args1 ret1, TFunction args2 ret2) ->
-        if length args1 == length args2
-          then do
+      (TDict k1 v1, TDict k2 v2) -> do
+        unifiedKey <- unifyTypes k1 k2
+        unifiedValue <- unifyTypes v1 v2
+        return $ TDict unifiedKey unifiedValue
+      (TFunction args1 ret1, TFunction args2 ret2)
+        | length args1 == length args2 -> do
             unifiedArgs <- sequence $ zipWith unifyTypes args1 args2
             unifiedRet <- unifyTypes ret1 ret2
             return $ TFunction unifiedArgs unifiedRet
-          else Nothing
+        | otherwise -> Nothing
+      (TTuple ts1, TTuple ts2)
+        | length ts1 == length ts2 -> do
+            unifiedElems <- sequence $ zipWith unifyTypes ts1 ts2
+            return $ TTuple unifiedElems
+        | otherwise -> Nothing
+      (TOptional t1', TOptional t2') -> TOptional <$> unifyTypes t1' t2'
+      (TSet t1', TSet t2') -> TSet <$> unifyTypes t1' t2'
       _ -> Nothing
 
 solveConstraints :: [(Type, Type)] -> Maybe [(TypeVar, Type)]
@@ -224,12 +235,18 @@ solveConstraints constraints = go constraints []
           in go newConstraints newSolution
     go ((t1, t2):rest) solution
       | t1 == t2 = go rest solution
-      | otherwise = Nothing
+      | otherwise = case unifyTypes t1 t2 of
+          Just _ -> go rest solution
+          Nothing -> Nothing
     
     occurs :: TypeVar -> Type -> Bool
     occurs var (TVar var') = var == var'
     occurs var (TList t) = occurs var t
+    occurs var (TDict k v) = occurs var k || occurs var v
     occurs var (TFunction args ret) = any (occurs var) args || occurs var ret
+    occurs var (TTuple ts) = any (occurs var) ts
+    occurs var (TOptional t) = occurs var t
+    occurs var (TSet t) = occurs var t
     occurs _ _ = False
     
     substitute :: TypeVar -> Type -> Type -> Type
@@ -237,6 +254,10 @@ solveConstraints constraints = go constraints []
       | var == var' = replacement
       | otherwise = TVar var'
     substitute var replacement (TList t) = TList (substitute var replacement t)
+    substitute var replacement (TDict k v) = TDict (substitute var replacement k) (substitute var replacement v)
     substitute var replacement (TFunction args ret) = 
       TFunction (map (substitute var replacement) args) (substitute var replacement ret)
+    substitute var replacement (TTuple ts) = TTuple (map (substitute var replacement) ts)
+    substitute var replacement (TOptional t) = TOptional (substitute var replacement t)
+    substitute var replacement (TSet t) = TSet (substitute var replacement t)
     substitute _ _ t = t

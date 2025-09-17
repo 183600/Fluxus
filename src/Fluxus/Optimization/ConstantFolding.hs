@@ -6,7 +6,8 @@
 -- This module implements constant folding optimization which evaluates
 -- constant expressions at compile time for both Python and Go ASTs.
 module Fluxus.Optimization.ConstantFolding 
-  ( constantFoldingPython
+  ( constantFolding
+  , constantFoldingPython
   , constantFoldingGo
   , optimizeAST
   -- Re-export AST types for convenience
@@ -487,6 +488,11 @@ goShiftRight a b = a `div` (2 ^ b)
 optimizeAST :: Either PythonAST GoAST -> Either PythonAST GoAST
 optimizeAST (Left pyAst) = Left (constantFoldingPython pyAst)
 optimizeAST (Right goAst) = Right (constantFoldingGo goAst)
+
+-- | Generic constant folding function for backward compatibility
+-- This function works with the unified AST representation
+constantFolding :: Either PythonAST GoAST -> Either PythonAST GoAST
+constantFolding = optimizeAST
 
 -- ============================================================================
 -- Test Examples
