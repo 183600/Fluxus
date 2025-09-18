@@ -36,7 +36,7 @@ library
       Fluxus.Analysis.ShapeAnalysis
       Fluxus.Analysis.SmartFallback
       Fluxus.Analysis.TypeInference
-      -- Fluxus.Optimization.BasicPasses  -- Disabled due to compilation errors
+      Fluxus.Optimization.BasicPasses
       Fluxus.Optimization.ConstantFolding
       Fluxus.Optimization.ConstantPropagation
       Fluxus.Optimization.DeadCodeElimination
@@ -62,12 +62,11 @@ library
       Fluxus.AST.Go.Expressions
   hs-source-dirs:
       src
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wredundant-constraints -O2
   build-depends:
       aeson >=2.1
     , ansi-terminal >=1.1
     , array >=0.5
-    , async >=2.2
     , base >=4.17 && <5
     , bytestring >=0.11
     , containers >=0.6.7
@@ -96,6 +95,7 @@ library
     , unordered-containers >=0.2.19
     , vector >=0.13
     , yaml >=0.11
+    , async >=2.2
   default-language: Haskell2010
 
 executable fluxus
@@ -104,7 +104,7 @@ executable fluxus
       Paths_fluxus
   hs-source-dirs:
       app
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.17 && <5
     , fluxus
@@ -117,20 +117,19 @@ test-suite fluxus-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Test.Fluxus.Parser.Python
+      Test.Fluxus.Parser.Go
       Test.Fluxus.Analysis.TypeInference
+      Test.Fluxus.CodeGen.CPP
   hs-source-dirs:
       test
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck >=2.14
     , base >=4.17 && <5
     , containers
-    , directory
-    , filepath
     , fluxus
     , hspec >=2.10
-    , process
-    , temporary
     , text
   default-language: Haskell2010
 
@@ -141,7 +140,7 @@ benchmark debug-full-go
       Paths_fluxus
   hs-source-dirs:
       ./
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.17 && <5
     , fluxus
@@ -157,7 +156,7 @@ benchmark debug-simple-full-go
       Paths_fluxus
   hs-source-dirs:
       ./
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.17 && <5
     , fluxus
@@ -173,7 +172,7 @@ benchmark fluxus-bench
       Paths_fluxus
   hs-source-dirs:
       bench
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N -with-rtsopts=-N
   build-depends:
       base >=4.17 && <5
     , criterion >=1.6
@@ -189,7 +188,7 @@ benchmark simple-go-test
       Paths_fluxus
   hs-source-dirs:
       ./
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.17 && <5
     , fluxus
@@ -205,7 +204,7 @@ benchmark test-build-streaming-expr
       Paths_fluxus
   hs-source-dirs:
       ./
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.17 && <5
     , fluxus

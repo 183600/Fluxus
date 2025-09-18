@@ -230,7 +230,7 @@ buildFunctionSummaries stmts = mapM_ buildSummaryForStmt stmts
     buildSummaryForStmt (Located _ (PyFuncDef funcDef)) = do
       let fname = pyFuncName funcDef
           params = pyFuncParams funcDef
-          body = pyFuncBody funcDef
+          _body = pyFuncBody funcDef
       -- Analyze function in isolation
       let dummyBody = Located (SourceSpan "<dummy>" (SourcePos 0 0) (SourcePos 0 0)) (PyLiteral PyNone)
       summary <- analyzeFunctionForSummary fname (extractParamNames params) (PyLambda params dummyBody)
@@ -256,7 +256,7 @@ analyzeFunctionForSummary fname params body = do
   -- Analyze function body
   local (\ctx -> ctx { ecCurrentFunction = Just fname }) $ do
     -- Mark parameters
-    forM_ (zip [0..] params) $ \(idx, param) ->
+    forM_ (zip [0::Int ..] params) $ \(_idx, param) ->
       modify $ \s -> s { easEscapeMap = HashMap.insert param NoEscape (easEscapeMap s) }
     
     -- Analyze body
@@ -283,7 +283,7 @@ analyzeFunctionForSummary fname params body = do
 
 -- | Identify captured variables in a function
 identifyCapturedVars :: [Identifier] -> PythonExpr -> HashSet Identifier
-identifyCapturedVars params expr =
+identifyCapturedVars _params expr =
   case expr of
     PyLambda params' body -> HashSet.difference (collectFreeVarsPython (locValue body)) (HashSet.fromList (extractParamNames params'))
     _ -> collectFreeVarsPython expr
@@ -318,6 +318,15 @@ collectFreeVarsPattern (PatCapture _) = HashSet.empty
 collectFreeVarsPattern (PatAs _ _) = HashSet.empty
 collectFreeVarsPattern (PatValue _) = HashSet.empty
 collectFreeVarsPattern (PatSequence _) = HashSet.empty
+collectFreeVarsPattern (PatMapping patterns mrest) =
+  HashSet.unions $
+    map (collectFreeVarsPython . locValue . fst) patterns ++
+    map (collectFreeVarsPattern . locValue . snd) patterns ++
+    maybe [] (return . HashSet.singleton) mrest
+collectFreeVarsPattern (PatClass _ patterns kwPatterns) =
+  HashSet.unions $
+    map (collectFreeVarsPattern . locValue) patterns ++
+    map (collectFreeVarsPattern . locValue . snd) kwPatterns
 
 collectFreeVarsFString :: FStringPart -> HashSet Identifier
 collectFreeVarsFString (FStringLiteral _) = HashSet.empty
@@ -382,14 +391,14 @@ analyzePythonExpression expr = case expr of
     return $ max leftEscape rightEscape
   PyUnaryOp _ e -> analyzePythonExpression (locValue e)
   PyComparison _ exprs -> do
-    escapes <- mapM (analyzePythonExpression . locValue) exprs
-    return $ maximum escapes
+    escapeList <- mapM (analyzePythonExpression . locValue) exprs
+    return $ maximum escapeList
   PyBoolOp _ exprs -> do
-    escapes <- mapM (analyzePythonExpression . locValue) exprs
-    return $ maximum escapes
+    escapeList <- mapM (analyzePythonExpression . locValue) exprs
+    return $ maximum escapeList
   PyCall func args -> do
     funcEscape <- analyzePythonExpression (locValue func)
-    argEscapes <- mapM (analyzePythonExpression . locValue . extractArgExpr) args
+    argEscapes <- mapM (analyzePythonExpression . locValue . extractArgExpr') args
     return $ maximum (funcEscape : argEscapes)
   PySubscript container idx -> do
     containerEscape <- analyzePythonExpression (locValue container)
@@ -404,20 +413,20 @@ analyzePythonExpression expr = case expr of
     return $ maximum [containerEscape, startEscape, endEscape]
   PyAttribute obj _ -> analyzePythonExpression (locValue obj)
   PyList exprs -> do
-    escapes <- mapM (analyzePythonExpression . locValue) exprs
-    return $ maximum escapes
+    escapeList <- mapM (analyzePythonExpression . locValue) exprs
+    return $ maximum escapeList
   PyTuple exprs -> do
-    escapes <- mapM (analyzePythonExpression . locValue) exprs
-    return $ maximum escapes
+    escapeList <- mapM (analyzePythonExpression . locValue) exprs
+    return $ maximum escapeList
   PySet exprs -> do
-    escapes <- mapM (analyzePythonExpression . locValue) exprs
-    return $ maximum escapes
+    escapeList <- mapM (analyzePythonExpression . locValue) exprs
+    return $ maximum escapeList
   PyDict pairs -> do
-    escapes <- mapM (\(k, v) -> do
+    escapeList <- mapM (\(k, v) -> do
       kEscape <- analyzePythonExpression (locValue k)
       vEscape <- analyzePythonExpression (locValue v)
       return $ max kEscape vEscape) pairs
-    return $ maximum escapes
+    return $ maximum escapeList
   PyLambda params body -> do
     -- Analyze closure
     let captured = collectFreeVarsPython (locValue body) `HashSet.difference` HashSet.fromList (extractParamNames params)
@@ -430,12 +439,12 @@ analyzePythonExpression expr = case expr of
     thenEscape <- analyzePythonExpression (locValue thenExpr)
     elseEscape <- analyzePythonExpression (locValue elseExpr)
     return $ maximum [condEscape, thenEscape, elseEscape]
-  PyListComp expr comps -> do
-    exprEscape <- analyzePythonExpression (locValue expr)
+  PyListComp expr' comps -> do
+    exprEscape <- analyzePythonExpression (locValue expr')
     compEscapes <- mapM analyzeComprehension comps
     return $ maximum (exprEscape : compEscapes)
-  PySetComp expr comps -> do
-    exprEscape <- analyzePythonExpression (locValue expr)
+  PySetComp expr' comps -> do
+    exprEscape <- analyzePythonExpression (locValue expr')
     compEscapes <- mapM analyzeComprehension comps
     return $ maximum (exprEscape : compEscapes)
   PyDictComp kexpr vexpr comps -> do
@@ -443,29 +452,29 @@ analyzePythonExpression expr = case expr of
     vEscape <- analyzePythonExpression (locValue vexpr)
     compEscapes <- mapM analyzeComprehension comps
     return $ maximum (kEscape : vEscape : compEscapes)
-  PyGenComp expr comps -> do
-    exprEscape <- analyzePythonExpression (locValue expr)
+  PyGenComp expr' comps -> do
+    exprEscape <- analyzePythonExpression (locValue expr')
     compEscapes <- mapM analyzeComprehension comps
     return $ maximum (exprEscape : compEscapes)
-  PyAwait expr -> analyzePythonExpression (locValue expr)
+  PyAwait expr' -> analyzePythonExpression (locValue expr')
   PyFString parts -> do
-    escapes <- mapM analyzeFStringPart parts
-    return $ maximum escapes
+    escapeList <- mapM analyzeFStringPart parts
+    return $ maximum escapeList
   _ -> return NoEscape
   where
-    extractArgExpr (Located _ (ArgPositional expr)) = expr
-    extractArgExpr (Located _ (ArgKeyword _ expr)) = expr
-    extractArgExpr (Located _ (ArgStarred expr)) = expr
-    extractArgExpr (Located _ (ArgKwStarred expr)) = expr
+    extractArgExpr' (Located _ (ArgPositional expr')) = expr'
+    extractArgExpr' (Located _ (ArgKeyword _ expr')) = expr'
+    extractArgExpr' (Located _ (ArgStarred expr')) = expr'
+    extractArgExpr' (Located _ (ArgKwStarred expr')) = expr'
     
-    analyzeComprehension (PythonComprehension target iter filters _) = do
+    analyzeComprehension (PythonComprehension _target iter filters _) = do
       -- Pattern doesn't escape, just track variables
       iterEscape <- analyzePythonExpression (locValue iter)
       filterEscapes <- mapM (analyzePythonExpression . locValue) filters
       return $ maximum (iterEscape : filterEscapes)
     
     analyzeFStringPart (FStringLiteral _) = return NoEscape
-    analyzeFStringPart (FStringExpr expr _ _) = analyzePythonExpression (locValue expr)
+    analyzeFStringPart (FStringExpr expr' _ _) = analyzePythonExpression (locValue expr')
 
 -- | Analyze Common expressions
 analyzeExpression :: CommonExpr -> EscapeAnalysisM EscapeInfo
@@ -537,7 +546,7 @@ analyzeStatement (Located _ stmt) = case stmt of
   
   PyReturn Nothing -> return ()
   
-  PyReturn (Just expr) -> do
+  PyReturn (Just _expr) -> do
     exitScope
   
   PyAugAssign _ _ _ -> return ()
@@ -613,7 +622,7 @@ analyzeCallWithSummary func args = do
       case HashMap.lookup fname summaries of
         Just summary -> do
           -- Use function summary for precise analysis
-          argEscapes <- mapM (\(idx, arg) -> do
+          _argEscapes <- mapM (\(idx, arg) -> do
             argEscape <- analyzeExpression (locValue arg)
             
             -- Check if this parameter escapes in the function
@@ -690,20 +699,20 @@ propagateEscapes = do
   where
     fixpoint f x = let x' = f x in if x' == x then x else fixpoint f x'
     
-    propagateStep graph escapes = 
-      HashMap.mapWithKey (propagateVar graph escapes) escapes
+    propagateStep graph escapeMap =
+      HashMap.mapWithKey (propagateVar graph escapeMap) escapeMap
     
-    propagateVar graph escapes var currentEscape =
+    propagateVar graph escapeMap var currentEscape =
       case HashMap.lookup var graph of
         Nothing -> currentEscape
         Just deps -> 
-          let depEscapes = [HashMap.lookupDefault NoEscape dep escapes | dep <- Set.toList deps]
+          let depEscapes = [HashMap.lookupDefault NoEscape dep escapeMap | dep <- Set.toList deps]
           in maximum (currentEscape : depEscapes)
 
 -- | Identify optimization opportunities
 identifyOptimizations :: EscapeAnalysisM [OptimizationOpportunity]
 identifyOptimizations = do
-  escapeMap <- gets easEscapeMap
+  _escapeMap <- gets easEscapeMap
   allocSites <- gets easAllocationSites
   
   let opportunities = []
@@ -730,17 +739,17 @@ identifyOptimizations = do
 
 -- | Gather statistics
 gatherStatistics :: EscapeAnalysisState -> AnalysisStatistics
-gatherStatistics state = AnalysisStatistics
-  { asAnalyzedFunctions = HashMap.size (easFunctionSummaries state)
-  , asEscapingAllocations = length [s | s <- HashMap.elems (easAllocationSites state), asEscapes s]
-  , asStackAllocations = length [s | s <- HashMap.elems (easAllocationSites state), not (asEscapes s)]
-  , asOptimizedAllocations = length (easOptimizationLog state)
+gatherStatistics state' = AnalysisStatistics
+  { asAnalyzedFunctions = HashMap.size (easFunctionSummaries state')
+  , asEscapingAllocations = length [s | s <- HashMap.elems (easAllocationSites state'), asEscapes s]
+  , asStackAllocations = length [s | s <- HashMap.elems (easAllocationSites state'), not (asEscapes s)]
+  , asOptimizedAllocations = length (easOptimizationLog state')
   }
 
 -- | Gather global escapes
 gatherGlobalEscapes :: EscapeAnalysisState -> HashSet Identifier
-gatherGlobalEscapes state = 
-  HashSet.fromList [var | (var, esc) <- HashMap.toList (easEscapeMap state), esc == EscapeToGlobal]
+gatherGlobalEscapes state' = 
+  HashSet.fromList [var | (var, esc) <- HashMap.toList (easEscapeMap state'), esc == EscapeToGlobal]
 
 -- | Optimize program based on escape analysis
 optimizeProgram :: [Located PythonStmt] -> ([Located PythonStmt], ProgramAnalysis)
