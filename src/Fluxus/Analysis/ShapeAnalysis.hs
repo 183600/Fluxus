@@ -31,7 +31,7 @@ import Fluxus.AST.Python
 import Control.Monad.State
 import Control.Monad.Reader
 import Control.Monad.Except
-import Control.Monad (void, when, forM_, zipWithM)
+import Control.Monad (when, forM_, zipWithM)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
@@ -42,7 +42,7 @@ import qualified Data.Set as Set
 import GHC.Generics (Generic)
 import Data.Hashable (Hashable)
 import Control.DeepSeq (NFData)
-import Data.Maybe (fromMaybe, listToMaybe, isJust, fromJust)
+import Data.Maybe (listToMaybe, isJust, fromJust)
 import Data.List (foldl', sortOn)
 
 type ShapeAnalysisM = ReaderT ShapeContext (StateT ShapeAnalysisState (Except Text))
@@ -205,6 +205,7 @@ analyzeShape expr = case locatedValue expr of
   PyAttribute obj attr -> do
     objShape <- analyzeShape obj
     return $ extractFieldShape objShape attr
+  _ -> return unknownShape
 
 -- | Function signature with shape information
 data FunctionSignatureWithShape = FunctionSignatureWithShape
@@ -338,18 +339,18 @@ exitScope :: ShapeAnalysisM ()
 exitScope = do
   currentScope <- asks scCurrentScope
   case siParentScope currentScope of
-    Just parentScope -> modify $ \s -> s { sasShapeMap = HashMap.empty }  -- Reset for parent scope
+    Just _ -> modify $ \s -> s { sasShapeMap = HashMap.empty }  -- Reset for parent scope
     Nothing -> return ()  -- Already at global scope
 
--- | Update variable shape and track it in current scope
-updateVariableShape :: Identifier -> ShapeInfo -> ShapeAnalysisM ()
-updateVariableShape var shape = do
-  -- Update shape map
-  modify $ \s -> s { sasShapeMap = HashMap.insert var shape (sasShapeMap s) }
+-- -- | Update variable shape and track it in current scope
+-- updateVariableShape :: Identifier -> ShapeInfo -> ShapeAnalysisM ()
+-- updateVariableShape var shape = do
+--   -- Update shape map
+--   modify $ \s -> s { sasShapeMap = HashMap.insert var shape (sasShapeMap s) }
 
 -- | Increment access count for a variable (simplified)
-incrementAccessCount :: Identifier -> ShapeAnalysisM ()
-incrementAccessCount _var = return ()
+-- incrementAccessCount :: Identifier -> ShapeAnalysisM ()
+-- incrementAccessCount _var = return ()
 
 -- | Extract common type from shape
 extractCommonType :: ShapeInfo -> Type
@@ -473,7 +474,7 @@ align value boundary = ((value + boundary - 1) `div` boundary) * boundary
 analyzeStructure :: Type -> ShapeAnalysisM StructShape
 analyzeStructure (TStruct _ fieldTypes) = do
   -- Create field names as indices since TStruct doesn't provide them
-  let fieldDefs = zipWith (\i ftype -> (T.pack ("field" ++ show i), ftype)) [0..] fieldTypes
+  let fieldDefs = zipWith (\i ftype -> (T.pack ("field" ++ show i), ftype)) ([0::Int] :: [Int]) fieldTypes
 
   -- Sort fields by size for better packing
   let sortedFields = sortOn (negate . getTypeSize . snd) fieldDefs
@@ -504,10 +505,10 @@ analyzeStructure _ = throwError "Not a struct or class type"
 -- | Calculate field layout with padding
 calculateLayout :: [Int] -> [Int] -> ([Int], [Int])
 calculateLayout sizes alignments = 
-  let calcOffset (offset, paddings) (size, alignment) =
+  let calcOffset (offset, accPaddings) (size, alignment) =
         let padding = (alignment - (offset `mod` alignment)) `mod` alignment
             newOffset = offset + padding + size
-        in (newOffset, paddings ++ [padding])
+        in (newOffset, accPaddings ++ [padding])
       (_, paddings) = foldl' calcOffset (0, []) (zip sizes alignments)
       offsets = scanl1 (+) (zipWith (+) (0 : init paddings) (0 : init sizes))
   in (offsets, paddings)
@@ -521,23 +522,23 @@ getTypeAlignment TChar = 1
 getTypeAlignment _ = 8  -- Default to pointer alignment
 
 -- | Infer container shape from usage patterns
-inferunknownShape :: CommonExpr -> ShapeAnalysisM ShapeInfo
-inferunknownShape _ = do
-  let shape = unknownShape
-  let growth = FixedSize
-  let avgSize = 0
+-- inferunknownShape :: CommonExpr -> ShapeAnalysisM ShapeInfo
+-- inferunknownShape _ = do
+--   let shape = unknownShape
+--   let growth = FixedSize
+--   let avgSize = 0
   
-  case siElementType shape of
-    Just elemType -> return unknownShape
-      { siElementType = Just elemType
-      , siDimensions = case siDimensions shape of
-          dims | length dims > 0 && head dims >= 0 -> [head dims]
-          _ -> []
-      , siIsConstant = siIsConstant shape
-      , siAccessPattern = siAccessPattern shape
-      , siFieldTypes = HashMap.insert "size" (TInt 64) (siFieldTypes shape)
-      }
-    Nothing -> throwError "Expression does not represent a container"
+  --   case siElementType shape of
+--     Just elemType -> return unknownShape
+--       { siElementType = Just elemType
+--       , siDimensions = case siDimensions shape of
+--           dims | length dims > 0 && head dims >= 0 -> [head dims]
+--           _ -> []
+--       , siIsConstant = siIsConstant shape
+--       , siAccessPattern = siAccessPattern shape
+--       , siFieldTypes = HashMap.insert "size" (TInt 64) (siFieldTypes shape)
+--       }
+--     Nothing -> throwError "Expression does not represent a container"
 
 -- | Analyze growth pattern of a container
 analyzeGrowthPattern :: CommonExpr -> ShapeAnalysisM GrowthPattern

@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE StrictData #-}
+{-# OPTIONS_GHC -Wno-partial-fields #-}
 
 -- | Python-specific AST definitions
 module Fluxus.AST.Python

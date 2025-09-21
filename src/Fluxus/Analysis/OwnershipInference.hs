@@ -6,7 +6,12 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Fluxus.Analysis.OwnershipInference where
+module Fluxus.Analysis.OwnershipInference
+  ( -- * Ownership analysis
+    OwnershipInfo(..)
+  , OwnershipContext(..)
+  , inferOwnership
+  ) where
 
 import Control.Monad.State
 import Control.Monad.Reader
@@ -390,7 +395,7 @@ analyzeExpression (CECall func args) = do
         Just summary -> do
           -- Apply function summary
           -- Check parameter moves
-          sequence_ $ zipWith (handleParamMove funcName) [0..] (zip args (fsMovesParameters summary))
+          sequence_ $ zipWith (handleParamMove funcName) ([0::Int] :: [Int]) (zip args (fsMovesParameters summary))
           return (fsReturnOwnership summary)
         Nothing -> do
           -- Unknown function - conservative defaults

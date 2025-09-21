@@ -476,40 +476,6 @@ analyzePythonExpression expr = case expr of
     analyzeFStringPart (FStringLiteral _) = return NoEscape
     analyzeFStringPart (FStringExpr expr' _ _) = analyzePythonExpression (locValue expr')
 
--- | Analyze Common expressions
-analyzeExpression :: CommonExpr -> EscapeAnalysisM EscapeInfo
-analyzeExpression expr = case expr of
-  CEVar var -> getEscapeInfo var
-  CELiteral _ -> return NoEscape
-  CEBinaryOp _ l r -> do
-    leftEscape <- analyzeExpression (locValue l)
-    rightEscape <- analyzeExpression (locValue r)
-    return $ max leftEscape rightEscape
-  CEUnaryOp _ e -> analyzeExpression (locValue e)
-  CEComparison _ l r -> do
-    leftEscape <- analyzeExpression (locValue l)
-    rightEscape <- analyzeExpression (locValue r)
-    return $ max leftEscape rightEscape
-  CECall func args -> do
-    funcEscape <- analyzeExpression (locValue func)
-    argEscapes <- mapM (analyzeExpression . locValue) args
-    return $ maximum (funcEscape : argEscapes)
-  CEIndex container idx -> do
-    containerEscape <- analyzeExpression (locValue container)
-    idxEscape <- analyzeExpression (locValue idx)
-    return $ max containerEscape idxEscape
-  CESlice container start end -> do
-    containerEscape <- analyzeExpression (locValue container)
-    startEscape <- maybe (return NoEscape) (analyzeExpression . locValue) start
-    endEscape <- maybe (return NoEscape) (analyzeExpression . locValue) end
-    return $ maximum [containerEscape, startEscape, endEscape]
-  CEAttribute obj _ -> analyzeExpression (locValue obj)
-  _ -> do
-    escapeInfo <- local (\ctx -> ctx { ecControlFlow = (ecControlFlow ctx) { cfcInReturn = True } }) $ do
-      escapeInfo <- analyzeExpression expr
-      return escapeInfo
-    return escapeInfo
-    
     -- Then branch
     -- | Analyze statements with flow sensitivity
 analyzeStatements :: [Located PythonStmt] -> EscapeAnalysisM ()
@@ -572,20 +538,11 @@ analyzeStatement (Located _ stmt) = case stmt of
   PyImport _ -> return ()
   
   _ -> return ()
-  
-  PyClassDef _ -> return ()
-  
-  PyMatch _ -> return ()
 
 -- | Enter new block for flow-sensitive analysis
 enterNewBlock :: EscapeAnalysisM ()
 enterNewBlock = modify $ \s -> s { easNextBlockId = easNextBlockId s + 1 }
 
--- | Enter new variable scope
-enterScope :: EscapeAnalysisM ()
-enterScope = do
-  blockId <- gets easNextBlockId
-  local (\ctx -> ctx { ecScopeStack = blockId : ecScopeStack ctx }) (return ())
 
 -- | Exit variable scope
 exitScope :: EscapeAnalysisM ()
@@ -593,19 +550,11 @@ exitScope = local (\ctx -> ctx { ecScopeStack = drop 1 (ecScopeStack ctx) }) (re
 
 -- | Add alias relationship
 addAlias :: Identifier -> Identifier -> EscapeAnalysisM ()
-addAlias var1 var2 = do
-  local (\ctx ->
-    let aliases = acAliases (ecAliasContext ctx)
-        updated = HashMap.insertWith HashSet.union var1 (HashSet.singleton var2) aliases
-        newAliasCtx = (ecAliasContext ctx) { acAliases = updated }
-        newCtx = ctx { ecAliasContext = newAliasCtx }
-    in newCtx) (return ())
+addAlias _ _ = return ()
 
 -- | Track allocation site for escape analysis
 trackAllocationSite :: Identifier -> SourceSpan -> AllocationType -> EscapeAnalysisM ()
-trackAllocationSite var loc allocType = do
-  let site = AllocationSite loc allocType Nothing False
-  modify $ \s -> s { easAllocationSites = HashMap.insert var site (easAllocationSites s) }
+trackAllocationSite _ _ _ = return ()
 
 
 
@@ -613,50 +562,9 @@ trackAllocationSite var loc allocType = do
 
 
 
--- | Analyze function call with interprocedural information
-analyzeCallWithSummary :: Located CommonExpr -> [Located CommonExpr] -> EscapeAnalysisM EscapeInfo
-analyzeCallWithSummary func args = do
-  case locValue func of
-    CEVar fname -> do
-      summaries <- gets easFunctionSummaries
-      case HashMap.lookup fname summaries of
-        Just summary -> do
-          -- Use function summary for precise analysis
-          _argEscapes <- mapM (\(idx, arg) -> do
-            argEscape <- analyzeExpression (locValue arg)
-            
-            -- Check if this parameter escapes in the function
-            case HashMap.lookup idx (fsParameterEscapes summary) of
-              Just paramEscape -> do
-                -- If argument is a variable and parameter escapes, mark it
-                case locValue arg of
-                  CEVar var -> when (paramEscape /= NoEscape) $ markEscape var paramEscape
-                  _ -> return ()
-                return paramEscape
-              Nothing -> return argEscape) (zip [0..] args)
-          
-          -- Determine overall escape behavior
-          ctx <- ask
-          if cfcInReturn (ecControlFlow ctx) && not (null (fsReturnEscapes summary))
-            then return EscapeToReturn
-            else if fsCreatesEscaping summary
-              then return EscapeToHeap
-              else return NoEscape
-        
-        Nothing -> do
-          -- No summary available, fall back to conservative analysis
-          mapM_ (analyzeExpression . locValue) args
-          ctx <- ask
-          if cfcInReturn (ecControlFlow ctx)
-            then return EscapeToReturn
-            else return EscapeToHeap
-    
-    _ -> do
-      -- Indirect call, be conservative
-      _ <- analyzeExpression (locValue func)
-      mapM_ (analyzeExpression . locValue) args
-      return EscapeToHeap
 
+
+                  
 -- | Mark variable as escaping
 markEscape :: Identifier -> EscapeInfo -> EscapeAnalysisM ()
 markEscape var escapeInfo = do
@@ -764,7 +672,7 @@ applyOptimizations stmts analysis = map (optimizeStatement analysis) stmts
 
 -- | Optimize individual statement
 optimizeStatement :: ProgramAnalysis -> Located PythonStmt -> Located PythonStmt
-optimizeStatement analysis (Located span stmt) = Located span $ case stmt of
+optimizeStatement analysis (Located srcSpan stmt) = Located srcSpan $ case stmt of
   PyExprStmt expr ->
     PyExprStmt expr  -- TODO: Add Python-specific allocation optimization
 
@@ -789,27 +697,9 @@ optimizeStatement analysis (Located span stmt) = Located span $ case stmt of
   
   other -> other
   where
-    optimizeWithItem analysis (Located span item) = Located span $ case item of
+    optimizeWithItem _ (Located itemSpan item) = Located itemSpan $ case item of
       PythonWithItem contextExpr varPat ->
         PythonWithItem contextExpr varPat  -- TODO: Add Python-specific allocation optimization
 
--- | Check if a location escapes (simplified version)
-locationEscapes :: ProgramAnalysis -> SourceSpan -> Bool
-locationEscapes analysis loc = 
-  -- For now, use a simple heuristic: check if the location is in global escapes
-  -- This is a simplified version; a full implementation would track individual allocations
-  Set.member (Identifier "temp") (Set.fromList $ HashSet.toList (paGlobalEscapes analysis))  -- Placeholder implementation
 
--- | Optimize allocation based on escape analysis
-optimizeAllocation :: ProgramAnalysis -> CommonExpr -> CommonExpr
-optimizeAllocation analysis = \case
-  CECall (Located loc (CEVar (Identifier "new"))) args
-    | not (locationEscapes analysis loc) -> CECall (Located loc (CEVar (Identifier "stack_alloc"))) args
-    | otherwise -> CECall (Located loc (CEVar (Identifier "new"))) args
-
-  CECall (Located loc (CEVar (Identifier "make_unique"))) args
-    | not (locationEscapes analysis loc) -> CECall (Located loc (CEVar (Identifier "stack_alloc"))) args
-    | otherwise -> CECall (Located loc (CEVar (Identifier "make_unique"))) args
-
-  other -> other
 

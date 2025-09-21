@@ -5,25 +5,44 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Fluxus.Compiler.Config where
+module Fluxus.Compiler.Config (
+  SourceLanguage(..),
+  OptimizationLevel(..),
+  TargetPlatform(..),
+  CompilerConfig(..),
+  MergeStrategy(..),
+  defaultConfig,
+  developmentConfig,
+  productionConfig,
+  debugConfig,
+  parseSourceLanguage,
+  showSourceLanguage,
+  parseOptLevel,
+  showOptLevel,
+  parseTargetPlatform,
+  showTargetPlatform,
+  configParser,
+  loadConfig,
+  loadConfigFromFile,
+  mergeConfigs,
+  applyEnvironmentOverrides,
+  validateConfigFile,
+  checkSystemRequirements,
+  configToArgs,
+  printConfig
+) where
 
 import Data.Aeson
-import qualified Data.Aeson.Types as Aeson
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
 import Data.Yaml (decodeFileEither, ParseException)
 import System.Environment (lookupEnv)
-import System.FilePath
 import System.Directory
-import System.Exit
 import System.Info (os, arch)
 import System.IO (hPutStrLn, stderr)
 import Control.Monad (unless, when, forM_)
-import Control.Monad.IO.Class
-import Control.Applicative ((<|>), (<**>), optional, many)
-import Data.Maybe (fromMaybe, isJust)
-import Data.List (isPrefixOf, isInfixOf, nub)
+import Data.List (isInfixOf, nub)
+import Data.Maybe (fromMaybe)
 import GHC.Generics (Generic)
 import Options.Applicative
 
@@ -35,7 +54,7 @@ data SourceLanguage = Python | Go
   deriving (Show, Read, Eq, Generic)
 
 data OptimizationLevel = O0 | O1 | O2 | O3 | Os
-  deriving (Show, Read, Eq, Generic)
+  deriving (Show, Read, Eq, Generic, Ord, Enum)
 
 data TargetPlatform 
   = Linux_x86_64 
@@ -151,7 +170,6 @@ getDefaultIncludePaths = case detectPlatform of
   Darwin_x86_64 -> ["/usr/local/include", "/opt/local/include"]
   Darwin_ARM64 -> ["/opt/homebrew/include", "/usr/local/include"]
   Windows_x86_64 -> []  -- Windows doesn't have standard paths
-  _ -> []
 
 getDefaultLibraryPaths :: [FilePath]
 getDefaultLibraryPaths = case detectPlatform of
@@ -160,7 +178,6 @@ getDefaultLibraryPaths = case detectPlatform of
   Darwin_x86_64 -> ["/usr/local/lib", "/opt/local/lib"]
   Darwin_ARM64 -> ["/opt/homebrew/lib", "/usr/local/lib"]
   Windows_x86_64 -> []
-  _ -> []
 
 -- ============================================================================
 -- Parsing and Showing Functions (DRY principle)
@@ -419,13 +436,13 @@ loadConfig args = do
           -- Only warn if file exists but can't be parsed
           exists <- doesFileExist "fluxus.yaml"
           when exists $ hPutStrLn stderr $ "Warning: " ++ err
-          
+
           -- Apply environment overrides to CLI config
           finalConfig <- applyEnvironmentOverrides cliConfig
           -- Validate the configuration
           validation <- checkSystemRequirements finalConfig
           case validation of
-            Left err -> return $ Left err
+            Left validationErr -> return $ Left validationErr
             Right () -> return $ Right finalConfig
             
         Right fileConfig -> do
@@ -435,7 +452,7 @@ loadConfig args = do
           -- Validate the configuration
           validation <- checkSystemRequirements finalConfig
           case validation of
-            Left err -> return $ Left err
+            Left validationErr -> return $ Left validationErr
             Right () -> return $ Right finalConfig
             
     Failure failure -> return $ Left $ show failure
@@ -479,9 +496,9 @@ mergeConfigs strategy base override = CompilerConfig
   , ccInputFiles = mergeLists strategy (ccInputFiles base) (ccInputFiles override)
   }
   where
-    mergeLists Override _ override = override
-    mergeLists Append base override = nub (override ++ base)  -- Remove duplicates
-    mergeLists Keep base _ = base
+    mergeLists Override _ overrideVal = overrideVal
+    mergeLists Append baseVal overrideVal = nub (overrideVal ++ baseVal)  -- Remove duplicates
+    mergeLists Keep baseVal _ = baseVal
 
 -- Enhanced environment variable support
 applyEnvironmentOverrides :: CompilerConfig -> IO CompilerConfig
@@ -500,7 +517,18 @@ applyEnvironmentOverrides config = do
     , fmap (fmap T.pack) (lookupEnv "FLUXUS_OUTPUT")
     ]
   
-  let [cppCompiler, cppStd, verbose, interop, debug, optLevel, target, parallel, strict, output] = envVars
+  let safeEnvVars = envVars ++ replicate (10 - length envVars) Nothing
+      resultVars = take 10 safeEnvVars
+      cppCompiler = resultVars !! 0
+      cppStd = resultVars !! 1
+      verbose = resultVars !! 2
+      interop = resultVars !! 3
+      debug = resultVars !! 4
+      optLevel = resultVars !! 5
+      target = resultVars !! 6
+      parallel = resultVars !! 7
+      strict = resultVars !! 8
+      output = resultVars !! 9
   
   return config
     { ccCppCompiler = fromMaybe (ccCppCompiler config) cppCompiler
@@ -545,7 +573,7 @@ checkSystemRequirements config = do
   
   case compilerPath of
     Nothing -> return $ Left $ "C++ compiler not found: " ++ compiler
-    Just path -> do
+    Just _path -> do
       -- Validate paths exist (with warnings for missing ones)
       validatePaths "include" (ccIncludePaths config)
       validatePaths "library" (ccLibraryPaths config)

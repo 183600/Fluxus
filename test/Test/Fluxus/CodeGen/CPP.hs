@@ -3,8 +3,6 @@
 module Test.Fluxus.CodeGen.CPP (spec) where
 
 import Test.Hspec
-import Data.Text (Text)
-import qualified Data.Text as T
 
 import Fluxus.CodeGen.CPP
 import Fluxus.AST.Common
@@ -64,7 +62,7 @@ typeMappingSpec = describe "Type Mapping" $ do
   
   it "maps function pointer types correctly" $ do
     let funcPtrType = TFunction [TInt 32, TString] TBool
-    mapCommonTypeToCpp funcPtrType `shouldBe` CppFunction [CppInt, CppString] CppBool
+    mapCommonTypeToCpp funcPtrType `shouldBe` CppFunctionType [CppInt, CppString] CppBool
 
 expressionGenerationSpec :: Spec
 expressionGenerationSpec = describe "Expression Generation" $ do
@@ -142,9 +140,9 @@ expressionGenerationSpec = describe "Expression Generation" $ do
   it "generates lambda expressions" $ do
     let params = [CppParam "x" CppInt Nothing]
     let body = [CppReturn (Just (CppBinary "*" (CppVar "x") (CppVar "x")))]
-    let lambda = CppLambda params body
+    let lambda = CppLambda params body False
     
-    lambda `shouldBe` CppLambda params body
+    lambda `shouldBe` CppLambda params body False
 
 statementGenerationSpec :: Spec
 statementGenerationSpec = describe "Statement Generation" $ do
@@ -185,21 +183,21 @@ statementGenerationSpec = describe "Statement Generation" $ do
     whileStmt `shouldBe` CppWhile cond body
   
   it "generates for loops" $ do
-    let init = CppVariable "i" CppInt (Just (CppLiteral (CppIntLit 0)))
-    let cond = CppBinary "<" (CppVar "i") (CppLiteral (CppIntLit 10))
-    let increment = CppExprStmt (CppUnary "++" (CppVar "i"))
+    let initVar = CppVariable "i" CppInt (Just (CppLiteral (CppIntLit 0)))
+    let condVar = CppBinary "<" (CppVar "i") (CppLiteral (CppIntLit 10))
+    let incrementVar = CppUnary "++" (CppVar "i")
     let body = [CppExprStmt (CppCall (CppVar "printf") [CppLiteral (CppStringLit "%d"), CppVar "i"])]
-    let forStmt = CppFor (Just (CppDecl init)) (Just cond) (Just increment) body
-    
-    forStmt `shouldBe` CppFor (Just (CppDecl init)) (Just cond) (Just increment) body
+    let forStmt = CppFor (Just (CppDecl initVar)) (Just condVar) (Just incrementVar) body
+
+    forStmt `shouldBe` CppFor (Just (CppDecl initVar)) (Just condVar) (Just incrementVar) body
   
   it "generates range-based for loops" $ do
-    let elem = "elem"
+    let elemVar = "elem"
     let container = CppVar "numbers"
-    let body = [CppExprStmt (CppCall (CppVar "printf") [CppLiteral (CppStringLit "%d"), CppVar "elem"])]
-    let rangeForStmt = CppForRange elem container body
-    
-    rangeForStmt `shouldBe` CppForRange elem container body
+    let body = [CppExprStmt (CppCall (CppVar "printf") [CppLiteral (CppStringLit "%d"), CppVar elemVar])]
+    let rangeForStmt = CppForRange elemVar container body
+
+    rangeForStmt `shouldBe` CppForRange elemVar container body
   
   it "generates switch statements" $ do
     let expr = CppVar "value"
@@ -215,7 +213,7 @@ statementGenerationSpec = describe "Statement Generation" $ do
   it "generates try-catch blocks" $ do
     let tryBody = [CppExprStmt (CppCall (CppVar "riskyOperation") [])]
     let catchBody = [CppExprStmt (CppCall (CppVar "handleError") [CppVar "e"])]
-    let catchClause = CppCatch CppStdException "e" catchBody
+    let catchClause = CppCatch CppString "e" catchBody
     let tryCatchStmt = CppTry tryBody [catchClause] []
     
     tryCatchStmt `shouldBe` CppTry tryBody [catchClause] []

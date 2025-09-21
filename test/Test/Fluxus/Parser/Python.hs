@@ -5,7 +5,6 @@ module Test.Fluxus.Parser.Python (spec) where
 
 import Test.Hspec
 import Data.Text (Text)
-import qualified Data.Text as T
 
 import qualified Fluxus.Parser.Python.Lexer as Lexer
 import Fluxus.Parser.Python.Parser
@@ -372,7 +371,7 @@ parserSpec = describe "Python Parser" $ do
     let tokens = mockTokens 
           [ Lexer.TokenDelimiter Lexer.DelimLeftBracket
           , Lexer.TokenIdent "x"
-          , Lexer.TokenOperator OpMult
+          , Lexer.TokenOperator Lexer.OpMult
           , Lexer.TokenNumber "2" False
           , Lexer.TokenKeyword Lexer.KwFor
           , Lexer.TokenIdent "x"
@@ -392,8 +391,10 @@ parserSpec = describe "Python Parser" $ do
         length body `shouldBe` 1
         case body of
           (item:_) -> case locatedValue item of
-            PyListComp _ _ -> return ()
-            _ -> expectationFailure "Expected list comprehension"
+            PyExprStmt expr -> case locatedValue expr of
+              PyListComp _ _ -> return ()
+              _ -> expectationFailure "Expected list comprehension expression"
+            _ -> expectationFailure "Expected expression statement"
           [] -> expectationFailure "Module body is empty"
 
 -- Helper functions
@@ -452,6 +453,9 @@ operatorToText = \case
   Lexer.OpBitXorAssign -> "^="
   Lexer.OpLeftShiftAssign -> "<<="
   Lexer.OpRightShiftAssign -> ">>="
+  Lexer.OpWalrus -> ":="
+  Lexer.OpArrow -> "->"
+  Lexer.OpEllipsis -> "..."
 
 delimiterToText :: Lexer.Delimiter -> Text
 delimiterToText = \case

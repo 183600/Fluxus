@@ -49,7 +49,6 @@ import Control.Monad.State (StateT, modify, runStateT, gets)
 import Control.Monad.Except (ExceptT, throwError, runExceptT)
 import System.FilePath (takeExtension, replaceExtension, dropExtension, takeFileName)
 import System.Directory (doesDirectoryExist, createDirectoryIfMissing, removeFile)
-import Control.Concurrent.Async (mapConcurrently)
 import Data.Maybe (fromMaybe)
 import Control.Monad (when, unless)
 
@@ -74,20 +73,7 @@ import Fluxus.Optimization.Vectorization (vectorizeLoops)
 import Fluxus.Optimization.SizeReduction (reduceCodeSize)
 import Fluxus.Utils.Pretty ()
 
--- Derive missing instances for imported types
-deriving stock instance Ord OptimizationLevel
-deriving stock instance Enum OptimizationLevel
 
--- | Convert Common.Located to Go.Located
-convertCommonToGoLocated :: Common.Located a -> Go.Located a
-convertCommonToGoLocated (Common.Located srcSpan val) = Go.Located (convertSpanToNodeAnn srcSpan) val
-  where
-    convertSpanToNodeAnn :: SourceSpan -> Go.NodeAnn
-    convertSpanToNodeAnn (SourceSpan _file start end) = 
-      Go.NodeAnn (Just $ Go.Span (convertPos start) (convertPos end)) [] []
-    
-    convertPos :: SourcePos -> Go.Position
-    convertPos (SourcePos line col) = Go.Position line col
 
 -- | Convert Config.CompilerConfig to Driver.CompilerConfig
 convertConfigToDriver :: Config.CompilerConfig -> CompilerConfig
@@ -445,13 +431,9 @@ compileProject inputFiles = do
       mainObj <- compileFileToObject mainFile True
       
       -- Compile other files (parallel if enabled)
-      otherObjs <- if ccEnableParallel config && not (null otherFiles)
-        then do
-          -- Parallel compilation using async
-          logInfo $ "Compiling " <> T.pack (show $ length otherFiles) <> " files in parallel"
-          liftIO $ mapConcurrently (compileFileInNewContext config False) otherFiles
-        else do
+      otherObjs <- do
           -- Sequential compilation
+          logInfo $ "Compiling " <> T.pack (show $ length otherFiles) <> " files sequentially"
           mapM (\f -> compileFileToObject f False) otherFiles
       
       return (mainObj : otherObjs)
@@ -480,12 +462,6 @@ compileProject inputFiles = do
       return finalBinary
 
 -- | Helper for parallel compilation - runs in fresh context
-compileFileInNewContext :: CompilerConfig -> Bool -> FilePath -> IO FilePath
-compileFileInNewContext config isMain inputFile = do
-  result <- runCompiler config (compileFileToObject inputFile isMain)
-  case result of
-    Left err -> error $ "Compilation failed: " <> show err
-    Right (objFile, _) -> return objFile
 
 -- | Enhanced parse stage with better error reporting
 parseStage :: FilePath -> CompilerM (Either PythonAST GoAST)
@@ -523,7 +499,7 @@ parseStage inputFile = do
           in throwError $ ParseError (T.pack $ show err) srcSpan
         Right toks -> return toks
       
-      case runGoParser (T.pack inputFile) (map convertCommonToGoLocated tokens) of
+      case runGoParser (T.pack inputFile) tokens of
         Left err -> 
           let (line, col) = extractPosFromError err
               srcSpan = SourceSpan (T.pack inputFile) (SourcePos line col) (SourcePos line col)
@@ -860,14 +836,23 @@ renderCppLiteral :: CppLiteral -> Text
 renderCppLiteral = \case
   CppIntLit i -> T.pack $ show i
   CppFloatLit f -> T.pack $ show f
+  CppCharLit c -> "'" <> escapeChar c <> "'"
   CppBoolLit True -> "true"
   CppBoolLit False -> "false"
   CppStringLit s -> "\"" <> escapeString s <> "\""
   CppNullPtr -> "nullptr"
+  CppUserDefinedLit value suffix -> value <> suffix
   where
     escapeString = T.concatMap $ \case
       '\n' -> "\\n"
       '\t' -> "\\t"
       '\\' -> "\\\\"
       '"' -> "\\\""
+      c -> T.singleton c
+
+    escapeChar = \case
+      '\n' -> "\\n"
+      '\t' -> "\\t"
+      '\\' -> "\\\\"
+      '\'' -> "\\'"
       c -> T.singleton c

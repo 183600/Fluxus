@@ -31,17 +31,14 @@ module Fluxus.Parser.Python.Lexer
 
 import Control.Monad (void, when)
 import Control.Monad.State
-import Control.Monad.Trans.Class (lift)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Char (isAlphaNum, isAlpha, isDigit)
 import Data.Void (Void)
 import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
-import Text.Megaparsec (many, choice, try, notFollowedBy, optional, eof, getSourcePos, satisfy, takeWhileP, manyTill, anySingle, (<|>), lookAhead, skipMany)
-import Text.Megaparsec.Char (string)
-import Control.Applicative ((<*), (*>))
+import Text.Megaparsec (many, choice, try, notFollowedBy, optional, eof, getSourcePos, satisfy, takeWhileP, manyTill, (<|>), lookAhead, skipMany)
+import Control.Applicative ()
 import Data.Functor (($>))
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
@@ -158,10 +155,9 @@ lexPython = do
   
   -- Generate final dedent tokens
   finalState <- get
-  let finalDedents = if length (indentStack finalState) > 1
-                      then map (Located (SourceSpan "<input>" (SourcePos 0 0) (SourcePos 0 0)) . TokenDedent) 
-                           (reverse $ tail (indentStack finalState))
-                      else []
+  let finalDedents = case indentStack finalState of
+                      (_:xs) -> map (Located (SourceSpan "<input>" (SourcePos 0 0) (SourcePos 0 0)) . TokenDedent) (reverse xs)
+                      [] -> []
   
   return $ concat tokens ++ finalDedents
 
@@ -169,15 +165,15 @@ lexPython = do
 processLine :: PythonLexer [Located PythonToken]
 processLine = do
   -- Skip whitespace at line start if not at line start
-  state <- get
-  when (not $ atLineStart state) $ do
+  lexerState <- get
+  when (not $ atLineStart lexerState) $ do
     lift $ skipMany (char ' ' <|> char '\t')
   
   -- Create span for tokens
   start <- lift getSourcePos
   
   -- Handle indentation at line start
-  indentTokens <- if atLineStart state
+  indentTokens <- if atLineStart lexerState
                    then handleIndentation
                    else return []
   
@@ -188,9 +184,9 @@ processLine = do
   newlineTokens <- many (Fluxus.Parser.Python.Lexer.newline)
   
   end <- lift getSourcePos
-  let span = SourceSpan "<input>" (convertPos start) (convertPos end)
+  let sourceSpan = SourceSpan "<input>" (convertPos start) (convertPos end)
       locatedIndentTokens = indentTokens
-      locatedNewlineTokens = map (Located span) (map (\_ -> TokenNewline) newlineTokens)
+      locatedNewlineTokens = map (Located sourceSpan) (map (\_ -> TokenNewline) newlineTokens)
   
   -- Update state for new line
   when (not (null newlineTokens)) $ do
@@ -206,27 +202,29 @@ handleIndentation = do
   spaces <- many (char ' ' <|> char '\t')
   let level = length spaces
   
-  state <- get
-  let currentStack = indentStack state
-      currentLevel = head currentStack
+  indentState <- get
+  let currentStack = indentStack indentState
+      currentLevel = case currentStack of
+                      [] -> 0  -- Default to 0 if empty
+                      (x:_) -> x
   
   modify $ \s -> s { atLineStart = False }
   
   end <- lift getSourcePos
-  let span = SourceSpan "<input>" (convertPos start) (convertPos end)
-  
+  let sourceSpan = SourceSpan "<input>" (convertPos start) (convertPos end)
+
   if level > currentLevel
     then do
       -- Increase indentation
       modify $ \s -> s { indentStack = level : indentStack s }
-      return [Located span (TokenIndent level)]
+      return [Located sourceSpan (TokenIndent level)]
     else if level == currentLevel
       then return []  -- Same level
       else do
         -- Decrease indentation
         let (newStack, dedentTokens) = generateDedents level currentStack
         modify $ \s -> s { indentStack = newStack }
-        return $ map (Located span) dedentTokens
+        return $ map (Located sourceSpan) dedentTokens
   where
     generateDedents :: Int -> [Int] -> ([Int], [PythonToken])
     generateDedents targetLevel stack = go stack []
@@ -262,12 +260,12 @@ pythonToken = choice
 locatedPythonToken :: PythonLexer (Located PythonToken)
 locatedPythonToken = do
   -- Skip whitespace (but not newlines) before parsing token
-  lift $ many (satisfy (\c -> c == ' ' || c == '\t'))
+  _ <- lift $ many (satisfy (\c -> c == ' ' || c == '\t'))
   start <- lift getSourcePos
   token <- pythonToken
   end <- lift getSourcePos
-  let span = SourceSpan "<input>" (convertPos start) (convertPos end)
-  return $ Located span token
+  let sourceSpan = SourceSpan "<input>" (convertPos start) (convertPos end)
+  return $ Located sourceSpan token
 
 -- | Parse keywords
 keyword :: PythonLexer PythonToken
@@ -424,8 +422,8 @@ numberLiteral = do
       expPart <- lift $ optional $ do
         _ <- char 'e' <|> char 'E'
         sign <- optional (char '+' <|> char '-')
-        exp <- MP.some digitChar
-        return $ 'e' : maybe "" (:[]) sign ++ exp
+        exponentDigits <- MP.some digitChar
+        return $ 'e' : maybe "" (:[]) sign ++ exponentDigits
       
       let result = intPart ++ maybe "" ('.':) fractPart ++ maybe "" id expPart
       return $ T.pack result

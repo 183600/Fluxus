@@ -2,13 +2,12 @@
 {-# LANGUAGE LambdaCase #-}
 
 -- | Main entry point for the HyperStatic/CXX compiler
-module Main where
+module Main (main) where
 
 import System.Environment (getArgs)
 import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 import Control.Monad (when, unless)
-import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.List (isPrefixOf, isSuffixOf)
@@ -35,8 +34,8 @@ main = do
           -- Validate configuration
           let driverConfig = Driver.convertConfigToDriver config
           case Driver.validateConfig driverConfig of
-            Left (ConfigurationError msg) -> do
-              hPutStrLn stderr $ "Invalid configuration: " ++ T.unpack msg
+            Left err -> do
+              hPutStrLn stderr $ "Invalid configuration: " ++ formatCompilerError err
               exitFailure
             Right validConfig -> runCompilerMain (Driver.convertDriverToConfig validConfig) args
 
@@ -94,59 +93,59 @@ extractInputFiles = filter isInputFile
       any (`isSuffixOf` file) [".py", ".go"]
 
 -- | Format compiler error for display
-formatCompilerError :: CompilerError -> String
+formatCompilerError :: Driver.CompilerError -> String
 formatCompilerError = \case
-  ParseError msg span -> 
-    "Parse error at " ++ formatSourceSpan span ++ ": " ++ T.unpack msg
-  TypeError msg span -> 
-    "Type error at " ++ formatSourceSpan span ++ ": " ++ T.unpack msg
-  OptimizationError msg span -> 
-    "Optimization error at " ++ formatSourceSpan span ++ ": " ++ T.unpack msg
-  CodeGenError msg span -> 
-    "Code generation error at " ++ formatSourceSpan span ++ ": " ++ T.unpack msg
-  LinkError msg -> 
+  Driver.ParseError msg errorSpan ->
+    "Parse error at " ++ formatSourceSpan errorSpan ++ ": " ++ T.unpack msg
+  Driver.TypeError msg errorSpan ->
+    "Type error at " ++ formatSourceSpan errorSpan ++ ": " ++ T.unpack msg
+  Driver.OptimizationError msg errorSpan ->
+    "Optimization error at " ++ formatSourceSpan errorSpan ++ ": " ++ T.unpack msg
+  Driver.CodeGenError msg errorSpan ->
+    "Code generation error at " ++ formatSourceSpan errorSpan ++ ": " ++ T.unpack msg
+  Driver.LinkError msg ->
     "Link error: " ++ T.unpack msg
-  FileSystemError msg path -> 
+  Driver.FileSystemError msg path ->
     "File system error with " ++ path ++ ": " ++ T.unpack msg
-  ConfigurationError msg -> 
+  Driver.ConfigurationError msg ->
     "Configuration error: " ++ T.unpack msg
-  RuntimeError msg -> 
+  Driver.RuntimeError msg ->
     "Runtime error: " ++ T.unpack msg
 
 -- | Format source span for display
-formatSourceSpan :: SourceSpan -> String
-formatSourceSpan span = 
-  T.unpack (spanFilename span) ++ ":" ++ 
-  show (posLine $ spanStart span) ++ ":" ++
-  show (posColumn $ spanStart span)
+formatSourceSpan :: Fluxus.AST.Common.SourceSpan -> String
+formatSourceSpan srcSpan =
+  T.unpack (Fluxus.AST.Common.spanFilename srcSpan) ++ ":" ++
+  show (Fluxus.AST.Common.posLine $ Fluxus.AST.Common.spanStart srcSpan) ++ ":" ++
+  show (Fluxus.AST.Common.posColumn $ Fluxus.AST.Common.spanStart srcSpan)
 
 -- | Print compilation statistics
-printCompilationStats :: CompilerState -> IO ()
+printCompilationStats :: Driver.CompilerState -> IO ()
 printCompilationStats state = do
   TIO.putStrLn "=== Compilation Statistics ==="
-  TIO.putStrLn $ "Files processed: " <> T.pack (show $ csProcessedFiles state)
-  TIO.putStrLn $ "Total files: " <> T.pack (show $ csTotalFiles state)
-  TIO.putStrLn $ "Warnings: " <> T.pack (show $ length $ csWarnings state)
-  TIO.putStrLn $ "Errors: " <> T.pack (show $ length $ csErrors state)
-  
+  TIO.putStrLn $ "Files processed: " <> T.pack (show $ Driver.csProcessedFiles state)
+  TIO.putStrLn $ "Total files: " <> T.pack (show $ Driver.csTotalFiles state)
+  TIO.putStrLn $ "Warnings: " <> T.pack (show $ length $ Driver.csWarnings state)
+  TIO.putStrLn $ "Errors: " <> T.pack (show $ length $ Driver.csErrors state)
+
   -- Print warnings if any
-  unless (null $ csWarnings state) $ do
+  unless (null $ Driver.csWarnings state) $ do
     TIO.putStrLn "\nWarnings:"
-    mapM_ printWarning (csWarnings state)
-  
+    mapM_ printWarning (Driver.csWarnings state)
+
   TIO.putStrLn "==============================="
 
 -- | Print a single warning
-printWarning :: CompilerWarning -> IO ()
+printWarning :: Driver.CompilerWarning -> IO ()
 printWarning warning = case warning of
-  TypeWarning msg span -> 
-    TIO.putStrLn $ "  Warning: " <> msg <> " at " <> T.pack (formatSourceSpan span)
-  OptimizationWarning msg span -> 
-    TIO.putStrLn $ "  Warning: " <> msg <> " at " <> T.pack (formatSourceSpan span)
-  DeprecationWarning msg span -> 
-    TIO.putStrLn $ "  Deprecation warning: " <> msg <> " at " <> T.pack (formatSourceSpan span)
-  PerformanceWarning msg span -> 
-    TIO.putStrLn $ "  Performance warning: " <> msg <> " at " <> T.pack (formatSourceSpan span)
+  Driver.TypeWarning msg warningSpan ->
+    TIO.putStrLn $ "  Warning: " <> msg <> " at " <> T.pack (formatSourceSpan warningSpan)
+  Driver.OptimizationWarning msg warningSpan ->
+    TIO.putStrLn $ "  Warning: " <> msg <> " at " <> T.pack (formatSourceSpan warningSpan)
+  Driver.DeprecationWarning msg warningSpan ->
+    TIO.putStrLn $ "  Deprecation warning: " <> msg <> " at " <> T.pack (formatSourceSpan warningSpan)
+  Driver.PerformanceWarning msg warningSpan ->
+    TIO.putStrLn $ "  Performance warning: " <> msg <> " at " <> T.pack (formatSourceSpan warningSpan)
 
 -- | Print usage information
 printUsage :: IO ()

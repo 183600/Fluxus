@@ -27,6 +27,7 @@ module Fluxus.CodeGen.CPP
   , CppLiteral(..)
   , CppParam(..)
   , CppCase(..)
+  , CppCatch(..)
     -- * Code generation utilities
   , runCppCodeGen
     -- * Type mapping

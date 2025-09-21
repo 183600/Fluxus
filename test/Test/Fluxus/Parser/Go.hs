@@ -5,12 +5,10 @@ module Test.Fluxus.Parser.Go (spec) where
 
 import Test.Hspec
 import Data.Text (Text)
-import qualified Data.Text as T
 
 import Fluxus.Parser.Go.Lexer
 import Fluxus.Parser.Go.Parser
 import Fluxus.AST.Go
-import Fluxus.AST.Common
 
 spec :: Spec
 spec = describe "Go Parser" $ do
@@ -25,7 +23,7 @@ lexerSpec = describe "Go Lexer" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right tokens -> do
         length tokens `shouldBe` 3
-        let tokenValues = map (locatedValue . fmap goTokenValue) tokens
+        let tokenValues = map (goTokenValue . locatedValue) tokens
         tokenValues `shouldBe` ["x", "+", "42"]
   
   it "tokenizes Go keywords" $ do
@@ -97,10 +95,10 @@ lexerSpec = describe "Go Lexer" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right tokens -> do
         let hasLineComment = any (\case
-              Located _ (GoTokenLineComment _) -> True
+              Located _ (GoTokenComment _) -> True
               _ -> False) tokens
         let hasBlockComment = any (\case
-              Located _ (GoTokenBlockComment _) -> True
+              Located _ (GoTokenComment _) -> True
               _ -> False) tokens
         hasLineComment `shouldBe` True
         hasBlockComment `shouldBe` True
@@ -111,7 +109,7 @@ lexerSpec = describe "Go Lexer" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right tokens -> do
         length tokens `shouldBe` 11
-        let tokenValues = map (locatedValue . fmap goTokenValue) tokens
+        let tokenValues = map (goTokenValue . locatedValue) tokens
         tokenValues `shouldBe` ["result", ":=", "(", "a", "+", "b", ")", "*", "c", "/", "2.0"]
 
 parserSpec :: Spec
@@ -203,7 +201,7 @@ parserSpec = describe "Go Parser" $ do
           [] -> expectationFailure "No files in package"
   
   it "parses variable declarations" $ do
-    let tokens = mockGoTokens 
+    let tokens = mockGoTokens
           [ GoTokenKeyword GoKwPackage
           , GoTokenIdent "main"
           , GoTokenKeyword GoKwVar
@@ -222,13 +220,13 @@ parserSpec = describe "Go Parser" $ do
             length decls `shouldBe` 1
             case decls of
               (decl:_) -> case locatedValue decl of
-                GoVarDecl vars -> length vars `shouldBe` 1
+                GoBindDecl bindings -> length bindings `shouldBe` 1
                 _ -> expectationFailure "Expected variable declaration"
               [] -> expectationFailure "No declarations in file"
           [] -> expectationFailure "No files in package"
   
   it "parses variable declarations with initialization" $ do
-    let tokens = mockGoTokens 
+    let tokens = mockGoTokens
           [ GoTokenKeyword GoKwPackage
           , GoTokenIdent "main"
           , GoTokenKeyword GoKwVar
@@ -249,13 +247,13 @@ parserSpec = describe "Go Parser" $ do
             length decls `shouldBe` 1
             case decls of
               (decl:_) -> case locatedValue decl of
-                GoVarDecl vars -> length vars `shouldBe` 1
+                GoBindDecl bindings -> length bindings `shouldBe` 1
                 _ -> expectationFailure "Expected variable declaration"
               [] -> expectationFailure "No declarations in file"
           [] -> expectationFailure "No files in package"
   
   it "parses short variable declarations" $ do
-    let tokens = mockGoTokens 
+    let tokens = mockGoTokens
           [ GoTokenKeyword GoKwPackage
           , GoTokenIdent "main"
           , GoTokenIdent "x"
@@ -274,8 +272,10 @@ parserSpec = describe "Go Parser" $ do
             length decls `shouldBe` 1
             case decls of
               (decl:_) -> case locatedValue decl of
-                GoShortVarDecl _ -> return ()
-                _ -> expectationFailure "Expected short variable declaration"
+                GoBindDecl [binding] -> case bindKind binding of
+                  BindDefine -> return ()
+                  _ -> expectationFailure "Expected short var declaration (:=)"
+                _ -> expectationFailure "Expected single binding"
               [] -> expectationFailure "No declarations in file"
           [] -> expectationFailure "No files in package"
   
@@ -299,7 +299,7 @@ parserSpec = describe "Go Parser" $ do
             length decls `shouldBe` 1
             case decls of
               (decl:_) -> case locatedValue decl of
-                GoTypeDecl (Identifier name) _ -> name `shouldBe` "MyInt"
+                GoTypeDeclStmt (GoTypeDecl name _ _ _) -> name `shouldBe` Identifier "MyInt"
                 _ -> expectationFailure "Expected type declaration"
               [] -> expectationFailure "No declarations in file"
           [] -> expectationFailure "No files in package"
@@ -330,7 +330,7 @@ parserSpec = describe "Go Parser" $ do
             length decls `shouldBe` 1
             case decls of
               (decl:_) -> case locatedValue decl of
-                GoTypeDecl (Identifier name) _ -> name `shouldBe` "Person"
+                GoTypeDeclStmt (GoTypeDecl name _ _ _) -> name `shouldBe` Identifier "Person"
                 _ -> expectationFailure "Expected struct declaration"
               [] -> expectationFailure "No declarations in file"
           [] -> expectationFailure "No files in package"
@@ -375,7 +375,7 @@ parserSpec = describe "Go Parser" $ do
             length decls `shouldBe` 1
             case decls of
               (decl:_) -> case locatedValue decl of
-                GoTypeDecl (Identifier name) _ -> name `shouldBe` "Writer"
+                GoTypeDeclStmt (GoTypeDecl name _ _ _) -> name `shouldBe` Identifier "Writer"
                 _ -> expectationFailure "Expected interface declaration"
               [] -> expectationFailure "No declarations in file"
           [] -> expectationFailure "No files in package"
@@ -391,7 +391,7 @@ parserSpec = describe "Go Parser" $ do
           , GoTokenDelimiter GoDelimLeftBrace
           , GoTokenKeyword GoKwIf
           , GoTokenIdent "x"
-          , GoTokenOperator GoOpGreaterThan
+          , GoTokenOperator GoOpGt
           , GoTokenInt "0"
           , GoTokenDelimiter GoDelimLeftBrace
           , GoTokenDelimiter GoDelimRightBrace
@@ -427,11 +427,11 @@ parserSpec = describe "Go Parser" $ do
           , GoTokenInt "0"
           , GoTokenDelimiter GoDelimSemicolon
           , GoTokenIdent "i"
-          , GoTokenOperator GoOpLessThan
+          , GoTokenOperator GoOpLt
           , GoTokenInt "10"
           , GoTokenDelimiter GoDelimSemicolon
           , GoTokenIdent "i"
-          , GoTokenOperator GoOpPlusPlus
+          , GoTokenOperator GoOpIncrement
           , GoTokenDelimiter GoDelimLeftBrace
           , GoTokenDelimiter GoDelimRightBrace
           , GoTokenDelimiter GoDelimRightBrace
@@ -456,9 +456,15 @@ mockGoTokens :: [GoToken] -> [Located GoToken]
 mockGoTokens = map mockGoToken
 
 mockGoToken :: GoToken -> Located GoToken
-mockGoToken token = Located mockSpan token
+mockGoToken token = Located mockNodeAnn token
   where
-    mockSpan = SourceSpan "test.go" (SourcePos 1 1) (SourcePos 1 10)
+    mockPosition = Position { posLine = 1, posColumn = 1 }
+    mockSpan = Just $ Span { spanStart = mockPosition, spanEnd = mockPosition { posColumn = 10 } }
+    mockNodeAnn = NodeAnn { annSpan = mockSpan, annLeading = [], annTrailing = [] }
+
+-- Extract the value from a Located node
+locatedValue :: Located a -> a
+locatedValue = locValue
 
 goTokenValue :: GoToken -> Text
 goTokenValue = \case
@@ -478,14 +484,14 @@ goOperatorToText = \case
   GoOpMult -> "*"
   GoOpDiv -> "/"
   GoOpMod -> "%"
-  GoOpPower -> "**"
+  GoOpBitClear -> "&^"
   GoOpAssign -> "="
+  GoOpDefine -> ":="
   GoOpPlusAssign -> "+="
   GoOpMinusAssign -> "-="
   GoOpMultAssign -> "*="
   GoOpDivAssign -> "/="
   GoOpModAssign -> "%="
-  GoOpPowerAssign -> "**="
   GoOpEq -> "=="
   GoOpNe -> "!="
   GoOpLt -> "<"
@@ -500,14 +506,19 @@ goOperatorToText = \case
   GoOpBitAnd -> "&"
   GoOpBitOr -> "|"
   GoOpBitXor -> "^"
-  GoOpBitNot -> "~"
+  GoOpTilde -> "~"
   GoOpLeftShift -> "<<"
   GoOpRightShift -> ">>"
   GoOpBitAndAssign -> "&="
   GoOpBitOrAssign -> "|="
   GoOpBitXorAssign -> "^="
+  GoOpBitClearAssign -> "&^="
   GoOpLeftShiftAssign -> "<<="
   GoOpRightShiftAssign -> ">>="
+  GoOpArrow -> "<-"
+  GoOpAddress -> "&"
+  GoOpDeref -> "*"
+  GoOpEllipsis -> "..."
 
 goDelimiterToText :: GoDelimiter -> Text
 goDelimiterToText = \case

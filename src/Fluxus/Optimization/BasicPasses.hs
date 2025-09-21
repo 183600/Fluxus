@@ -1213,7 +1213,7 @@ csePyExpr (Common.Located span expr) = do
           return $ Python.PyVar varName
         Nothing -> do
           -- Generate new variable name and cache it
-          let newVarName = "_cse_" <> T.pack (show $ HashMap.size cache)
+          let newVarName = Common.Identifier ("_cse_" <> T.pack (show $ HashMap.size cache))
           modify $ \s -> s { osSubexpressions = HashMap.insert exprKey newVarName (osSubexpressions s) }
           return $ Python.PyBinaryOp op newLeft newRight
     
@@ -1223,12 +1223,12 @@ csePyExpr (Common.Located span expr) = do
     
     Python.PyCall func args -> do
       newFunc <- csePyExpr func
-      newArgs <- mapM csePyArg args
+      newArgs <- mapM (\(Common.Located span arg) -> Common.Located span <$> csePyArg arg) args
       return $ Python.PyCall newFunc newArgs
     
     Python.PySubscript container slice -> do
       newContainer <- csePyExpr container
-      newSlice <- csePyExpr slice
+      newSlice <- csePySlice slice
       return $ Python.PySubscript newContainer newSlice
     
     Python.PyList elems -> Python.PyList <$> mapM csePyExpr elems
@@ -1243,8 +1243,20 @@ csePyArg (Python.ArgPositional expr) = Python.ArgPositional <$> csePyExpr expr
 csePyArg (Python.ArgKeyword kw expr) = Python.ArgKeyword kw <$> csePyExpr expr
 csePyArg (Python.ArgStarred expr) = Python.ArgStarred <$> csePyExpr expr
 
+csePySlice :: Common.Located Python.PythonSlice -> OptimizationM (Common.Located Python.PythonSlice)
+csePySlice (Common.Located span slice) = do
+  newSlice <- case slice of
+    Python.SliceIndex index -> Python.SliceIndex <$> csePyExpr index
+    Python.SliceSlice start end step -> do
+      newStart <- traverse csePyExpr start
+      newEnd <- traverse csePyExpr end
+      newStep <- traverse csePyExpr step
+      return $ Python.SliceSlice newStart newEnd newStep
+    Python.SliceExtSlice slices -> Python.SliceExtSlice <$> mapM csePySlice slices
+  return $ Common.Located span newSlice
+
 exprToText :: Python.PythonExpr -> Text
-exprToText (Python.PyVar name) = name
+exprToText (Python.PyVar (Common.Identifier name)) = name
 exprToText (Python.PyLiteral lit) = T.pack $ show lit
 exprToText _ = "_complex_"
 
@@ -1260,8 +1272,8 @@ cseGoPackage (Go.GoPackage packageName files) = do
 
 cseGoFile :: Go.GoFile -> OptimizationM Go.GoFile
 cseGoFile file = do
-  newDecls <- mapM cseGoDecl (Go.goFileDecls file)
-  return $ file { Go.goFileDecls = newDecls }
+  newDecls <- mapM (cseGoDecl . goToCommonLocated) (Go.goFileDecls file)
+  return $ file { Go.goFileDecls = map commonToGoLocated newDecls }
 
 cseGoDecl :: Common.Located Go.GoDecl -> OptimizationM (Common.Located Go.GoDecl)
 cseGoDecl (Common.Located span decl) = case decl of
@@ -1277,19 +1289,23 @@ cseGoDecl (Common.Located span decl) = case decl of
 cseGoStmt :: Common.Located Go.GoStmt -> OptimizationM (Common.Located Go.GoStmt)
 cseGoStmt (Common.Located span stmt) = do
   newStmt <- case stmt of
-    Go.GoExprStmt expr -> Go.GoExprStmt <$> cseGoExpr expr
+    Go.GoExprStmt expr -> fmap (Go.GoExprStmt . commonToGoLocatedExpr) (cseGoExpr (goToCommonLocatedExpr expr))
     Go.GoBind binding -> Go.GoBind <$> cseGoBinding binding
     Go.GoIf initStmt cond thenStmt elseStmt -> do
-      newCond <- cseGoExpr cond
+      newCond <- fmap commonToGoLocatedExpr (cseGoExpr (goToCommonLocatedExpr cond))
       newThenStmt <- cseGoStmt (goToCommonLocatedStmt thenStmt)
       newElseStmt <- traverse (cseGoStmt . goToCommonLocatedStmt) elseStmt
-      return $ Go.GoIf newCond (commonToGoLocatedStmt newThenStmt) (fmap commonToGoLocatedStmt newElseStmt)
+      return $ Go.GoIf initStmt newCond (commonToGoLocatedStmt newThenStmt) (fmap commonToGoLocatedStmt newElseStmt)
     Go.GoFor forClause body -> do
       modify $ \s -> s { osSubexpressions = HashMap.empty }
       newBody <- cseGoStmt (goToCommonLocatedStmt body)
       return $ Go.GoFor forClause (commonToGoLocatedStmt newBody)
-    Go.GoReturn mexpr -> Go.GoReturn <$> traverse cseGoExpr (map goToCommonLocatedExpr mexpr)
-    Go.GoBlock stmts -> Go.GoBlock <$> mapM (cseGoStmt . goToCommonLocatedStmt) stmts
+    Go.GoReturn mexpr -> Go.GoReturn <$> mapM (\expr -> do
+        processed <- cseGoExpr (goToCommonLocatedExpr expr)
+        return $ commonToGoLocatedExpr processed) mexpr
+    Go.GoBlock stmts -> Go.GoBlock <$> mapM (\stmt -> do
+        processed <- cseGoStmt (goToCommonLocatedStmt stmt)
+        return $ commonToGoLocatedStmt processed) stmts
     _ -> return stmt
   return $ Common.Located span newStmt
 
@@ -1297,8 +1313,8 @@ cseGoExpr :: Common.Located Go.GoExpr -> OptimizationM (Common.Located Go.GoExpr
 cseGoExpr (Common.Located span expr) = do
   newExpr <- case expr of
     Go.GoBinaryOp op left right -> do
-      newLeft <- cseGoExpr left
-      newRight <- cseGoExpr right
+      newLeft <- cseGoExpr (goToCommonLocatedExpr left)
+      newRight <- cseGoExpr (goToCommonLocatedExpr right)
       
       let exprKey = BasicCommonExpr (T.pack $ show op) [goExprToText $ Common.locatedValue newLeft, goExprToText $ Common.locatedValue newRight]
       cache <- gets osSubexpressions
@@ -1309,24 +1325,27 @@ cseGoExpr (Common.Located span expr) = do
           modify $ \s -> s { osChanged = True }
           return $ Go.GoIdent varName
         Nothing -> do
-          let newVarName = "_cse_" <> T.pack (show $ HashMap.size cache)
+          let newVarName = GoCommon.Identifier ("_cse_" <> T.pack (show $ HashMap.size cache))
           modify $ \s -> s { osSubexpressions = HashMap.insert exprKey newVarName (osSubexpressions s) }
-          return $ Go.GoBinaryOp op newLeft newRight
+          return $ Go.GoBinaryOp op (commonToGoLocatedExpr newLeft) (commonToGoLocatedExpr newRight)
     
     Go.GoUnaryOp op operand -> do
-      newOperand <- cseGoExpr operand
+      processedOperand <- cseGoExpr (goToCommonLocatedExpr operand)
+      let newOperand = commonToGoLocatedExpr processedOperand
       return $ Go.GoUnaryOp op newOperand
     
     Go.GoCall func args -> do
-      newFunc <- cseGoExpr func
-      newArgs <- mapM cseGoExpr args
+      processedFunc <- cseGoExpr (goToCommonLocatedExpr func)
+      let newFunc = commonToGoLocatedExpr processedFunc
+      processedArgs <- mapM (\expr -> cseGoExpr (goToCommonLocatedExpr expr)) args
+      let newArgs = map commonToGoLocatedExpr processedArgs
       return $ Go.GoCall newFunc newArgs
     
     _ -> return expr
   return $ Common.Located span newExpr
 
 goExprToText :: Go.GoExpr -> Text
-goExprToText (Go.GoIdent name) = name
+goExprToText (Go.GoIdent (GoCommon.Identifier name)) = name
 goExprToText (Go.GoLiteral lit) = T.pack $ show lit
 goExprToText _ = "_complex_"
 
@@ -1350,7 +1369,7 @@ peepholeOptimizeStmts (s1:s2:rest) = do
   -- Look for patterns in consecutive statements
   case (Common.locatedValue s1, Common.locatedValue s2) of
     -- Pattern: x = y; return x => return y
-    (Python.PyAssign [var] value, Python.PyReturn (Just (Common.Located _ (Python.PyVar returnVar))))
+    (Python.PyAssign [Common.Located _ (Python.PatVar returnVar)] value, Python.PyReturn (Just (Common.Located _ (Python.PyVar var))))
       | var == returnVar -> do
         recordOptimization "Peephole: Eliminated temporary variable before return"
         modify $ \s -> s { osChanged = True }
@@ -1375,7 +1394,8 @@ peepholePyStmt (Common.Located span stmt) = do
     Python.PyFor async target iter body elseBody -> do
       newIter <- peepholePyExpr iter
       newBody <- peepholeOptimizeStmts body
-      return $ Python.PyFor target newIter newBody
+      newElseBody <- peepholeOptimizeStmts elseBody
+      return $ Python.PyFor async target newIter newBody newElseBody
     Python.PyFuncDef funcDef -> do
       newBody <- peepholeOptimizeStmts (Python.pyFuncBody funcDef)
       return $ Python.PyFuncDef funcDef { Python.pyFuncBody = newBody }
@@ -1388,28 +1408,28 @@ peepholePyExpr :: Common.Located Python.PythonExpr -> OptimizationM (Common.Loca
 peepholePyExpr (Common.Located span expr) = do
   newExpr <- case expr of
     -- Pattern: not (x == y) => x != y
-    Python.PyUnaryOp Common.OpNot (Common.Located _ (Python.PyBinaryOp Common.OpEq left right)) -> do
+    Python.PyUnaryOp Common.OpNot (Common.Located _ (Python.PyComparison [Common.OpEq] [left, right])) -> do
       recordOptimization "Peephole: Converted not (x == y) to x != y"
       modify $ \s -> s { osChanged = True }
-      return $ Python.PyBinaryOp Common.OpNe left right
-    
+      return $ Python.PyComparison [Common.OpNe] [left, right]
+
     -- Pattern: not (x != y) => x == y
-    Python.PyUnaryOp Common.OpNot (Common.Located _ (Python.PyBinaryOp Common.OpNe left right)) -> do
+    Python.PyUnaryOp Common.OpNot (Common.Located _ (Python.PyComparison [Common.OpNe] [left, right])) -> do
       recordOptimization "Peephole: Converted not (x != y) to x == y"
       modify $ \s -> s { osChanged = True }
-      return $ Python.PyBinaryOp Common.OpEq left right
+      return $ Python.PyComparison [Common.OpEq] [left, right]
     
     -- Pattern: not (x < y) => x >= y
-    Python.PyUnaryOp Common.OpNot (Common.Located _ (Python.PyBinaryOp Common.OpLt left right)) -> do
+    Python.PyUnaryOp Common.OpNot (Common.Located _ (Python.PyComparison [Common.OpLt] [left, right])) -> do
       recordOptimization "Peephole: Converted not (x < y) to x >= y"
       modify $ \s -> s { osChanged = True }
-      return $ Python.PyBinaryOp Common.OpGe left right
-    
+      return $ Python.PyComparison [Common.OpGe] [left, right]
+
     -- Pattern: not (x > y) => x <= y
-    Python.PyUnaryOp Common.OpNot (Common.Located _ (Python.PyBinaryOp Common.OpGt left right)) -> do
+    Python.PyUnaryOp Common.OpNot (Common.Located _ (Python.PyComparison [Common.OpGt] [left, right])) -> do
       recordOptimization "Peephole: Converted not (x > y) to x <= y"
       modify $ \s -> s { osChanged = True }
-      return $ Python.PyBinaryOp Common.OpLe left right
+      return $ Python.PyComparison [Common.OpLe] [left, right]
     
     Python.PyBinaryOp op left right -> do
       newLeft <- peepholePyExpr left
@@ -1422,13 +1442,12 @@ peepholePyExpr (Common.Located span expr) = do
     
     Python.PyCall func args -> do
       newFunc <- peepholePyExpr func
-      newArgs <- mapM peepholePyArg args
+      newArgs <- mapM (\(Common.Located span arg) -> Common.Located span <$> peepholePyArg arg) args
       return $ Python.PyCall newFunc newArgs
     
     Python.PySubscript container slice -> do
       newContainer <- peepholePyExpr container
-      newSlice <- peepholePyExpr slice
-      return $ Python.PySubscript newContainer newSlice
+      return $ Python.PySubscript newContainer slice
     
     Python.PyList elems -> Python.PyList <$> mapM peepholePyExpr elems
     Python.PyTuple elems -> Python.PyTuple <$> mapM peepholePyExpr elems
@@ -1443,14 +1462,16 @@ peepholePyArg (Python.ArgKeyword kw expr) = Python.ArgKeyword kw <$> peepholePyE
 peepholePyArg (Python.ArgStarred expr) = Python.ArgStarred <$> peepholePyExpr expr
 
 peepholeGo :: Go.GoAST -> OptimizationM Go.GoAST
-peepholeGo (Go.GoPackage packageName files) = do
+peepholeGo (Go.GoAST (Go.GoPackage packageName files)) = do
   newFiles <- mapM peepholeGoFile files
-  return $ Go.GoPackage packageName newFiles
+  return $ Go.GoAST $ Go.GoPackage packageName newFiles
 
 peepholeGoFile :: Go.GoFile -> OptimizationM Go.GoFile
 peepholeGoFile file = do
-  newDecls <- mapM peepholeGoDecl (Go.goFileDecls file)
-  return $ file { Go.goFileDecls = newDecls }
+  let commonDecls = map goToCommonLocated (Go.goFileDecls file)
+  newDecls <- mapM peepholeGoDecl commonDecls
+  let goDecls = map commonToGoLocated newDecls
+  return $ file { Go.goFileDecls = goDecls }
 
 peepholeGoDecl :: Common.Located Go.GoDecl -> OptimizationM (Common.Located Go.GoDecl)
 peepholeGoDecl (Common.Located span decl) = case decl of
@@ -1469,17 +1490,23 @@ peepholeGoFunction (Go.GoFunction name typeParams params results body) = do
 peepholeGoStmt :: Common.Located Go.GoStmt -> OptimizationM (Common.Located Go.GoStmt)
 peepholeGoStmt (Common.Located span stmt) = do
   newStmt <- case stmt of
-    Go.GoExprStmt expr -> Go.GoExprStmt <$> peepholeGoExpr expr
+    Go.GoExprStmt expr -> do
+      newExpr <- peepholeGoExpr (goToCommonLocatedExpr expr)
+      return $ Go.GoExprStmt (commonToGoLocatedExpr newExpr)
     Go.GoBind binding -> Go.GoBind <$> peepholeGoBinding binding
     Go.GoIf initStmt cond thenStmt elseStmt -> do
-      newCond <- peepholeGoExpr cond
+      newCond <- peepholeGoExpr (goToCommonLocatedExpr cond)
       newThenStmt <- peepholeGoStmt (goToCommonLocatedStmt thenStmt)
       newElseStmt <- traverse (peepholeGoStmt . goToCommonLocatedStmt) elseStmt
-      return $ Go.GoIf initStmt newCond (commonToGoLocatedStmt newThenStmt) (fmap commonToGoLocatedStmt newElseStmt)
+      return $ Go.GoIf initStmt (commonToGoLocatedExpr newCond) (commonToGoLocatedStmt newThenStmt) (fmap commonToGoLocatedStmt newElseStmt)
     Go.GoFor forClause body -> do
       newBody <- peepholeGoStmt (goToCommonLocatedStmt body)
       return $ Go.GoFor forClause (commonToGoLocatedStmt newBody)
-    Go.GoReturn mexpr -> Go.GoReturn <$> traverse peepholeGoExpr (map goToCommonLocatedExpr mexpr)
+    Go.GoReturn mexpr -> do
+      let commonMexpr = map goToCommonLocatedExpr mexpr
+      processedMexpr <- traverse peepholeGoExpr commonMexpr
+      let goMexpr = map commonToGoLocatedExpr processedMexpr
+      return $ Go.GoReturn goMexpr
     Go.GoBlock stmts -> do
       newStmts <- peepholeOptimizeGoStmts stmts
       return $ Go.GoBlock newStmts
@@ -1515,29 +1542,29 @@ peepholeOptimizeGoStmts (s1:s2:rest) = do
 peepholeGoExpr :: Common.Located Go.GoExpr -> OptimizationM (Common.Located Go.GoExpr)
 peepholeGoExpr (Common.Located span expr) = do
   newExpr <- case expr of
-    Go.GoUnaryOp Go.OpNot (Common.Located _ (Go.GoBinaryOp Common.OpEq left right)) -> do
+    Go.GoUnaryOp Go.OpNot (GoCommon.Located _ (Go.GoComparison Go.OpEq left right)) -> do
       recordOptimization "Peephole: Converted Go !(x == y) to x != y"
       modify $ \s -> s { osChanged = True }
-      return $ Go.GoBinaryOp Common.OpNe left right
+      return $ Go.GoComparison Go.OpNe left right
     
-    Go.GoUnaryOp Go.OpNot (Common.Located _ (Go.GoBinaryOp Common.OpNe left right)) -> do
+    Go.GoUnaryOp Go.OpNot (GoCommon.Located _ (Go.GoComparison Go.OpNe left right)) -> do
       recordOptimization "Peephole: Converted Go !(x != y) to x == y"
       modify $ \s -> s { osChanged = True }
-      return $ Go.GoBinaryOp Common.OpEq left right
+      return $ Go.GoComparison Go.OpEq left right
     
     Go.GoBinaryOp op left right -> do
-      newLeft <- peepholeGoExpr left
-      newRight <- peepholeGoExpr right
-      return $ Go.GoBinaryOp op newLeft newRight
+      newLeft <- peepholeGoExpr (goToCommonLocatedExpr left)
+      newRight <- peepholeGoExpr (goToCommonLocatedExpr right)
+      return $ Go.GoBinaryOp op (commonToGoLocatedExpr newLeft) (commonToGoLocatedExpr newRight)
     
     Go.GoUnaryOp op operand -> do
-      newOperand <- peepholeGoExpr operand
-      return $ Go.GoUnaryOp op newOperand
+      newOperand <- peepholeGoExpr (goToCommonLocatedExpr operand)
+      return $ Go.GoUnaryOp op (commonToGoLocatedExpr newOperand)
     
     Go.GoCall func args -> do
-      newFunc <- peepholeGoExpr func
-      newArgs <- mapM peepholeGoExpr args
-      return $ Go.GoCall newFunc newArgs
+      newFunc <- peepholeGoExpr (goToCommonLocatedExpr func)
+      newArgs <- mapM peepholeGoExpr (map goToCommonLocatedExpr args)
+      return $ Go.GoCall (commonToGoLocatedExpr newFunc) (map commonToGoLocatedExpr newArgs)
     
     _ -> return expr
   return $ Common.Located span newExpr
@@ -1622,23 +1649,27 @@ strengthReduction = runBasicOptimizations $ defaultConfig {
 -- Helper functions for Go bindings
 simplifyAlgebraicGoBinding :: Go.GoBinding -> OptimizationM Go.GoBinding
 simplifyAlgebraicGoBinding binding = do
-  newRHS <- mapM (fmap commonToGoLocatedExpr . simplifyAlgebraicGoExpr . goToCommonLocatedExpr) (Go.bindRHS binding)
+  newRHS <- mapM simplifyAlgebraicGoExpr (Go.bindRHS binding)
   return $ binding { Go.bindRHS = newRHS }
 
 strengthReduceGoBinding :: Go.GoBinding -> OptimizationM Go.GoBinding
 strengthReduceGoBinding binding = do
-  newRHS <- mapM (fmap commonToGoLocatedExpr . strengthReduceGoExpr . goToCommonLocatedExpr) (Go.bindRHS binding)
+  newRHS <- mapM strengthReduceGoExpr (Go.bindRHS binding)
   return $ binding { Go.bindRHS = newRHS }
 
 cseGoBinding :: Go.GoBinding -> OptimizationM Go.GoBinding
 cseGoBinding binding = do
-  newRHS <- mapM (fmap commonToGoLocatedExpr . cseGoExpr . goToCommonLocatedExpr) (Go.bindRHS binding)
-  return $ binding { Go.bindRHS = newRHS }
+  let commonRHS = map goToCommonLocatedExpr (Go.bindRHS binding)
+  newRHS <- mapM cseGoExpr commonRHS
+  let goRHS = map commonToGoLocatedExpr newRHS
+  return $ binding { Go.bindRHS = goRHS }
 
 peepholeGoBinding :: Go.GoBinding -> OptimizationM Go.GoBinding
 peepholeGoBinding binding = do
-  newRHS <- mapM (fmap commonToGoLocatedExpr . peepholeGoExpr . goToCommonLocatedExpr) (Go.bindRHS binding)
-  return $ binding { Go.bindRHS = newRHS }
+  let commonRHS = map goToCommonLocatedExpr (Go.bindRHS binding)
+  newRHS <- mapM peepholeGoExpr commonRHS
+  let goRHS = map commonToGoLocatedExpr newRHS
+  return $ binding { Go.bindRHS = goRHS }
 
 markDefinedBinding :: Go.BindingLHS -> OptimizationM ()
 markDefinedBinding (Go.LHSIdents goIdents) = mapM_ (\(GoCommon.Identifier ident) -> markDefined (Common.Identifier ident)) goIdents

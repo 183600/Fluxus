@@ -67,7 +67,7 @@ type PythonParser = Parsec Void [Located PythonToken]
 
 -- | Run the Python parser
 runPythonParser :: Text -> [Located PythonToken] -> Either (ParseErrorBundle [Located PythonToken] Void) PythonAST
-runPythonParser filename tokens = parse parsePython (T.unpack filename) tokens
+runPythonParser filename tokenStream = parse parsePython (T.unpack filename) tokenStream
 
 -- | Main parser entry point
 parsePython :: PythonParser PythonAST
@@ -422,10 +422,10 @@ parseAtom = choice
 
 parseLiteral :: PythonParser PythonExpr
 parseLiteral = do
-  Located _ token <- anySingle
-  case token of
+  Located _ tokenValue <- anySingle
+  case tokenValue of
     TokenString text -> return $ PyLiteral $ PyString text
-    TokenFString text exprs -> do
+    TokenFString _ exprs -> do
       -- Parse embedded expressions from the f-string
       embeddedExprs <- mapM parseEmbeddedExpr exprs
       let fStringParts = map (\e -> FStringExpr e Nothing Nothing) embeddedExprs
@@ -702,10 +702,10 @@ parseBlock = do
 -- | Utility parsers
 parseIdentifier :: PythonParser Identifier
 parseIdentifier = do
-  Located _ token <- satisfy $ \case
+  Located _ tokenValue <- satisfy $ \case
     Located _ (TokenIdent _) -> True
     _ -> False
-  case token of
+  case tokenValue of
     TokenIdent text -> return $ Identifier text
     _ -> fail "Expected identifier"
 
@@ -719,8 +719,8 @@ parseQualifiedName = do
 
 parseUnderscore :: PythonParser ()
 parseUnderscore = do
-  Located _ token <- anySingle
-  case token of
+  Located _ tokenValue <- anySingle
+  case tokenValue of
     TokenIdent "_" -> return ()
     _ -> fail "Expected underscore"
 
@@ -761,8 +761,8 @@ located :: PythonParser a -> PythonParser (Located a)
 located parser = do
   value <- parser
   -- Create a dummy span since we can't easily get source positions
-  let span = SourceSpan "<input>" (Common.SourcePos 0 0) (Common.SourcePos 0 0)
-  return $ Located span value
+  let srcSpan = SourceSpan "<input>" (Common.SourcePos 0 0) (Common.SourcePos 0 0)
+  return $ Located srcSpan value
 
 located' :: a -> Located a
 located' = noLoc
