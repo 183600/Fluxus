@@ -1,22 +1,28 @@
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE StrictData #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE StrictData #-}
+{-# OPTIONS_GHC -fno-warn-unused-top-binds #-}
+{-# OPTIONS_GHC -fno-warn-missing-export-lists #-}
 
-module Fluxus.Analysis.OwnershipInference
-  ( -- * Ownership analysis
-    OwnershipInfo(..)
-  , OwnershipContext(..)
-  , inferOwnership
-  ) where
+module Fluxus.Analysis.OwnershipInference where
 
 import Control.Monad.State
 import Control.Monad.Reader
 import Control.Monad.Except
-import Control.Monad (void, when, unless, forM_)
+import Control.Monad (void, when, unless)
 import Data.Text (Text)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
@@ -148,6 +154,7 @@ data OwnershipResult = OwnershipResult
     deriving anyclass (NFData)
 
 -- Initial states
+{-# WARNING initialContext "This function is defined for future use but not currently utilized" #-}
 initialContext :: OwnershipContext
 initialContext = OwnershipContext
   { ocCurrentFunction = Nothing
@@ -168,6 +175,7 @@ initialContext = OwnershipContext
     ownedValue = OwnershipInfo True True (Just 1) NoEscape Stack True Nothing
     ownedHeapValue = OwnershipInfo True True (Just 1) NoEscape Heap True Nothing
 
+{-# WARNING initialState "This function is defined for future use but not currently utilized" #-}
 initialState :: OwnershipInferenceState
 initialState = OwnershipInferenceState
   { oisOwnershipMap = HashMap.empty
@@ -183,8 +191,8 @@ initialState = OwnershipInferenceState
 type OwnershipInferenceM = ReaderT OwnershipContext (StateT OwnershipInferenceState (Except Text))
 
 -- Core functions
-runOwnershipInference :: OwnershipInferenceM a -> Either Text (a, OwnershipInferenceState)
-runOwnershipInference m = runExcept $ runStateT (runReaderT m initialContext) initialState
+-- runOwnershipInference :: OwnershipInferenceM a -> Either Text (a, OwnershipInferenceState)
+-- runOwnershipInference m = runExcept $ runStateT (runReaderT m initialContext) initialState
 
 -- Get ownership info with proper error handling
 getOwnershipInfo :: Identifier -> OwnershipInferenceM OwnershipInfo
@@ -505,33 +513,33 @@ analyzeExpression (CEReturn expr) = do
   return $ ownership { escapes = EscapeToReturn }
 
 -- Analyze function with flow sensitivity
-analyzeFunction :: Identifier -> [Identifier] -> [Located CommonExpr] -> OwnershipInferenceM FunctionSummary
-analyzeFunction funcName params body = do
-  local (\ctx -> ctx { ocCurrentFunction = Just funcName, ocFunctionDepth = ocFunctionDepth ctx + 1 }) $ do
-    -- Set parameter ownership
-    let paramOwnership = OwnershipInfo False False Nothing NoEscape Stack True Nothing
-    mapM_ (\p -> setOwnershipInfo p paramOwnership) params
-    
-    -- Analyze body with flow sensitivity
-    bodyOwnerships <- mapM (analyzeExpression . locatedValue) body
-    
-    -- Determine return ownership
-    let returnOwnership = case bodyOwnerships of
-          [] -> OwnershipInfo False False Nothing NoEscape Stack True Nothing
-          _ -> last bodyOwnerships
-    
-    -- Check which parameters were moved
-    movedParams <- mapM checkParamMoved params
-    
-    return $ FunctionSummary 
-      { fsParameters = replicate (length params) paramOwnership
-      , fsReturnOwnership = returnOwnership
-      , fsMovesParameters = movedParams
-      }
-  where
-    checkParamMoved param = do
-      info <- getOwnershipInfo param
-      return (not (isValid info))
+-- analyzeFunction :: Identifier -> [Identifier] -> [Located CommonExpr] -> OwnershipInferenceM FunctionSummary
+-- analyzeFunction funcName params body = do
+--   local (\ctx -> ctx { ocCurrentFunction = Just funcName, ocFunctionDepth = ocFunctionDepth ctx + 1 }) $ do
+--     -- Set parameter ownership
+--     let paramOwnership = OwnershipInfo False False Nothing NoEscape Stack True Nothing
+--     mapM_ (\p -> setOwnershipInfo p paramOwnership) params
+--
+--     -- Analyze body with flow sensitivity
+--     bodyOwnerships <- mapM (analyzeExpression . locatedValue) body
+--
+--     -- Determine return ownership
+--     let returnOwnership = case bodyOwnerships of
+--           [] -> OwnershipInfo False False Nothing NoEscape Stack True Nothing
+--           _ -> last bodyOwnerships
+--
+--     -- Check which parameters were moved
+--     movedParams <- mapM checkParamMoved params
+--
+--     return $ FunctionSummary
+--       { fsParameters = replicate (length params) paramOwnership
+--       , fsReturnOwnership = returnOwnership
+--       , fsMovesParameters = movedParams
+--       }
+--   where
+--     checkParamMoved param = do
+--       info <- getOwnershipInfo param
+--       return (not (isValid info))
 
 -- Infer optimal strategy
 inferOptimalStrategy :: OwnershipInfo -> OwnershipInferenceM OwnershipStrategy
@@ -554,17 +562,17 @@ inferOptimalStrategy OwnershipInfo{..} = do
     _ -> return UniqueOwnership
 
 -- Check lifetime constraints
-checkLifetimeConstraints :: OwnershipInferenceM ()
-checkLifetimeConstraints = do
-  constraints <- gets oisLifetimeConstraints
-  ownershipMap <- gets oisOwnershipMap
-  
-  forM_ constraints $ \(outlives, depends) -> do
-    case (HashMap.lookup outlives ownershipMap, HashMap.lookup depends ownershipMap) of
-      (Just outlivesInfo, Just dependsInfo) -> do
-        when (not (isValid outlivesInfo) && isValid dependsInfo) $
-          throwError $ "Lifetime error: " <> depends <> " outlives " <> outlives
-      _ -> return ()
+-- checkLifetimeConstraints :: OwnershipInferenceM ()
+-- checkLifetimeConstraints = do
+--   constraints <- gets oisLifetimeConstraints
+--   ownershipMap <- gets oisOwnershipMap
+--
+--   forM_ constraints $ \(outlives, depends) -> do
+--     case (HashMap.lookup outlives ownershipMap, HashMap.lookup depends ownershipMap) of
+--       (Just outlivesInfo, Just dependsInfo) -> do
+--         when (not (isValid outlivesInfo) && isValid dependsInfo) $
+--           throwError $ "Lifetime error: " <> depends <> " outlives " <> outlives
+--       _ -> return ()
 
 -- Generate C++ type
 generateCppType :: CommonExpr -> OwnershipInfo -> OwnershipStrategy -> OwnershipInferenceM Text
@@ -607,16 +615,16 @@ generateOptimizationHints _ ownership strategy = do
   return (hints ++ extraHints)
 
 -- Generate C++ memory management code
-generateCppMemoryManagement :: OwnershipStrategy -> Text -> Text -> Text
-generateCppMemoryManagement strategy varName typeName = case strategy of
-  StackOwned -> typeName <> " " <> varName <> ";"
-  UniqueOwnership -> "auto " <> varName <> " = std::make_unique<" <> typeName <> ">();"
-  SharedOwnership -> "auto " <> varName <> " = std::make_shared<" <> typeName <> ">();"
-  BorrowedReference -> "const " <> typeName <> "& " <> varName <> " = source;"
-  MoveSemantics -> typeName <> " " <> varName <> " = std::move(source);"
-  CopySemantics -> typeName <> " " <> varName <> " = source;"
-  WeakReference -> "std::weak_ptr<" <> typeName <> "> " <> varName <> " = shared_source;"
-  CustomRAII -> "RAII_" <> typeName <> " " <> varName <> ";"
+-- generateCppMemoryManagement :: OwnershipStrategy -> Text -> Text -> Text
+-- generateCppMemoryManagement strategy varName typeName = case strategy of
+--   StackOwned -> typeName <> " " <> varName <> ";"
+--   UniqueOwnership -> "auto " <> varName <> " = std::make_unique<" <> typeName <> ">();"
+--   SharedOwnership -> "auto " <> varName <> " = std::make_shared<" <> typeName <> ">();"
+--   BorrowedReference -> "const " <> typeName <> "& " <> varName <> " = source;"
+--   MoveSemantics -> typeName <> " " <> varName <> " = std::move(source);"
+--   CopySemantics -> typeName <> " " <> varName <> " = source;"
+--   WeakReference -> "std::weak_ptr<" <> typeName <> "> " <> varName <> " = shared_source;"
+--   CustomRAII -> "RAII_" <> typeName <> " " <> varName <> ";"
 
 -- Main entry points
 inferOwnership :: CommonExpr -> OwnershipInferenceM OwnershipResult
@@ -627,13 +635,13 @@ inferOwnership expr = do
   opts <- generateOptimizationHints expr ownership strategy
   return $ OwnershipResult expr ownership strategy cppType opts
 
-analyzeOwnership :: [CommonExpr] -> OwnershipInferenceM [OwnershipResult]
-analyzeOwnership exprs = do
-  results <- mapM inferOwnership exprs
-  checkLifetimeConstraints  -- Check constraints after analysis
-  return results
+-- analyzeOwnership :: [CommonExpr] -> OwnershipInferenceM [OwnershipResult]
+-- analyzeOwnership exprs = do
+--   results <- mapM inferOwnership exprs
+--   checkLifetimeConstraints  -- Check constraints after analysis
+--   return results
 
-optimizeOwnership :: [CommonExpr] -> OwnershipInferenceM [(CommonExpr, OwnershipStrategy, Text)]
-optimizeOwnership exprs = do
-  results <- analyzeOwnership exprs
-  return [(orExpression r, orStrategy r, orCppType r) | r <- results]
+-- optimizeOwnership :: [CommonExpr] -> OwnershipInferenceM [(CommonExpr, OwnershipStrategy, Text)]
+-- optimizeOwnership exprs = do
+--   results <- analyzeOwnership exprs
+--   return [(orExpression r, orStrategy r, orCppType r) | r <- results]

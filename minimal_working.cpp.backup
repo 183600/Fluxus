@@ -10,7 +10,7 @@
 #include <iostream>
 
 int main() {
-    /* expr */("Hello, World!");
+    /* expr */("Hello from working Go code!");
     return 0;
 }
 

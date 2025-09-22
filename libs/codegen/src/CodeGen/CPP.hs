@@ -1418,7 +1418,9 @@ generateGoStmt (Located _ stmt) = case stmt of
 
 -- | Generate Go expression
 generateGoExpr :: Located GoExpr -> CppCodeGen CppExpr
-generateGoExpr (Located _ expr) = case expr of
+generateGoExpr (Located _ expr) = do
+  liftIO $ putStrLn $ "[DEBUG] generateGoExpr: " <> T.pack (show expr)
+  case expr of
   GoLiteral lit -> return $ CppLiteral $ mapGoLiteral lit
   GoIdent name -> return $ CppVar (unIdentifier name)
   
@@ -1461,10 +1463,15 @@ generateGoExpr (Located _ expr) = case expr of
     return $ CppCall (CppMember cppChannel "receive") []
   
   GoCompositeLit mType elements -> generateGoCompositeLiteral mType elements
-  
+
   GoFuncLit func -> generateGoFuncLiteral func
-  
-  _ -> do
+
+  GoBuiltinCall name args -> do
+    liftIO $ putStrLn $ "[DEBUG] GoBuiltinCall reached: " <> T.pack (show name) <> " with " <> T.pack (show $ length args) <> " args"
+    generateGoBuiltinCall name args
+
+  expr -> do
+    liftIO $ putStrLn $ "[DEBUG] Other expression type: " <> T.pack (show expr)
     addWarning $ "Unsupported Go expression: " <> T.pack (show expr)
     return $ CppLiteral $ CppIntLit 0
 
@@ -1472,7 +1479,9 @@ generateGoExpr (Located _ expr) = case expr of
 generateGoCall :: Located GoExpr -> [Located GoExpr] -> CppCodeGen CppExpr
 generateGoCall func args = do
   cppFunc <- generateGoExpr func
+  liftIO $ putStrLn $ "[DEBUG] generateGoCall: func=" <> T.pack (show cppFunc)
   cppArgs <- mapM generateGoExpr args
+  liftIO $ putStrLn $ "[DEBUG] generateGoCall: args=" <> T.pack (show $ length cppArgs)
   
   -- Handle special functions
   case func of
@@ -1497,6 +1506,30 @@ generateGoCall func args = do
       addInclude "<iostream>"
       return $ buildPrintExpr args False
     handleFmtFunction _ args = return $ CppCall cppFunc args
+
+-- | Generate Go builtin function call
+generateGoBuiltinCall :: Text -> [Located GoExpr] -> CppCodeGen CppExpr
+generateGoBuiltinCall name args = do
+  cppArgs <- mapM generateGoExpr args
+  case name of
+    "println" -> do
+      addInclude "<iostream>"
+      return $ buildPrintExpr cppArgs True
+    "print" -> do
+      addInclude "<iostream>"
+      return $ buildPrintExpr cppArgs False
+    "printf" -> do
+      case cppArgs of
+        (CppLiteral (CppStringLit fmt) : restArgs) -> do
+          addInclude "<iostream>"
+          addInclude "<iomanip>"
+          return $ buildPrintfExpr fmt restArgs
+        _ -> do
+          addWarning "printf with non-string format not supported"
+          return $ CppLiteral $ CppStringLit "printf_error"
+    _ -> do
+      addWarning $ "Unsupported builtin function: " <> name
+      return $ CppLiteral $ CppIntLit 0
 
 -- | Build print expression
 buildPrintExpr :: [CppExpr] -> Bool -> CppExpr

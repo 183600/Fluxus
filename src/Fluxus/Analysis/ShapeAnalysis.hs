@@ -1,30 +1,25 @@
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE StrictData #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE StrictData #-}
+{-# OPTIONS_GHC -fno-warn-unused-top-binds #-}
+{-# OPTIONS_GHC -fno-warn-unused-local-binds #-}
+{-# OPTIONS_GHC -fno-warn-unused-matches #-}
+{-# OPTIONS_GHC -fno-warn-missing-export-lists #-}
 
-module Fluxus.Analysis.ShapeAnalysis
-  ( ShapeAnalysisM
-  , ShapeAnalysisState(..)
-  , ShapeInfo(..)
-  , StructShape(..)
-  
-  , FunctionSignature(..)
-  , ScopeInfo(..)
-  , runShapeAnalysis
-  , analyzeProgram
-  , analyzeShape
-  , inferShape
-  , analyzeStructure
-  , optimizeDataStructures
-  , generateCppStructure
-  , analyzeDictShape
-  , analyzeObjectShape
-  ) where
+module Fluxus.Analysis.ShapeAnalysis where
 
 import Fluxus.AST.Common
 import Fluxus.AST.Python
@@ -541,6 +536,7 @@ getTypeAlignment _ = 8  -- Default to pointer alignment
 --     Nothing -> throwError "Expression does not represent a container"
 
 -- | Analyze growth pattern of a container
+{-# WARNING analyzeGrowthPattern "This function is defined for future use but not currently utilized" #-}
 analyzeGrowthPattern :: CommonExpr -> ShapeAnalysisM GrowthPattern
 analyzeGrowthPattern expr = do
   -- This would analyze loop bodies and function calls to detect patterns
@@ -554,6 +550,7 @@ analyzeGrowthPattern expr = do
     _ -> return UnknownGrowth
 
 -- | Analyze average size of containers
+{-# WARNING analyzeAverageSize "This function is defined for future use but not currently utilized" #-}
 analyzeAverageSize :: CommonExpr -> ShapeAnalysisM (Maybe Int)
 analyzeAverageSize _ = do
   return $ Just 0  -- Simplified
@@ -624,10 +621,12 @@ generateNewMapping shape context
     && siIsKnown shape 
     && siIsHomogeneous shape
     && isJust (siElementType shape) = do
-    let size = head (siDimensions shape)
-    if size > 0 && size <= scMaxInlineSize context
-      then return $ T.concat ["std::array<", cppType (fromJust (siElementType shape)), ", ", T.pack (show size), ">"]
-      else return $ T.concat ["std::vector<", cppType (fromJust (siElementType shape)), ">"]
+    case siDimensions shape of
+      [] -> return $ T.concat ["std::vector<", cppType (fromJust (siElementType shape)), ">"]
+      (size:_) -> 
+        if size > 0 && size <= scMaxInlineSize context
+          then return $ T.concat ["std::array<", cppType (fromJust (siElementType shape)), ", ", T.pack (show size), ">"]
+          else return $ T.concat ["std::vector<", cppType (fromJust (siElementType shape)), ">"]
   
   -- Dynamic array/list
   | length (siDimensions shape) >= 1 
@@ -701,7 +700,8 @@ optimizeDataStructures exprs = do
       addOptimization "Consider marking as const for better optimization"
     
     case siDimensions shape of
-      dims | length dims > 0 && head dims > 1000 ->
+      [] -> return ()  -- No dimensions, skip
+      (firstDim:_) | firstDim > 1000 ->
         addOptimization "Large container detected - consider memory pooling"
       _ -> return ()
   
@@ -732,8 +732,7 @@ combineBinaryShapes op left right = case op of
   -- String/list concatenation
   OpConcat -> return ShapeInfo
     { siDimensions = case (siDimensions left, siDimensions right) of
-        (ld, rd) | length ld == 1 && length rd == 1 ->
-          [head ld + head rd]
+        ([ld], [rd]) -> [ld + rd]  -- Safe pattern matching for single dimensions
         _ -> []
     , siIsKnown = siIsKnown left && siIsKnown right
     , siElementType = if siElementType left == siElementType right 
@@ -832,6 +831,7 @@ transformUnaryShape op shape = case op of
   OpNot -> booleanShape
   OpNegate -> shape { siIsConstant = siIsConstant shape }
   OpBitNot -> shape { siIsConstant = siIsConstant shape }
+  OpPositive -> shape { siIsConstant = siIsConstant shape }  -- Added missing case
 
 -- | Extract element shape from container
 extractElementShape :: ShapeInfo -> ShapeInfo
@@ -839,9 +839,9 @@ extractElementShape shape = case siElementType shape of
   Just elemType -> inferShape elemType
   Nothing -> 
     -- For multi-dimensional arrays, reduce dimensionality
-    if length (siDimensions shape) > 1
-    then shape { siDimensions = tail (siDimensions shape) }
-    else unknownShape
+    case siDimensions shape of
+      [] -> unknownShape
+      (_:rest) -> shape { siDimensions = rest }
 
 -- | Create slice shape with known bounds
 createSliceShape :: ShapeInfo -> Maybe Int -> Maybe Int -> ShapeInfo
@@ -849,14 +849,16 @@ createSliceShape shape startVal endVal =
   let dims = siDimensions shape
   in if null dims
      then shape  -- Can't slice scalar
-     else case (startVal, endVal, head dims) of
-       (Just s, Just e, d) | d >= 0 -> 
+     else case (startVal, endVal, dims) of
+       (Just s, Just e, d:rest) | d >= 0 -> 
          -- Known slice of known dimension
-         shape { siDimensions = (e - s) : tail dims }
+         shape { siDimensions = (e - s) : rest }
        _ -> 
          -- Unknown slice size
          shape { 
-           siDimensions = (-1) : tail dims,
+           siDimensions = case dims of
+                            [] -> [-1]
+                            (_:rest) -> (-1) : rest,
            siIsKnown = False 
          }
 
@@ -890,6 +892,7 @@ pythonLiteralToLiteral (PyComplex _ _) = LFloat 0.0  -- Simplified
 -- | Infer literal shape
 inferLiteralShape :: Literal -> ShapeInfo
 inferLiteralShape (LInt _) = (inferShape (TInt 64)) { siIsConstant = True }
+inferLiteralShape (LUInt _) = (inferShape (TUInt 64)) { siIsConstant = True }  -- Added missing case
 inferLiteralShape (LFloat _) = (inferShape (TFloat 64)) { siIsConstant = True }
 inferLiteralShape (LBool _) = booleanShape { siIsConstant = True }
 inferLiteralShape (LString _) = stringShape { siIsConstant = True }
@@ -927,15 +930,19 @@ charShape = ShapeInfo
   , siOrigin = InferredFromType
   }
 
+{-# WARNING intShape "This function is defined for future use but not currently utilized" #-}
 intShape :: ShapeInfo
 intShape = inferShape (TInt 64)
 
+{-# WARNING floatShape "This function is defined for future use but not currently utilized" #-}
 floatShape :: ShapeInfo
 floatShape = inferShape (TFloat 64)
 
+{-# WARNING voidShape "This function is defined for future use but not currently utilized" #-}
 voidShape :: ShapeInfo
 voidShape = unknownShape { siIsKnown = True }
 
+{-# WARNING arrayShape "This function is defined for future use but not currently utilized" #-}
 arrayShape :: ShapeInfo
 arrayShape = ShapeInfo
   { siDimensions = [-1]
@@ -950,6 +957,7 @@ arrayShape = ShapeInfo
   , siOrigin = InferredFromType
   }
 
+{-# WARNING listShape "This function is defined for future use but not currently utilized" #-}
 listShape :: ShapeInfo
 listShape = ShapeInfo
   { siDimensions = [-1]
@@ -964,6 +972,7 @@ listShape = ShapeInfo
   , siOrigin = InferredFromType
   }
 
+{-# WARNING anyunknownShape "This function is defined for future use but not currently utilized" #-}
 anyunknownShape :: ShapeInfo
 anyunknownShape = ShapeInfo
   { siDimensions = [-1]

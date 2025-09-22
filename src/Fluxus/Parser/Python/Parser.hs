@@ -437,7 +437,8 @@ parseLiteral = do
     TokenKeyword KwTrue -> return $ PyLiteral $ PyBool True
     TokenKeyword KwFalse -> return $ PyLiteral $ PyBool False
     TokenKeyword KwNone -> return $ PyLiteral PyNone
-    _ -> fail "Expected literal"
+    TokenIdent name -> return $ PyVar $ Identifier name  -- Handle identifiers as variables
+    _ -> fail $ "Expected literal, got: " ++ show tokenValue
 
 -- | Parse f-string embedded expressions
 parseEmbeddedExpr :: Text -> PythonParser (Located PythonExpr)
@@ -459,9 +460,77 @@ parseIdentifierExpr = PyVar <$> parseIdentifier
 parseListLiteral :: PythonParser PythonExpr
 parseListLiteral = do
   void $ delimiterP DelimLeftBracket
-  elements <- parseExpression `sepBy` delimiterP DelimComma
-  void $ delimiterP DelimRightBracket
-  return $ PyList elements
+  
+  -- Look ahead to determine if this is a list comprehension
+  input <- getInput
+  case input of
+    [] -> do
+      -- Empty list []
+      void $ delimiterP DelimRightBracket
+      return $ PyList []
+    (Located _ (TokenDelimiter DelimRightBracket) : _) -> do
+      -- Empty list []
+      void $ delimiterP DelimRightBracket
+      return $ PyList []
+    _ -> do
+      -- Try to parse as list comprehension first
+      result <- tryParseListComprehension
+      case result of
+        Just compExpr -> return compExpr
+        Nothing -> do
+          -- Parse as regular list literal
+          elements <- parseExpression `sepBy` delimiterP DelimComma
+          void $ delimiterP DelimRightBracket
+          return $ PyList elements
+
+-- Try to parse list comprehension [expr for target in iter if filters]
+tryParseListComprehension :: PythonParser (Maybe PythonExpr)
+tryParseListComprehension = do
+  input <- getInput
+  case input of
+    (Located _ (TokenKeyword KwFor) : _) -> return Nothing  -- Starts with 'for', not valid
+    _ -> do
+      -- Try to parse: expr for target in iter [if filter]...
+      result <- optional $ try $ do
+        expr <- parseExpression  -- The main expression
+        
+        -- Look for 'for' keyword to indicate comprehension
+        inputAfterExpr <- getInput
+        case inputAfterExpr of
+          (Located _ (TokenKeyword KwFor) : _) -> do
+            -- This is a list comprehension
+            comprehensions <- parseComprehensions
+            void $ delimiterP DelimRightBracket
+            return $ PyListComp expr comprehensions
+          _ -> fail "Not a list comprehension"
+      
+      return result
+
+-- Parse comprehension clauses: for target in iter [if filter]...
+parseComprehensions :: PythonParser [PythonComprehension]
+parseComprehensions = do
+  comp <- parseSingleComprehension
+  -- For now, only support single comprehension
+  return [comp]
+
+parseSingleComprehension :: PythonParser PythonComprehension
+parseSingleComprehension = do
+  void $ keywordP KwFor
+  target <- parsePattern  -- Target variable/pattern
+  void $ keywordP KwIn
+  iter <- parseExpression  -- Iterator expression
+  
+  -- Parse optional filter conditions
+  filters <- many $ try $ do
+    void $ keywordP KwIf
+    parseExpression
+  
+  return $ PythonComprehension
+    { pyCompTarget = target
+    , pyCompIter = iter
+    , pyCompFilters = filters
+    , pyCompAsync = False  -- TODO: Support async comprehensions
+    }
 
 parseTupleLiteral :: PythonParser PythonExpr
 parseTupleLiteral = do

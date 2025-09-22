@@ -10,7 +10,9 @@
 #include <iostream>
 
 int main() {
-    /* expr */("Hello, World!");
+    /* expr */("Hello");
+    /* expr */(" ");
+    /* expr */("World!");
     return 0;
 }
 

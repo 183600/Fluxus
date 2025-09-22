@@ -10,7 +10,7 @@
 #include <iostream>
 
 int main() {
-    /* expr */("Hello, World!");
+    std::cout << "Hello, World!" << std::endl;
     return 0;
 }
 

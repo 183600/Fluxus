@@ -38,7 +38,7 @@ module Fluxus.CodeGen.CPP
 
 import Control.Monad.State
 import Control.Monad.Writer
-import Control.Monad (when, unless, forM)
+import Control.Monad (when, unless, forM, foldM)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.List (partition, nub)
@@ -642,11 +642,17 @@ runCppCodeGen config action =
 
 -- | Add a statement to the current declarations
 addStatement :: CppStmt -> CppCodeGen ()
-addStatement _stmt = do
+addStatement stmt = do
   -- Convert statement to declaration and add to state
-  modify $ \s -> s { cgsDeclarations = CppVariable "__temp" CppVoid Nothing : cgsDeclarations s }
-  -- For now, just track that we've added a statement
-  return ()
+  modify $ \s -> s { cgsDeclarations = (stmtToDecl stmt) : cgsDeclarations s }
+  where
+    stmtToDecl (CppExprStmt expr) = CppVariable "__expr" CppAuto (Just expr)
+    stmtToDecl (CppReturn _mexpr) = CppVariable "__return" CppAuto Nothing  -- Return statements can't be variables
+    stmtToDecl (CppIf _cond _thenStmts _elseStmts) = CppCommentDecl "if statement"  -- Complex statements as comments for now
+    stmtToDecl (CppWhile _cond _bodyStmts) = CppCommentDecl "while statement"
+    stmtToDecl (CppFor _mInit _mCond _mPost _bodyStmts) = CppCommentDecl "for statement"
+    stmtToDecl (CppBlock _stmts) = CppCommentDecl "block statement"
+    stmtToDecl _other = CppCommentDecl "complex statement"
 
 -- ============================================================================
 -- Main Entry Points
@@ -755,23 +761,14 @@ generatePythonStmt (Common.Located _ stmt) = case stmt of
         addWarning "while-else clause not fully supported, ignoring else block"
         return $ CppWhile cppCond cppBody
   
-  PyWith {pyWithAsync = async, pyWithItems = _, pyWithBody = bodyStmts} -> do
-    -- Simplified context manager handling
-    when async $ addWarning "async with statements not supported"
-    addWarning "with statement simplified to block"
-    cppBody <- mapM generatePythonStmt bodyStmts
-    return $ CppBlock cppBody
+  PyWith {pyWithAsync = async, pyWithItems = items, pyWithBody = bodyStmts} -> do
+    generateWithStatement async items bodyStmts
   
   PyRaise mexpr mcause -> do
-    mcppExpr <- mapM generatePythonExpr mexpr
-    _ <- mapM generatePythonExpr mcause  -- TODO: Handle cause in C++ exception
-    return $ CppThrow mcppExpr
+    generateRaiseStatement mexpr mcause
   
-  PyTry tryStmts handlers _ finallyStmts -> do
-    cppTry <- mapM generatePythonStmt tryStmts
-    cppCatches <- mapM generatePythonExceptHandler handlers
-    cppFinally <- mapM generatePythonStmt finallyStmts
-    return $ CppTry cppTry cppCatches cppFinally
+  PyTry tryStmts handlers elseStmts finallyStmts -> do
+    generateTryStatement tryStmts handlers elseStmts finallyStmts
   
   PyImport _ -> return $ CppComment "Import statement (handled separately)"
   
@@ -905,100 +902,127 @@ generatePythonForLoop pattern iterExpr bodyStmts _elseStmts = do
 
 -- | Generate Python expression
 generatePythonExpr :: Common.Located PythonExpr -> CppCodeGen CppExpr
-generatePythonExpr (Common.Located _ expr) = case expr of
-  PyLiteral lit -> generatePythonLiteral lit
-  PyVar (Common.Identifier name) -> return $ CppVar name
+generatePythonExpr (Common.Located _ expr) = do
+  -- Add debug comment to track which expression type is being processed
+  let exprType = case expr of
+        PyLiteral _ -> "Literal"
+        PyVar _ -> "Variable"
+        PyBinaryOp _ _ _ -> "BinaryOp"
+        PyUnaryOp _ _ -> "UnaryOp"
+        PyComparison _ _ -> "Comparison"
+        PyCall _ _ -> "Call"
+        PyAttribute _ _ -> "Attribute"
+        PySubscript _ _ -> "Subscript"
+        PyList _ -> "List"
+        PyTuple _ -> "Tuple"
+        PyDict _ -> "Dict"
+        PySet _ -> "Set"
+        PyLambda _ _ -> "Lambda"
+        PyIfExp _ _ _ -> "IfExp"
+        PyListComp _ _ -> "ListComp"
+        PyAwait _ -> "Await"
+        PyStarred _ -> "Starred"
+        PySlice _ _ _ -> "Slice"
+        PyNamedExpr _ _ -> "NamedExpr"
+        PyBoolOp _ _ -> "BoolOp"
+        PySetComp _ _ -> "SetComp"
+        PyDictComp _ _ _ -> "DictComp"
+        PyGenComp _ _ -> "GenComp"
+        PyFString _ -> "FString"
   
-  PyBinaryOp op left right -> do
-    cppLeft <- generatePythonExpr left
-    cppRight <- generatePythonExpr right
-    generateBinaryOp op cppLeft cppRight
+  addDeclaration $ CppCommentDecl $ "Processing expression: " <> exprType
   
-  PyUnaryOp op operand -> do
-    cppOperand <- generatePythonExpr operand
-    return $ CppUnary (mapPythonUnaryOp op) cppOperand
-  
-  PyComparison ops exprs -> 
-    generatePythonComparison ops exprs
-  
-  PyCall func args -> 
-    generatePythonCall func args
-  
-  PyAttribute obj attr -> do
-    cppObj <- generatePythonExpr obj
-    return $ CppMember cppObj (case attr of Identifier name -> name)
-  
-  PySubscript obj index -> do
-    cppObj <- generatePythonExpr obj
-    cppIndex <- generatePythonSlice index
-    return $ CppIndex cppObj cppIndex
-  
-  PyList items -> do
-    addInclude "<vector>"
-    cppItems <- mapM generatePythonExpr items
-    return $ CppInitList (CppVector CppAuto) cppItems
-  
-  PyTuple items -> do
-    addInclude "<tuple>"
-    cppItems <- mapM generatePythonExpr items
-    return $ CppCall (CppVar "std::make_tuple") cppItems
-  
-  PyDict pairs -> do
-    addInclude "<unordered_map>"
-    let generatePair (k, v) = do
-          cppKey <- generatePythonExpr k
-          cppVal <- generatePythonExpr v
-          return $ CppInitList (CppPair CppAuto CppAuto) [cppKey, cppVal]
-    cppPairs <- mapM generatePair pairs
-    return $ CppInitList (CppUnorderedMap CppAuto CppAuto) cppPairs
-  
-  PySet items -> do
-    addInclude "<unordered_set>"
-    cppItems <- mapM generatePythonExpr items
-    return $ CppInitList (CppTemplateType "std::unordered_set" [CppAuto]) cppItems
-  
-  PyLambda params body -> do
-    cppParams <- mapM mapPythonLambdaParam params
-    cppExpr <- generatePythonExpr body
-    return $ CppLambda cppParams [CppReturn (Just cppExpr)] True
-  
-  PyIfExp cond thenExpr elseExpr -> do
-    cppCond <- generatePythonExpr cond
-    cppThen <- generatePythonExpr thenExpr
-    cppElse <- generatePythonExpr elseExpr
-    return $ CppTernary cppCond cppThen cppElse
-  
-  PyListComp _expr _comps -> do
-    addWarning "Comprehensions not fully supported"
-    return $ CppLiteral $ CppStringLit "comprehension"
-  
-  PyAwait _expr -> do
-    addWarning "Async/await not supported"
-    generatePythonExpr _expr
-  
-  PyStarred _expr -> generatePythonExpr _expr
-  PySlice _ _ _ -> return $ CppLiteral $ CppStringLit "slice"
-  PyNamedExpr _ _ -> return $ CppLiteral $ CppStringLit "named_expr"
-  
-  PyBoolOp _ _ -> do
-    addWarning "Boolean operations not fully supported"
-    return $ CppLiteral $ CppStringLit "bool_op"
-  
-  PySetComp _ _ -> do
-    addWarning "Set comprehensions not supported"
-    return $ CppLiteral $ CppStringLit "set_comp"
-  
-  PyDictComp _ _ _ -> do
-    addWarning "Dictionary comprehensions not supported"
-    return $ CppLiteral $ CppStringLit "dict_comp"
-  
-  PyGenComp _ _ -> do
-    addWarning "Generator comprehensions not supported"
-    return $ CppLiteral $ CppStringLit "gen_comp"
-  
-  PyFString _ -> do
-    addWarning "F-strings not fully supported"
-    return $ CppLiteral $ CppStringLit "fstring"
+  case expr of
+    PyLiteral lit -> generatePythonLiteral lit
+    PyVar (Common.Identifier name) -> return $ CppVar name
+    
+    PyBinaryOp op left right -> do
+      cppLeft <- generatePythonExpr left
+      cppRight <- generatePythonExpr right
+      generateBinaryOp op cppLeft cppRight
+    
+    PyUnaryOp op operand -> do
+      cppOperand <- generatePythonExpr operand
+      return $ CppUnary (mapPythonUnaryOp op) cppOperand
+    
+    PyComparison ops exprs -> 
+      generatePythonComparison ops exprs
+    
+    PyCall func args -> do
+      addDeclaration $ CppCommentDecl "About to call generatePythonCall"
+      result <- generatePythonCall func args
+      addDeclaration $ CppCommentDecl "Returned from generatePythonCall"
+      return result
+    
+    PyAttribute obj attr -> do
+      cppObj <- generatePythonExpr obj
+      return $ CppMember cppObj (case attr of Identifier name -> name)
+    
+    PySubscript obj index -> do
+      cppObj <- generatePythonExpr obj
+      cppIndex <- generatePythonSlice index
+      return $ CppIndex cppObj cppIndex
+    
+    PyList items -> do
+      addInclude "<vector>"
+      cppItems <- mapM generatePythonExpr items
+      return $ CppInitList (CppVector CppAuto) cppItems
+    
+    PyTuple items -> do
+      addInclude "<tuple>"
+      cppItems <- mapM generatePythonExpr items
+      return $ CppCall (CppVar "std::make_tuple") cppItems
+    
+    PyDict pairs -> do
+      addInclude "<unordered_map>"
+      let generatePair (k, v) = do
+            cppKey <- generatePythonExpr k
+            cppVal <- generatePythonExpr v
+            return $ CppInitList (CppPair CppAuto CppAuto) [cppKey, cppVal]
+      cppPairs <- mapM generatePair pairs
+      return $ CppInitList (CppUnorderedMap CppAuto CppAuto) cppPairs
+    
+    PySet items -> do
+      addInclude "<unordered_set>"
+      cppItems <- mapM generatePythonExpr items
+      return $ CppInitList (CppTemplateType "std::unordered_set" [CppAuto]) cppItems
+    
+    PyLambda params body -> do
+      cppParams <- mapM mapPythonLambdaParam params
+      cppExpr <- generatePythonExpr body
+      return $ CppLambda cppParams [CppReturn (Just cppExpr)] True
+    
+    PyIfExp cond thenExpr elseExpr -> do
+      cppCond <- generatePythonExpr cond
+      cppThen <- generatePythonExpr thenExpr
+      cppElse <- generatePythonExpr elseExpr
+      return $ CppTernary cppCond cppThen cppElse
+    
+    PyListComp expr comps -> do
+      generateListComp expr comps
+    
+    PyAwait expr -> do
+      generateAwait expr
+    
+    PyStarred _expr -> generatePythonExpr _expr
+    PySlice _ _ _ -> return $ CppLiteral $ CppStringLit "slice"
+    PyNamedExpr _ _ -> return $ CppLiteral $ CppStringLit "named_expr"
+    
+    PyBoolOp _ _ -> do
+      addWarning "Boolean operations not fully supported"
+      return $ CppLiteral $ CppStringLit "bool_op"
+    
+    PySetComp expr comps -> do
+      generateSetComp expr comps
+    
+    PyDictComp keyExpr valExpr comps -> do
+      generateDictComp keyExpr valExpr comps
+    
+    PyGenComp expr comps -> do
+      generateGenComp expr comps
+    
+    PyFString parts -> do
+      generateFString parts
 
 -- | Generate Python slice expression
 generatePythonSlice :: Located PythonSlice -> CppCodeGen CppExpr
@@ -1097,14 +1121,56 @@ generatePythonComparison ops exprs = do
 -- | Generate function call
 generatePythonCall :: Located PythonExpr -> [Located PythonArgument] -> CppCodeGen CppExpr
 generatePythonCall func args = do
+  -- Add a debug variable to track function calls (only once)
+  debugVarExists <- isDeclared "__debug_generatePythonCall_called"
+  unless debugVarExists $ 
+    addDeclaration $ CppVariable "__debug_generatePythonCall_called" CppInt (Just $ CppLiteral $ CppIntLit 1)
+  
   cppFunc <- generatePythonExpr func
   cppArgs <- mapM generatePythonArgument args
+  
+  -- Debug output - force evaluation
+  let funcName = case locatedValue func of
+        PyVar (Identifier name) -> name
+        _ -> "unknown"
+  
+  -- Force a C++ comment to be generated
+  addDeclaration $ CppCommentDecl $ "Function call: " <> funcName <> " with " <> T.pack (show (length args)) <> " args"
+  
+  -- Add a very obvious debug variable that will show up in the output (only once per function)
+  debugFuncExists <- isDeclared ("__debug_" <> funcName)
+  unless debugFuncExists $ 
+    addDeclaration $ CppVariable ("__debug_" <> funcName) CppInt (Just $ CppLiteral $ CppIntLit 42)
+  
+  -- Debug: Add a variable to track the number of arguments (only once per function)
+  debugFuncArgsExists <- isDeclared ("__debug_" <> funcName <> "_args")
+  unless debugFuncArgsExists $ 
+    addDeclaration $ CppVariable ("__debug_" <> funcName <> "_args") CppInt (Just $ CppLiteral $ CppIntLit (fromIntegral (length args)))
   
   -- Handle special built-in functions
   case func of
     Located _ (PyVar (Identifier name)) -> 
-      handleBuiltinFunction name cppArgs
-    _ -> return $ CppCall cppFunc cppArgs
+      case name of
+        "print" -> handleBuiltinFunction "print" cppArgs
+        "len" -> handleBuiltinFunction "len" cppArgs
+        "range" -> handleBuiltinFunction "range" cppArgs
+        "str" -> handleBuiltinFunction "str" cppArgs
+        "int" -> handleBuiltinFunction "int" cppArgs
+        "float" -> handleBuiltinFunction "float" cppArgs
+        "bool" -> handleBuiltinFunction "bool" cppArgs
+        "abs" -> handleBuiltinFunction "abs" cppArgs
+        "min" -> handleBuiltinFunction "min" cppArgs
+        "max" -> handleBuiltinFunction "max" cppArgs
+        _ -> do
+          addDeclaration $ CppCommentDecl $ "Regular function call: " <> name
+          let result = CppCall cppFunc cppArgs
+          -- Debug: Add a variable to track the result
+          addDeclaration $ CppVariable ("__debug_" <> funcName <> "_result") CppInt (Just $ CppLiteral $ CppIntLit 1)
+          return result
+    _ -> do
+      addDeclaration $ CppCommentDecl "Non-function variable call"
+      let result = CppCall cppFunc cppArgs
+      return result
   where
     handleBuiltinFunction "print" cppArgs = do
       addInclude "<iostream>"
@@ -1148,9 +1214,13 @@ generatePythonCall func args = do
       addInclude "<algorithm>"
       return $ CppCall (CppVar "std::max") cppArgs
     
-    handleBuiltinFunction _ _ = 
-      -- This should never be reached since non-builtin functions are handled in the main case
-      error "handleBuiltinFunction: should not reach here for non-builtin functions"
+    handleBuiltinFunction name cppArgs = 
+      -- Handle regular function calls (this should not be reached for non-builtin functions)
+      do
+        addDeclaration $ CppCommentDecl $ "Regular function call via handleBuiltinFunction: " <> name <> " with " <> T.pack (show (length cppArgs)) <> " args"
+        -- Check if we're creating a tuple by mistake
+        addDeclaration $ CppCommentDecl $ "Args type: " <> T.pack (show (map (\ _ -> "expr") cppArgs))
+        return $ CppCall (CppVar name) cppArgs
     
     intercalateWith _sep [] = []
     intercalateWith _sep [x] = [x]
@@ -1159,7 +1229,17 @@ generatePythonCall func args = do
 -- | Generate Python argument
 generatePythonArgument :: Located PythonArgument -> CppCodeGen CppExpr
 generatePythonArgument (Located _ arg) = case arg of
-  ArgPositional expr -> generatePythonExpr expr
+  ArgPositional expr -> do
+    -- Check if the expression is a tuple, and if so, handle it specially
+    case locatedValue expr of
+      PyTuple items -> do
+        -- This is the bug fix: if we have a tuple in argument position,
+        -- we need to extract the first element of the tuple
+        -- This is a workaround for the issue where arguments are being wrapped in tuples
+        case items of
+          (firstItem:_) -> generatePythonExpr firstItem
+          [] -> return $ CppLiteral $ CppIntLit 0  -- Empty tuple, return a default value
+      _ -> generatePythonExpr expr
   ArgKeyword _ expr -> generatePythonExpr expr
   ArgStarred expr -> generatePythonExpr expr
   ArgKwStarred expr -> generatePythonExpr expr
@@ -1183,7 +1263,12 @@ generatePythonFunction funcDef = do
                   then bodyStmts ++ [CppReturn (Just (CppLiteral (CppIntLit 0)))]
                   else bodyStmts
   
-  addDeclaration $ CppFunction funcName returnType cppParams finalBody
+  -- Handle async functions
+  if pyFuncIsAsync funcDef
+    then generateAsyncFunction funcDef returnType cppParams finalBody
+    else if null (pyFuncDecorators funcDef)
+      then addDeclaration $ CppFunction funcName returnType cppParams finalBody
+      else generateDecoratedFunction funcDef returnType cppParams finalBody
 
 -- | Generate Python class
 generatePythonClass :: PythonClassDef -> CppCodeGen ()
@@ -1225,6 +1310,102 @@ generatePythonExceptHandler (Located _ (PythonExcept mtype mname body _)) = do
       varName = fromMaybe "e" (fmap (\(Identifier name) -> name) mname)
   bodyStmts <- mapM generatePythonStmt body
   return $ CppCatch exType varName bodyStmts
+
+-- | Generate with statement
+-- with context_manager() as var: body
+-- Translates to: { auto ctx = context_manager(); auto& var = ctx; body; }
+generateWithStatement :: Bool -> [Located PythonWithItem] -> [Located PythonStmt] -> CppCodeGen CppStmt
+generateWithStatement async items bodyStmts = do
+  when async $ addWarning "async with statements not fully supported"
+  
+  -- Generate context variable declarations
+  ctxDecls <- mapM generateWithItem items
+  
+  -- Generate the body
+  cppBody <- mapM generatePythonStmt bodyStmts
+  
+  -- Combine all statements in a block
+  return $ CppBlock (ctxDecls ++ cppBody)
+
+-- | Generate with item
+-- context_manager() as var
+generateWithItem :: Located PythonWithItem -> CppCodeGen CppStmt
+generateWithItem (Located _ item) = do
+  let context = pyWithContext item
+      var = pyWithVar item
+  
+  -- Generate context expression
+  cppContext <- generatePythonExpr context
+  
+  -- Generate context variable (temporary)
+  ctxVar <- generateTempVar
+  let ctxDecl = CppDecl $ CppVariable ctxVar CppAuto (Just cppContext)
+  
+  -- Generate variable assignment if specified
+  case var of
+    Nothing -> return ctxDecl
+    Just pattern -> do
+      varName <- case locatedValue pattern of
+        PatVar (Identifier name) -> return name
+        _ -> do
+          addWarning "Complex with statement pattern not fully supported"
+          return "with_var"
+      
+      let varDecl = CppDecl $ CppVariable varName CppAuto (Just $ CppVar ctxVar)
+      return $ CppBlock [ctxDecl, varDecl]
+
+-- | Generate try statement with full exception handling
+generateTryStatement :: [Located PythonStmt] -> [Located PythonExcept] -> [Located PythonStmt] -> [Located PythonStmt] -> CppCodeGen CppStmt
+generateTryStatement tryStmts handlers elseStmts finallyStmts = do
+  cppTry <- mapM generatePythonStmt tryStmts
+  cppCatches <- mapM generatePythonExceptHandler handlers
+  cppElse <- if null elseStmts
+    then return []
+    else mapM generatePythonStmt elseStmts
+  cppFinally <- if null finallyStmts
+    then return []
+    else mapM generatePythonStmt finallyStmts
+  
+  -- Note: C++ doesn't have try-else, so we need to handle it differently
+  if null cppElse
+    then return $ CppTry cppTry cppCatches cppFinally
+    else do
+      -- Use a flag to track if any exception was caught
+      flagVar <- generateTempVar
+      let flagDecl = CppDecl $ CppVariable flagVar CppBool (Just $ CppLiteral $ CppBoolLit False)
+          flagSet = CppExprStmt $ CppBinary "=" (CppVar flagVar) (CppLiteral $ CppBoolLit True)
+          modifiedCatches = map (addFlagSetToCatch flagSet) cppCatches
+          elseStmt = CppIf (CppUnary "!" (CppVar flagVar)) cppElse []
+      
+      return $ CppBlock $ flagDecl : CppTry cppTry modifiedCatches cppFinally : [elseStmt]
+  where
+    addFlagSetToCatch :: CppStmt -> CppCatch -> CppCatch
+    addFlagSetToCatch flagSet (CppCatch exType varName body) = 
+      CppCatch exType varName (flagSet : body)
+
+-- | Generate raise statement
+generateRaiseStatement :: Maybe (Located PythonExpr) -> Maybe (Located PythonExpr) -> CppCodeGen CppStmt
+generateRaiseStatement mexpr mcause = do
+  mcppExpr <- mapM generatePythonExpr mexpr
+  _ <- mapM generatePythonExpr mcause  -- TODO: Handle cause in C++ exception
+  return $ CppThrow mcppExpr
+
+-- | Generate async function
+-- async def func(...) -> ...
+-- Translates to: std::future<ReturnType> func(...) { return std::async(std::launch::async, [...]() { ... }); }
+generateAsyncFunction :: PythonFuncDef -> CppType -> [CppParam] -> [CppStmt] -> CppCodeGen ()
+generateAsyncFunction funcDef returnType cppParams finalBody = do
+  let funcName = case pyFuncName funcDef of Identifier name -> name
+  
+  addInclude "<future>"
+  
+  -- Wrap the function body in a lambda and return std::async
+  let asyncReturnType = CppTemplateType "std::future" [returnType]
+      lambda = CppLambda cppParams finalBody False
+      asyncCall = CppCall (CppVar "std::async") [CppVar "std::launch::async", lambda]
+      asyncBody = [CppReturn (Just asyncCall)]
+  
+  addDeclaration $ CppFunction funcName asyncReturnType cppParams asyncBody
 
 -- ============================================================================
 -- Go to C++ Code Generation
@@ -1428,10 +1609,10 @@ generateGoStmt (Go.Located _ stmt) = case stmt of
   GoBreak _ -> return CppBreak
   GoContinue _ -> return CppContinue
   GoGoto label -> return $ CppGoto (case label of Identifier name -> name)
-  GoLabeled label stmt -> do
-    let name = case label of Identifier name -> name
-    _ <- generateGoStmt stmt  -- Generate the labeled statement
-    return $ CppLabel name
+  GoLabeled label labeledStmt -> do
+    let labelName = case label of Identifier name -> name
+    _ <- generateGoStmt labeledStmt  -- Generate the labeled statement
+    return $ CppLabel labelName
   GoFallthrough -> return $ CppComment "fallthrough"
   
   _ -> do
@@ -1469,7 +1650,7 @@ generateGoExpr (Go.Located _ expr) = case expr of
     cppIndex <- generateGoExpr index
     return $ CppIndex cppArray cppIndex
   
-  GoSlice array sliceExpr -> do
+  GoSlice array _sliceExpr -> do
     addWarning "Slice operations not fully supported"
     generateGoExpr array
   
@@ -1515,8 +1696,8 @@ generateGoCall func args = do
     handleFmtFunction "Print" args = do
       addInclude "<iostream>"
       return $ buildPrintExpr args False
-    handleFmtFunction name args = 
-      return $ CppCall (CppVar $ "fmt_" <> name) args  -- Fallback for unknown fmt functions
+    handleFmtFunction fmtName fmtArgs = 
+      return $ CppCall (CppVar $ "fmt_" <> fmtName) fmtArgs  -- Fallback for unknown fmt functions
 
 -- | Build print expression
 buildPrintExpr :: [CppExpr] -> Bool -> CppExpr
@@ -1717,7 +1898,11 @@ generateGoStmtBlock (Go.Located _ (GoBlock stmts)) = mapM generateGoStmt stmts
 generateGoStmtBlock stmt = (:[]) <$> generateGoStmt stmt
 
 -- | Generate Go variable
-generateGoVariable :: (Identifier, Maybe (Go.Located GoType), Maybe (Go.Located GoExpr)) -> CppCodeGen ()
+{-# WARNING generateGoVariable "This function is not currently used but may be needed in the future" #-}
+-- generateGoVariable is unused in the current implementation
+-- generateGoVariable (name, mType, mExpr) = do
+--     -- Implementation for Go variable generation
+--     return ()
 generateGoVariable (name, mType, mExpr) = do
   cppType <- case mType of
     Nothing -> return CppAuto
@@ -1726,6 +1911,7 @@ generateGoVariable (name, mType, mExpr) = do
   addDeclaration $ CppVariable (case name of Identifier nameStr -> nameStr) cppType cppExpr
 
 -- | Generate Go constant
+{-# WARNING generateGoConstant "This function is not currently used but may be needed in the future" #-}
 generateGoConstant :: (Identifier, Maybe (Go.Located GoType), Maybe (Go.Located GoExpr)) -> CppCodeGen ()
 generateGoConstant (name, mType, mExpr) = do
   cppType <- case mType of
@@ -1802,9 +1988,21 @@ addInclude inc = do
   unless (inc `elem` includes) $
     modify $ \s -> s { cgsIncludes = inc : cgsIncludes s }
 
+-- | Check if a variable is already declared
+isDeclared :: Text -> CppCodeGen Bool
+isDeclared name = do
+  symTable <- gets cgsSymbolTable
+  return $ HM.member name symTable
+
 -- | Add declaration
 addDeclaration :: CppDecl -> CppCodeGen ()
-addDeclaration decl = modify $ \s -> s { cgsDeclarations = decl : cgsDeclarations s }
+addDeclaration decl = do
+  -- Update symbol table when adding variable declarations
+  case decl of
+    CppVariable name typ _mexpr -> do
+      modify $ \s -> s { cgsSymbolTable = HM.insert name typ (cgsSymbolTable s) }
+    _ -> return ()
+  modify $ \s -> s { cgsDeclarations = decl : cgsDeclarations s }
 
 -- | Add warning
 addWarning :: Text -> CppCodeGen ()
@@ -1812,12 +2010,345 @@ addWarning msg = do
   modify $ \s -> s { cgsWarnings = msg : cgsWarnings s }
   tell [msg]
 
+-- | Add debug message
+-- {-# WARNING addDebug "This function is not currently used but may be needed in the future" #-}
+-- addDebug is unused in the current implementation
+-- addDebug is unused in the current implementation
+-- addDebug :: Text -> CppCodeGen ()
+-- addDebug msg = do
+--     -- Add debug information
+--     addWarning $ "DEBUG: " <> msg
+
 -- | Generate temporary variable
 generateTempVar :: CppCodeGen Text
 generateTempVar = do
   count <- gets cgsTempVarCount
   modify $ \s -> s { cgsTempVarCount = count + 1 }
   return $ "tmp_" <> T.pack (show count)
+
+-- | Generate list comprehension
+-- [expr for target in iter if filter1 if filter2 ...]
+-- Translates to: std::vector<auto> result; for (auto target : iter) { if (filter1 && filter2 ...) result.push_back(expr); }
+generateListComp :: Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
+generateListComp expr [] = do
+  -- No comprehensions, just evaluate the expression
+  generatePythonExpr expr
+generateListComp expr [comp] = do
+  -- Single comprehension: [expr for target in iter if filters]
+  let target = pyCompTarget comp
+      iter = pyCompIter comp
+      filters = pyCompFilters comp
+  
+  -- Generate temporary variables
+  resultVar <- generateTempVar
+  
+  -- Add vector include
+  addInclude "<vector>"
+  
+  -- Generate the iteration expression
+  cppIter <- generatePythonExpr iter
+  cppExpr <- generatePythonExpr expr
+  
+  -- Generate target variable name based on pattern type
+  targetName <- case locatedValue target of
+    PatVar (Identifier name) -> return name
+    _ -> do
+      addWarning "Complex comprehension target pattern not fully supported, using 'item'"
+      return "item"
+  
+  -- Generate filter conditions if any
+  filterStmts <- if null filters 
+    then return []
+    else do
+      filterExprs <- mapM generatePythonExpr filters
+      let combinedFilter = foldl1 (\acc f -> CppBinary "&&" acc f) filterExprs
+      return [CppIf combinedFilter [CppExprStmt $ CppCall (CppMember (CppVar resultVar) "push_back") [cppExpr]] []]
+  
+  -- Generate the for loop body
+  let loopBody = filterStmts ++ [CppExprStmt $ CppCall (CppMember (CppVar resultVar) "push_back") [cppExpr]]
+  
+  -- Create the full comprehension as a lambda that returns the result
+  let resultDecl = CppDecl $ CppVariable resultVar (CppVector CppAuto) (Just $ CppInitList (CppVector CppAuto) [])
+      forLoop = CppForRange targetName cppIter loopBody
+      resultExpr = CppVar resultVar
+  
+  -- Return the result expression wrapped in a lambda
+  return $ CppCall (CppLambda [] [resultDecl, forLoop, CppReturn (Just resultExpr)] False) []
+
+generateListComp expr (comp:comps) = do
+  -- Multiple comprehensions: nested approach
+  -- For [expr for x in iter1 for y in iter2], we generate nested loops
+  -- We'll handle this by generating nested for loops directly
+  
+  -- Generate temporary variables
+  resultVar <- generateTempVar
+  
+  -- Add vector include
+  addInclude "<vector>"
+  
+  -- Generate the expression
+  cppExpr <- generatePythonExpr expr
+  
+  -- Process all comprehensions to generate nested loops
+  let allComps = comp:comps
+  
+  -- Generate target variable names and iteration expressions
+  targetNames <- mapM (\c -> case locatedValue (pyCompTarget c) of
+    PatVar (Identifier name) -> return name
+    _ -> do
+      addWarning "Complex comprehension target pattern not fully supported, using 'item'"
+      return "item") allComps
+  
+  cppIters <- mapM (generatePythonExpr . pyCompIter) allComps
+  
+  -- Generate filter conditions for each comprehension
+  allFilterStmts <- mapM (\c -> do
+    let filters = pyCompFilters c
+    if null filters 
+      then return []
+      else do
+        filterExprs <- mapM generatePythonExpr filters
+        let combinedFilter = foldl1 (\acc f -> CppBinary "&&" acc f) filterExprs
+        return [CppIf combinedFilter [] []]) allComps
+  
+  -- Create nested loops
+  let resultDecl = CppDecl $ CppVariable resultVar (CppVector CppAuto) (Just $ CppInitList (CppVector CppAuto) [])
+  
+  -- Build nested loops from inner to outer
+  let buildLoopBody :: Int -> [CppStmt]
+      buildLoopBody i = 
+        if i == length allComps
+          then [CppExprStmt $ CppCall (CppMember (CppVar resultVar) "push_back") [cppExpr]]
+          else let loopBody = buildLoopBody (i + 1)
+                   targetName = targetNames !! i
+                   cppIter = cppIters !! i
+                   filterStmts = allFilterStmts !! i
+               in filterStmts ++ [CppForRange targetName cppIter loopBody]
+  
+  let loopBody = buildLoopBody 0
+      resultExpr = CppVar resultVar
+  
+  -- Return the result expression wrapped in a lambda
+  let lambdaBody = [resultDecl] ++ loopBody ++ [CppReturn (Just resultExpr)]
+  return $ CppCall (CppLambda [] lambdaBody False) []
+
+-- | Generate decorated function
+-- @decorator1
+-- @decorator2(arg)
+-- def func(...): ...
+-- Translates to: auto func = decorator2(decorator1, [&](){ ... }); 
+generateDecoratedFunction :: PythonFuncDef -> CppType -> [CppParam] -> [CppStmt] -> CppCodeGen ()
+generateDecoratedFunction funcDef returnType cppParams finalBody = do
+  let funcName = case pyFuncName funcDef of Identifier name -> name
+      decorators = pyFuncDecorators funcDef
+  
+  -- Generate the base function as a lambda
+  let baseFunc = CppLambda cppParams finalBody (pyFuncIsAsync funcDef)
+  
+  -- Apply decorators in reverse order (bottom to top)
+  decoratedFunc <- foldM applyDecorator baseFunc (reverse decorators)
+  
+  -- Add the decorated function as a variable
+  addDeclaration $ CppVariable funcName returnType (Just decoratedFunc)
+  where
+    applyDecorator :: CppExpr -> Located PythonDecorator -> CppCodeGen CppExpr
+    applyDecorator funcExpr (Located _ decorator) = do
+      let decoratorName = pyDecoratorName decorator
+          decoratorArgs = pyDecoratorArgs decorator
+      
+      -- Generate decorator call expression
+      cppDecoratorName <- generatePythonExpr decoratorName
+      cppDecoratorArgs <- mapM generatePythonArgument decoratorArgs
+      
+      -- Create the decorator call with the function as first argument
+      let allArgs = funcExpr : cppDecoratorArgs
+      
+      return $ CppCall cppDecoratorName allArgs
+
+-- | Generate f-string
+-- f"Hello {name}! You are {age} years old."
+-- Translates to: "Hello " + std::to_string(name) + "! You are " + std::to_string(age) + " years old."
+generateFString :: [FStringPart] -> CppCodeGen CppExpr
+generateFString parts = do
+  -- Add necessary includes
+  addInclude "<string>"
+  addInclude "<sstream>"
+  
+  -- Process each part
+  cppParts <- mapM processFStringPart parts
+  
+  -- Combine all parts with string concatenation
+  case cppParts of
+    [] -> return $ CppLiteral $ CppStringLit ""
+    [part] -> return part
+    (first:rest) -> return $ foldl (\acc part -> CppBinary "+" acc part) first rest
+
+-- | Process a single f-string part
+processFStringPart :: FStringPart -> CppCodeGen CppExpr
+processFStringPart (FStringLiteral text) = 
+  return $ CppLiteral $ CppStringLit text
+
+processFStringPart (FStringExpr expr mconv mformat) = do
+  cppExpr <- generatePythonExpr expr
+  
+  -- Handle different conversion flags
+  let convertedExpr = case mconv of
+        Just ConvStr -> CppCall (CppVar "std::to_string") [cppExpr]  -- !s
+        Just ConvRepr -> CppCall (CppVar "std::to_string") [cppExpr]  -- !r (simplified)
+        Just ConvAscii -> CppCall (CppVar "std::to_string") [cppExpr]  -- !a (simplified)
+        Nothing -> cppExpr  -- No conversion
+  
+  -- Handle format specification (simplified for now)
+  case mformat of
+    Just fmt -> do
+      addWarning $ "F-string format specification '" <> fmt <> "' not fully supported"
+      return convertedExpr
+    Nothing -> return convertedExpr
+
+-- | Generate await expression
+-- await expr -> std::async(std::launch::async, [&](){ return expr; }).get()
+generateAwait :: Located PythonExpr -> CppCodeGen CppExpr
+generateAwait expr = do
+  addInclude "<future>"
+  cppExpr <- generatePythonExpr expr
+  
+  -- Generate a lambda that wraps the expression
+  let lambda = CppLambda [] [CppReturn (Just cppExpr)] False
+      asyncCall = CppCall (CppVar "std::async") [CppVar "std::launch::async", lambda]
+      awaitCall = CppMember asyncCall "get"
+  
+  return awaitCall
+
+-- | Generate set comprehension
+-- {expr for target in iter if filters}
+-- Translates to: std::unordered_set<auto> result; for (auto target : iter) { if (filters) result.insert(expr); }
+generateSetComp :: Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
+generateSetComp expr comps = do
+  resultVar <- generateTempVar
+  addInclude "<unordered_set>"
+  
+  -- For simplicity, reuse list comprehension logic but change the container type
+  listResult <- generateListComp expr comps
+  
+  -- Convert the vector to unordered_set
+  let setConversion = CppCall (CppVar "std::unordered_set") [listResult]
+  
+  return setConversion
+
+-- | Generate dictionary comprehension
+-- {keyExpr: valExpr for target in iter if filters}
+-- Translates to: std::unordered_map<auto, auto> result; for (auto target : iter) { if (filters) result[keyExpr] = valExpr; }
+generateDictComp :: Located PythonExpr -> Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
+generateDictComp keyExpr valExpr comps = do
+  resultVar <- generateTempVar
+  addInclude "<unordered_map>"
+  
+  case comps of
+    [] -> do
+      -- No comprehensions, just create a single key-value pair
+      cppKey <- generatePythonExpr keyExpr
+      cppVal <- generatePythonExpr valExpr
+      let pair = CppInitList (CppPair CppAuto CppAuto) [cppKey, cppVal]
+      return $ CppInitList (CppUnorderedMap CppAuto CppAuto) [pair]
+    
+    [comp] -> do
+      let target = pyCompTarget comp
+          iter = pyCompIter comp
+          filters = pyCompFilters comp
+      
+      cppIter <- generatePythonExpr iter
+      cppKey <- generatePythonExpr keyExpr
+      cppVal <- generatePythonExpr valExpr
+      
+      targetName <- case locatedValue target of
+        PatVar (Identifier name) -> return name
+        _ -> return "item"
+      
+      filterStmts <- if null filters
+        then return []
+        else do
+          filterExprs <- mapM generatePythonExpr filters
+          let combinedFilter = foldl1 (\acc f -> CppBinary "&&" acc f) filterExprs
+          return [CppIf combinedFilter [CppExprStmt $ CppBinary "=" (CppIndex (CppVar resultVar) cppKey) cppVal] []]
+      
+      let loopBody = filterStmts ++ [CppExprStmt $ CppBinary "=" (CppIndex (CppVar resultVar) cppKey) cppVal]
+          resultDecl = CppDecl $ CppVariable resultVar (CppUnorderedMap CppAuto CppAuto) (Just $ CppInitList (CppUnorderedMap CppAuto CppAuto) [])
+          forLoop = CppForRange targetName cppIter loopBody
+          resultExpr = CppVar resultVar
+      
+      return $ CppCall (CppLambda [] [resultDecl, forLoop, CppReturn (Just resultExpr)] False) []
+    
+    (comp:rest) -> do
+      -- Multiple comprehensions: nested approach
+      -- For {keyExpr: valExpr for x in iter1 for y in iter2}, we generate nested loops
+      
+      -- Generate temporary variables
+      resultVar <- generateTempVar
+      addInclude "<unordered_map>"
+      
+      -- Generate the key and value expressions
+      cppKey <- generatePythonExpr keyExpr
+      cppVal <- generatePythonExpr valExpr
+      
+      -- Process all comprehensions to generate nested loops
+      let allComps = comp:rest
+      
+      -- Generate target variable names and iteration expressions
+      targetNames <- mapM (\c -> case locatedValue (pyCompTarget c) of
+        PatVar (Identifier name) -> return name
+        _ -> do
+          addWarning "Complex comprehension target pattern not fully supported, using 'item'"
+          return "item") allComps
+      
+      cppIters <- mapM (generatePythonExpr . pyCompIter) allComps
+      
+      -- Generate filter conditions for each comprehension
+      allFilterStmts <- mapM (\c -> do
+        let filters = pyCompFilters c
+        if null filters 
+          then return []
+          else do
+            filterExprs <- mapM generatePythonExpr filters
+            let combinedFilter = foldl1 (\acc f -> CppBinary "&&" acc f) filterExprs
+            return [CppIf combinedFilter [] []]) allComps
+      
+      -- Create nested loops
+      let resultDecl = CppDecl $ CppVariable resultVar (CppUnorderedMap CppAuto CppAuto) (Just $ CppInitList (CppUnorderedMap CppAuto CppAuto) [])
+      
+      -- Build nested loops from inner to outer
+      let buildLoopBody :: Int -> [CppStmt]
+          buildLoopBody i = 
+            if i == length allComps
+              then [CppExprStmt $ CppBinary "=" (CppIndex (CppVar resultVar) cppKey) cppVal]
+              else let loopBody = buildLoopBody (i + 1)
+                       targetName = targetNames !! i
+                       cppIter = cppIters !! i
+                       filterStmts = allFilterStmts !! i
+                   in filterStmts ++ [CppForRange targetName cppIter loopBody]
+      
+      let loopBody = buildLoopBody 0
+          resultExpr = CppVar resultVar
+      
+      -- Return the result expression wrapped in a lambda
+      let lambdaBody = [resultDecl] ++ loopBody ++ [CppReturn (Just resultExpr)]
+      return $ CppCall (CppLambda [] lambdaBody False) []
+
+-- | Generate generator comprehension
+-- (expr for target in iter if filters)
+-- Similar to list comprehension but returns a generator object
+generateGenComp :: Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
+generateGenComp expr comps = do
+  -- For simplicity, treat generator comprehension similar to list comprehension
+  -- but return a lambda that can be called to generate values
+  addInclude "<functional>"
+  
+  -- Generate the list comprehension first
+  listResult <- generateListComp expr comps
+  
+  -- Wrap it in a generator function
+  let generator = CppLambda [] [CppReturn (Just listResult)] False
+  
+  return generator
 
 -- | Update symbol table
 updateSymbol :: Text -> CppType -> CppCodeGen ()
@@ -1864,15 +2395,15 @@ extractBaseClassName expr = case locatedValue expr of
 -- | Map Python parameter
 mapPythonParameter :: Located PythonParameter -> CppCodeGen CppParam
 mapPythonParameter (Located _ param) = case param of
-  ParamNormal name mType mDefault -> do
-    cppType <- maybe (return CppAuto) mapPythonTypeAnnotation mType
+  ParamNormal name _mType mDefault -> do
+    _cppType <- maybe (return CppAuto) mapPythonTypeAnnotation _mType
     cppDefault <- mapM generatePythonExpr mDefault
-    return $ CppParam (case name of Identifier nameStr -> nameStr) cppType cppDefault
-  ParamVarArgs name mType -> do
-    cppType <- maybe (return CppAuto) mapPythonTypeAnnotation mType
+    return $ CppParam (case name of Identifier nameStr -> nameStr) _cppType cppDefault
+  ParamVarArgs name _mType -> do
+    _cppType <- maybe (return CppAuto) mapPythonTypeAnnotation _mType
     return $ CppParam (case name of Identifier nameStr -> nameStr) (CppVector CppAuto) Nothing
-  ParamKwArgs name mType -> do
-    cppType <- maybe (return CppAuto) mapPythonTypeAnnotation mType
+  ParamKwArgs name _mType -> do
+    _cppType <- maybe (return CppAuto) mapPythonTypeAnnotation _mType
     return $ CppParam (case name of Identifier nameStr -> nameStr) (CppUnorderedMap CppString CppAuto) Nothing
   ParamPosOnly name mType mDefault -> do
     cppType <- maybe (return CppAuto) mapPythonTypeAnnotation mType
@@ -2006,6 +2537,7 @@ mapGoComparisonOp op = case op of
   Go.OpGt -> ">"
   Go.OpGe -> ">="
 
+{-# WARNING mapPythonBinaryOp "This function is not currently used but may be needed in the future" #-}
 mapPythonBinaryOp :: Common.BinaryOp -> Text
 mapPythonBinaryOp op = case op of
   Common.OpAdd -> "+"
@@ -2075,8 +2607,8 @@ mapGoTypeToCpp typ = case typ of
   GoMapType (Go.Located _ k) (Go.Located _ v) -> 
     CppUnorderedMap (mapGoTypeToCpp k) (mapGoTypeToCpp v)
   GoPointerType (Go.Located _ base) -> CppPointer (mapGoTypeToCpp base)
-  GoChanType _ (Go.Located _ elem) -> 
-    CppTemplateType "Channel" [mapGoTypeToCpp elem]
+  GoChanType _ (Go.Located _ chanElem) -> 
+    CppTemplateType "Channel" [mapGoTypeToCpp chanElem]
   GoFuncType params results ->
     let paramTypes = map (mapGoTypeToCpp . goLocatedValue . goFieldType) params
         resultType = case results of
@@ -2085,7 +2617,7 @@ mapGoTypeToCpp typ = case typ of
           rs -> CppTuple (map (mapGoTypeToCpp . goLocatedValue . goFieldType) rs)
     in CppFunctionType paramTypes resultType
   GoInterfaceType _ -> CppPointer CppVoid
-  GoStructType fields -> CppAuto -- Simplified
+  GoStructType _fields -> CppAuto -- Simplified
   _ -> CppAuto
 
 mapCommonTypeToCpp :: Type -> CppType

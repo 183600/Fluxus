@@ -9,6 +9,14 @@
 
 // TODO: Render other declaration types
 
+auto test() {
+    return 42;
+}
+
+// TODO: Render other declaration types
+
+// TODO: Render other declaration types
+
 // TODO: Render other declaration types
 
 // TODO: Render other declaration types
@@ -16,11 +24,23 @@
 // TODO: Render other declaration types
 
 // TODO: Render other declaration types
+
+// TODO: Render other declaration types
+
+int __debug_test = 42;
+
+// TODO: Render other declaration types
+
+// TODO: Render other declaration types
+
+// TODO: Render other declaration types
+
+int __debug_print = 42;
 
 // TODO: Render other declaration types
 
 int main() {
-    std::cout << "Hello, World!" << std::endl;
+    std::cout << test() << std::endl;
     return 0;
 }
 

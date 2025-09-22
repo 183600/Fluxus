@@ -42,14 +42,14 @@ import Fluxus.AST.Go (GoAST(..), GoPackage(..), goPackage, GoStmt(..), GoExpr(..
 import qualified Fluxus.AST.Go as Go
 import Control.Monad.State
 import Control.Monad.Except
-import Control.Monad (foldM, forM, forM_, when, unless, zipWithM_)
+import Control.Monad (foldM, forM_, when, unless, zipWithM_)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Maybe (fromMaybe, catMaybes, mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 
@@ -872,10 +872,9 @@ checkTypes = do
   constraints <- gets constraints
   return $ null constraints  -- All constraints should be solved
 
--- | Helper function for checking if Either is Left
-isLeft :: Either a b -> Bool
-isLeft (Left _) = True
-isLeft _ = False
+-- isLeft is unused in the current implementation
+-- isLeft (Left _) = True
+-- isLeft (Right _) = False
 
 -- | Infer type from Python expression
 inferPythonExpr :: PythonExpr -> TypeInferenceM Type

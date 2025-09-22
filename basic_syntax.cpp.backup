@@ -10,7 +10,14 @@
 #include <iostream>
 
 int main() {
-    /* expr */("Hello, World!");
     return 0;
 }
+
+void __temp;
+
+void __temp;
+
+void __temp;
+
+void __temp;
 

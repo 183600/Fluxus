@@ -315,7 +315,7 @@ runtimeBehaviorSpec = describe "Runtime Behavior Tests" $ do
           , "        results.append(result_queue.get())"
           , "    "
           , "    # Sort results by worker ID"
-          , "    results.sort()
+          , "    results.sort()"
           , "    "
           , "    print(f\"Processed {len(results)} tasks\")"
           , "    for worker_id, result in results:"
