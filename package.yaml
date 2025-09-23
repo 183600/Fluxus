@@ -126,12 +126,14 @@ tests:
       - Test.Fluxus.Parser.Go
       - Test.Fluxus.Analysis.TypeInference
       - Test.Fluxus.CodeGen.CPP
+      - Test.Fluxus.ConvertCommand
     dependencies:
       - fluxus
       - hspec >= 2.10
       - QuickCheck >= 2.14
       - text
       - containers
+      - unix
     ghc-options:
       - -threaded
       - -rtsopts
