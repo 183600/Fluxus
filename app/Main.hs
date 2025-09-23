@@ -11,6 +11,8 @@ import Control.Monad (when, unless)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.List (isPrefixOf, isSuffixOf)
+import System.Directory (doesDirectoryExist, getDirectoryContents, doesFileExist)
+import System.FilePath (takeFileName, takeExtension, takeDirectory, dropExtension)
 
 import Fluxus.Compiler.Driver as Driver
 import Fluxus.Compiler.Config as Config
@@ -45,11 +47,14 @@ runCompilerMain config args = do
   when (Config.ccVerboseLevel config >= 2) $
     printConfig config
   
-  -- Extract input files from arguments
-  let inputFiles = extractInputFiles args
-  
+  -- Extract input files from arguments or scan directories
+  inputFiles <- extractInputFiles args
+
+  when (Config.ccVerboseLevel config >= 1) $
+    putStrLn $ "Found " ++ show (length inputFiles) ++ " source files to compile"
+
   when (null inputFiles) $ do
-    hPutStrLn stderr "Error: No input files specified"
+    hPutStrLn stderr "Error: No input files or directories specified"
     printUsage
     exitFailure
   
@@ -82,15 +87,49 @@ runCompilerMain config args = do
       exitSuccess
 
 -- | Extract input files from command line arguments
-extractInputFiles :: [String] -> [FilePath]
-extractInputFiles = filter isInputFile
+extractInputFiles :: [String] -> IO [FilePath]
+extractInputFiles args = do
+  let nonOptions = filter isInputFileOrDir args
+  expandedFiles <- mapM expandInput nonOptions
+  return $ concat expandedFiles
   where
-    isInputFile arg = not ("--" `isPrefixOf` arg) && 
-                     not ("-" `isPrefixOf` arg) &&
-                     (hasSupportedExtension arg)
-    
-    hasSupportedExtension file = 
+    isInputFileOrDir arg = not ("--" `isPrefixOf` arg) &&
+                           not ("-" `isPrefixOf` arg)
+
+    -- Expand input to list of files (handles directories)
+    expandInput :: String -> IO [FilePath]
+    expandInput path = do
+      isDir <- doesDirectoryExist path
+      if isDir
+        then scanDirectoryForCodeFiles path
+        else if hasSupportedExtension path
+             then return [path]
+             else return []
+
+    hasSupportedExtension file =
       any (`isSuffixOf` file) [".py", ".go"]
+
+-- | Scan directory recursively for code files
+scanDirectoryForCodeFiles :: FilePath -> IO [FilePath]
+scanDirectoryForCodeFiles dir = do
+  contents <- getDirectoryContents dir
+  filesWithDirs <- mapM (scanItem dir) contents
+  let allFiles = concat filesWithDirs
+  when (not $ null allFiles) $
+    putStrLn $ "Scanned directory " ++ dir ++ ": found " ++ show (length allFiles) ++ " code files"
+  return allFiles
+  where
+    scanItem :: FilePath -> String -> IO [FilePath]
+    scanItem basePath item = do
+      let fullPath = basePath </> item
+      isDir <- doesDirectoryExist fullPath
+      if isDir
+        then scanDirectoryForCodeFiles fullPath
+        else if hasSupportedExtension item
+             then do
+               putStrLn $ "  Found code file: " ++ fullPath
+               return [fullPath]
+             else return []
 
 -- | Format compiler error for display
 formatCompilerError :: Driver.CompilerError -> String
@@ -152,7 +191,7 @@ printUsage :: IO ()
 printUsage = do
   putStrLn "Fluxus - High-performance hybrid C++ AOT compiler"
   putStrLn ""
-  putStrLn "Usage: fluxus [options] <input-files>"
+  putStrLn "Usage: fluxus [options] <input-files-or-directories>"
   putStrLn ""
   putStrLn "Source Language Options:"
   putStrLn "  --python              Compile Python source (default)"
@@ -202,10 +241,17 @@ printUsage = do
   putStrLn "  --help               Show this help message"
   putStrLn "  --version            Show version information"
   putStrLn ""
+  putStrLn "Directory Conversion:"
+  putStrLn "  fluxus source_directory/ -o output_file"
+  putStrLn "    Compiles all .py and .go files in source_directory/ recursively"
+  putStrLn "    and links them into a single executable: output_file"
+  putStrLn ""
   putStrLn "Examples:"
   putStrLn "  fluxus --python -O2 main.py"
   putStrLn "  fluxus --go --enable-debug *.go"
   putStrLn "  fluxus --python -O3 --enable-interop -o fast_app app.py lib.py"
+  putStrLn "  fluxus --python source_directory/ -o compiled_executable"
+  putStrLn "  fluxus --python project/ --output dist/app"
   putStrLn ""
   putStrLn "Environment Variables:"
   putStrLn "  CXX                   C++ compiler (overrides --cpp-compiler)"
