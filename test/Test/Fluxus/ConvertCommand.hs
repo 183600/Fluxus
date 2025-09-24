@@ -4,12 +4,12 @@ import Test.Hspec
 import System.Process
 import System.Directory
 import System.FilePath
-import System.IO
 import System.Exit
 import Data.List (isSuffixOf)
 import Control.Monad (when, forM_)
 import Data.Char (isSpace)
-import System.Posix.Files (FileMode, ownerReadMode, ownerWriteMode, ownerExecuteMode, groupReadMode, groupExecuteMode, otherReadMode, otherExecuteMode, setFileMode)
+import System.Posix.Files (ownerReadMode, ownerWriteMode, ownerExecuteMode, groupReadMode, groupExecuteMode, otherReadMode, otherExecuteMode, setFileMode, unionFileModes)
+import System.Posix.Types (FileMode)
 
 spec :: Spec
 spec = describe "Fluxus Convert Command Tests" $ do
@@ -19,17 +19,17 @@ spec = describe "Fluxus Convert Command Tests" $ do
     when outputDirExists $ removeDirectoryRecursive "test/python-testsoutput"
 
     -- Run fluxus convert command
-    (exitCode, stdout, stderr) <- readProcessWithExitCode "fluxus" ["--python", "-O2", "convert", "test/python-tests", "-o", "test/python-testsoutput"] ""
+    (exitCode, stdoutOutput, stderrOutput) <- readProcessWithExitCode "fluxus" ["--python", "-O2", "convert", "test/python-tests", "-o", "test/python-testsoutput"] ""
 
     -- Check that the command succeeded
     exitCode `shouldBe` ExitSuccess
 
     -- Check that output directory was created
-    outputDirExists <- doesDirectoryExist "test/python-testsoutput"
-    outputDirExists `shouldBe` True
+    outputDirCreated <- doesDirectoryExist "test/python-testsoutput"
+    outputDirCreated `shouldBe` True
 
-    putStrLn $ "Fluxus convert stdout: " ++ stdout
-    putStrLn $ "Fluxus convert stderr: " ++ stderr
+    putStrLn $ "Fluxus convert stdout: " ++ stdoutOutput
+    putStrLn $ "Fluxus convert stderr: " ++ stderrOutput
 
   it "executes Python files and compares outputs with compiled executables" $ do
     -- Get all Python files in test/python-tests
@@ -50,7 +50,7 @@ spec = describe "Fluxus Convert Command Tests" $ do
         expectedExists <- doesFileExist expectedFile
         when expectedExists $ do
           -- Run Python file
-          (exitCodePy, stdoutPy, stderrPy) <- readProcessWithExitCode "python" [pyPath] ""
+          (exitCodePy, stdoutPy, _stderrPy) <- readProcessWithExitCode "python" [pyPath] ""
 
           -- Read expected output
           expectedContent <- readFile expectedFile
@@ -112,6 +112,9 @@ spec = describe "Fluxus Convert Command Tests" $ do
 
     -- File permissions helper
     executableMode :: FileMode
-    executableMode = ownerReadMode .|. ownerWriteMode .|. ownerExecuteMode
-                      .|. groupReadMode .|. groupExecuteMode
-                      .|. otherReadMode .|. otherExecuteMode
+    executableMode = unionFileModes (unionFileModes (unionFileModes
+                      (unionFileModes
+                      (unionFileModes
+                      (unionFileModes ownerReadMode ownerWriteMode) ownerExecuteMode)
+                      groupReadMode) groupExecuteMode)
+                      otherReadMode) otherExecuteMode

@@ -112,6 +112,8 @@ executables:
       - optparse-applicative
       - text
       - monad-logger
+      - directory
+      - filepath
     ghc-options:
       - -threaded
       - -rtsopts
@@ -133,6 +135,9 @@ tests:
       - QuickCheck >= 2.14
       - text
       - containers
+      - directory
+      - filepath
+      - process
       - unix
     ghc-options:
       - -threaded
