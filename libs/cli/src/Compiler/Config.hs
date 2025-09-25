@@ -253,12 +253,12 @@ languageOption =
   pure (ccSourceLanguage defaultConfig)
 
 optimizationOption :: Parser OptimizationLevel
-optimizationOption = 
-  flag' O0 (short '0' <> long "O0" <> help "No optimization") <|>
-  flag' O1 (short '1' <> long "O1" <> help "Basic optimization") <|>
-  flag' O2 (short '2' <> long "O2" <> help "Standard optimization") <|>
-  flag' O3 (short '3' <> long "O3" <> help "Aggressive optimization") <|>
-  flag' Os (short 's' <> long "Os" <> help "Size optimization") <|>
+optimizationOption =
+  flag' O0 (short 'O' <> short '0' <> long "O0" <> help "No optimization") <|>
+  flag' O1 (short 'O' <> short '1' <> long "O1" <> help "Basic optimization") <|>
+  flag' O2 (short 'O' <> short '2' <> long "O2" <> help "Standard optimization") <|>
+  flag' O3 (short 'O' <> short '3' <> long "O3" <> help "Aggressive optimization") <|>
+  flag' Os (short 'O' <> short 's' <> long "Os" <> help "Size optimization") <|>
   pure (ccOptimizationLevel defaultConfig)
 
 targetOption :: Parser TargetPlatform
@@ -452,8 +452,7 @@ loadConfigFromFile configFile = do
         Left err -> return $ Left $ "Failed to parse config file: " ++ prettyPrintParseException err
         Right config -> return $ Right config
 
--- Enhanced merge with strategy parameter
-data MergeStrategy = Replace | Combine
+-- Merge strategy parameter is already defined above at line 73
 
 mergeConfigs :: MergeStrategy -> CompilerConfig -> CompilerConfig -> CompilerConfig
 mergeConfigs strategy base override = CompilerConfig
@@ -480,8 +479,9 @@ mergeConfigs strategy base override = CompilerConfig
   , ccInputFiles = mergeLists strategy (ccInputFiles base) (ccInputFiles override)
   }
   where
-    mergeLists Replace _ override = override
-    mergeLists Combine base override = nub (override ++ base)  -- Remove duplicates
+    mergeLists Override _ override = override
+    mergeLists Append base override = nub (override ++ base)  -- Remove duplicates
+    mergeLists Keep base _ = base
 
 -- Enhanced environment variable support
 applyEnvironmentOverrides :: CompilerConfig -> IO CompilerConfig

@@ -26,19 +26,15 @@ import Control.Exception (try, SomeException)
 import Control.Concurrent.STM
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
 import Data.Int (Int64)
 import Data.Word (Word64)
 import Data.ByteString (ByteString)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
-import Data.Vector (Vector)
-import qualified Data.Vector as Vector
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Foreign.Ptr (Ptr, nullPtr)
-import Foreign.C.Types
-import Foreign.C.String
+import Data.Vector (Vector)
 
 -- | Go runtime state
 data GoRuntime = GoRuntime

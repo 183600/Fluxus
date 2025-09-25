@@ -41,7 +41,7 @@ module Fluxus.Parser.Go.Parser
   ) where
 
 import Control.Monad (void, when)
-import Control.Applicative ((<|>), many)
+import Control.Applicative (many)
 import Data.Functor (($>))
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -54,7 +54,7 @@ import qualified Data.List.NonEmpty as NE ()
 
 import qualified Fluxus.AST.Common as Common
 import Fluxus.AST.Go hiding (Identifier, QualifiedName)
-import Fluxus.AST.Go (Located(..), Identifier(..), QualifiedName(..), NodeAnn(..))
+import Fluxus.AST.Go (Identifier(..), QualifiedName(..))
 import Fluxus.AST.Common (SourceSpan, ModuleName(..))
 import Fluxus.Parser.Go.Lexer
 
@@ -1043,9 +1043,9 @@ parseParenExpr = do
 -- | Parse composite literals
 parseCompositeLit :: GoParser GoExpr
 parseCompositeLit = do
-  typeExpr <- optional parseGoType
+  _ <- optional parseGoType
   void $ goDelimiterP GoDelimLeftBrace
-  elements <- parseExpression `sepBy` goDelimiterP GoDelimComma
+  _ <- parseExpression `sepBy` goDelimiterP GoDelimComma
   void $ goDelimiterP GoDelimRightBrace
   -- TODO: Fix composite literal - need to convert type and elements to proper format
   -- For now, return a simple literal
@@ -1139,7 +1139,7 @@ parseTypeAssertion :: GoParser (Located GoExpr -> Located GoExpr)
 parseTypeAssertion = do
   void $ goDelimiterP GoDelimDot
   void $ goDelimiterP GoDelimLeftParen
-  typeExpr <- parseGoType
+  _ <- parseGoType
   void $ goDelimiterP GoDelimRightParen
   -- TODO: Fix GoTypeAssert - not implemented in main AST
   -- return $ \expr -> located' $ GoTypeAssert expr typeExpr

@@ -188,7 +188,7 @@ data BinaryOp
   | OpShiftL | OpShiftR
   
   -- Logical
-  | OpAnd | OpOr
+  | OpAnd | OpOr | OpXor
   
   -- String/list operations
   | OpConcat                            -- String/list concatenation

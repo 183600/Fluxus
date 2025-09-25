@@ -33,21 +33,16 @@ module Fluxus.Parser.Go.Lexer
 import Control.Monad (void)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Char (isAlphaNum, isAlpha, isDigit)
 import Data.Void (Void)
 import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
-import qualified Text.Megaparsec.Char.Lexer as L
 import Text.Megaparsec (many, choice, try, notFollowedBy, optional, eof, getSourcePos, satisfy, takeWhileP, manyTill, anySingle, (<|>))
-import Text.Megaparsec.Char (string)
-import Control.Applicative ((<*), (*>))
 import Data.Functor (($>))
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 
 import qualified Fluxus.AST.Go as Go
-import Fluxus.AST.Common (SourcePos(..), SourceSpan(..))
 
 -- | Go token types
 data GoToken
@@ -156,16 +151,10 @@ lexGo = do
       end <- getSourcePos
       let position = Go.Position { Go.posLine = MP.unPos (MP.sourceLine start), Go.posColumn = MP.unPos (MP.sourceColumn start) }
       let endPosition = Go.Position { Go.posLine = MP.unPos (MP.sourceLine end), Go.posColumn = MP.unPos (MP.sourceColumn end) }
-      let span = Just $ Go.Span { Go.spanStart = position, Go.spanEnd = endPosition }
-      let nodeAnn = Go.NodeAnn { Go.annSpan = span, Go.annLeading = [], Go.annTrailing = [] }
+      let tokenSpan = Just $ Go.Span { Go.spanStart = position, Go.spanEnd = endPosition }
+      let nodeAnn = Go.NodeAnn { Go.annSpan = tokenSpan, Go.annLeading = [], Go.annTrailing = [] }
       return $ Go.Located nodeAnn token
 
--- | Convert Megaparsec SourcePos to our SourcePos
-convertPos :: MP.SourcePos -> SourcePos
-convertPos pos = SourcePos
-  { posLine = MP.unPos (MP.sourceLine pos)
-  , posColumn = MP.unPos (MP.sourceColumn pos)
-  }
 
 -- | Parse a single Go token
 goToken :: GoLexer GoToken

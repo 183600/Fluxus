@@ -31,8 +31,7 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Maybe (fromMaybe, mapMaybe)
-import Data.List (foldl')
+import Data.Maybe (fromMaybe)
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
@@ -321,10 +320,10 @@ initialState = FallbackState
 -- | Run smart fallback analysis
 runSmartFallback :: SmartFallbackM a -> Either AnalysisError (a, FallbackState, [AnalysisWarning])
 runSmartFallback m = 
-  let ((result, warnings), state) = runState (runReaderT (runWriterT (runExceptT m)) initialContext) initialState
+  let ((result, warnings), finalState) = runState (runReaderT (runWriterT (runExceptT m)) initialContext) initialState
   in case result of
     Left err -> Left err
-    Right val -> Right (val, state, warnings)
+    Right val -> Right (val, finalState, warnings)
 
 -- | Analyze a complete program
 analyzeProgram :: [Statement] -> SmartFallbackM [AnalysisResult]
@@ -374,22 +373,22 @@ analyzeStatement = \case
     void $ analyzeExpression (locatedValue expr)
     
   SIf cond thenStmts elseStmts -> do
-    condResult <- analyzeExpression (locatedValue cond)
+    _ <- analyzeExpression (locatedValue cond)
     withNewScope $ do
       mapM_ analyzeStatement thenStmts
       mapM_ analyzeStatement elseStmts
     
   SWhile cond body -> do
-    condResult <- analyzeExpression (locatedValue cond)
+    _ <- analyzeExpression (locatedValue cond)
     withNewScope $ mapM_ analyzeStatement body
     
   SFor var iterExpr body -> do
-    iterResult <- analyzeExpression (locatedValue iterExpr)
+    _ <- analyzeExpression (locatedValue iterExpr)
     withNewScope $ do
-      updateVariableDynamism var (arDynamism iterResult)
+      updateVariableDynamism var SemiDynamic
       mapM_ analyzeStatement body
     
-  SFunction name params body -> do
+  SFunction _ params body -> do
     -- Analyze function body in new scope
     withNewScope $ do
       -- Mark parameters as potentially dynamic
@@ -497,7 +496,7 @@ analyzeExpression expr = do
 -- | Implementation of expression analysis
 analyzeExpressionImpl :: CommonExpr -> SmartFallbackM AnalysisResult
 analyzeExpressionImpl expr = case expr of
-  CELiteral lit -> return $ AnalysisResult
+  CELiteral _ -> return $ AnalysisResult
     { arExpression = expr
     , arDynamism = FullyStatic
     , arReasons = []
@@ -520,7 +519,7 @@ analyzeExpressionImpl expr = case expr of
       , arSuggestedOptimizations = []
       }
   
-  CEBinaryOp op left right -> do
+  CEBinaryOp _ left right -> do
     leftResult <- analyzeExpression (locatedValue left)
     rightResult <- analyzeExpression (locatedValue right)
     let dynamism = max (arDynamism leftResult) (arDynamism rightResult)
@@ -540,7 +539,7 @@ analyzeExpressionImpl expr = case expr of
           else []
       }
   
-  CEUnaryOp op operand -> do
+  CEUnaryOp _ operand -> do
     operandResult <- analyzeExpression (locatedValue operand)
     return $ operandResult
       { arExpression = expr
@@ -550,7 +549,7 @@ analyzeExpressionImpl expr = case expr of
           else arSuggestedOptimizations operandResult
       }
   
-  CEComparison op left right -> do
+  CEComparison _ left right -> do
     leftResult <- analyzeExpression (locatedValue left)
     rightResult <- analyzeExpression (locatedValue right)
     let dynamism = max (arDynamism leftResult) (arDynamism rightResult)
@@ -704,7 +703,7 @@ analyzeCallExpression expr func args = do
 
 -- | Make optimization decision based on analysis result
 makeOptimizationDecision :: AnalysisResult -> FallbackDecision
-makeOptimizationDecision result@AnalysisResult{..} = FallbackDecision
+makeOptimizationDecision AnalysisResult{..} = FallbackDecision
   { fdExpression = arExpression
   , fdShouldFallback = not arCanOptimize || arDynamism >= HighlyDynamic
   , fdReasons = arReasons
@@ -756,9 +755,9 @@ applyOptimizations decisions stmt = case stmt of
 
 -- | Optimize a located expression
 optimizeLocatedExpr :: [FallbackDecision] -> Located CommonExpr -> SmartFallbackM (Located CommonExpr)
-optimizeLocatedExpr decisions (Located span expr) = do
+optimizeLocatedExpr decisions (Located exprSpan expr) = do
   optExpr <- optimizeExpression decisions expr
-  return $ Located span optExpr
+  return $ Located exprSpan optExpr
 
 -- | Optimize an expression based on decisions
 optimizeExpression :: [FallbackDecision] -> CommonExpr -> SmartFallbackM CommonExpr
@@ -874,81 +873,3 @@ staticResult expr = AnalysisResult
 dummySpan :: SourceSpan
 dummySpan = SourceSpan "<generated>" 0 0 0 0
 
--- | Helper to create located value
-noLoc :: a -> Located a
-noLoc = Located dummySpan
-
--- ============================================================================
--- Public API Functions
--- ============================================================================
-
--- | Get fallback statistics
-getFallbackStats :: SmartFallbackM (Int, Int, Double)
-getFallbackStats = do
-  stats <- gets fsStatistics
-  decisions <- gets fsFallbackDecisions
-  let total = length decisions
-  let fallbacks = length $ filter fdShouldFallback decisions
-  let percentage = if total > 0 
-                   then fromIntegral fallbacks / fromIntegral total * 100 
-                   else 0
-  return (total, fallbacks, percentage)
-
--- | Generate analysis report
-generateReport :: SmartFallbackM Text
-generateReport = do
-  (total, fallbacks, percentage) <- getFallbackStats
-  stats <- gets fsStatistics
-  warnings <- snd <$> listen (return ())
-  
-  return $ T.unlines
-    [ "=== Smart Fallback Analysis Report ==="
-    , ""
-    , "Statistics:"
-    , "  Expressions analyzed: " <> T.pack (show $ asExpressionsAnalyzed stats)
-    , "  Statements analyzed: " <> T.pack (show $ asStatementsAnalyzed stats)
-    , "  Cache hits: " <> T.pack (show $ asCacheHits stats)
-    , "  Cache misses: " <> T.pack (show $ asCacheMisses stats)
-    , ""
-    , "Fallback Decisions:"
-    , "  Total decisions: " <> T.pack (show total)
-    , "  Fallbacks needed: " <> T.pack (show fallbacks)
-    , "  Fallback rate: " <> T.pack (show percentage) <> "%"
-    , ""
-    , "Warnings: " <> T.pack (show $ length warnings)
-    ]
-
--- | Example usage
-example :: IO ()
-example = do
-  let program = 
-        [ SFunction (Identifier "factorial") [Identifier "n"]
-            [ SIf (Located dummySpan $ CEComparison Lt 
-                    (Located dummySpan $ CEVar (Identifier "n"))
-                    (Located dummySpan $ CELiteral (LInt 2)))
-                [SReturn (Just $ Located dummySpan $ CELiteral (LInt 1))]
-                [SReturn (Just $ Located dummySpan $ 
-                   CEBinaryOp Mul 
-                     (Located dummySpan $ CEVar (Identifier "n"))
-                     (Located dummySpan $ CECall 
-                       (Located dummySpan $ CEVar (Identifier "factorial"))
-                       [Located dummySpan $ CEBinaryOp Sub 
-                         (Located dummySpan $ CEVar (Identifier "n"))
-                         (Located dummySpan $ CELiteral (LInt 1))]))]
-            ]
-        , SExpr (Located dummySpan $ CECall 
-            (Located dummySpan $ CEVar (Identifier "print"))
-            [Located dummySpan $ CECall 
-              (Located dummySpan $ CEVar (Identifier "factorial"))
-              [Located dummySpan $ CELiteral (LInt 5)]])
-        ]
-  
-  case runSmartFallback (analyzeProgram program) of
-    Left err -> putStrLn $ "Analysis error: " ++ show err
-    Right (results, state, warnings) -> do
-      putStrLn "Analysis completed successfully"
-      putStrLn $ "Results: " ++ show (length results)
-      putStrLn $ "Warnings: " ++ show (length warnings)
-      case runSmartFallback (optimizeProgram program) of
-        Left err -> putStrLn $ "Optimization error: " ++ show err
-        Right (optimized, _, _) -> putStrLn $ "Optimized statements: " ++ show (length optimized)

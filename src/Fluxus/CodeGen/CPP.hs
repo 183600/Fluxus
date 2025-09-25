@@ -1174,12 +1174,25 @@ generatePythonCall func args = do
   where
     handleBuiltinFunction "print" cppArgs = do
       addInclude "<iostream>"
+      addInclude "<tuple>"
+      addInclude "<string>"
       case cppArgs of
         [] -> return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
         _ -> do
+          -- Convert each argument to a printable form, handling tuples specially
+          printableArgs <- mapM makePrintable cppArgs
           let chainOutput = foldl (CppBinary "<<") (CppVar "std::cout") $
-                intercalateWith (CppLiteral (CppStringLit " ")) cppArgs
+                intercalateWith (CppLiteral (CppStringLit " ")) printableArgs
           return $ CppBinary "<<" chainOutput (CppVar "std::endl")
+      where
+        -- Convert an expression to a printable form
+        makePrintable :: CppExpr -> CppCodeGen CppExpr
+        makePrintable expr = case expr of
+          -- Handle tuple printing by converting to string
+          CppCall (CppVar "std::make_tuple") _ -> do
+            return $ CppCall (CppVar "std::to_string") [expr]
+          -- Handle other non-printable types similarly if needed
+          _ -> return expr
     
     handleBuiltinFunction "len" [arg] = do
       return $ CppCall (CppMember arg "size") []

@@ -8,7 +8,7 @@
 #include <iostream>
 
 int main() {
-    std::cout << "Hello" << std::endl;
+    std::cout << 10.0 / 5.0 << std::endl;
     return 0;
 }
 

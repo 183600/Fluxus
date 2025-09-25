@@ -38,11 +38,11 @@ import Fluxus.AST.Common
 import qualified Fluxus.AST.Common as Common
 import qualified Fluxus.AST.Python as Python
 import Fluxus.AST.Python (PythonAST(..), PythonModule(..), pyModule, PythonStmt(..), PythonExpr(..), PythonPattern(..), PythonLiteral(..), PythonFuncDef(..), PythonClassDef(..), PythonParameter(..), PythonImport(..), PythonArgument(..))
-import Fluxus.AST.Go (GoAST(..), GoPackage(..), goPackage, GoStmt(..), GoExpr(..), GoType(..), GoLiteral(..), GoDecl(..), GoTypeDecl(..), GoFunction(..), GoReceiver(..), GoImport(..), GoField(..), GoFile(..), GoForClause(..), GoRangeClause(..), GoConstraint(..), GoBinding(..), BindingLHS(..), BindKind(..), Located(..))
+import Fluxus.AST.Go (GoAST(..), GoPackage(..), goPackage, GoStmt(..), GoExpr(..), GoType(..), GoLiteral(..), GoDecl(..), GoTypeDecl(..), GoFunction(..), GoReceiver(..), GoImport(..), GoFile(..), GoForClause(..), GoBinding(..), BindingLHS(..), BindKind(..))
 import qualified Fluxus.AST.Go as Go
 import Control.Monad.State
 import Control.Monad.Except
-import Control.Monad (foldM, forM_, when, unless, zipWithM_)
+import Control.Monad (foldM, forM_, zipWithM_)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
@@ -216,7 +216,7 @@ inferCommonExpr (CEBinaryOp op left right) = do
 inferCommonExpr (CEUnaryOp op operand) = do
   operandType <- inferCommonExpr (locatedValue operand)
   inferUnaryOp op operandType
-inferCommonExpr (CEComparison op left right) = do
+inferCommonExpr (CEComparison _op left right) = do
   leftType <- inferCommonExpr (locatedValue left)
   rightType <- inferCommonExpr (locatedValue right)
   addConstraint leftType rightType
@@ -297,9 +297,13 @@ inferBinaryOp op leftType rightType = case op of
   OpSub -> inferArithmeticOp leftType rightType
   OpMul -> inferArithmeticOp leftType rightType
   OpDiv -> do
+    -- For division, we should allow proper numeric type coercion
+    -- but default to float division to maintain precision
+    resultType <- freshTypeVar
     addConstraint leftType (TFloat 64)
     addConstraint rightType (TFloat 64)
-    return $ TFloat 64
+    addConstraint resultType (TFloat 64)
+    return resultType
   OpMod -> inferArithmeticOp leftType rightType
   OpPow -> inferArithmeticOp leftType rightType
   OpFloorDiv -> inferArithmeticOp leftType rightType
@@ -313,6 +317,10 @@ inferBinaryOp op leftType rightType = case op of
     addConstraint rightType TBool
     return TBool
   OpOr -> do
+    addConstraint leftType TBool
+    addConstraint rightType TBool
+    return TBool
+  OpXor -> do
     addConstraint leftType TBool
     addConstraint rightType TBool
     return TBool
@@ -539,7 +547,7 @@ solveConstraints = do
 
 -- | Instantiate a polymorphic type with fresh type variables
 instantiate :: Type -> TypeInferenceM Type
-instantiate (TForall vars constraints t) = do
+instantiate (TForall vars _constraints t) = do
   freshVars <- mapM (const freshTypeVar) vars
   let varMap = HashMap.fromList (zip vars freshVars)
   let substitution = varMap
@@ -681,7 +689,7 @@ inferGoStatement stmt = case stmt of
     _ <- mapM (inferGoExpr . goLocatedValue) exprs
     return ()
   
-  GoIf maybeInit condition thenStmt maybeElseStmt -> do
+  GoIf _maybeInit condition thenStmt maybeElseStmt -> do
     condType <- inferGoExpr (goLocatedValue condition)
     addConstraint condType TBool
     _ <- inferGoStatement (goLocatedValue thenStmt)
@@ -730,6 +738,8 @@ inferPythonFuncDef funcDef = do
       ParamNormal name _ _ -> bindVarType name ty
       ParamVarArgs name _ -> bindVarType name ty
       ParamKwArgs name _ -> bindVarType name ty
+      ParamKwOnly name _ _ -> bindVarType name ty
+      ParamPosOnly name _ _ -> bindVarType name ty
 
 -- | Enhanced Python class definition inference
 inferPythonClassDef :: PythonClassDef -> TypeInferenceM ()
@@ -751,15 +761,15 @@ inferPythonClassDef classDef = do
         , typeDefParent = Nothing
         }
   registerTypeDefinition className typeDef
-  
-  let classType = TStruct className []
+
+  let selfType = TStruct className []
   
   withNewScope $ do
-    bindVarType (Identifier "self") classType
+    bindVarType (Identifier "self") selfType
     mapM_ (inferPythonStatement . locatedValue) (pyClassBody classDef)
   where
     collectClassFields :: [Common.Located Python.PythonStmt] -> TypeInferenceM (HashMap Common.Identifier Type)
-    collectClassFields stmts = do
+    collectClassFields _ = do
       -- Simplified: collect assignments in __init__ method
       return HashMap.empty
     
@@ -803,7 +813,7 @@ inferGoDecl decl = case decl of
   
   GoMethodDecl receiver func -> do
     withNewScope $ do
-      receiverType <- inferGoReceiver receiver
+      _ <- inferGoReceiver receiver
       inferGoFunction func
     return ()
   
@@ -869,8 +879,8 @@ inferClassType className fieldTypes = TStruct (QualifiedName [] className) field
 checkTypes :: TypeInferenceM Bool
 checkTypes = do
   solveConstraints
-  constraints <- gets constraints
-  return $ null constraints  -- All constraints should be solved
+  remainingConstraints <- gets constraints
+  return $ null remainingConstraints  -- All constraints should be solved
 
 -- isLeft is unused in the current implementation
 -- isLeft (Left _) = True
@@ -890,17 +900,17 @@ inferPythonExpr expr = case expr of
     inferUnaryOp op operandType
   PyCall func args -> do
     argTypes <- mapM (inferPythonArgument . locatedValue) args
-    
+
     funcType <- case locatedValue func of
       PyVar var -> do
         envLookup <- lookupVarType var `catchError` (\_ -> freshTypeVar)
         return envLookup
       _ -> inferPythonExpr (locatedValue func)
-    
-    resultType <- freshTypeVar
-    let expectedFuncType = TFunction argTypes resultType
+
+    returnType <- freshTypeVar
+    let expectedFuncType = TFunction argTypes returnType
     addConstraint funcType expectedFuncType
-    return resultType
+    return returnType
   PyAttribute obj attr -> do
     objType <- inferPythonExpr (locatedValue obj)
     inferAttributeAccess objType attr
@@ -915,8 +925,13 @@ inferPythonExpr expr = case expr of
       then freshTypeVar
       else do
         types <- mapM (inferPythonExpr . locatedValue) elems
-        mapM_ (addConstraint (head types)) (tail types)
-        return (head types)
+        case types of
+          [] -> do
+            elemType <- freshTypeVar
+            return elemType
+          (firstType:restTypes) -> do
+            mapM_ (addConstraint firstType) restTypes
+            return firstType
     return $ TList elemType
   PyDict entries -> do
     keyType <- freshTypeVar
@@ -999,6 +1014,19 @@ inferPythonParameter param = case param of
     let kwArgsType = TDict TString valueType
     bindVarType name kwArgsType
     return kwArgsType
+  ParamKwOnly name maybeType _maybeDefault -> do
+    valueType <- case maybeType of
+      Just typeExpr -> inferPythonTypeExpr (locatedValue typeExpr)
+      Nothing -> freshTypeVar
+    let kwOnlyType = TDict TString valueType
+    bindVarType name kwOnlyType
+    return kwOnlyType
+  ParamPosOnly name maybeType _maybeDefault -> do
+    paramType <- case maybeType of
+      Just typeExpr -> inferPythonTypeExpr (locatedValue typeExpr)
+      Nothing -> freshTypeVar
+    bindVarType name paramType
+    return paramType
 
 -- | Infer type from Python type expression
 inferPythonTypeExpr :: Python.PythonTypeExpr -> TypeInferenceM Type
@@ -1054,6 +1082,13 @@ inferPythonImport imp = case imp of
       case HashMap.lookup name moduleEnv of
         Just ty -> bindVarType name ty
         Nothing -> return ()
+  ImportFromStar moduleName -> do
+    let modIdentifier = case moduleName of
+            ModuleName name -> Identifier name
+    _moduleEnv <- loadPythonModule modIdentifier
+    -- For star imports, we can't determine what's being imported ahead of time
+    -- In a real implementation, we'd need to analyze the module and extract all public names
+    return ()
   where
     loadPythonModule :: Identifier -> TypeInferenceM TypeEnvironment
     loadPythonModule (Identifier modName) = 
@@ -1096,6 +1131,7 @@ inferGoExpr expr = case expr of
           Go.OpShiftR -> Common.OpShiftR
           Go.OpAndAnd -> Common.OpAnd
           Go.OpOrOr -> Common.OpOr
+          Go.OpAndNot -> Common.OpBitXor  -- Map &^ to bitwise XOR as fallback
     inferBinaryOp commonOp leftType rightType
   GoUnaryOp op operand -> do
     operandType <- inferGoExpr (goLocatedValue operand)
@@ -1129,8 +1165,10 @@ inferGoLiteral :: GoLiteral -> TypeInferenceM Type
 inferGoLiteral lit = case lit of
   GoInt _ -> return $ TInt 32
   GoFloat _ -> return $ TFloat 64
+  GoImag _ -> return $ TFloat 64  -- Imaginary numbers treated as floats
   GoBool _ -> return TBool
   GoString _ -> return TString
+  GoRawString _ -> return TString  -- Raw strings treated as regular strings
   GoRune _ -> return TChar
   GoNil -> return $ TOptional TAny
 

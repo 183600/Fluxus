@@ -11,8 +11,8 @@ import Control.Monad (when, unless)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.List (isPrefixOf, isSuffixOf)
-import System.Directory (doesDirectoryExist, getDirectoryContents, doesFileExist)
-import System.FilePath (takeFileName, takeExtension, takeDirectory, dropExtension)
+import System.Directory (doesDirectoryExist, getDirectoryContents)
+import System.FilePath ((</>))
 
 import Fluxus.Compiler.Driver as Driver
 import Fluxus.Compiler.Config as Config
@@ -97,6 +97,9 @@ extractInputFiles args = do
                            not ("-" `isPrefixOf` arg)
 
     -- Expand input to list of files (handles directories)
+    hasSupportedExtension file =
+      any (`isSuffixOf` file) [".py", ".go"]
+
     expandInput :: String -> IO [FilePath]
     expandInput path = do
       isDir <- doesDirectoryExist path
@@ -105,9 +108,6 @@ extractInputFiles args = do
         else if hasSupportedExtension path
              then return [path]
              else return []
-
-    hasSupportedExtension file =
-      any (`isSuffixOf` file) [".py", ".go"]
 
 -- | Scan directory recursively for code files
 scanDirectoryForCodeFiles :: FilePath -> IO [FilePath]
@@ -119,6 +119,9 @@ scanDirectoryForCodeFiles dir = do
     putStrLn $ "Scanned directory " ++ dir ++ ": found " ++ show (length allFiles) ++ " code files"
   return allFiles
   where
+    hasSupportedExtension file =
+      any (`isSuffixOf` file) [".py", ".go"]
+
     scanItem :: FilePath -> String -> IO [FilePath]
     scanItem basePath item = do
       let fullPath = basePath </> item
