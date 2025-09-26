@@ -421,7 +421,18 @@ unify (TFunction args1 ret1) (TFunction args2 ret2)
             Right subst2 -> return $ Right (composeSubst subst2 subst1)
   | otherwise = return $ Left "Function arity mismatch"
 unify (TOptional t1) (TOptional t2) = unify t1 t2
-unify t1 t2 = return $ Left $ "Cannot unify " <> T.pack (show t1) <> " with " <> T.pack (show t2)
+unify t1 t2 = do
+  -- Allow numeric type conversion (int to float)
+  case (t1, t2) of
+    (TInt _, TFloat _) -> return $ Right HashMap.empty  -- Allow int -> float conversion
+    (TFloat _, TInt _) -> return $ Right HashMap.empty  -- Allow float <- int conversion
+    (TInt bw1, TInt bw2)
+      | bw1 == bw2 -> return $ Right HashMap.empty
+      | otherwise -> return $ Left $ "Cannot unify TInt (BitWidth " <> T.pack (show bw1) <> ") with TInt (BitWidth " <> T.pack (show bw2) <> ")"
+    (TFloat bw1, TFloat bw2)
+      | bw1 == bw2 -> return $ Right HashMap.empty
+      | otherwise -> return $ Left $ "Cannot unify TFloat (BitWidth " <> T.pack (show bw1) <> ") with TFloat (BitWidth " <> T.pack (show bw2) <> ")"
+     the     _ -> return $ Left $ "Cannot unify " <> T.pack (show t1) <> " with " <> T.pack (show t2)
 
 -- | Unify a list of type pairs
 unifyList :: [(Type, Type)] -> TypeInferenceM (Either Text Substitution)

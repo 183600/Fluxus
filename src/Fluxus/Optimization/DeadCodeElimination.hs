@@ -7,7 +7,6 @@ module Fluxus.Optimization.DeadCodeElimination
 
 import Fluxus.AST.Python
 import Fluxus.AST.Go
-import Data.Text (Text)
 
 -- | Apply dead code elimination optimization to AST
 deadCodeElimination :: Either PythonAST GoAST -> IO (Either PythonAST GoAST)

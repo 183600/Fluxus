@@ -7,106 +7,6 @@
 #include <string>
 #include <iostream>
 
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-int __debug_generatePythonCall_called = 1;
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-int __debug_print = 42;
-
-int __debug_print_args = 1;
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
-// TODO: Render other declaration types
-
 int main() {
     auto x = 10;
     auto y = 20;
@@ -115,11 +15,11 @@ int main() {
     auto product = x * y;
     auto quotient = /* expr */ / /* expr */;
     auto remainder = y % x;
-    std::cout << "Sum:" << std::endl;
-    std::cout << "Difference:" << std::endl;
-    std::cout << "Product:" << std::endl;
-    std::cout << "Quotient:" << std::endl;
-    std::cout << "Remainder:" << std::endl;
+    std::cout << std::make_tuple("Sum:", sum_result) << std::endl;
+    std::cout << std::make_tuple("Difference:", diff) << std::endl;
+    std::cout << std::make_tuple("Product:", product) << std::endl;
+    std::cout << std::make_tuple("Quotient:", quotient) << std::endl;
+    std::cout << std::make_tuple("Remainder:", remainder) << std::endl;
     return 0;
 }
 

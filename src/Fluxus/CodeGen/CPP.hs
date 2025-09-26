@@ -655,6 +655,24 @@ addStatement stmt = do
     stmtToDecl _other = CppCommentDecl "complex statement"
 
 -- ============================================================================
+-- | Convert an expression to a printable form
+makePrintable :: CppExpr -> CppCodeGen CppExpr
+makePrintable expr = case expr of
+  -- Handle tuple printing by converting to string
+  CppCall (CppVar "std::make_tuple") args -> do
+    addInclude "<string>"
+    return $ CppCall (CppVar "std::to_string") [expr]
+  -- Handle string literals directly (no need for to_string)
+  CppLiteral (CppStringLit s) -> do
+    return expr
+  -- Handle all other literals directly (no need for to_string)
+  CppLiteral _ -> do
+    return expr
+  -- Convert other expressions to string for printing
+  _ -> do
+    addInclude "<string>"
+    return $ CppCall (CppVar "std::to_string") [expr]
+
 -- Main Entry Points
 -- ============================================================================
 
@@ -937,9 +955,14 @@ generatePythonExpr (Common.Located _ expr) = do
     PyVar (Common.Identifier name) -> return $ CppVar name
     
     PyBinaryOp op left right -> do
+      addDeclaration $ CppCommentDecl $ "Processing binary operation: " <> T.pack (show op)
       cppLeft <- generatePythonExpr left
+      addDeclaration $ CppCommentDecl $ "Generated left operand: " <> T.pack (show cppLeft)
       cppRight <- generatePythonExpr right
-      generateBinaryOp op cppLeft cppRight
+      addDeclaration $ CppCommentDecl $ "Generated right operand: " <> T.pack (show cppRight)
+      result <- generateBinaryOp op cppLeft cppRight
+      addDeclaration $ CppCommentDecl $ "Generated binary operation result: " <> T.pack (show result)
+      return result
     
     PyUnaryOp op operand -> do
       cppOperand <- generatePythonExpr operand
@@ -1000,11 +1023,11 @@ generatePythonExpr (Common.Located _ expr) = do
     
     PyListComp expr comps -> do
       generateListComp expr comps
-    
-    PyAwait expr -> do
-      generateAwait expr
-    
-    PyStarred _expr -> generatePythonExpr _expr
+
+    PyAwait awaitExpr -> do
+      generateAwait awaitExpr
+
+    PyStarred expr -> generatePythonExpr expr
     PySlice _ _ _ -> return $ CppLiteral $ CppStringLit "slice"
     PyNamedExpr _ _ -> return $ CppLiteral $ CppStringLit "named_expr"
     
@@ -1065,7 +1088,7 @@ generateBinaryOp op left right = case op of
   Common.OpAdd -> handleAddition left right
   Common.OpSub -> return $ CppBinary "-" left right
   Common.OpMul -> return $ CppBinary "*" left right
-  OpDiv -> handleDivision left right
+  Common.OpDiv -> handleDivision left right
   OpFloorDiv -> do
     addInclude "<cmath>"
     return $ CppCall (CppVar "std::floor") [CppBinary "/" left right]
@@ -1093,6 +1116,8 @@ generateBinaryOp op left right = case op of
       else return $ CppBinary "+" l r
     
     handleDivision l r = do
+      -- Debug: Add a comment to see if this function is called
+      addDeclaration $ CppCommentDecl "handleDivision called"
       let ensureFloat e = case e of
             CppLiteral (CppIntLit i) -> CppLiteral (CppFloatLit (fromIntegral i))
             _ -> CppStaticCast CppDouble e
@@ -1184,16 +1209,7 @@ generatePythonCall func args = do
           let chainOutput = foldl (CppBinary "<<") (CppVar "std::cout") $
                 intercalateWith (CppLiteral (CppStringLit " ")) printableArgs
           return $ CppBinary "<<" chainOutput (CppVar "std::endl")
-      where
-        -- Convert an expression to a printable form
-        makePrintable :: CppExpr -> CppCodeGen CppExpr
-        makePrintable expr = case expr of
-          -- Handle tuple printing by converting to string
-          CppCall (CppVar "std::make_tuple") _ -> do
-            return $ CppCall (CppVar "std::to_string") [expr]
-          -- Handle other non-printable types similarly if needed
-          _ -> return expr
-    
+          
     handleBuiltinFunction "len" [arg] = do
       return $ CppCall (CppMember arg "size") []
     
@@ -1693,10 +1709,10 @@ generateGoCall func args = do
       handleFmtFunction fname cppArgs
     Go.Located _ (GoIdent (Identifier "println")) -> do
       addInclude "<iostream>"
-      return $ buildPrintExpr cppArgs True
+      buildPrintExpr cppArgs True
     Go.Located _ (GoIdent (Identifier "print")) -> do
       addInclude "<iostream>"
-      return $ buildPrintExpr cppArgs False
+      buildPrintExpr cppArgs False
     _ -> return $ CppCall cppFunc cppArgs
   where
     handleFmtFunction "Printf" (CppLiteral (CppStringLit fmt) : args) = do
@@ -1705,21 +1721,23 @@ generateGoCall func args = do
       return $ buildPrintfExpr fmt args
     handleFmtFunction "Println" args = do
       addInclude "<iostream>"
-      return $ buildPrintExpr args True
+      buildPrintExpr args True
     handleFmtFunction "Print" args = do
       addInclude "<iostream>"
-      return $ buildPrintExpr args False
+      buildPrintExpr args False
     handleFmtFunction fmtName fmtArgs = 
       return $ CppCall (CppVar $ "fmt_" <> fmtName) fmtArgs  -- Fallback for unknown fmt functions
 
 -- | Build print expression
-buildPrintExpr :: [CppExpr] -> Bool -> CppExpr
-buildPrintExpr args addNewline = 
+buildPrintExpr :: [CppExpr] -> Bool -> CppCodeGen CppExpr
+buildPrintExpr args addNewline = do
+  -- Make all arguments printable before building expression
+  printableArgs <- mapM makePrintable args
   let base = foldl (\acc arg -> CppBinary "<<" acc arg) (CppVar "std::cout") $
-             intercalateWith (CppLiteral (CppStringLit " ")) args
-  in if addNewline 
-     then CppBinary "<<" base (CppVar "std::endl")
-     else base
+             intercalateWith (CppLiteral (CppStringLit " ")) printableArgs
+  return $ if addNewline
+           then CppBinary "<<" base (CppVar "std::endl")
+           else base
   where
     intercalateWith _ [] = []
     intercalateWith _ [x] = [x]

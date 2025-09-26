@@ -1671,28 +1671,20 @@ peepholeGoBinding binding = do
   let goRHS = map commonToGoLocatedExpr newRHS
   return $ binding { Go.bindRHS = goRHS }
 
-markDefinedBinding :: Go.BindingLHS -> OptimizationM ()
-markDefinedBinding (Go.LHSIdents goIdents) = mapM_ (\(GoCommon.Identifier ident) -> markDefined (Common.Identifier ident)) goIdents
-markDefinedBinding (Go.LHSExprs _) = return ()  -- Complex expressions, handle later
 
 -- Convert between Common.Located and GoCommon.Located
 commonToGoLocated :: Common.Located a -> GoCommon.Located a
-commonToGoLocated (Common.Located span val) = GoCommon.Located (commonToGoNodeAnn span) val
+commonToGoLocated (Common.Located spanLoc val) = GoCommon.Located (commonToGoNodeAnn spanLoc) val
 
 commonToGoNodeAnn :: Common.SourceSpan -> GoCommon.NodeAnn
 commonToGoNodeAnn (Common.SourceSpan _ start end) = GoCommon.NodeAnn (Just $ GoCommon.Span (commonToGoPos start) (commonToGoPos end)) [] []
 
 goToCommonLocated :: GoCommon.Located a -> Common.Located a
-goToCommonLocated (GoCommon.Located ann val) = 
-  case GoCommon.annSpan ann of
-    Just span -> Common.Located (goToCommonSpan span) val
+goToCommonLocated (GoCommon.Located nodeAnn val) =
+  case GoCommon.annSpan nodeAnn of
+    Just spanVal -> Common.Located (goToCommonSpan spanVal) val
     Nothing -> Common.Located (Common.SourceSpan (T.pack "<unknown>") (Common.SourcePos 0 0) (Common.SourcePos 0 0)) val
 
-commonToGoSpan :: Common.SourceSpan -> GoCommon.Span
-commonToGoSpan (Common.SourceSpan _ start end) = GoCommon.Span (commonToGoPos start) (commonToGoPos end)
-
-goToCommonSpan :: GoCommon.Span -> Common.SourceSpan
-goToCommonSpan (GoCommon.Span start end) = Common.SourceSpan (T.pack "<go-file>") (goToCommonPos start) (goToCommonPos end)
 
 commonToGoPos :: Common.SourcePos -> GoCommon.Position
 commonToGoPos (Common.SourcePos line col) = GoCommon.Position line col
@@ -1702,24 +1694,20 @@ goToCommonPos (GoCommon.Position line col) = Common.SourcePos line col
 
 -- Convert between Common.Located and GoCommon.Located for use in propagateConstantsGoExpr
 goToCommonLocatedExpr :: GoCommon.Located Go.GoExpr -> Common.Located Go.GoExpr
-goToCommonLocatedExpr (GoCommon.Located nodeAnn expr) = 
+goToCommonLocatedExpr (GoCommon.Located nodeAnn expr) =
   case GoCommon.annSpan nodeAnn of
-    Just span -> Common.Located (goToCommonSpan span) expr
+    Just spanVal -> Common.Located (goToCommonSpan spanVal) expr
     Nothing -> Common.Located (Common.SourceSpan (T.pack "<unknown>") (Common.SourcePos 0 0) (Common.SourcePos 0 0)) expr
 
 commonToGoLocatedExpr :: Common.Located Go.GoExpr -> GoCommon.Located Go.GoExpr
-commonToGoLocatedExpr (Common.Located span expr) = GoCommon.Located (commonToGoNodeAnn span) expr
+commonToGoLocatedExpr (Common.Located spanLoc expr) = GoCommon.Located (commonToGoNodeAnn spanLoc) expr
 
-anyM :: Monad m => (a -> m Bool) -> [a] -> m Bool
-anyM _ [] = return False
-anyM f (x:xs) = do
-  b <- f x
-  if b then return True else anyM f xs
 
--- Fix for Common.locatedSpan issue
-getLocatedSpan :: Common.Located a -> Common.SourceSpan
-getLocatedSpan (Common.Located span _) = span
 
 -- Helper function to extract value from GoCommon.Located
 goLocatedValue :: GoCommon.Located a -> a
 goLocatedValue (GoCommon.Located _ expr) = expr
+
+-- | Convert GoCommon.Span to Common.SourceSpan
+goToCommonSpan :: GoCommon.Span -> Common.SourceSpan
+goToCommonSpan (GoCommon.Span start end) = Common.SourceSpan (T.pack "<go-file>") (goToCommonPos start) (goToCommonPos end)

@@ -826,11 +826,51 @@ renderCppExpr :: CppExpr -> Text
 renderCppExpr = \case
   CppVar name -> name
   CppLiteral lit -> renderCppLiteral lit
-  CppBinary op left right -> 
+  CppBinary op left right ->
     renderCppExpr left <> " " <> op <> " " <> renderCppExpr right
   CppCall func args ->
     renderCppExpr func <> "(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
-  _ -> "/* expr */"
+  CppUnary op expr ->
+    op <> renderCppExpr expr
+  CppMember obj member ->
+    renderCppExpr obj <> "." <> member
+  CppPointerMember ptr member ->
+    renderCppExpr ptr <> "->" <> member
+  CppIndex arr idx ->
+    renderCppExpr arr <> "[" <> renderCppExpr idx <> "]"
+  CppCast typ expr ->
+    "(" <> renderCppType typ <> ")" <> renderCppExpr expr
+  CppStaticCast typ expr ->
+    "static_cast<" <> renderCppType typ <> ">(" <> renderCppExpr expr <> ")"
+  CppDynamicCast typ expr ->
+    "dynamic_cast<" <> renderCppType typ <> ">(" <> renderCppExpr expr <> ")"
+  CppReinterpretCast typ expr ->
+    "reinterpret_cast<" <> renderCppType typ <> ">(" <> renderCppExpr expr <> ")"
+  CppConstCast typ expr ->
+    "const_cast<" <> renderCppType typ <> ">(" <> renderCppExpr expr <> ")"
+  CppSizeOf typ ->
+    "sizeof(" <> renderCppType typ <> ")"
+  CppNew typ args ->
+    "new " <> renderCppType typ <> "(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
+  CppDelete expr ->
+    "delete " <> renderCppExpr expr
+  CppThis -> "this"
+  CppMove expr ->
+    "std::move(" <> renderCppExpr expr <> ")"
+  CppTernary cond trueExpr falseExpr ->
+    renderCppExpr cond <> " ? " <> renderCppExpr trueExpr <> " : " <> renderCppExpr falseExpr
+  CppComma exprs ->
+    "(" <> T.intercalate ", " (map renderCppExpr exprs) <> ")"
+  CppLambda params stmts _ ->
+    "[" <> T.intercalate ", " (map renderCppParam params) <> "]{ " <> T.intercalate " " (map renderCppStmt stmts) <> " }"
+  CppForward expr ->
+    "std::forward<decltype(" <> renderCppExpr expr <> ")>(" <> renderCppExpr expr <> ")"
+  CppMakeUnique typ args ->
+    "std::make_unique<" <> renderCppType typ <> ">(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
+  CppMakeShared typ args ->
+    "std::make_shared<" <> renderCppType typ <> ">(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
+  CppInitList typ exprs ->
+    renderCppType typ <> "{" <> T.intercalate ", " (map renderCppExpr exprs) <> "}"
 
 renderCppLiteral :: CppLiteral -> Text
 renderCppLiteral = \case

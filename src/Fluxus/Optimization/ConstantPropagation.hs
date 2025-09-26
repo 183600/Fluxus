@@ -7,7 +7,6 @@ module Fluxus.Optimization.ConstantPropagation
 
 import Fluxus.AST.Python
 import Fluxus.AST.Go
-import Data.Text (Text)
 
 -- | Apply constant propagation optimization to AST
 constantPropagation :: Either PythonAST GoAST -> IO (Either PythonAST GoAST)

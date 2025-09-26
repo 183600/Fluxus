@@ -144,6 +144,10 @@ freshTypeVar = do
 addConstraint :: Type -> Type -> TypeInferenceM ()
 addConstraint t1 t2 = modify $ \s -> s { constraints = (t1, t2) : constraints s }
 
+-- | Add a warning message for debugging
+addWarning :: Text -> TypeInferenceM ()
+addWarning _msg = return ()  -- Debug logging - can be enhanced to log to stderr or file
+
 -- | Look up variable type in scope stack
 lookupVarType :: Identifier -> TypeInferenceM Type
 lookupVarType var = do
@@ -197,9 +201,9 @@ lookupTypeDefinition name = gets (HashMap.lookup name . typeDefinitions)
 inferType :: CommonExpr -> TypeInferenceM InferenceResult
 inferType expr = do
   t <- inferExpr expr
-  constraints <- gets constraints
-  substitution <- gets substitution
-  return $ InferenceResult t constraints substitution
+  currentConstraints <- gets constraints
+  currentSubstitution <- gets substitution
+  return $ InferenceResult t currentConstraints currentSubstitution
 
 -- | Infer type of common expressions
 inferExpr :: CommonExpr -> TypeInferenceM Type
@@ -224,10 +228,10 @@ inferCommonExpr (CEComparison _op left right) = do
 inferCommonExpr (CECall func args) = do
   funcType <- inferCommonExpr (locatedValue func)
   argTypes <- mapM (inferCommonExpr . locatedValue) args
-  resultType <- freshTypeVar
-  let expectedFuncType = TFunction argTypes resultType
+  freshResultType <- freshTypeVar
+  let expectedFuncType = TFunction argTypes freshResultType
   addConstraint funcType expectedFuncType
-  return resultType
+  return freshResultType
 inferCommonExpr (CEIndex container index) = do
   containerType <- inferCommonExpr (locatedValue container)
   indexType <- inferCommonExpr (locatedValue index)
@@ -298,12 +302,22 @@ inferBinaryOp op leftType rightType = case op of
   OpMul -> inferArithmeticOp leftType rightType
   OpDiv -> do
     -- For division, we should allow proper numeric type coercion
-    -- but default to float division to maintain precision
-    resultType <- freshTypeVar
-    addConstraint leftType (TFloat 64)
-    addConstraint rightType (TFloat 64)
-    addConstraint resultType (TFloat 64)
-    return resultType
+    -- and default to float division to maintain precision
+    -- Allow int to float conversion by not requiring exact type equality
+    case (leftType, rightType) of
+      (TInt _, TInt _) -> do
+        -- Both are ints, result should be float
+        return (TFloat 64)
+      (TFloat _, _) -> do
+        -- Left is float, right should be convertible to float
+        return (TFloat 64)
+      (_, TFloat _) -> do
+        -- Right is float, left should be convertible to float
+        return (TFloat 64)
+      _ -> do
+        -- For other types, ensure float result without requiring type equality
+        -- This allows int -> float conversion for division
+        return (TFloat 64)
   OpMod -> inferArithmeticOp leftType rightType
   OpPow -> inferArithmeticOp leftType rightType
   OpFloorDiv -> inferArithmeticOp leftType rightType
@@ -434,7 +448,18 @@ unify (TFunction args1 ret1) (TFunction args2 ret2)
             Right subst2 -> return $ Right (composeSubst subst2 subst1)
   | otherwise = return $ Left "Function arity mismatch"
 unify (TOptional t1) (TOptional t2) = unify t1 t2
-unify t1 t2 = return $ Left $ "Cannot unify " <> T.pack (show t1) <> " with " <> T.pack (show t2)
+unify t1 t2 = do
+  -- Allow numeric type conversion (int to float)
+  case (t1, t2) of
+    (TInt _, TFloat _) -> return $ Right HashMap.empty  -- Allow int -> float conversion
+    (TFloat _, TInt _) -> return $ Right HashMap.empty  -- Allow float <- int conversion
+    (TInt bw1, TInt bw2)
+      | bw1 == bw2 -> return $ Right HashMap.empty
+      | otherwise -> return $ Left $ "Cannot unify TInt (BitWidth " <> T.pack (show bw1) <> ") with TInt (BitWidth " <> T.pack (show bw2) <> ")"
+    (TFloat bw1, TFloat bw2)
+      | bw1 == bw2 -> return $ Right HashMap.empty
+      | otherwise -> return $ Left $ "Cannot unify TFloat (BitWidth " <> T.pack (show bw1) <> ") with TFloat (BitWidth " <> T.pack (show bw2) <> ")"
+    _ -> return $ Left $ "Cannot unify " <> T.pack (show t1) <> " with " <> T.pack (show t2)
 
 -- | Unify a list of type pairs
 unifyList :: [(Type, Type)] -> TypeInferenceM (Either Text Substitution)
@@ -457,13 +482,13 @@ composeSubst s2 s1 = HashMap.map (applySubstitution s2) s1 `HashMap.union` s2
 -- | Apply substitution to current state
 applySubstitutionToState :: Substitution -> TypeInferenceM ()
 applySubstitutionToState newSubst = do
-  state <- get
-  let composedSubst = composeSubst newSubst (substitution state)
+  currentState <- get
+  let composedSubst = composeSubst newSubst (substitution currentState)
   let updatedConstraints = map (\(t1, t2) -> 
         (applySubstitution newSubst t1, applySubstitution newSubst t2)) 
-        (constraints state)
-  let updatedScopes = map (HashMap.map (applySubstitution newSubst)) (scopeStack state)
-  put state 
+        (constraints currentState)
+  let updatedScopes = map (HashMap.map (applySubstitution newSubst)) (scopeStack currentState)
+  put currentState 
     { substitution = composedSubst
     , constraints = updatedConstraints
     , scopeStack = updatedScopes
@@ -510,7 +535,7 @@ applySubstitution subst = go
     go (TInterface name args) = TInterface name (map go args)
     go (TUnion ts) = TUnion (map go ts)
     go (TGeneric name args) = TGeneric name (map go args)
-    go (TForall vars constraints t) = TForall vars constraints (go t)
+    go (TForall vars typeConstraints t) = TForall vars typeConstraints (go t)
     go (TOwned t) = TOwned (go t)
     go (TShared t) = TShared (go t)
     go (TBorrowed t) = TBorrowed (go t)
@@ -531,7 +556,10 @@ solveConstraints = do
       subst <- gets substitution
       let t1' = applySubstitution subst t1
       let t2' = applySubstitution subst t2
-      
+
+      -- Try to unify the constraint being processed
+      addWarning $ "Constraint: " <> T.pack (show t1') <> " ~ " <> T.pack (show t2')
+
       -- Try to unify
       result <- unify t1' t2'
       case result of
@@ -550,8 +578,8 @@ instantiate :: Type -> TypeInferenceM Type
 instantiate (TForall vars _constraints t) = do
   freshVars <- mapM (const freshTypeVar) vars
   let varMap = HashMap.fromList (zip vars freshVars)
-  let substitution = varMap
-  return $ applySubstitution substitution t
+  let newSubstitution = varMap
+  return $ applySubstitution newSubstitution t
 instantiate t = return t
 
 -- | Generalize a type by quantifying over free type variables
@@ -564,11 +592,11 @@ generalize env t =
   where
     freeVarsInType :: Type -> Set TypeVar
     freeVarsInType (TVar v) = Set.singleton v
-    freeVarsInType (TList t) = freeVarsInType t
+    freeVarsInType (TList elemType) = freeVarsInType elemType
     freeVarsInType (TTuple ts) = Set.unions (map freeVarsInType ts)
     freeVarsInType (TDict k v) = freeVarsInType k `Set.union` freeVarsInType v
-    freeVarsInType (TSet t) = freeVarsInType t
-    freeVarsInType (TOptional t) = freeVarsInType t
+    freeVarsInType (TSet elemType) = freeVarsInType elemType
+    freeVarsInType (TOptional elemType) = freeVarsInType elemType
     freeVarsInType (TFunction args ret) = Set.unions (map freeVarsInType (ret:args))
     freeVarsInType (TMethod rec args ret) = Set.unions (map freeVarsInType (rec:ret:args))
     freeVarsInType (TStruct _ args) = Set.unions (map freeVarsInType args)
@@ -576,11 +604,11 @@ generalize env t =
     freeVarsInType (TInterface _ args) = Set.unions (map freeVarsInType args)
     freeVarsInType (TUnion ts) = Set.unions (map freeVarsInType ts)
     freeVarsInType (TGeneric _ args) = Set.unions (map freeVarsInType args)
-    freeVarsInType (TForall vars _ t) = freeVarsInType t `Set.difference` Set.fromList vars
-    freeVarsInType (TOwned t) = freeVarsInType t
-    freeVarsInType (TShared t) = freeVarsInType t
-    freeVarsInType (TBorrowed t) = freeVarsInType t
-    freeVarsInType (TMutable t) = freeVarsInType t
+    freeVarsInType (TForall vars _ elemType) = freeVarsInType elemType `Set.difference` Set.fromList vars
+    freeVarsInType (TOwned elemType) = freeVarsInType elemType
+    freeVarsInType (TShared elemType) = freeVarsInType elemType
+    freeVarsInType (TBorrowed elemType) = freeVarsInType elemType
+    freeVarsInType (TMutable elemType) = freeVarsInType elemType
     freeVarsInType _ = Set.empty
     
     freeVarsInEnv :: TypeEnvironment -> Set TypeVar
@@ -602,8 +630,8 @@ inferPythonStatement stmt = case stmt of
     targetType <- freshTypeVar
     inferPythonPattern (locatedValue target) targetType
     valueType <- inferPythonExpr (locatedValue value)
-    resultType <- inferBinaryOp op targetType valueType
-    inferPythonPattern (locatedValue target) resultType
+    operationResultType <- inferBinaryOp op targetType valueType
+    inferPythonPattern (locatedValue target) operationResultType
     return ()
   
   PyAnnAssign target typeExpr maybeValue -> do
@@ -1037,8 +1065,8 @@ inferPythonTypeExpr typeExpr = case typeExpr of
   Python.TypeTuple elemExprs -> do
     elemTypes <- mapM (inferPythonTypeExpr . locatedValue) elemExprs
     return $ TTuple elemTypes
-  Python.TypeOptional typeExpr -> do
-    innerType <- inferPythonTypeExpr (locatedValue typeExpr)
+  Python.TypeOptional innerTypeExpr -> do
+    innerType <- inferPythonTypeExpr (locatedValue innerTypeExpr)
     return $ TOptional innerType
   _ -> freshTypeVar
   where
@@ -1144,10 +1172,10 @@ inferGoExpr expr = case expr of
   GoCall func args -> do
     funcType <- inferGoExpr (goLocatedValue func)
     argTypes <- mapM (inferGoExpr . goLocatedValue) args
-    resultType <- freshTypeVar
-    let expectedFuncType = TFunction argTypes resultType
+    callResultType <- freshTypeVar
+    let expectedFuncType = TFunction argTypes callResultType
     addConstraint funcType expectedFuncType
-    return resultType
+    return callResultType
   GoSelector obj field -> do
     objType <- inferGoExpr (goLocatedValue obj)
     inferAttributeAccess objType field
