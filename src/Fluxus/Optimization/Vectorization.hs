@@ -7,7 +7,7 @@ module Fluxus.Optimization.Vectorization
 
 import Fluxus.AST.Python
 import Fluxus.AST.Go
-import Data.Text (Text)
+
 
 -- | Apply loop vectorization optimization to AST
 vectorizeLoops :: Either PythonAST GoAST -> IO (Either PythonAST GoAST)

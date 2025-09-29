@@ -8,7 +8,7 @@
 #include <iostream>
 
 int main() {
-    auto x = 10;
+    auto z = 10.0 / 20.0;
     return 0;
 }
 

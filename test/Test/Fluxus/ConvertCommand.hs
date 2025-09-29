@@ -19,7 +19,7 @@ spec = describe "Fluxus Convert Command Tests" $ do
     when outputDirExists $ removeDirectoryRecursive "test/python-testsoutput"
 
     -- Run fluxus convert command
-    (exitCode, stdoutOutput, stderrOutput) <- readProcessWithExitCode "fluxus" ["--python", "-2", "-o", "test/python-testsoutput", "test/python-tests/basic_arithmetic.py"] ""
+    (exitCode, stdoutOutput, stderrOutput) <- readProcessWithExitCode "fluxus" ["--python", "-v", "-o", "test/python-testsoutput", "test/python-tests/basic_arithmetic.py"] ""
 
     -- Note: fluxus compiler has known code generation issues, so we expect it to fail
     -- This test ensures the command interface works correctly

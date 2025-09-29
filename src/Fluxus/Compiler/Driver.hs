@@ -794,6 +794,8 @@ renderCppDecl = \case
     "struct " <> name <> " {\n" <>
     T.unlines (map ("    " <>) (map renderCppDecl members)) <>
     "};\n"
+  CppCommentDecl comment ->
+    "// " <> comment <> "\n"
   _ -> "// TODO: Render other declaration types\n"
 
 renderCppType :: CppType -> Text
@@ -820,6 +822,7 @@ renderCppStmt = \case
   CppReturn (Just expr) -> "return " <> renderCppExpr expr <> ";"
   CppExprStmt expr -> renderCppExpr expr <> ";"
   CppDecl decl -> T.stripEnd (renderCppDecl decl)
+  CppComment comment -> "/* " <> comment <> " */"
   _ -> "// TODO: Render statement"
 
 renderCppExpr :: CppExpr -> Text
@@ -871,6 +874,8 @@ renderCppExpr = \case
     "std::make_shared<" <> renderCppType typ <> ">(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
   CppInitList typ exprs ->
     renderCppType typ <> "{" <> T.intercalate ", " (map renderCppExpr exprs) <> "}"
+  CppMakeTuple args ->
+    "std::make_tuple(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
 
 renderCppLiteral :: CppLiteral -> Text
 renderCppLiteral = \case

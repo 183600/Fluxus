@@ -9,6 +9,7 @@
 
 int main() {
     auto x = 10;
+    auto y = 20;
     return 0;
 }
 

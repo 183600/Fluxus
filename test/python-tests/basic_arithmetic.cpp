@@ -7,19 +7,233 @@
 #include <string>
 #include <iostream>
 
+// Processing expression: Literal
+
+// Processing expression: Literal
+
+// Processing expression: BinaryOp
+
+// Processing binary operation: OpAdd
+
+// Processing expression: Variable
+
+// Generated left operand: CppVar "x"
+
+// Processing expression: Variable
+
+// Generated right operand: CppVar "y"
+
+// Generated binary operation result: CppBinary "+" (CppVar "x") (CppVar "y")
+
+// Processing expression: BinaryOp
+
+// Processing binary operation: OpSub
+
+// Processing expression: Variable
+
+// Generated left operand: CppVar "y"
+
+// Processing expression: Variable
+
+// Generated right operand: CppVar "x"
+
+// Generated binary operation result: CppBinary "-" (CppVar "y") (CppVar "x")
+
+// Processing expression: BinaryOp
+
+// Processing binary operation: OpMul
+
+// Processing expression: Variable
+
+// Generated left operand: CppVar "x"
+
+// Processing expression: Variable
+
+// Generated right operand: CppVar "y"
+
+// Generated binary operation result: CppBinary "*" (CppVar "x") (CppVar "y")
+
+// Processing expression: BinaryOp
+
+// Processing binary operation: OpDiv
+
+// Processing expression: Variable
+
+// Generated left operand: CppVar "y"
+
+// Processing expression: Variable
+
+// Generated right operand: CppVar "x"
+
+// handleDivision called
+
+// Division operation: CppStaticCast CppDouble (CppVar "y") / CppStaticCast CppDouble (CppVar "x")
+
+// Generated binary operation result: CppBinary "/" (CppStaticCast CppDouble (CppVar "y")) (CppStaticCast CppDouble (CppVar "x"))
+
+// Processing expression: BinaryOp
+
+// Processing binary operation: OpMod
+
+// Processing expression: Variable
+
+// Generated left operand: CppVar "y"
+
+// Processing expression: Variable
+
+// Generated right operand: CppVar "x"
+
+// Generated binary operation result: CppBinary "%" (CppVar "y") (CppVar "x")
+
+// Processing expression: Call
+
+// About to call generatePythonCall
+
+int __debug_generatePythonCall_called = 1;
+
+// Processing expression: Variable
+
+// Processing expression: Tuple
+
+// Processing expression: Literal
+
+// Processing expression: Variable
+
+// Function call: print with 1 args
+
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyTuple [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "Sum:")},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "sum_result")}]})}
+
+int __debug_print = 42;
+
+int __debug_print_args = 1;
+
+// print function called with 1 arguments
+
+// print argument 0: CppCall (CppVar "std::make_tuple") [CppLiteral (CppStringLit "Sum:"),CppVar "sum_result"]
+
+// print printable argument 0: CppBinary "+" (CppLiteral (CppStringLit "Sum:")) (CppCall (CppVar "std::to_string") [CppVar "sum_result"])
+
+// Final printable arg type: CppBinary "+" (CppLiteral (CppStringLit "Sum:")) (CppCall (CppVar "std::to_string") [CppVar "sum_result"])
+
+// Returned from generatePythonCall
+
+// Processing expression: Call
+
+// About to call generatePythonCall
+
+// Processing expression: Variable
+
+// Processing expression: Tuple
+
+// Processing expression: Literal
+
+// Processing expression: Variable
+
+// Function call: print with 1 args
+
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyTuple [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "Difference:")},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "diff")}]})}
+
+// print function called with 1 arguments
+
+// print argument 0: CppCall (CppVar "std::make_tuple") [CppLiteral (CppStringLit "Difference:"),CppVar "diff"]
+
+// print printable argument 0: CppBinary "+" (CppLiteral (CppStringLit "Difference:")) (CppCall (CppVar "std::to_string") [CppVar "diff"])
+
+// Final printable arg type: CppBinary "+" (CppLiteral (CppStringLit "Difference:")) (CppCall (CppVar "std::to_string") [CppVar "diff"])
+
+// Returned from generatePythonCall
+
+// Processing expression: Call
+
+// About to call generatePythonCall
+
+// Processing expression: Variable
+
+// Processing expression: Tuple
+
+// Processing expression: Literal
+
+// Processing expression: Variable
+
+// Function call: print with 1 args
+
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyTuple [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "Product:")},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "product")}]})}
+
+// print function called with 1 arguments
+
+// print argument 0: CppCall (CppVar "std::make_tuple") [CppLiteral (CppStringLit "Product:"),CppVar "product"]
+
+// print printable argument 0: CppBinary "+" (CppLiteral (CppStringLit "Product:")) (CppCall (CppVar "std::to_string") [CppVar "product"])
+
+// Final printable arg type: CppBinary "+" (CppLiteral (CppStringLit "Product:")) (CppCall (CppVar "std::to_string") [CppVar "product"])
+
+// Returned from generatePythonCall
+
+// Processing expression: Call
+
+// About to call generatePythonCall
+
+// Processing expression: Variable
+
+// Processing expression: Tuple
+
+// Processing expression: Literal
+
+// Processing expression: Variable
+
+// Function call: print with 1 args
+
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyTuple [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "Quotient:")},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "quotient")}]})}
+
+// print function called with 1 arguments
+
+// print argument 0: CppCall (CppVar "std::make_tuple") [CppLiteral (CppStringLit "Quotient:"),CppVar "quotient"]
+
+// print printable argument 0: CppBinary "+" (CppLiteral (CppStringLit "Quotient:")) (CppCall (CppVar "std::to_string") [CppVar "quotient"])
+
+// Final printable arg type: CppBinary "+" (CppLiteral (CppStringLit "Quotient:")) (CppCall (CppVar "std::to_string") [CppVar "quotient"])
+
+// Returned from generatePythonCall
+
+// Processing expression: Call
+
+// About to call generatePythonCall
+
+// Processing expression: Variable
+
+// Processing expression: Tuple
+
+// Processing expression: Literal
+
+// Processing expression: Variable
+
+// Function call: print with 1 args
+
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyTuple [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "Remainder:")},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "remainder")}]})}
+
+// print function called with 1 arguments
+
+// print argument 0: CppCall (CppVar "std::make_tuple") [CppLiteral (CppStringLit "Remainder:"),CppVar "remainder"]
+
+// print printable argument 0: CppBinary "+" (CppLiteral (CppStringLit "Remainder:")) (CppCall (CppVar "std::to_string") [CppVar "remainder"])
+
+// Final printable arg type: CppBinary "+" (CppLiteral (CppStringLit "Remainder:")) (CppCall (CppVar "std::to_string") [CppVar "remainder"])
+
+// Returned from generatePythonCall
+
 int main() {
     auto x = 10;
     auto y = 20;
     auto sum_result = x + y;
     auto diff = y - x;
     auto product = x * y;
-    auto quotient = /* expr */ / /* expr */;
+    auto quotient = static_cast<double>(y) / static_cast<double>(x);
     auto remainder = y % x;
-    std::cout << std::make_tuple("Sum:", sum_result) << std::endl;
-    std::cout << std::make_tuple("Difference:", diff) << std::endl;
-    std::cout << std::make_tuple("Product:", product) << std::endl;
-    std::cout << std::make_tuple("Quotient:", quotient) << std::endl;
-    std::cout << std::make_tuple("Remainder:", remainder) << std::endl;
+    std::cout << "Sum:" + std::to_string(sum_result) << std::endl;
+    std::cout << "Difference:" + std::to_string(diff) << std::endl;
+    std::cout << "Product:" + std::to_string(product) << std::endl;
+    std::cout << "Quotient:" + std::to_string(quotient) << std::endl;
+    std::cout << "Remainder:" + std::to_string(remainder) << std::endl;
     return 0;
 }
 

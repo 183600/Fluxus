@@ -7,7 +7,7 @@ module Fluxus.Optimization.Inlining
 
 import Fluxus.AST.Python
 import Fluxus.AST.Go
-import Data.Text (Text)
+
 
 -- | Apply function inlining optimization to AST
 inlineFunctions :: Either PythonAST GoAST -> IO (Either PythonAST GoAST)

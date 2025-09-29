@@ -9,6 +9,8 @@
 
 int main() {
     auto x = 10;
+    auto y = 10;
+    auto z = /* expr */ / /* expr */;
     return 0;
 }
 

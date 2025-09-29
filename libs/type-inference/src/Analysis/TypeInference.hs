@@ -292,9 +292,25 @@ inferBinaryOp op leftType rightType = case op of
   OpSub -> inferArithmeticOp leftType rightType
   OpMul -> inferArithmeticOp leftType rightType
   OpDiv -> do
-    addConstraint leftType (TFloat 64)
-    addConstraint rightType (TFloat 64)
-    return $ TFloat 64
+    -- For division, we should allow proper numeric type coercion
+    -- and default to float division to maintain precision
+    case (leftType, rightType) of
+      (TInt _, TInt _) -> do
+        -- Both are ints, they should unify and result should be float
+        addConstraint leftType rightType  -- Unify the int types
+        return (TFloat 64)
+      (TFloat _, _) -> do
+        -- Left is float, right should be convertible to float
+        addConstraint rightType (TFloat 64)  -- Allow right to be float or be convertible
+        return (TFloat 64)
+      (_, TFloat _) -> do
+        -- Right is float, left should be convertible to float
+        addConstraint leftType (TFloat 64)  -- Allow left to be float or be convertible
+        return (TFloat 64)
+      _ -> do
+        -- For other numeric types, allow conversion to float
+        addConstraint leftType rightType  -- For same numeric types
+        return (TFloat 64)
   OpMod -> inferArithmeticOp leftType rightType
   OpPow -> inferArithmeticOp leftType rightType
   OpFloorDiv -> inferArithmeticOp leftType rightType
@@ -424,15 +440,16 @@ unify (TOptional t1) (TOptional t2) = unify t1 t2
 unify t1 t2 = do
   -- Allow numeric type conversion (int to float)
   case (t1, t2) of
-    (TInt _, TFloat _) -> return $ Right HashMap.empty  -- Allow int -> float conversion
-    (TFloat _, TInt _) -> return $ Right HashMap.empty  -- Allow float <- int conversion
     (TInt bw1, TInt bw2)
       | bw1 == bw2 -> return $ Right HashMap.empty
       | otherwise -> return $ Left $ "Cannot unify TInt (BitWidth " <> T.pack (show bw1) <> ") with TInt (BitWidth " <> T.pack (show bw2) <> ")"
     (TFloat bw1, TFloat bw2)
       | bw1 == bw2 -> return $ Right HashMap.empty
       | otherwise -> return $ Left $ "Cannot unify TFloat (BitWidth " <> T.pack (show bw1) <> ") with TFloat (BitWidth " <> T.pack (show bw2) <> ")"
-     the     _ -> return $ Left $ "Cannot unify " <> T.pack (show t1) <> " with " <> T.pack (show t2)
+    -- Allow int to float conversion for arithmetic operations
+    (TInt _, TFloat _) -> return $ Right HashMap.empty
+    (TFloat _, TInt _) -> return $ Right HashMap.empty
+    _ -> return $ Left $ "Cannot unify " <> T.pack (show t1) <> " with " <> T.pack (show t2)
 
 -- | Unify a list of type pairs
 unifyList :: [(Type, Type)] -> TypeInferenceM (Either Text Substitution)

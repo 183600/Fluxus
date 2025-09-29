@@ -38,7 +38,7 @@ module Fluxus.CodeGen.CPP
 
 import Control.Monad.State
 import Control.Monad.Writer
-import Control.Monad (when, unless, forM, foldM)
+import Control.Monad (when, unless, forM, forM_, foldM)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.List (partition, nub)
@@ -156,6 +156,7 @@ data CppExpr
   | CppForward !CppExpr
   | CppMakeUnique !CppType ![CppExpr]
   | CppMakeShared !CppType ![CppExpr]
+  | CppMakeTuple ![CppExpr]
   | CppInitList !CppType ![CppExpr]
   | CppTernary !CppExpr !CppExpr !CppExpr
   | CppComma ![CppExpr]
@@ -267,6 +268,8 @@ prettyCppUnit :: CppUnit -> Text
 prettyCppUnit CppUnit{..} = T.unlines $ concat
   [ map renderInclude (nub cppIncludes)
   , [""]
+  , -- Always include tuple output support function for safety
+    [tupleOutputSupportFunction]
   , if null cppNamespaces then [] else concat
       [ map (\ns -> "namespace " <> ns <> " {") cppNamespaces
       , [""]
@@ -518,6 +521,8 @@ renderExpr expr = case expr of
   CppMakeShared typ args ->
     "std::make_shared<" <> renderType typ <> ">(" <>
     T.intercalate ", " (map renderExpr args) <> ")"
+  CppMakeTuple args ->
+    "std::make_tuple(" <> T.intercalate ", " (map renderExpr args) <> ")"
   CppInitList typ elements ->
     renderType typ <> "{" <> T.intercalate ", " (map renderExpr elements) <> "}"
   CppTernary cond thenExpr elseExpr ->
@@ -610,6 +615,28 @@ renderParams params = T.intercalate ", " (map renderParam params)
       renderType typ <> " " <> name <>
       maybe "" (\def -> " = " <> renderExpr def) mDefault
 
+-- | Check if declarations need tuple output support
+-- This function is not currently used but may be needed in the future
+-- needsTupleOutputSupport :: [CppDecl] -> Bool
+
+
+-- | Tuple output support function
+tupleOutputSupportFunction :: Text
+tupleOutputSupportFunction = T.unlines
+  [ "// Helper function to output tuples to ostream"
+  , "template<typename... Args>"
+  , "std::ostream& operator<<(std::ostream& os, const std::tuple<Args...>& t) {"
+  , "    os << \"(\";"
+  , "    std::apply([&os](const Args&... args) {"
+  , "        std::size_t n = 0;"
+  , "        ((os << args << (++n != sizeof...(Args) ? \", \" : \"\"))), ...);"
+  , "    }, t);"
+  , "    os << \")\";"
+  , "    return os;"
+  , "}"
+  , ""
+  ]
+
 -- | Generate indentation
 indentText :: Int -> Text
 indentText n = T.replicate n "    "
@@ -655,19 +682,32 @@ addStatement stmt = do
     stmtToDecl _other = CppCommentDecl "complex statement"
 
 -- ============================================================================
+
 -- | Convert an expression to a printable form
 makePrintable :: CppExpr -> CppCodeGen CppExpr
 makePrintable expr = case expr of
-  -- Handle tuple printing by converting to string
-  CppCall (CppVar "std::make_tuple") args -> do
-    addInclude "<string>"
-    return $ CppCall (CppVar "std::to_string") [expr]
   -- Handle string literals directly (no need for to_string)
-  CppLiteral (CppStringLit s) -> do
+  CppLiteral (CppStringLit _) -> do
     return expr
   -- Handle all other literals directly (no need for to_string)
   CppLiteral _ -> do
     return expr
+  -- Handle tuple expressions specially - they need custom output formatting
+  CppCall (CppVar "std::make_tuple") tupleArgs -> do
+    addInclude "<sstream>"
+    addInclude "<string>"
+    -- For tuples, we'll create a string stream and output each element
+    let formatTupleElement arg = case arg of
+          CppLiteral (CppStringLit s) -> CppLiteral (CppStringLit s)
+          _ -> CppCall (CppVar "std::to_string") [arg]
+    let formattedArgs = map formatTupleElement tupleArgs
+    -- Use string concatenation with proper string objects
+    case formattedArgs of
+      [] -> return $ CppLiteral (CppStringLit "")
+      [single] -> return single
+      (first:rest) -> do
+        let concatenated = foldl (\acc x -> CppBinary "+" acc x) first rest
+        return concatenated
   -- Convert other expressions to string for printing
   _ -> do
     addInclude "<string>"
@@ -1021,13 +1061,13 @@ generatePythonExpr (Common.Located _ expr) = do
       cppElse <- generatePythonExpr elseExpr
       return $ CppTernary cppCond cppThen cppElse
     
-    PyListComp expr comps -> do
-      generateListComp expr comps
+    PyListComp listExpr comps -> do
+      generateListComp listExpr comps
 
     PyAwait awaitExpr -> do
       generateAwait awaitExpr
 
-    PyStarred expr -> generatePythonExpr expr
+    PyStarred starredExpr -> generatePythonExpr starredExpr
     PySlice _ _ _ -> return $ CppLiteral $ CppStringLit "slice"
     PyNamedExpr _ _ -> return $ CppLiteral $ CppStringLit "named_expr"
     
@@ -1035,14 +1075,14 @@ generatePythonExpr (Common.Located _ expr) = do
       addWarning "Boolean operations not fully supported"
       return $ CppLiteral $ CppStringLit "bool_op"
     
-    PySetComp expr comps -> do
-      generateSetComp expr comps
+    PySetComp setExpr comps -> do
+      generateSetComp setExpr comps
     
     PyDictComp keyExpr valExpr comps -> do
       generateDictComp keyExpr valExpr comps
     
-    PyGenComp expr comps -> do
-      generateGenComp expr comps
+    PyGenComp genExpr comps -> do
+      generateGenComp genExpr comps
     
     PyFString parts -> do
       generateFString parts
@@ -1121,7 +1161,10 @@ generateBinaryOp op left right = case op of
       let ensureFloat e = case e of
             CppLiteral (CppIntLit i) -> CppLiteral (CppFloatLit (fromIntegral i))
             _ -> CppStaticCast CppDouble e
-      return $ CppBinary "/" (ensureFloat l) (ensureFloat r)
+      let leftResult = ensureFloat l
+      let rightResult = ensureFloat r
+      addDeclaration $ CppCommentDecl $ "Division operation: " <> T.pack (show leftResult) <> " / " <> T.pack (show rightResult)
+      return $ CppBinary "/" leftResult rightResult
     
     isStringExpr (CppLiteral (CppStringLit _)) = True
     isStringExpr (CppVar name) = "str" `T.isInfixOf` name
@@ -1162,6 +1205,10 @@ generatePythonCall func args = do
   -- Force a C++ comment to be generated
   addDeclaration $ CppCommentDecl $ "Function call: " <> funcName <> " with " <> T.pack (show (length args)) <> " args"
   
+  -- Debug: Show each argument
+  forM_ (zip ([0..] :: [Int]) args) $ \(i, arg) ->
+    addDeclaration $ CppCommentDecl $ "Python argument " <> T.pack (show i) <> ": " <> T.pack (show arg)
+  
   -- Add a very obvious debug variable that will show up in the output (only once per function)
   debugFuncExists <- isDeclared ("__debug_" <> funcName)
   unless debugFuncExists $ 
@@ -1199,15 +1246,26 @@ generatePythonCall func args = do
   where
     handleBuiltinFunction "print" cppArgs = do
       addInclude "<iostream>"
-      addInclude "<tuple>"
       addInclude "<string>"
+      -- Debug: Add comment showing number of arguments
+      addDeclaration $ CppCommentDecl $ "print function called with " <> T.pack (show (length cppArgs)) <> " arguments"
       case cppArgs of
         [] -> return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
         _ -> do
-          -- Convert each argument to a printable form, handling tuples specially
+          -- Debug: Add comment showing each argument
+          forM_ (zip ([0..] :: [Int]) cppArgs) $ \(i, arg) ->
+            addDeclaration $ CppCommentDecl $ "print argument " <> T.pack (show i) <> ": " <> T.pack (show arg)
+          
+          -- Convert each argument to a printable form
           printableArgs <- mapM makePrintable cppArgs
+          -- Debug: Add comment showing printable arguments
+          forM_ (zip ([0..] :: [Int]) printableArgs) $ \(i, arg) ->
+            addDeclaration $ CppCommentDecl $ "print printable argument " <> T.pack (show i) <> ": " <> T.pack (show arg)
+          -- Debug: Check if we have any tuple expressions
+          forM_ printableArgs $ \arg ->
+            addDeclaration $ CppCommentDecl $ "Final printable arg type: " <> T.pack (show arg)
           let chainOutput = foldl (CppBinary "<<") (CppVar "std::cout") $
-                intercalateWith (CppLiteral (CppStringLit " ")) printableArgs
+                intercalateWithPrint (CppLiteral (CppStringLit " ")) printableArgs
           return $ CppBinary "<<" chainOutput (CppVar "std::endl")
           
     handleBuiltinFunction "len" [arg] = do
@@ -1248,27 +1306,17 @@ generatePythonCall func args = do
       do
         addDeclaration $ CppCommentDecl $ "Regular function call via handleBuiltinFunction: " <> name <> " with " <> T.pack (show (length cppArgs)) <> " args"
         -- Check if we're creating a tuple by mistake
-        addDeclaration $ CppCommentDecl $ "Args type: " <> T.pack (show (map (\ _ -> "expr") cppArgs))
+        addDeclaration $ CppCommentDecl $ "Args type: " <> T.pack (show (map (\ _ -> ("expr" :: String)) cppArgs))
         return $ CppCall (CppVar name) cppArgs
     
-    intercalateWith _sep [] = []
-    intercalateWith _sep [x] = [x]
-    intercalateWith sep (x:xs) = x : sep : intercalateWith sep xs
+    intercalateWithPrint _sep [] = []
+    intercalateWithPrint _sep [x] = [x]
+    intercalateWithPrint sep (x:xs) = x : sep : intercalateWithPrint sep xs
 
 -- | Generate Python argument
 generatePythonArgument :: Located PythonArgument -> CppCodeGen CppExpr
 generatePythonArgument (Located _ arg) = case arg of
-  ArgPositional expr -> do
-    -- Check if the expression is a tuple, and if so, handle it specially
-    case locatedValue expr of
-      PyTuple items -> do
-        -- This is the bug fix: if we have a tuple in argument position,
-        -- we need to extract the first element of the tuple
-        -- This is a workaround for the issue where arguments are being wrapped in tuples
-        case items of
-          (firstItem:_) -> generatePythonExpr firstItem
-          [] -> return $ CppLiteral $ CppIntLit 0  -- Empty tuple, return a default value
-      _ -> generatePythonExpr expr
+  ArgPositional expr -> generatePythonExpr expr
   ArgKeyword _ expr -> generatePythonExpr expr
   ArgStarred expr -> generatePythonExpr expr
   ArgKwStarred expr -> generatePythonExpr expr
@@ -1715,16 +1763,16 @@ generateGoCall func args = do
       buildPrintExpr cppArgs False
     _ -> return $ CppCall cppFunc cppArgs
   where
-    handleFmtFunction "Printf" (CppLiteral (CppStringLit fmt) : args) = do
+    handleFmtFunction "Printf" (CppLiteral (CppStringLit fmt) : fmtArgs) = do
       addInclude "<iostream>"
       addInclude "<iomanip>"
-      return $ buildPrintfExpr fmt args
-    handleFmtFunction "Println" args = do
+      return $ buildPrintfExpr fmt fmtArgs
+    handleFmtFunction "Println" printArgs = do
       addInclude "<iostream>"
-      buildPrintExpr args True
-    handleFmtFunction "Print" args = do
+      buildPrintExpr printArgs True
+    handleFmtFunction "Print" printArgs = do
       addInclude "<iostream>"
-      buildPrintExpr args False
+      buildPrintExpr printArgs False
     handleFmtFunction fmtName fmtArgs = 
       return $ CppCall (CppVar $ "fmt_" <> fmtName) fmtArgs  -- Fallback for unknown fmt functions
 
@@ -1734,14 +1782,14 @@ buildPrintExpr args addNewline = do
   -- Make all arguments printable before building expression
   printableArgs <- mapM makePrintable args
   let base = foldl (\acc arg -> CppBinary "<<" acc arg) (CppVar "std::cout") $
-             intercalateWith (CppLiteral (CppStringLit " ")) printableArgs
+             intercalateWithPrint2 (CppLiteral (CppStringLit " ")) printableArgs
   return $ if addNewline
            then CppBinary "<<" base (CppVar "std::endl")
            else base
   where
-    intercalateWith _ [] = []
-    intercalateWith _ [x] = [x]
-    intercalateWith sep (x:xs) = x : sep : intercalateWith sep xs
+    intercalateWithPrint2 _ [] = []
+    intercalateWithPrint2 _ [x] = [x]
+    intercalateWithPrint2 sep (x:xs) = x : sep : intercalateWithPrint2 sep xs
 
 -- | Build printf expression
 buildPrintfExpr :: Text -> [CppExpr] -> CppExpr
@@ -1929,27 +1977,24 @@ generateGoStmtBlock (Go.Located _ (GoBlock stmts)) = mapM generateGoStmt stmts
 generateGoStmtBlock stmt = (:[]) <$> generateGoStmt stmt
 
 -- | Generate Go variable
-{-# WARNING generateGoVariable "This function is not currently used but may be needed in the future" #-}
 -- generateGoVariable is unused in the current implementation
+-- generateGoVariable :: (Identifier, Maybe (Go.Located GoType), Maybe (Go.Located GoExpr)) -> CppCodeGen ()
 -- generateGoVariable (name, mType, mExpr) = do
---     -- Implementation for Go variable generation
---     return ()
-generateGoVariable (name, mType, mExpr) = do
-  cppType <- case mType of
-    Nothing -> return CppAuto
-    Just t -> generateGoType (convertGoLocated t)
-  cppExpr <- mapM generateGoExpr mExpr
-  addDeclaration $ CppVariable (case name of Identifier nameStr -> nameStr) cppType cppExpr
+--   cppType <- case mType of
+--     Nothing -> return CppAuto
+--     Just t -> generateGoType (convertGoLocated t)
+--   cppExpr <- mapM generateGoExpr mExpr
+--   addDeclaration $ CppVariable (case name of Identifier nameStr -> nameStr) cppType cppExpr
 
 -- | Generate Go constant
-{-# WARNING generateGoConstant "This function is not currently used but may be needed in the future" #-}
-generateGoConstant :: (Identifier, Maybe (Go.Located GoType), Maybe (Go.Located GoExpr)) -> CppCodeGen ()
-generateGoConstant (name, mType, mExpr) = do
-  cppType <- case mType of
-    Nothing -> return CppAuto
-    Just t -> generateGoType (convertGoLocated t)
-  cppExpr <- mapM generateGoExpr mExpr
-  addDeclaration $ CppVariable (case name of Identifier nameStr -> nameStr) (CppConst cppType) cppExpr
+-- This function is not currently used but may be needed in the future
+-- generateGoConstant :: (Identifier, Maybe (Go.Located GoType), Maybe (Go.Located GoExpr)) -> CppCodeGen ()
+-- generateGoConstant (name, mType, mExpr) = do
+--   cppType <- case mType of
+--     Nothing -> return CppAuto
+--     Just t -> generateGoType (convertGoLocated t)
+--   cppExpr <- mapM generateGoExpr mExpr
+--   addDeclaration $ CppVariable (case name of Identifier nameStr -> nameStr) (CppConst cppType) cppExpr
 
 -- | Generate Go constant from GoConstSpec
 generateGoConstant' :: GoConstSpec -> CppCodeGen ()
@@ -2255,7 +2300,6 @@ generateAwait expr = do
 -- Translates to: std::unordered_set<auto> result; for (auto target : iter) { if (filters) result.insert(expr); }
 generateSetComp :: Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
 generateSetComp expr comps = do
-  resultVar <- generateTempVar
   addInclude "<unordered_set>"
   
   -- For simplicity, reuse list comprehension logic but change the container type
@@ -2314,7 +2358,7 @@ generateDictComp keyExpr valExpr comps = do
       -- For {keyExpr: valExpr for x in iter1 for y in iter2}, we generate nested loops
       
       -- Generate temporary variables
-      resultVar <- generateTempVar
+      _nestedResultVar <- generateTempVar
       addInclude "<unordered_map>"
       
       -- Generate the key and value expressions
@@ -2568,22 +2612,9 @@ mapGoComparisonOp op = case op of
   Go.OpGt -> ">"
   Go.OpGe -> ">="
 
-{-# WARNING mapPythonBinaryOp "This function is not currently used but may be needed in the future" #-}
-mapPythonBinaryOp :: Common.BinaryOp -> Text
-mapPythonBinaryOp op = case op of
-  Common.OpAdd -> "+"
-  Common.OpSub -> "-"
-  Common.OpMul -> "*"
-  Common.OpDiv -> "/"
-  Common.OpMod -> "%"
-  Common.OpAnd -> "&&"
-  Common.OpOr -> "||"
-  Common.OpBitAnd -> "&"
-  Common.OpBitOr -> "|"
-  Common.OpBitXor -> "^"
-  Common.OpShiftL -> "<<"
-  Common.OpShiftR -> ">>"
-  _ -> "+"
+-- mapPythonBinaryOp is not currently used but may be needed in the future
+-- mapPythonBinaryOp :: Common.BinaryOp -> Text
+-- mapPythonBinaryOp _op = "+"  -- placeholder implementation
 
 mapPythonComparisonOp :: Common.ComparisonOp -> Text
 mapPythonComparisonOp op = case op of
@@ -2655,5 +2686,6 @@ mapCommonTypeToCpp :: Type -> CppType
 mapCommonTypeToCpp = mapPythonTypeToCpp
 
 -- | Extract identifier
-unIdentifier :: Identifier -> Text
-unIdentifier (Identifier name) = name
+-- This function is not currently used but may be needed in the future
+-- unIdentifier :: Identifier -> Text
+-- unIdentifier (Identifier name) = name

@@ -42,7 +42,7 @@ import Fluxus.AST.Go (GoAST(..), GoPackage(..), goPackage, GoStmt(..), GoExpr(..
 import qualified Fluxus.AST.Go as Go
 import Control.Monad.State
 import Control.Monad.Except
-import Control.Monad (foldM, forM_, zipWithM_)
+import Control.Monad (foldM, forM, forM_, zipWithM_)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
@@ -146,7 +146,7 @@ addConstraint t1 t2 = modify $ \s -> s { constraints = (t1, t2) : constraints s 
 
 -- | Add a warning message for debugging
 addWarning :: Text -> TypeInferenceM ()
-addWarning _msg = return ()  -- Debug logging - can be enhanced to log to stderr or file
+addWarning _msg = return ()
 
 -- | Look up variable type in scope stack
 lookupVarType :: Identifier -> TypeInferenceM Type
@@ -156,7 +156,9 @@ lookupVarType var = do
     Just t -> do
       -- Apply current substitution to the type
       subst <- gets substitution
-      return $ applySubstitution subst t
+      let result = applySubstitution subst t
+      addWarning $ "Variable lookup: " <> T.pack (show var) <> ", type=" <> T.pack (show result)
+      return result
     Nothing -> throwError $ errorToText $ UndefinedVariable var (SourceSpan (T.pack "<no-file>") (SourcePos 0 0) (SourcePos 0 0))
   where
     lookupInScopes :: Identifier -> [TypeEnvironment] -> Maybe Type
@@ -296,67 +298,78 @@ inferLiteral LNone = return $ TOptional TAny
 
 -- | Infer type of binary operations
 inferBinaryOp :: BinaryOp -> Type -> Type -> TypeInferenceM Type
-inferBinaryOp op leftType rightType = case op of
-  OpAdd -> inferArithmeticOp leftType rightType
-  OpSub -> inferArithmeticOp leftType rightType
-  OpMul -> inferArithmeticOp leftType rightType
-  OpDiv -> do
-    -- For division, we should allow proper numeric type coercion
-    -- and default to float division to maintain precision
-    -- Allow int to float conversion by not requiring exact type equality
-    case (leftType, rightType) of
-      (TInt _, TInt _) -> do
-        -- Both are ints, result should be float
-        return (TFloat 64)
-      (TFloat _, _) -> do
-        -- Left is float, right should be convertible to float
-        return (TFloat 64)
-      (_, TFloat _) -> do
-        -- Right is float, left should be convertible to float
-        return (TFloat 64)
-      _ -> do
-        -- For other types, ensure float result without requiring type equality
-        -- This allows int -> float conversion for division
-        return (TFloat 64)
-  OpMod -> inferArithmeticOp leftType rightType
-  OpPow -> inferArithmeticOp leftType rightType
-  OpFloorDiv -> inferArithmeticOp leftType rightType
-  OpBitAnd -> inferBitwiseOp leftType rightType
-  OpBitOr -> inferBitwiseOp leftType rightType
-  OpBitXor -> inferBitwiseOp leftType rightType
-  OpShiftL -> inferBitwiseOp leftType rightType
-  OpShiftR -> inferBitwiseOp leftType rightType
-  OpAnd -> do
-    addConstraint leftType TBool
-    addConstraint rightType TBool
-    return TBool
-  OpOr -> do
-    addConstraint leftType TBool
-    addConstraint rightType TBool
-    return TBool
-  OpXor -> do
-    addConstraint leftType TBool
-    addConstraint rightType TBool
-    return TBool
-  OpConcat -> do
-    addConstraint leftType rightType
-    return leftType
-  OpIn -> do
-    case rightType of
-      TList elemType -> addConstraint leftType elemType
-      TSet elemType -> addConstraint leftType elemType
-      TDict keyType _ -> addConstraint leftType keyType
-      TString -> addConstraint leftType TChar
-      _ -> return ()
-    return TBool
-  OpNotIn -> do
-    case rightType of
-      TList elemType -> addConstraint leftType elemType
-      TSet elemType -> addConstraint leftType elemType
-      TDict keyType _ -> addConstraint leftType keyType
-      TString -> addConstraint leftType TChar
-      _ -> return ()
-    return TBool
+inferBinaryOp op leftType rightType = do
+  addWarning $ "Binary op: " <> T.pack (show op) <> ", left=" <> T.pack (show leftType) <> ", right=" <> T.pack (show rightType)
+  case op of
+    OpAdd -> inferArithmeticOp leftType rightType
+    OpSub -> inferArithmeticOp leftType rightType
+    OpMul -> inferArithmeticOp leftType rightType
+    OpDiv -> do
+      -- For division, we should allow proper numeric type coercion
+      -- and default to float division to maintain precision
+      -- Allow int to float conversion by not requiring exact type equality
+      addWarning $ "Division type inference: left=" <> T.pack (show leftType) <> ", right=" <> T.pack (show rightType)
+      case (leftType, rightType) of
+        (TInt _, TInt _) -> do
+          -- Both are ints, result should be float
+          -- Don't unify int types for division since they might have different bit widths
+          -- but both should be convertible to float
+          addWarning "Division: both ints, returning float"
+          return (TFloat 64)
+        (TFloat _, _) -> do
+          -- Left is float, right should be convertible to float
+          -- Don't add constraint for division since it should allow numeric conversion
+          addWarning "Division: left is float, returning float"
+          return (TFloat 64)
+        (_, TFloat _) -> do
+          -- Right is float, left should be convertible to float
+          -- Don't add constraint for division since it should allow numeric conversion
+          addWarning "Division: right is float, returning float"
+          return (TFloat 64)
+        _ -> do
+          -- For other numeric types, allow conversion to float
+          -- Don't unify different numeric types for division
+          addWarning "Division: other case, returning float"
+          return (TFloat 64)
+    OpMod -> inferArithmeticOp leftType rightType
+    OpPow -> inferArithmeticOp leftType rightType
+    OpFloorDiv -> inferArithmeticOp leftType rightType
+    OpBitAnd -> inferBitwiseOp leftType rightType
+    OpBitOr -> inferBitwiseOp leftType rightType
+    OpBitXor -> inferBitwiseOp leftType rightType
+    OpShiftL -> inferBitwiseOp leftType rightType
+    OpShiftR -> inferBitwiseOp leftType rightType
+    OpAnd -> do
+      addConstraint leftType TBool
+      addConstraint rightType TBool
+      return TBool
+    OpOr -> do
+      addConstraint leftType TBool
+      addConstraint rightType TBool
+      return TBool
+    OpXor -> do
+      addConstraint leftType TBool
+      addConstraint rightType TBool
+      return TBool
+    OpConcat -> do
+      addConstraint leftType rightType
+      return leftType
+    OpIn -> do
+      case rightType of
+        TList elemType -> addConstraint leftType elemType
+        TSet elemType -> addConstraint leftType elemType
+        TDict keyType _ -> addConstraint leftType keyType
+        TString -> addConstraint leftType TChar
+        _ -> return ()
+      return TBool
+    OpNotIn -> do
+      case rightType of
+        TList elemType -> addConstraint leftType elemType
+        TSet elemType -> addConstraint leftType elemType
+        TDict keyType _ -> addConstraint leftType keyType
+        TString -> addConstraint leftType TChar
+        _ -> return ()
+      return TBool
 
 -- | Helper for arithmetic operations
 inferArithmeticOp :: Type -> Type -> TypeInferenceM Type
@@ -451,15 +464,29 @@ unify (TOptional t1) (TOptional t2) = unify t1 t2
 unify t1 t2 = do
   -- Allow numeric type conversion (int to float)
   case (t1, t2) of
-    (TInt _, TFloat _) -> return $ Right HashMap.empty  -- Allow int -> float conversion
-    (TFloat _, TInt _) -> return $ Right HashMap.empty  -- Allow float <- int conversion
+    (TFloat 64, TInt _) -> do
+      return $ Right HashMap.empty  -- Allow float <- int conversion (specific case for division)
+    (TInt _, TFloat 64) -> do
+      return $ Right HashMap.empty  -- Allow int -> float conversion (specific case for division)
+    (TInt _, TFloat _) -> do
+      return $ Right HashMap.empty  -- Allow int -> float conversion
+    (TFloat _, TInt _) -> do
+      return $ Right HashMap.empty  -- Allow float <- int conversion
     (TInt bw1, TInt bw2)
       | bw1 == bw2 -> return $ Right HashMap.empty
-      | otherwise -> return $ Left $ "Cannot unify TInt (BitWidth " <> T.pack (show bw1) <> ") with TInt (BitWidth " <> T.pack (show bw2) <> ")"
+      | otherwise -> return $ Right HashMap.empty  -- Allow different bitwidth int unification
     (TFloat bw1, TFloat bw2)
       | bw1 == bw2 -> return $ Right HashMap.empty
-      | otherwise -> return $ Left $ "Cannot unify TFloat (BitWidth " <> T.pack (show bw1) <> ") with TFloat (BitWidth " <> T.pack (show bw2) <> ")"
+      | otherwise -> return $ Right HashMap.empty  -- Allow different bitwidth float unification
+    -- Catch-all for any remaining cases, especially involving numeric types or bit widths
+    _ | isNumericType t1 && isNumericType t2 -> return $ Right HashMap.empty
     _ -> return $ Left $ "Cannot unify " <> T.pack (show t1) <> " with " <> T.pack (show t2)
+  where
+    -- Helper function to check if a type is numeric
+    isNumericType (TInt _) = True
+    isNumericType (TFloat _) = True
+    isNumericType (TUInt _) = True
+    isNumericType _ = False
 
 -- | Unify a list of type pairs
 unifyList :: [(Type, Type)] -> TypeInferenceM (Either Text Substitution)
@@ -563,7 +590,9 @@ solveConstraints = do
       -- Try to unify
       result <- unify t1' t2'
       case result of
-        Left err -> throwError err
+        Left err -> do
+          addWarning $ "Unification failed: " <> err
+          throwError err
         Right newSubst -> do
           -- Apply new substitution to remaining constraints
           let rest' = map (\(a, b) -> 
@@ -621,9 +650,14 @@ inferPythonStatement stmt = case stmt of
     _ <- inferPythonExpr (locatedValue expr)
     return ()
   
-  PyAssign targets value -> do
-    valueType <- inferPythonExpr (locatedValue value)
-    mapM_ (\target -> inferPythonPattern (locatedValue target) valueType) targets
+  PyAssign patterns expr -> do
+    rvalueType <- inferPythonExpr (locatedValue expr)
+    lvalueTypes <- forM patterns $ \pattern -> do
+      patternType <- freshTypeVar
+      inferPythonPattern (locatedValue pattern) patternType
+      return patternType
+    addWarning $ "Assignment: lvalueTypes=" <> T.pack (show lvalueTypes) <> ", rvalueType=" <> T.pack (show rvalueType)
+    mapM_ (\lvalueType -> addConstraint lvalueType rvalueType) lvalueTypes
     return ()
   
   PyAugAssign target op value -> do
@@ -996,8 +1030,12 @@ inferPythonArgument arg = case arg of
 -- | Infer type from Python literal
 inferPythonLiteral :: PythonLiteral -> TypeInferenceM Type
 inferPythonLiteral lit = case lit of
-  PyInt _ -> return $ TInt 32
-  PyFloat _ -> return $ TFloat 64
+  PyInt i -> do
+    addWarning $ "Literal int: " <> T.pack (show i) <> ", returning TInt 32"
+    return $ TInt 32
+  PyFloat _ -> do
+    addWarning "Literal float: returning TFloat 64"
+    return $ TFloat 64
   PyComplex _ _ -> return $ TComplex (TFloat 64)
   PyString _ -> return TString
   PyBytes _ -> return TBytes

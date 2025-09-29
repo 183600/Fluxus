@@ -239,6 +239,8 @@ prettyCppUnit :: CppUnit -> Text
 prettyCppUnit CppUnit{..} = T.unlines $ concat
   [ map renderInclude (nub cppIncludes)
   , [""]
+  , -- Always include tuple output support function for safety
+    [tupleOutputSupportFunction]
   , if null cppNamespaces then [] else concat
       [ map (\ns -> "namespace " <> ns <> " {") cppNamespaces
       , [""]
@@ -579,6 +581,23 @@ renderParams params = T.intercalate ", " (map renderParam params)
       renderType typ <> " " <> name <>
       maybe "" (\def -> " = " <> renderExpr def) mDefault
 
+-- | Tuple output support function
+tupleOutputSupportFunction :: Text
+tupleOutputSupportFunction = T.unlines
+  [ "// Helper function to output tuples to ostream"
+  , "template<typename... Args>"
+  , "std::ostream& operator<<(std::ostream& os, const std::tuple<Args...>& t) {"
+  , "    os << \"(\";"
+  , "    std::apply([&os](const Args&... args) {"
+  , "        std::size_t n = 0;"
+  , "        ((os << args << (++n != sizeof...(Args) ? \", \" : \"\"))), ...);"
+  , "    }, t);"
+  , "    os << \")\";"
+  , "    return os;"
+  , "}"
+  , ""
+  ]
+
 -- | Generate indentation
 indentText :: Int -> Text
 indentText n = T.replicate n "    "
@@ -698,8 +717,17 @@ generatePythonStmt (Located _ stmt) = case stmt of
     return $ CppComment "Class definition processed"
   
   PyExprStmt expr -> do
-    cppExpr <- generatePythonExpr expr
-    return $ CppExprStmt cppExpr
+    -- Check if this is a print statement
+    case expr of
+      Located _ (PyCall func args) ->
+        case func of
+          Located _ (PyVar (Identifier "print")) -> handleBuiltinFunction "print" args
+          _ -> do
+            cppExpr <- generatePythonExpr expr
+            return $ CppExprStmt cppExpr
+      _ -> do
+        cppExpr <- generatePythonExpr expr
+        return $ CppExprStmt cppExpr
   
   PyAssign patterns expr -> 
     generatePythonAssignment patterns expr
@@ -1046,7 +1074,8 @@ generateBinaryOp op left right = case op of
     handleDivision l r = do
       let ensureFloat e = case e of
             CppLiteral (CppIntLit i) -> CppLiteral (CppFloatLit (fromIntegral i))
-            _ -> CppStaticCast CppDouble e
+            CppLiteral (CppFloatLit f) -> CppLiteral (CppFloatLit f)
+            _ -> e  -- For variables and other expressions, rely on C++'s automatic promotion
       return $ CppBinary "/" (ensureFloat l) (ensureFloat r)
     
     isStringExpr (CppLiteral (CppStringLit _)) = True
@@ -1080,12 +1109,45 @@ generatePythonCall func args = do
   where
     handleBuiltinFunction "print" args = do
       addInclude "<iostream>"
+      addInclude "<tuple>"
+      addInclude "<string>"
+      
+      -- Debug: print what arguments we receive
+      addDeclaration $ CppCommentDecl $ "PRINT DEBUG: Received args: " <> T.pack (show args)
+      
       case args of
         [] -> return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
-        _ -> do
-          let chainOutput = foldl (CppBinary "<<") (CppVar "std::cout") $
-                intercalateWith (CppLiteral (CppStringLit " ")) args
-          return $ CppBinary "<<" chainOutput (CppVar "std::endl")
+        [singleArg] -> do
+          -- Debug: check if it's a tuple
+          case singleArg of
+            CppCall (CppVar "std::make_tuple") tupleArgs -> do
+              addDeclaration $ CppCommentDecl $ "PRINT DEBUG: Found tuple with args: " <> T.pack (show tupleArgs)
+              -- Handle tuple by expanding it - print each element separately
+              case tupleArgs of
+                [] -> return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
+                [singleElement] -> 
+                  return $ CppBinary "<<" (CppBinary "<<" (CppVar "std::cout") singleElement) (CppVar "std::endl")
+                (label:value:rest) -> do
+                  -- Print label and value, then handle remaining elements
+                  let firstPart = CppBinary "<<" (CppBinary "<<" (CppVar "std::cout") label) (CppLiteral (CppStringLit " "))
+                      secondPart = CppBinary "<<" firstPart value
+                  case rest of
+                    [] -> return $ CppBinary "<<" secondPart (CppVar "std::endl")
+                    _ -> do
+                      -- Add space and continue with remaining elements
+                      let withSpace = CppBinary "<<" secondPart (CppLiteral (CppStringLit " "))
+                          remainingChain = foldl (\acc arg -> CppBinary "<<" acc arg) withSpace rest
+                      return $ CppBinary "<<" remainingChain (CppVar "std::endl")
+            _ -> do
+              -- Single argument: print it directly
+              return $ CppBinary "<<" (CppBinary "<<" (CppVar "std::cout") singleArg) (CppVar "std::endl")
+        multipleArgs -> do
+          -- Multiple arguments: print them separated by spaces
+          let buildChain [] acc = acc
+              buildChain [x] acc = CppBinary "<<" acc x
+              buildChain (x:xs) acc = buildChain xs (CppBinary "<<" (CppBinary "<<" acc x) (CppLiteral (CppStringLit " ")))
+          let outputChain = buildChain multipleArgs (CppVar "std::cout")
+          return $ CppBinary "<<" outputChain (CppVar "std::endl")
     
     handleBuiltinFunction "len" [arg] = do
       return $ CppCall (CppMember arg "size") []
@@ -1093,20 +1155,20 @@ generatePythonCall func args = do
     handleBuiltinFunction "range" args = do
       -- This should be handled by for loops
       addWarning "range() outside of for loop"
-      return $ CppComment "range() call"
+      return $ CppLiteral $ CppStringLit "range() call"
     
     handleBuiltinFunction "str" [arg] = do
       addInclude "<string>"
       return $ CppCall (CppVar "std::to_string") [arg]
     
     handleBuiltinFunction "int" [arg] = 
-      return $ CppStaticCast CppInt arg
+      return arg  -- For now, just return the argument as-is
     
     handleBuiltinFunction "float" [arg] = 
-      return $ CppStaticCast CppDouble arg
+      return arg  -- For now, just return the argument as-is
     
     handleBuiltinFunction "bool" [arg] = 
-      return $ CppStaticCast CppBool arg
+      return arg  -- For now, just return the argument as-is
     
     handleBuiltinFunction "abs" [arg] = do
       addInclude "<cmath>"

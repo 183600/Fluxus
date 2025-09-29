@@ -1,5 +1,5 @@
-# Simple division test
-a = 10
-b = 5
-result = a / b
-print("Result:", result)
+# Test division expression
+x = 10
+y = 20
+quotient = y / x
+print("Quotient:", quotient)

@@ -7,43 +7,63 @@
 #include <string>
 #include <iostream>
 
-// TODO: Render other declaration types
+// Processing expression: Literal
 
-// TODO: Render other declaration types
+// Processing expression: Literal
 
-// TODO: Render other declaration types
+// Processing expression: BinaryOp
 
-// TODO: Render other declaration types
+// Processing binary operation: OpDiv
 
-// TODO: Render other declaration types
+// Processing expression: Variable
 
-// TODO: Render other declaration types
+// Generated left operand: CppVar "y"
 
-// TODO: Render other declaration types
+// Processing expression: Variable
+
+// Generated right operand: CppVar "x"
+
+// handleDivision called
+
+// Division operation: CppStaticCast CppDouble (CppVar "y") / CppStaticCast CppDouble (CppVar "x")
+
+// Generated binary operation result: CppBinary "/" (CppStaticCast CppDouble (CppVar "y")) (CppStaticCast CppDouble (CppVar "x"))
+
+// Processing expression: Call
+
+// About to call generatePythonCall
 
 int __debug_generatePythonCall_called = 1;
 
-// TODO: Render other declaration types
+// Processing expression: Variable
 
-// TODO: Render other declaration types
+// Processing expression: Tuple
 
-// TODO: Render other declaration types
+// Processing expression: Literal
 
-// TODO: Render other declaration types
+// Processing expression: Variable
 
-// TODO: Render other declaration types
+// Function call: print with 1 args
+
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyTuple [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "Quotient:")},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "quotient")}]})}
 
 int __debug_print = 42;
 
 int __debug_print_args = 1;
 
-// TODO: Render other declaration types
+// print function called with 1 arguments
+
+// print argument 0: CppCall (CppVar "std::make_tuple") [CppLiteral (CppStringLit "Quotient:"),CppVar "quotient"]
+
+// print printable argument 0: CppBinary "+" (CppLiteral (CppStringLit "Quotient:")) (CppCall (CppVar "std::to_string") [CppVar "quotient"])
+
+// Returned from generatePythonCall
 
 int main() {
-    auto a = 10;
-    auto b = 5;
-    auto result = /* expr */ / /* expr */;
-    std::cout << "Result:" << " " << std::to_string(result) << std::endl;
+    auto x = 10;
+    auto y = 20;
+    auto quotient = static_cast<double>(y) / static_cast<double>(x);
+    std::cout << "Quotient:" + std::to_string(quotient) << std::endl;
     return 0;
 }
 

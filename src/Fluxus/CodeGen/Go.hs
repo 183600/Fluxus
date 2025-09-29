@@ -22,13 +22,11 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HS
-import Data.Maybe (fromMaybe, mapMaybe, isJust)
+import Data.Maybe (isJust)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Control.Monad.State
-import Control.Monad.Except
 import Control.Monad (forM, when)
-import Data.List (nub)
 
 import Fluxus.AST.Common
 import Fluxus.AST.Python
@@ -133,7 +131,9 @@ generateGoFromPython :: PythonAST -> GoGenConfig -> Either GoGenError Text
 generateGoFromPython (PythonAST module_) config = do
   (result, finalState) <- runStateT (generateModule module_ config) initialState
   if not (null (gsErrors finalState))
-    then Left (head (gsErrors finalState))
+    then Left (case gsErrors finalState of
+                 (err:_) -> err
+                 [] -> error "Unexpected empty errors list")
     else Right result
 
 -- | Generate complete module
@@ -359,7 +359,7 @@ generateFunctionDef config funcDef = do
 
 -- | Generate parameter
 generateParameter :: GoGenConfig -> Located PythonParameter -> GenM Text
-generateParameter config (Located _ param) = case param of
+generateParameter _config (Located _ param) = case param of
   ParamNormal (Identifier name) typeAnn _ -> do
     paramType <- case typeAnn of
       Just ann -> inferTypeFromAnnotation ann
@@ -420,7 +420,7 @@ generateExpression config = \case
     elemExprs <- mapM (generateExpression config . locatedValue) elements
     elemType <- if null elements 
                 then return GoInterface
-                else inferType config (locatedValue $ head elements)
+                else inferType config (locatedValue $ case elements of (e:_) -> e; [] -> error "Empty list case already handled")
     return $ "[]" <> showGoType elemType <> "{" <> T.intercalate ", " elemExprs <> "}"
     
   PyDict pairs -> do
@@ -435,12 +435,6 @@ generateExpression config = \case
     -- Go doesn't have tuples, use struct or array
     elemExprs <- mapM (generateExpression config . locatedValue) elements
     return $ "[]interface{}{" <> T.intercalate ", " elemExprs <> "}"
-    
-  PyBinaryOp op (Located _ left) (Located _ right) -> do
-    leftExpr <- generateExpression config left
-    rightExpr <- generateExpression config right
-    let goOp = binaryOpToGo op
-    return $ "(" <> leftExpr <> " " <> goOp <> " " <> rightExpr <> ")"
     
   expr -> do
     addError $ UnsupportedSyntax $ "Expression: " <> T.pack (show expr)
@@ -493,6 +487,9 @@ generateSubscript config expr slice = do
       stopStr <- maybe (return "") (generateExpression config . locatedValue) stop
       when (isJust step) $ addWarning "Slice step not supported in Go"
       return $ exprStr <> "[" <> startStr <> ":" <> stopStr <> "]"
+    SliceExtSlice _slices -> do
+      addWarning "Extended slice not supported in Go"
+      return $ exprStr <> "[/* extended slice */]"
 
 -- | Infer type from expression
 inferType :: GoGenConfig -> PythonExpr -> GenM GoType
@@ -531,8 +528,8 @@ inferReturnType stmts config = do
   let returns = extractReturns stmts
   if null returns
     then return GoVoid
-    else case head returns of
-           PyReturn (Just (Located _ expr)) -> inferType config expr
+    else case returns of
+           (PyReturn (Just (Located _ expr)) : _) -> inferType config expr
            _ -> return GoVoid
   where
     extractReturns [] = []
@@ -609,15 +606,4 @@ unaryOpToGo = \case
   OpPositive -> "+"
   OpNot -> "!"
   OpBitNot -> "^"
-
-compareOpToGo :: ComparisonOp -> Text
-compareOpToGo = \case
-  OpEq -> "=="
-  OpNe -> "!="
-  OpLt -> "<"
-  OpLe -> "<="
-  OpGt -> ">"
-  OpGe -> ">="
-  OpIs -> "=="  -- Simplified
-  OpIsNot -> "!="
   

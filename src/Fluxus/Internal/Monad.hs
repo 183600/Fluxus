@@ -48,11 +48,11 @@ module Fluxus.Internal.Monad
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Control.Monad.Except
-import Control.Monad.IO.Class
 import Control.Monad (when)
 import Data.Text (Text)
 import qualified Data.Text as T
 import GHC.Generics (Generic)
+import Control.DeepSeq (NFData)
 import Data.List (intercalate)
 
 -- ============================================================================
@@ -68,25 +68,16 @@ data CompilerPhase
   | Optimization
   | Linking
   deriving stock (Show, Eq, Ord, Generic)
+    deriving anyclass (NFData)
 
 -- | Compiler errors with phase information
 data CompilerError
-  = SyntaxError
-      { errorPhase    :: CompilerPhase
-      , errorMessage  :: Text
-      , errorLocation :: Maybe (Int, Int)  -- (line, column)
-      }
-  | TypeError
-      { errorPhase    :: CompilerPhase
-      , errorMessage  :: Text
-      , errorLocation :: Maybe (Int, Int)
-      }
-  | InternalError
-      { errorPhase    :: CompilerPhase
-      , errorMessage  :: Text
-      }
+  = SyntaxError CompilerPhase Text (Maybe (Int, Int))
+  | TypeError CompilerPhase Text (Maybe (Int, Int))
+  | InternalError CompilerPhase Text
   | MultipleErrors [CompilerError]
   deriving stock (Eq, Generic)
+    deriving anyclass (NFData)
 
 -- | Pretty printing for compiler errors
 instance Show CompilerError where
@@ -115,7 +106,7 @@ data CompilerEnv = CompilerEnv
   , envWarningsAsErrors :: Bool             -- ^ Treat warnings as errors
   , envMaxErrors      :: Int                -- ^ Maximum errors before stopping
   , envVerbosity      :: Int                -- ^ Verbosity level for logging
-  } deriving stock (Show, Eq, Generic)
+  } deriving stock (Show, Eq)
 
 -- | Mutable state during compilation
 data CompilerState = CompilerState
@@ -125,7 +116,7 @@ data CompilerState = CompilerState
   , stateSymbolTable  :: SymbolTable        -- ^ Symbol table for name resolution
   , stateTypeEnv      :: TypeEnvironment    -- ^ Type environment
   , stateGeneratedCode :: [Text]            -- ^ Generated code fragments
-  } deriving stock (Show, Eq, Generic)
+  } deriving stock (Show, Eq)
 
 -- | Simple symbol table (placeholder - expand as needed)
 type SymbolTable = [(Text, SymbolInfo)]
@@ -134,7 +125,7 @@ data SymbolInfo = SymbolInfo
   { symbolName :: Text
   , symbolType :: Text  -- Simplified type representation
   , symbolScope :: Int
-  } deriving stock (Show, Eq, Generic)
+  } deriving stock (Show, Eq)
 
 -- | Simple type environment (placeholder - expand as needed)
 type TypeEnvironment = [(Text, TypeInfo)]
@@ -142,7 +133,7 @@ type TypeEnvironment = [(Text, TypeInfo)]
 data TypeInfo = TypeInfo
   { typeName :: Text
   , typeKind :: Text
-  } deriving stock (Show, Eq, Generic)
+  } deriving stock (Show, Eq)
 
 -- ============================================================================
 -- Core Monad Definition
@@ -179,9 +170,8 @@ newtype CompilerM a = CompilerM
 
 -- | Run a compiler computation with given environment and initial state
 runCompilerM :: CompilerEnv -> CompilerState -> CompilerM a -> IO (Either CompilerError (a, CompilerState))
-runCompilerM env st m = 
-  runExceptT $ runStateT (runReaderT (unCompilerM m) env) st
-
+runCompilerM env st (CompilerM m) = 
+  runExceptT $ runStateT (runReaderT m env) st
 -- | Run a compiler computation and return only the result, discarding final state
 evalCompilerM :: CompilerEnv -> CompilerState -> CompilerM a -> IO (Either CompilerError a)
 evalCompilerM env st m = fmap fst <$> runCompilerM env st m
@@ -214,39 +204,31 @@ tryCompilerM m = (Right <$> m) `catchCompilerError` (return . Left)
 withPhase :: CompilerPhase -> CompilerM a -> CompilerM a
 withPhase phase action = do
   oldPhase <- gets statePhase
-  modify $ \s -> s { statePhase = phase }
+  modify' $ \s -> s { statePhase = phase }
   result <- action `catchCompilerError` \e -> do
-    -- Restore phase on error
-    modify $ \s -> s { statePhase = oldPhase }
+    modify' $ \s -> s { statePhase = oldPhase }
     throwCompilerError e
-  modify $ \s -> s { statePhase = oldPhase }
+  modify' $ \s -> s { statePhase = oldPhase }
   return result
-
 -- | Get the current compilation phase
 getPhase :: CompilerM CompilerPhase
 getPhase = gets statePhase
-
 -- | Add a warning to the state
 addWarning :: Text -> CompilerM ()
 addWarning warning = do
   phase <- getPhase
   env <- ask
   let formattedWarning = T.pack (show phase) <> ": " <> warning
-  modify $ \s -> s { stateWarnings = formattedWarning : stateWarnings s }
-  
-  -- Check if warnings should be treated as errors
-  when (envWarningsAsErrors env) $ do
-    throwCompilerError $ TypeError phase warning Nothing
-
+  modify' $ \s -> s { stateWarnings = formattedWarning : stateWarnings s }
+  when (envWarningsAsErrors env) $ throwCompilerError $ TypeError phase warning Nothing
 -- | Get all accumulated warnings
 getWarnings :: CompilerM [Text]
 getWarnings = gets stateWarnings
-
--- ============================================================================
 -- Default Values for Testing
 -- ============================================================================
 
 -- | Default compiler environment for testing
+{-# ANN defaultCompilerEnv ("HLint: ignore" :: String) #-}
 defaultCompilerEnv :: CompilerEnv
 defaultCompilerEnv = CompilerEnv
   { envSourceFile = "input.flux"
@@ -258,7 +240,8 @@ defaultCompilerEnv = CompilerEnv
   , envVerbosity = 1
   }
 
--- | Default initial compiler state
+-- | Default compiler state for testing
+{-# ANN defaultCompilerState ("HLint: ignore" :: String) #-}
 defaultCompilerState :: CompilerState
 defaultCompilerState = CompilerState
   { statePhase = Lexing
@@ -274,6 +257,7 @@ defaultCompilerState = CompilerState
 -- ============================================================================
 
 -- | Example compilation pipeline
+{-# ANN exampleCompile ("HLint: ignore" :: String) #-}
 exampleCompile :: Text -> CompilerM Text
 exampleCompile sourceCode = do
   -- Lexing phase
@@ -315,6 +299,7 @@ exampleCompile sourceCode = do
   return optimized
 
 -- | Run the example
+{-# ANN runExample ("HLint: ignore" :: String) #-}
 runExample :: IO ()
 runExample = do
   result <- runCompilerM defaultCompilerEnv defaultCompilerState $ 

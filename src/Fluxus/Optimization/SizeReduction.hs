@@ -7,7 +7,7 @@ module Fluxus.Optimization.SizeReduction
 
 import Fluxus.AST.Python
 import Fluxus.AST.Go
-import Data.Text (Text)
+
 
 -- | Apply code size reduction optimization to AST
 reduceCodeSize :: Either PythonAST GoAST -> IO (Either PythonAST GoAST)

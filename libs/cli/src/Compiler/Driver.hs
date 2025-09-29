@@ -782,6 +782,8 @@ renderCppDecl = \case
     "struct " <> name <> " {\n" <>
     T.unlines (map ("    " <>) (map renderCppDecl members)) <>
     "};\n"
+  CppCommentDecl comment ->
+    "// " <> comment <> "\n"
   _ -> "// TODO: Render other declaration types\n"
 
 renderCppType :: CppType -> Text
@@ -814,11 +816,51 @@ renderCppExpr :: CppExpr -> Text
 renderCppExpr = \case
   CppVar name -> name
   CppLiteral lit -> renderCppLiteral lit
-  CppBinary op left right -> 
+  CppBinary op left right ->
     renderCppExpr left <> " " <> op <> " " <> renderCppExpr right
+  CppUnary op expr ->
+    op <> renderCppExpr expr
   CppCall func args ->
     renderCppExpr func <> "(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
-  _ -> "/* expr */"
+  CppMember expr member ->
+    renderCppExpr expr <> "." <> member
+  CppPointerMember expr member ->
+    renderCppExpr expr <> "->" <> member
+  CppIndex expr index ->
+    renderCppExpr expr <> "[" <> renderCppExpr index <> "]"
+  CppCast castType expr ->
+    "(" <> renderCppType castType <> ")" <> renderCppExpr expr
+  CppSizeOf castType ->
+    "sizeof(" <> renderCppType castType <> ")"
+  CppNew castType args ->
+    "new " <> renderCppType castType <> "(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
+  CppDelete expr ->
+    "delete " <> renderCppExpr expr
+  CppThis -> "this"
+  CppMove expr ->
+    "std::move(" <> renderCppExpr expr <> ")"
+  CppForward expr ->
+    "std::forward(" <> renderCppExpr expr <> ")"
+  CppMakeUnique castType args ->
+    "std::make_unique<" <> renderCppType castType <> ">(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
+  CppMakeShared castType args ->
+    "std::make_shared<" <> renderCppType castType <> ">(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
+  CppInitList castType args ->
+    renderCppType castType <> "{" <> T.intercalate ", " (map renderCppExpr args) <> "}"
+  CppTernary cond trueExpr falseExpr ->
+    renderCppExpr cond <> " ? " <> renderCppExpr trueExpr <> " : " <> renderCppExpr falseExpr
+  CppComma exprs ->
+    "(" <> T.intercalate ", " (map renderCppExpr exprs) <> ")"
+  CppStaticCast castType expr ->
+    "static_cast<" <> renderCppType castType <> ">(" <> renderCppExpr expr <> ")"
+  CppDynamicCast castType expr ->
+    "dynamic_cast<" <> renderCppType castType <> ">(" <> renderCppExpr expr <> ")"
+  CppReinterpretCast castType expr ->
+    "reinterpret_cast<" <> renderCppType castType <> ">(" <> renderCppExpr expr <> ")"
+  CppConstCast castType expr ->
+    "const_cast<" <> renderCppType castType <> ">(" <> renderCppExpr expr <> ")"
+  CppMakeTuple args ->
+    "std::make_tuple(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
 
 renderCppLiteral :: CppLiteral -> Text
 renderCppLiteral = \case

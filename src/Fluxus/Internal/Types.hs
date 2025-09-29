@@ -48,7 +48,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
-import Data.Hashable (Hashable)
+import Data.Hashable (Hashable(..))
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Data.Maybe (listToMaybe, mapMaybe)
@@ -60,14 +60,18 @@ import Data.Maybe (listToMaybe, mapMaybe)
 -- | A simple identifier in the source code
 newtype Identifier = Identifier Text
   deriving stock (Eq, Show, Ord, Generic)
-  deriving anyclass (Hashable, NFData)
+    deriving anyclass (NFData, Hashable)
+
 
 -- | A qualified name with namespace path
 data QualifiedName = QualifiedName
   { qnNamespace :: [Text]
   , qnName :: Text
-  } deriving stock (Eq, Show, Ord, Generic)
-    deriving anyclass (NFData)
+  } deriving stock (Eq, Show, Ord)
+
+instance Hashable QualifiedName where
+  hashWithSalt salt (QualifiedName ns n) = hashWithSalt salt (ns, n)
+
 
 -- | Basic type representation (simplified for this example)
 data Type
@@ -80,7 +84,7 @@ data Type
   | TCustom QualifiedName
   | TGeneric Text
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (NFData)
+
 
 -- =============================================================================
 -- Source Location Types
@@ -91,16 +95,14 @@ data SourcePos = SourcePos
   { spLine   :: !Int  -- ^ Line number (1-based)
   , spColumn :: !Int  -- ^ Column number (1-based)
   } deriving stock (Eq, Show, Ord, Generic)
-    deriving anyclass (NFData)
-
+    
 -- | A span of source code between two positions
 data SourceSpan = SourceSpan
   { ssStart :: !SourcePos  -- ^ Starting position
   , ssEnd   :: !SourcePos  -- ^ Ending position
   , ssFile  :: !Text       -- ^ Source file name
   } deriving stock (Eq, Show, Generic)
-    deriving anyclass (NFData)
-
+    
 -- =============================================================================
 -- Configuration Types
 -- =============================================================================
@@ -113,8 +115,7 @@ data CppVersion
   | Cpp20  -- ^ C++20 standard
   | Cpp23  -- ^ C++23 standard
   deriving stock (Eq, Show, Ord, Generic)
-  deriving anyclass (NFData)
-
+  
 -- | Optimization levels for code generation
 data OptimizationLevel
   = O0  -- ^ No optimization (fastest compilation)
@@ -123,8 +124,7 @@ data OptimizationLevel
   | O3  -- ^ Aggressive optimization
   | Os  -- ^ Optimize for size
   deriving stock (Eq, Show, Ord, Generic)
-  deriving anyclass (NFData)
-
+  
 -- =============================================================================
 -- Core Compiler Types
 -- =============================================================================
@@ -143,37 +143,35 @@ type TypeTable = HashMap QualifiedName Type
 data CompilerState = CompilerState
   { -- | A stack of symbol tables, where the head is the innermost scope
     csSymbolTable :: ![SymbolTable]
-    
+
     -- | Global table for top-level type definitions
   , csTypeTable :: !TypeTable
-    
+
     -- | Counter for generating unique identifiers (e.g., for desugaring)
   , csNextId :: !Int
-    
+
     -- | Accumulated warnings during compilation
   , csWarnings :: ![Text]
   } deriving stock (Show, Generic)
-    deriving anyclass (NFData)
 
 -- | Immutable configuration for the compiler
 data CompilerEnv = CompilerEnv
   { -- | Path to the source file being compiled
     ceSourceFile :: !Text
-    
+
     -- | Optimization level for code generation
   , ceOptimizationLevel :: !OptimizationLevel
-    
+
     -- | Target C++ standard version
   , ceTargetCppVersion :: !CppVersion
-    
+
     -- | Enable verbose debug output
   , ceDebugMode :: !Bool
-    
+
     -- | Additional include paths for imports
   , ceIncludePaths :: ![Text]
   } deriving stock (Show, Generic)
-    deriving anyclass (NFData)
-
+    
 -- =============================================================================
 -- Error Types
 -- =============================================================================
@@ -182,46 +180,44 @@ data CompilerEnv = CompilerEnv
 data TypeErrorInfo = TypeErrorInfo
   { -- | Location where the error occurred
     teLocation :: !SourceSpan
-    
+
     -- | The type that was expected
   , teExpected :: !Type
-    
+
     -- | The actual type that was found
   , teActual   :: !Type
-    
+
     -- | Additional context information
   , teContext  :: !Text
-    
+
     -- | Optional suggestion for fixing the error
   , teSuggestion :: !(Maybe Text)
   } deriving stock (Eq, Show, Generic)
-    deriving anyclass (NFData)
-
+    
 -- | All possible compiler errors with structured information
 data CompilerError
   = -- | Parse error with location and message
     ParseError !SourceSpan !Text
-    
+
     -- | Type checking error with detailed information
   | TypeError !TypeErrorInfo
-    
+
     -- | Semantic analysis error
   | AnalysisError !SourceSpan !Text !(Maybe Text)
-    
+
     -- | Code generation error
   | CodeGenError !Text
-    
+
     -- | Error during name resolution
   | NameResolutionError !SourceSpan !Identifier !Text
-    
+
     -- | Duplicate definition error
   | DuplicateDefinition !SourceSpan !Identifier !SourceSpan
-    
+
     -- | Import/module system error
   | ImportError !Text !Text
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (NFData)
-
+  
 -- =============================================================================
 -- Helper Functions
 -- =============================================================================
@@ -260,8 +256,8 @@ exitScope = modify $ \s ->
 
 -- | Look up a symbol in the symbol table stack (innermost scope first)
 lookupSymbol :: Identifier -> CompilerState -> Maybe Type
-lookupSymbol ident state = 
-  listToMaybe $ mapMaybe (HM.lookup ident) (csSymbolTable state)
+lookupSymbol ident compilerState = 
+  listToMaybe $ mapMaybe (HM.lookup ident) (csSymbolTable compilerState)
 
 -- | Insert a symbol into the current (innermost) scope
 insertSymbol :: Identifier -> Type -> State CompilerState ()
@@ -271,18 +267,22 @@ insertSymbol ident ty = modify $ \s ->
     (x:xs) -> s { csSymbolTable = HM.insert ident ty x : xs }
 
 -- | Generate a fresh unique identifier
+{-# ANN freshId ("HLint: ignore" :: String) #-}
 freshId :: State CompilerState Int
 freshId = do
-  current <- gets csNextId
-  modify $ \s -> s { csNextId = current + 1 }
-  return current
+  s <- get
+  let n = csNextId s
+  put $ s { csNextId = n + 1 }
+  return n
 
 -- | Add a warning to the compiler state
+{-# ANN addWarning ("HLint: ignore" :: String) #-}
 addWarning :: Text -> State CompilerState ()
 addWarning warning = modify $ \s ->
   s { csWarnings = warning : csWarnings s }
 
 -- | Convert C++ version to its command-line flag representation
+{-# ANN cppVersionToFlag ("HLint: ignore" :: String) #-}
 cppVersionToFlag :: CppVersion -> Text
 cppVersionToFlag = \case
   Cpp11 -> "-std=c++11"
@@ -292,6 +292,7 @@ cppVersionToFlag = \case
   Cpp23 -> "-std=c++23"
 
 -- | Convert optimization level to its command-line flag representation
+{-# ANN optimizationLevelToFlag ("HLint: ignore" :: String) #-}
 optimizationLevelToFlag :: OptimizationLevel -> Text
 optimizationLevelToFlag = \case
   O0 -> "-O0"
@@ -301,10 +302,11 @@ optimizationLevelToFlag = \case
   Os -> "-Os"
 
 -- | Create a pretty error message from a CompilerError
+{-# ANN prettyError ("HLint: ignore" :: String) #-}
 prettyError :: CompilerError -> Text
 prettyError = \case
-  ParseError span msg ->
-    formatError span "Parse Error" msg Nothing
+  ParseError srcSpan msg ->
+    formatError srcSpan "Parse Error" msg Nothing
     
   TypeError info ->
     formatError (teLocation info) "Type Error"
@@ -314,20 +316,20 @@ prettyError = \case
                  ])
       (teSuggestion info)
       
-  AnalysisError span msg suggestion ->
-    formatError span "Analysis Error" msg suggestion
+  AnalysisError srcSpan msg suggestion ->
+    formatError srcSpan "Analysis Error" msg suggestion
     
   CodeGenError msg ->
     T.unwords ["Code Generation Error:", msg]
     
-  NameResolutionError span (Identifier name) msg ->
-    formatError span "Name Resolution Error"
+  NameResolutionError srcSpan (Identifier name) msg ->
+    formatError srcSpan "Name Resolution Error"
       (T.unwords ["Undefined identifier", quote name <> ":", msg])
       Nothing
       
-  DuplicateDefinition span1 (Identifier name) span2 ->
-    formatError span1 "Duplicate Definition"
-      (T.unwords ["Identifier", quote name, "already defined at", formatSpan span2])
+  DuplicateDefinition srcSpan1 (Identifier name) srcSpan2 ->
+    formatError srcSpan1 "Duplicate Definition"
+      (T.unwords ["Identifier", quote name, "already defined at", formatSpan srcSpan2])
       (Just "Consider using a different name or removing the duplicate")
       
   ImportError module' msg ->
@@ -338,9 +340,9 @@ prettyError = \case
     formatSpan (SourceSpan start _ file) =
       T.concat [file, ":", T.pack (show $ spLine start), ":", T.pack (show $ spColumn start)]
     
-    formatError span title msg maybeSuggestion =
+    formatError srcSpan title msg maybeSuggestion =
       T.unlines $ filter (not . T.null)
-        [ T.concat [formatSpan span, ": ", title]
+        [ T.concat [formatSpan srcSpan, ": ", title]
         , "  " <> msg
         , maybe "" ("  Suggestion: " <>) maybeSuggestion
         ]
