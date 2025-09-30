@@ -10,8 +10,8 @@
 #include <iostream>
 
 int main() {
-    /* expr */("Hello, World!");
-    /* expr */("2 + 2 = %d\n", 2 + 2);
+    fmt.Println("Hello, World!");
+    fmt.Printf("2 + 2 = %d\n", 2 + 2);
     return 0;
 }
 
