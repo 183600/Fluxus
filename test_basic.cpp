@@ -7,48 +7,56 @@
 #include <string>
 #include <iostream>
 
-// TODO: Render other declaration types
+// Processing expression: Call
 
-// TODO: Render other declaration types
+// About to call generatePythonCall
 
 int __debug_generatePythonCall_called = 1;
 
-// TODO: Render other declaration types
+// Processing expression: Variable
 
-// TODO: Render other declaration types
+// Processing expression: Literal
 
-// TODO: Render other declaration types
+// Function call: print with 1 args
+
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "Hello, World!")})}
 
 int __debug_print = 42;
 
 int __debug_print_args = 1;
 
-// TODO: Render other declaration types
+// print function called with 1 arguments
 
-// TODO: Render other declaration types
+// print argument 0: CppLiteral (CppStringLit "Hello, World!")
 
-// TODO: Render other declaration types
+// Returned from generatePythonCall
 
-// TODO: Render other declaration types
+// Processing expression: Literal
 
-int __debug_generatePythonCall_called = 1;
+// Processing expression: Call
 
-// TODO: Render other declaration types
+// About to call generatePythonCall
 
-// TODO: Render other declaration types
+// Processing expression: Variable
 
-// TODO: Render other declaration types
+// Processing expression: FString
 
-int __debug_print = 42;
+// Processing expression: Variable
 
-int __debug_print_args = 1;
+// Function call: print with 1 args
 
-// TODO: Render other declaration types
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyFString [FStringExpr {fstrExpr = Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "x")}, fstrConversion = Nothing, fstrFormatSpec = Nothing}]})}
+
+// print function called with 1 arguments
+
+// print argument 0: CppVar "x"
+
+// Returned from generatePythonCall
 
 int main() {
     std::cout << "Hello, World!" << std::endl;
     auto x = 42;
-    std::cout << "fstring" << std::endl;
+    std::cout << x << std::endl;
     return 0;
 }
 

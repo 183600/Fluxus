@@ -15,20 +15,6 @@
 
 // Processing binary operation: OpDiv
 
-// Processing expression: Variable
-
-// Generated left operand: CppVar "y"
-
-// Processing expression: Variable
-
-// Generated right operand: CppVar "x"
-
-// handleDivision called
-
-// Division operation: CppStaticCast CppDouble (CppVar "y") / CppStaticCast CppDouble (CppVar "x")
-
-// Generated binary operation result: CppBinary "/" (CppStaticCast CppDouble (CppVar "y")) (CppStaticCast CppDouble (CppVar "x"))
-
 // Processing expression: Call
 
 // About to call generatePythonCall
@@ -37,33 +23,71 @@ int __debug_generatePythonCall_called = 1;
 
 // Processing expression: Variable
 
-// Processing expression: Tuple
+// Processing expression: Variable
+
+// Function call: float with 1 args
+
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "y")})}
+
+int __debug_float = 42;
+
+int __debug_float_args = 1;
+
+// Returned from generatePythonCall
+
+// Generated left operand: CppStaticCast CppDouble (CppVar "y")
+
+// Processing expression: Call
+
+// About to call generatePythonCall
+
+// Processing expression: Variable
+
+// Processing expression: Variable
+
+// Function call: float with 1 args
+
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "x")})}
+
+// Returned from generatePythonCall
+
+// Generated right operand: CppStaticCast CppDouble (CppVar "x")
+
+// Generated binary operation result: CppBinary "/" (CppStaticCast CppDouble (CppStaticCast CppDouble (CppVar "y"))) (CppStaticCast CppDouble (CppStaticCast CppDouble (CppVar "x")))
+
+// Processing expression: Call
+
+// About to call generatePythonCall
+
+// Processing expression: Variable
 
 // Processing expression: Literal
 
 // Processing expression: Variable
 
-// Function call: print with 1 args
+// Function call: print with 2 args
 
-// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyTuple [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "Quotient:")},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "quotient")}]})}
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "Quotient:")})}
+
+// Python argument 1: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "quotient")})}
 
 int __debug_print = 42;
 
-int __debug_print_args = 1;
+int __debug_print_args = 2;
 
-// print function called with 1 arguments
+// print function called with 2 arguments
 
-// print argument 0: CppCall (CppVar "std::make_tuple") [CppLiteral (CppStringLit "Quotient:"),CppVar "quotient"]
+// print argument 0: CppLiteral (CppStringLit "Quotient:")
 
-// print printable argument 0: CppBinary "+" (CppLiteral (CppStringLit "Quotient:")) (CppCall (CppVar "std::to_string") [CppVar "quotient"])
+// print argument 1: CppVar "quotient"
 
 // Returned from generatePythonCall
 
 int main() {
     auto x = 10;
     auto y = 20;
-    auto quotient = static_cast<double>(y) / static_cast<double>(x);
-    std::cout << "Quotient:" + std::to_string(quotient) << std::endl;
+    auto quotient = static_cast<double>(static_cast<double>(y)) / static_cast<double>(static_cast<double>(x));
+    std::cout << "Quotient:" << " " << quotient << std::endl;
     return 0;
 }
 

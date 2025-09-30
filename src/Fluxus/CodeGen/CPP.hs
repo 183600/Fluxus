@@ -1282,8 +1282,10 @@ generatePythonCall func args = do
         _ -> do
           addDeclaration $ CppCommentDecl $ "Regular function call: " <> name
           let result = CppCall cppFunc cppArgs
-          -- Debug: Add a variable to track the result
-          addDeclaration $ CppVariable ("__debug_" <> funcName <> "_result") CppInt (Just $ CppLiteral $ CppIntLit 1)
+          -- Debug: Add a variable to track the result (only once per function)
+          debugResultExists <- isDeclared ("__debug_" <> funcName <> "_result")
+          unless debugResultExists $
+            addDeclaration $ CppVariable ("__debug_" <> funcName <> "_result") CppInt (Just $ CppLiteral $ CppIntLit 1)
           return result
     _ -> do
       addDeclaration $ CppCommentDecl "Non-function variable call"
@@ -1372,6 +1374,8 @@ generatePythonArgument (Located _ arg) = case arg of
 generatePythonFunction :: PythonFuncDef -> CppCodeGen ()
 generatePythonFunction funcDef = do
   let funcName = case pyFuncName funcDef of Identifier name -> name
+  -- Debug: Log that we're starting function generation
+  addDeclaration $ CppCommentDecl $ "DEBUG: Starting function generation for: " <> funcName
   cppParams <- mapM mapPythonParameter (pyFuncParams funcDef)
   
   returnType <- case pyFuncReturns funcDef of
@@ -1381,8 +1385,15 @@ generatePythonFunction funcDef = do
       then return CppInt
       else inferReturnType (pyFuncBody funcDef)
   
+  -- Debug: Log number of body statements
+  let numStmts = length (pyFuncBody funcDef)
+  addDeclaration $ CppCommentDecl $ "DEBUG: Function has " <> T.pack (show numStmts) <> " body statements"
+
   bodyStmts <- mapM generatePythonStmt (pyFuncBody funcDef)
-  
+
+  -- Debug: Log what was generated
+  addDeclaration $ CppCommentDecl $ "DEBUG: Generated " <> T.pack (show (length bodyStmts)) <> " C++ statements"
+
   let finalBody = if funcName == "main" && not (hasReturn bodyStmts)
                   then bodyStmts ++ [CppReturn (Just (CppLiteral (CppIntLit 0)))]
                   else bodyStmts
@@ -2505,12 +2516,27 @@ hasReturn = any isReturn where
 
 -- | Infer return type from function body
 inferReturnType :: [Located PythonStmt] -> CppCodeGen CppType
-inferReturnType stmts = 
+inferReturnType stmts =
   if any hasReturnValue stmts
   then return CppAuto
   else return CppVoid
   where
     hasReturnValue (Located _ (PyReturn (Just _))) = True
+    hasReturnValue (Located _ (PyReturn Nothing)) = True  -- Explicit return without value still means function returns
+    hasReturnValue (Located _ (PyIf _ thenStmts elseStmts)) =
+      any hasReturnValue thenStmts || any hasReturnValue elseStmts
+    hasReturnValue (Located _ (PyFor {pyForBody = bodyStmts})) = any hasReturnValue bodyStmts  -- Check for loop bodies
+    hasReturnValue (Located _ (PyWhile _ bodyStmts _)) = any hasReturnValue bodyStmts  -- Check while loop bodies
+    -- For simple expressions, check if last statement could return a value
+    hasReturnValue (Located _ (PyExprStmt expr)) =
+      case locatedValue expr of
+        PyCall _ _ -> True  -- Function calls could return values
+        PyBinaryOp _ _ _ -> True  -- Binary operations return values
+        PyUnaryOp _ _ -> True  -- Unary operations return values
+        PyComparison _ _ -> True  -- Comparisons return boolean values
+        PyLiteral _ -> True  -- Literals are values
+        PyVar _ -> True  -- Variables are values
+        _ -> False
     hasReturnValue _ = False
 
 -- | Extract base class name

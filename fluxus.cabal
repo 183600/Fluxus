@@ -139,38 +139,6 @@ test-suite fluxus-test
     , unix
   default-language: Haskell2010
 
-benchmark debug-full-go
-  type: exitcode-stdio-1.0
-  main-is: debug_full_go.hs
-  other-modules:
-      Paths_fluxus
-  hs-source-dirs:
-      ./
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      base >=4.17 && <5
-    , fluxus
-    , megaparsec
-    , parser-combinators
-    , text
-  default-language: Haskell2010
-
-benchmark debug-simple-full-go
-  type: exitcode-stdio-1.0
-  main-is: debug_simple_full_go.hs
-  other-modules:
-      Paths_fluxus
-  hs-source-dirs:
-      ./
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      base >=4.17 && <5
-    , fluxus
-    , megaparsec
-    , parser-combinators
-    , text
-  default-language: Haskell2010
-
 benchmark fluxus-bench
   type: exitcode-stdio-1.0
   main-is: Bench.hs
@@ -178,41 +146,11 @@ benchmark fluxus-bench
       Paths_fluxus
   hs-source-dirs:
       bench
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.17 && <5
     , criterion >=1.6
     , deepseq
-    , fluxus
-    , text
-  default-language: Haskell2010
-
-benchmark simple-go-test
-  type: exitcode-stdio-1.0
-  main-is: simple_go_test2.hs
-  other-modules:
-      Paths_fluxus
-  hs-source-dirs:
-      ./
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      base >=4.17 && <5
-    , fluxus
-    , megaparsec
-    , parser-combinators
-    , text
-  default-language: Haskell2010
-
-benchmark test-build-streaming-expr
-  type: exitcode-stdio-1.0
-  main-is: test_buildStreamingExpr.hs
-  other-modules:
-      Paths_fluxus
-  hs-source-dirs:
-      ./
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      base >=4.17 && <5
     , fluxus
     , text
   default-language: Haskell2010

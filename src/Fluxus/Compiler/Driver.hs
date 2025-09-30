@@ -823,6 +823,32 @@ renderCppStmt = \case
   CppExprStmt expr -> renderCppExpr expr <> ";"
   CppDecl decl -> T.stripEnd (renderCppDecl decl)
   CppComment comment -> "/* " <> comment <> " */"
+  CppIf condition thenStmts elseStmts ->
+    "if (" <> renderCppExpr condition <> ") {\n" <>
+    T.intercalate "\n" (map renderCppStmt thenStmts) <> "\n" <>
+    "} else {\n" <>
+    T.intercalate "\n" (map renderCppStmt elseStmts) <> "\n}"
+  CppWhile condition bodyStmts ->
+    "while (" <> renderCppExpr condition <> ") {\n" <>
+    T.intercalate "\n" (map renderCppStmt bodyStmts) <> "\n}"
+  CppFor initStmt condition post bodyStmts ->
+    "for (" <>
+    maybe "" (\stmt -> renderCppStmt stmt <> " ") initStmt <>
+    maybe "" (\cond -> renderCppExpr cond) condition <> ";" <>
+    maybe "" (\post -> renderCppExpr post) post <>
+    ") {\n" <>
+    T.intercalate "\n" (map renderCppStmt bodyStmts) <> "\n}"
+  CppForRange varName iterExpr bodyStmts ->
+    "for (auto " <> varName <> " : " <> renderCppExpr iterExpr <> ") {\n" <>
+    T.intercalate "\n" (map renderCppStmt bodyStmts) <> "\n}"
+  CppBlock stmts ->
+    "{\n" <> T.intercalate "\n" (map renderCppStmt stmts) <> "\n}"
+  CppBreak -> "break;"
+  CppContinue -> "continue;"
+  CppDoWhile bodyStmts condition ->
+    "do {\n" <>
+    T.intercalate "\n" (map renderCppStmt bodyStmts) <> "\n" <>
+    "} while (" <> renderCppExpr condition <> ");"
   _ -> "// TODO: Render statement"
 
 renderCppExpr :: CppExpr -> Text

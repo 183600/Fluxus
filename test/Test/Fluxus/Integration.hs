@@ -281,29 +281,294 @@ endToEndSpec = describe "End-to-End Tests" $ do
           , "    result = util.util_function(5)"
           , "    return result"
           ]
-    
+
     withSystemTempDirectory "fluxus-test-" $ \tmpDir -> do
       let inputFile1 = tmpDir </> "util.py"
       let inputFile2 = tmpDir </> "main.py"
       let outputFile = tmpDir </> "combined.cpp"
-      
+
       writeFile inputFile1 (T.unpack pythonCode1)
       writeFile inputFile2 (T.unpack pythonCode2)
-      
-      let config = defaultConfig 
+
+      let config = defaultConfig
             { inputFiles = [inputFile1, inputFile2]
             , outputFile = outputFile
             , sourceLanguage = Python
             , targetLanguage = Cpp
             }
-      
+
       result <- runCompiler config
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
           exists `shouldBe` True
-          
+
           cppContent <- readFile outputFile
           cppContent `shouldContain` "util_function"
           cppContent `shouldContain` "main"
         Left err -> expectationFailure $ "Compilation failed: " ++ show err
+
+  it "handles mixed Python and Go projects" $ do
+    let pythonCode = T.unlines
+          [ "def python_func(x):"
+          , "    return x * 2"
+          ]
+    let goCode = T.unlines
+          [ "package main"
+          , ""
+          , "import \"fmt\""
+          , ""
+          , "func go_func(x int) int {"
+          , "    return x * 3"
+          , "}"
+          , ""
+          , "func main() {"
+          , "    result := go_func(5)"
+          , "    fmt.Printf(\"%d\\n\", result)"
+          , "}"
+          ]
+
+    withSystemTempDirectory "fluxus-mixed-test-" $ \tmpDir -> do
+      let pyFile = tmpDir </> "code.py"
+      let goFile = tmpDir </> "code.go"
+      let pyOutput = tmpDir </> "python.cpp"
+      let goOutput = tmpDir </> "go.cpp"
+
+      writeFile pyFile (T.unpack pythonCode)
+      writeFile goFile (T.unpack goCode)
+
+      -- Test Python compilation
+      let pyConfig = defaultConfig
+            { inputFiles = [pyFile]
+            , outputFile = pyOutput
+            , sourceLanguage = Python
+            , targetLanguage = Cpp
+            }
+
+      pyResult <- runCompiler pyConfig
+      case pyResult of
+        Right _ -> do
+          pyExists <- doesFileExist pyOutput
+          pyExists `shouldBe` True
+        Left err -> expectationFailure $ "Python compilation failed: " ++ show err
+
+      -- Test Go compilation
+      let goConfig = defaultConfig
+            { inputFiles = [goFile]
+            , outputFile = goOutput
+            , sourceLanguage = Go
+            , targetLanguage = Cpp
+            }
+
+      goResult <- runCompiler goConfig
+      case goResult of
+        Right _ -> do
+          goExists <- doesFileExist goOutput
+          goExists `shouldBe` True
+        Left err -> expectationFailure $ "Go compilation failed: " ++ show err
+
+  it "handles complex import chains" $ do
+    let moduleA = T.unlines
+          [ "def func_a():"
+          , "    return \"A\""
+          ]
+    let moduleB = T.unlines
+          [ "import module_a"
+          , ""
+          , "def func_b():"
+          , "    return \"B\" + module_a.func_a()"
+          ]
+    let moduleC = T.unlines
+          [ "import module_b"
+          , ""
+          , "def func_c():"
+          , "    return \"C\" + module_b.func_b()"
+          , ""
+          , "def main():"
+          , "    result = func_c()"
+          , "    return result"
+          ]
+
+    withSystemTempDirectory "fluxus-import-test-" $ \tmpDir -> do
+      let fileA = tmpDir </> "module_a.py"
+      let fileB = tmpDir </> "module_b.py"
+      let fileC = tmpDir </> "module_c.py"
+      let outputFile = tmpDir </> "combined.cpp"
+
+      writeFile fileA (T.unpack moduleA)
+      writeFile fileB (T.unpack moduleB)
+      writeFile fileC (T.unpack moduleC)
+
+      let config = defaultConfig
+            { inputFiles = [fileA, fileB, fileC]
+            , outputFile = outputFile
+            , sourceLanguage = Python
+            , targetLanguage = Cpp
+            }
+
+      result <- runCompiler config
+      case result of
+        Right _ -> do
+          exists <- doesFileExist outputFile
+          exists `shouldBe` True
+
+          cppContent <- readFile outputFile
+          cppContent `shouldContain` "func_a"
+          cppContent `shouldContain` "func_b"
+          cppContent `shouldContain` "func_c"
+        Left err -> expectationFailure $ "Compilation failed: " ++ show err
+
+  it "handles circular dependencies with fallback" $ do
+    let moduleA = T.unlines
+          [ "# Circular dependency"
+          , "import module_b"
+          , ""
+          , "def func_a():"
+          , "    if hasattr(module_b, 'func_b'):"
+          , "        return \"A\""
+          , "    else:"
+          , "        return \"A_fallback\""
+          ]
+    let moduleB = T.unlines
+          [ "# Circular dependency"
+          , "import module_a"
+          , ""
+          , "def func_b():"
+          , "    if hasattr(module_a, 'func_a'):"
+          , "        return \"B\""
+          , "    else:"
+          , "        return \"B_fallback\""
+          ]
+
+    withSystemTempDirectory "fluxus-circular-test-" $ \tmpDir -> do
+      let fileA = tmpDir </> "module_a.py"
+      let fileB = tmpDir </> "module_b.py"
+      let outputFile = tmpDir </> "combined.cpp"
+
+      writeFile fileA (T.unpack moduleA)
+      writeFile fileB (T.unpack moduleB)
+
+      let config = defaultConfig
+            { inputFiles = [fileA, fileB]
+            , outputFile = outputFile
+            , sourceLanguage = Python
+            , targetLanguage = Cpp
+            }
+
+      result <- runCompiler config
+      case result of
+        Right _ -> do
+          exists <- doesFileExist outputFile
+          exists `shouldBe` True
+        Left err -> expectationFailure $ "Circular dependency handling failed: " ++ show err
+
+  it "integrates with external libraries" $ do
+    let pythonCode = T.unlines
+          [ "import json"
+          , "import sys"
+          , ""
+          , "def main():"
+          , "    data = {'name': 'Fluxus', 'version': '1.0'}"
+          , "    json_str = json.dumps(data)"
+          , "    print(json_str)"
+          , "    return 0"
+          , ""
+          , "if __name__ == '__main__':"
+          , "    sys.exit(main())"
+          ]
+
+    withSystemTempDirectory "fluxus-external-test-" $ \tmpDir -> do
+      let inputFile = tmpDir </> "external.py"
+      let outputFile = tmpDir </> "external.cpp"
+
+      writeFile inputFile (T.unpack pythonCode)
+
+      let config = defaultConfig
+            { inputFiles = [inputFile]
+            , outputFile = outputFile
+            , sourceLanguage = Python
+            , targetLanguage = Cpp
+            }
+
+      result <- runCompiler config
+      case result of
+        Right _ -> do
+          exists <- doesFileExist outputFile
+          exists `shouldBe` True
+
+          cppContent <- readFile outputFile
+          cppContent `shouldContain` "json"
+          cppContent `shouldContain` "dumps"
+        Left err -> expectationFailure $ "External library integration failed: " ++ show err
+
+  it "handles large-scale integration" $ do
+    -- Generate a larger Python project with multiple modules
+    let modules = [
+            ("utils", T.unlines [
+                "def validate_input(x):",
+                "    return isinstance(x, (int, float)) and x >= 0",
+                "",
+                "def format_output(x):",
+                "    return f\"Result: {x}\""
+            ]),
+            ("calculator", T.unlines [
+                "import utils",
+                "",
+                "class Calculator:",
+                "    def __init__(self):",
+                "        self.result = 0",
+                "    ",
+                "    def add(self, x):",
+                "        if utils.validate_input(x):",
+                "            self.result += x",
+                "        return self.result",
+                "    ",
+                "    def multiply(self, x):",
+                "        if utils.validate_input(x):",
+                "            self.result *= x",
+                "        return self.result",
+                "    ",
+                "    def get_result(self):",
+                "        return utils.format_output(self.result)"
+            ]),
+            ("main", T.unlines [
+                "from calculator import Calculator",
+                "",
+                "def main():",
+                "    calc = Calculator()",
+                "    calc.add(10)",
+                "    calc.multiply(2)",
+                "    result = calc.get_result()",
+                "    print(result)",
+                "    return 0"
+            ])
+          ]
+
+    withSystemTempDirectory "fluxus-large-integration-test-" $ \tmpDir -> do
+      -- Create modules
+      mapM_ (\(name, content) -> do
+        let filename = tmpDir </> name ++ ".py"
+        writeFile filename (T.unpack content)
+      ) modules
+
+      let inputFiles = [tmpDir </> name ++ ".py" | (name, _) <- modules]
+      let outputFile = tmpDir </> "large_project.cpp"
+
+      let config = defaultConfig
+            { inputFiles = inputFiles
+            , outputFile = outputFile
+            , sourceLanguage = Python
+            , targetLanguage = Cpp
+            }
+
+      result <- runCompiler config
+      case result of
+        Right _ -> do
+          exists <- doesFileExist outputFile
+          exists `shouldBe` True
+
+          cppContent <- readFile outputFile
+          cppContent `shouldContain` "Calculator"
+          cppContent `shouldContain` "validate_input"
+          cppContent `shouldContain` "format_output"
+        Left err -> expectationFailure $ "Large-scale integration failed: " ++ show err

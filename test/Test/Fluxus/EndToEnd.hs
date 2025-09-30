@@ -416,7 +416,7 @@ performanceSpec :: Spec
 performanceSpec = describe "Performance Tests" $ do
   it "compiles efficiently with large codebases" $ do
     -- Generate a large Python file
-    let largeCode = T.unlines $ 
+    let largeCode = T.unlines $
           ["import sys", "import math", ""] ++
           ["def function_" ++ show i ++ "(x):" | i <- [1..100]] ++
           ["    # Function " ++ show i ++ " implementation" ++
@@ -432,41 +432,239 @@ performanceSpec = describe "Performance Tests" $ do
           [""] ++
           ["if __name__ == \"__main__\":"]
           ["    sys.exit(main())"]
-    
+
     withSystemTempDirectory "fluxus-large-test-" $ \tmpDir -> do
       let inputFile = tmpDir </> "large.py"
       let cppFile = tmpDir </> "large.cpp"
       let exeFile = tmpDir </> "large"
-      
+
       writeFile inputFile (T.unpack largeCode)
-      
+
       -- Time the compilation
       start <- getCurrentTime
-      let config = defaultConfig 
+      let config = defaultConfig
             { inputFiles = [inputFile]
             , outputFile = cppFile
             , sourceLanguage = Python
             , targetLanguage = Cpp
             , optimizationLevel = 3
             }
-      
+
       result <- runCompiler config
       end <- getCurrentTime
-      
+
       let compilationTime = diffUTCTime end start
-      
+
       case result of
         Right _ -> do
           -- Check that compilation completed in reasonable time
           -- (This threshold might need adjustment based on your system)
           compilationTime `shouldSatisfy` (\t -> t < 30)  -- Less than 30 seconds
-          
+
           -- Compile and run
-          (exitCode, _, stderr) <- readProcessWithExitCode "g++" 
+          (exitCode, _, stderr) <- readProcessWithExitCode "g++"
             [cppFile, "-o", exeFile, "-std=c++20", "-O3"] ""
           exitCode `shouldBe` ExitSuccess
-          
+
           (exitCode', stdout, stderr') <- readProcessWithExitCode exeFile [] ""
           exitCode' `shouldBe` ExitSuccess
           stdout `shouldContain` "Total:"
         Left err -> expectationFailure $ "Compilation failed: " ++ show err
+
+  it "handles memory-intensive compilation" $ do
+    let memoryIntensiveCode = T.unlines $
+          ["import sys", "import array", ""] ++
+          ["def create_large_array(size):"] ++
+          ["    return array.array('i', [i % 1000 for i in range(size)])"] ++
+          [""] ++
+          ["def process_arrays(arr1, arr2):"] ++
+          ["    result = array.array('i', [])"] ++
+          ["    for i in range(min(len(arr1), len(arr2))):"] ++
+          ["        result.append(arr1[i] + arr2[i])"] ++
+          ["    return result"] ++
+          [""] ++
+          ["def main():"] ++
+          ["    size = 1000000"] ++
+          ["    arr1 = create_large_array(size)"] ++
+          ["    arr2 = create_large_array(size)"] ++
+          ["    result = process_arrays(arr1, arr2)"] ++
+          ["    print(f\"Processed {len(result)} elements\")"] ++
+          ["    return 0"] ++
+          [""] ++
+          ["if __name__ == \"__main__\":"]
+          ["    sys.exit(main())"]
+
+    withSystemTempDirectory "fluxus-memory-test-" $ \tmpDir -> do
+      let inputFile = tmpDir </> "memory.py"
+      let cppFile = tmpDir </> "memory.cpp"
+      let exeFile = tmpDir </> "memory"
+
+      writeFile inputFile (T.unpack memoryIntensiveCode)
+
+      let config = defaultConfig
+            { inputFiles = [inputFile]
+            , outputFile = cppFile
+            , sourceLanguage = Python
+            , targetLanguage = Cpp
+            , optimizationLevel = 3
+            }
+
+      result <- runCompiler config
+      case result of
+        Right _ -> do
+          -- Compile with memory optimization flags
+          (exitCode, _, stderr) <- readProcessWithExitCode "g++"
+            [cppFile, "-o", exeFile, "-std=c++20", "-O3", "-march=native", "-flto"] ""
+          exitCode `shouldBe` ExitSuccess
+
+          (exitCode', stdout, stderr') <- readProcessWithExitCode exeFile [] ""
+          exitCode' `shouldBe` ExitSuccess
+          stdout `shouldContain` "Processed 1000000 elements"
+        Left err -> expectationFailure $ "Memory-intensive compilation failed: " ++ show err
+
+  it "measures compilation speed across different optimization levels" $ do
+    let simpleCode = T.unlines
+          ["import sys", ""] ++
+          ["def factorial(n):"] ++
+          ["    if n <= 1:"] ++
+          ["        return 1"] ++
+          ["    else:"] ++
+          ["        return n * factorial(n - 1)"] ++
+          [""] ++
+          ["def main():"] ++
+          ["    result = factorial(20)"] ++
+          ["    print(f\"Factorial: {result}\")"] ++
+          ["    return 0"] ++
+          [""] ++
+          ["if __name__ == \"__main__\":"]
+          ["    sys.exit(main())"]
+
+    withSystemTempDirectory "fluxus-speed-test-" $ \tmpDir -> do
+      let inputFile = tmpDir </> "speed.py"
+      let cppFile = tmpDir </> "speed.cpp"
+      let exeFile = tmpDir </> "speed"
+
+      writeFile inputFile (T.unpack simpleCode)
+
+      -- Test different optimization levels
+      let testOptimization level = do
+        let config = defaultConfig
+              { inputFiles = [inputFile]
+              , outputFile = cppFile
+              , sourceLanguage = Python
+              , targetLanguage = Cpp
+              , optimizationLevel = level
+              }
+
+        start <- getCurrentTime
+        result <- runCompiler config
+        end <- getCurrentTime
+
+        let compilationTime = diffUTCTime end start
+
+        case result of
+          Right _ -> do
+            -- Check that compilation was successful and timed
+            (exitCode, _, stderr) <- readProcessWithExitCode "g++"
+              [cppFile, "-o", exeFile, "-std=c++20", "-O" ++ show level] ""
+            exitCode `shouldBe` ExitSuccess
+
+            return (level, compilationTime)
+          Left err -> expectationFailure $ "Optimization level " ++ show level ++ " failed: " ++ show err
+
+      -- Test optimization levels 0, 1, 2, 3
+      results <- mapM testOptimization [0, 1, 2, 3]
+
+      -- Verify that higher optimization levels don't take significantly longer
+      -- (within reasonable bounds)
+      let times = map snd results
+      let (minTime, maxTime) = (minimum times, maximum times)
+      let ratio = maxTime / minTime
+
+      -- Higher optimization shouldn't take more than 3x longer
+      ratio `shouldSatisfy` (\r -> r < 3)
+
+  it "handles concurrent compilation" $ do
+    let concurrentCode = T.unlines
+          ["import threading", "import queue", "import time", "import sys", ""] ++
+          ["class Worker:", ""] ++
+          ["    def __init__(self, worker_id, task_queue, result_queue):"] ++
+          ["        self.worker_id = worker_id", ""] ++
+          ["        self.task_queue = task_queue", ""] ++
+          ["        self.result_queue = result_queue", ""] ++
+          ["    ", ""] ++
+          ["    def run(self):"] ++
+          ["        while True:", ""] ++
+          ["            try:", ""] ++
+          ["                task = self.task_queue.get_nowait()", ""] ++
+          ["                result = task * 2  # Simple processing", ""] ++
+          ["                self.result_queue.put((self.worker_id, result))", ""] ++
+          ["                self.task_queue.task_done()", ""] ++
+          ["            except queue.Empty:", ""] ++
+          ["                break", ""] ++
+          ["", ""] ++
+          ["def main():"] ++
+          ["    # Create queues", ""] ++
+          ["    task_queue = queue.Queue()", ""] ++
+          ["    result_queue = queue.Queue()", ""] ++
+          ["    ", ""] ++
+          ["    # Add tasks", ""] ++
+          ["    for i in range(100):"] ++
+          ["        task_queue.put(i)", ""] ++
+          ["    ", ""] ++
+          ["    # Create and start workers", ""] ++
+          ["    workers = []", ""] ++
+          ["    for i in range(5):"] ++
+          ["        worker = Worker(i, task_queue, result_queue)", ""] ++
+          ["        thread = threading.Thread(target=worker.run)", ""] ++
+          ["        workers.append(thread)", ""] ++
+          ["        thread.start()", ""] ++
+          ["    ", ""] ++
+          ["    # Wait for all tasks to be done", ""] ++
+          ["    task_queue.join()", ""] ++
+          ["    ", ""] ++
+          ["    # Wait for workers to finish", ""] ++
+          ["    for thread in workers:", ""] ++
+          ["        thread.join()", ""] ++
+          ["    ", ""] ++
+          ["    # Collect results", ""] ++
+          ["    results = []", ""] ++
+          ["    while not result_queue.empty():"] ++
+          ["        results.append(result_queue.get())", ""] ++
+          ["    ", ""] ++
+          ["    # Sort results by worker ID", ""] ++
+          ["    results.sort()", ""] ++
+          ["    ", ""] ++
+          ["    print(f\"Processed {len(results)} tasks\")", ""] ++
+          ["    return 0", ""] ++
+          ["", ""] ++
+          ["if __name__ == \"__main__\":"]
+          ["    main()"]
+
+    withSystemTempDirectory "fluxus-concurrent-test-" $ \tmpDir -> do
+      let inputFile = tmpDir </> "concurrent.py"
+      let cppFile = tmpDir </> "concurrent.cpp"
+      let exeFile = tmpDir </> "concurrent"
+
+      writeFile inputFile (T.unpack concurrentCode)
+
+      let config = defaultConfig
+            { inputFiles = [inputFile]
+            , outputFile = cppFile
+            , sourceLanguage = Python
+            , targetLanguage = Cpp
+            , optimizationLevel = 3
+            }
+
+      result <- runCompiler config
+      case result of
+        Right _ -> do
+          -- Compile with threading support
+          (exitCode, _, stderr) <- readProcessWithExitCode "g++"
+            [cppFile, "-o", exeFile, "-std=c++20", "-O3", "-pthread"] ""
+          exitCode `shouldBe` ExitSuccess
+
+          (exitCode', stdout, stderr') <- readProcessWithExitCode exeFile [] ""
+          exitCode' `shouldBe` ExitSuccess
+          stdout `shouldContain` "Processed 100 tasks"
+        Left err -> expectationFailure $ "Concurrent compilation failed: " ++ show err
