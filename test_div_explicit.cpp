@@ -10,7 +10,7 @@
 int main() {
     auto x = 10;
     auto y = 20;
-    auto z = /* expr */ / /* expr */;
+    auto z = y / x;
     return 0;
 }
 

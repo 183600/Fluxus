@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include "tuple_printer.h"
 
 int main() {
     std::cout << std::make_tuple("Hello", 42) << std::endl;

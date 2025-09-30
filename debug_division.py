@@ -1,5 +1,5 @@
 # Test division expression
 x = 10
 y = 20
-quotient = y / x
+quotient = float(y) / float(x)  # Ensure float division with explicit types
 print("Quotient:", quotient)

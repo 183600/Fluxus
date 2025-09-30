@@ -313,7 +313,26 @@ inferBinaryOp op leftType rightType = case op of
         return (TFloat 64)
   OpMod -> inferArithmeticOp leftType rightType
   OpPow -> inferArithmeticOp leftType rightType
-  OpFloorDiv -> inferArithmeticOp leftType rightType
+  OpFloorDiv -> do
+    -- For floor division, we should allow proper numeric type coercion
+    -- but typically return an integer type when possible
+    case (leftType, rightType) of
+      (TInt _, TInt _) -> do
+        -- Both are ints, they should unify and result should be int
+        addConstraint leftType rightType  -- Unify the int types
+        return leftType
+      (TFloat _, _) -> do
+        -- Left is float, right should be convertible to float
+        addConstraint rightType (TFloat 64)  -- Allow right to be float or be convertible
+        return (TFloat 64)
+      (_, TFloat _) -> do
+        -- Right is float, left should be convertible to float
+        addConstraint leftType (TFloat 64)  -- Allow left to be float or be convertible
+        return (TFloat 64)
+      _ -> do
+        -- For other numeric types, allow conversion
+        addConstraint leftType rightType  -- For same numeric types
+        return (TFloat 64)
   OpBitAnd -> inferBitwiseOp leftType rightType
   OpBitOr -> inferBitwiseOp leftType rightType
   OpBitXor -> inferBitwiseOp leftType rightType

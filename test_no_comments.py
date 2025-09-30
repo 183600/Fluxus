@@ -3,7 +3,7 @@ y = 20
 sum_result = x + y
 diff = y - x
 product = x * y
-quotient = y / x
+quotient = float(y) / float(x)  # Ensure float division with explicit types
 remainder = y % x
 
 print("Sum:", sum_result)

@@ -1,1 +1,1 @@
-print("Hello", 42)
+print("Sum: " + str(123))

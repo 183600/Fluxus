@@ -268,8 +268,9 @@ prettyCppUnit :: CppUnit -> Text
 prettyCppUnit CppUnit{..} = T.unlines $ concat
   [ map renderInclude (nub cppIncludes)
   , [""]
-  , -- Always include tuple output support function for safety
-    [tupleOutputSupportFunction]
+  , -- Include tuple printer header when tuple output is needed
+    if needsTupleOutputSupport cppDeclarations then ["#include \"tuple_printer.h\""] else []
+  , [""]
   , if null cppNamespaces then [] else concat
       [ map (\ns -> "namespace " <> ns <> " {") cppNamespaces
       , [""]
@@ -616,26 +617,87 @@ renderParams params = T.intercalate ", " (map renderParam params)
       maybe "" (\def -> " = " <> renderExpr def) mDefault
 
 -- | Check if declarations need tuple output support
--- This function is not currently used but may be needed in the future
--- needsTupleOutputSupport :: [CppDecl] -> Bool
+needsTupleOutputSupport :: [CppDecl] -> Bool
+needsTupleOutputSupport decls = any declUsesTuple decls
+  where
+    declUsesTuple :: CppDecl -> Bool
+    declUsesTuple (CppCommentDecl _) = False
+    declUsesTuple (CppVariable _ _ mExpr) =
+      case mExpr of
+        Nothing -> False
+        Just expr -> exprUsesTuple expr
+    declUsesTuple (CppFunction _ _ _ body) = any stmtUsesTuple body
+    declUsesTuple (CppClass _ _ methods) = any declUsesTuple methods
+    declUsesTuple (CppStruct _ methods) = any declUsesTuple methods
+    declUsesTuple (CppMethod _ _ _ body _) = any stmtUsesTuple body
+    declUsesTuple (CppConstructor _ _ body) = any stmtUsesTuple body
+    declUsesTuple (CppDestructor _ _ _) = False
+    declUsesTuple (CppTypedef _ _) = False
+    declUsesTuple (CppUsing _ _) = False
+    declUsesTuple (CppTemplate _ decl) = declUsesTuple decl
+    declUsesTuple (CppNamespace _ decls') = any declUsesTuple decls'
+    declUsesTuple (CppExternC decls') = any declUsesTuple decls'
+    declUsesTuple (CppPreprocessor _) = False
+
+    exprUsesTuple :: CppExpr -> Bool
+    exprUsesTuple (CppLiteral _) = False
+    exprUsesTuple (CppVar _) = False
+    exprUsesTuple (CppCall _ args) = any exprUsesTuple args
+    exprUsesTuple (CppMember _ _) = False
+    exprUsesTuple (CppPointerMember _ _) = False
+    exprUsesTuple (CppBinary _ lhs rhs) = exprUsesTuple lhs || exprUsesTuple rhs
+    exprUsesTuple (CppUnary _ expr) = exprUsesTuple expr
+    exprUsesTuple (CppIndex _ _) = False
+    exprUsesTuple (CppCast _ expr) = exprUsesTuple expr
+    exprUsesTuple (CppSizeOf _) = False
+    exprUsesTuple (CppNew _ args) = any exprUsesTuple args
+    exprUsesTuple (CppDelete expr) = exprUsesTuple expr
+    exprUsesTuple (CppThis) = False
+    exprUsesTuple (CppLambda _ _ _) = False  -- Simplified for now
+    exprUsesTuple (CppMove expr) = exprUsesTuple expr
+    exprUsesTuple (CppForward expr) = exprUsesTuple expr
+    exprUsesTuple (CppMakeUnique _ args) = any exprUsesTuple args
+    exprUsesTuple (CppMakeShared _ args) = any exprUsesTuple args
+    exprUsesTuple (CppMakeTuple _) = True  -- This is the key case!
+    exprUsesTuple (CppInitList _ elements) = any exprUsesTuple elements
+    exprUsesTuple (CppTernary cond thenExpr elseExpr) =
+      exprUsesTuple cond || exprUsesTuple thenExpr || exprUsesTuple elseExpr
+    exprUsesTuple (CppComma exprs) = any exprUsesTuple exprs
+    exprUsesTuple (CppStaticCast _ expr) = exprUsesTuple expr
+    exprUsesTuple (CppDynamicCast _ expr) = exprUsesTuple expr
+    exprUsesTuple (CppReinterpretCast _ expr) = exprUsesTuple expr
+    exprUsesTuple (CppConstCast _ expr) = exprUsesTuple expr
+
+    stmtUsesTuple :: CppStmt -> Bool
+    stmtUsesTuple (CppExprStmt expr) = exprUsesTuple expr
+    stmtUsesTuple (CppBlock stmts) = any stmtUsesTuple stmts
+    stmtUsesTuple (CppReturn mExpr) = maybe False exprUsesTuple mExpr
+    stmtUsesTuple (CppIf _ thenStmt elseStmt) =
+      any stmtUsesTuple thenStmt || any stmtUsesTuple elseStmt
+    stmtUsesTuple (CppWhile _ body) = any stmtUsesTuple body
+    stmtUsesTuple (CppDoWhile body _) = any stmtUsesTuple body
+    stmtUsesTuple (CppFor _ _ _ body) = any stmtUsesTuple body
+    stmtUsesTuple (CppForRange _ _ body) = any stmtUsesTuple body
+    stmtUsesTuple (CppSwitch _ cases) = any caseUsesTuple cases
+    stmtUsesTuple (CppTry body catches _) =
+      any stmtUsesTuple body || any catchUsesTuple catches
+    stmtUsesTuple (CppThrow _) = False
+    stmtUsesTuple (CppBreak) = False
+    stmtUsesTuple (CppContinue) = False
+    stmtUsesTuple (CppComment _) = False
+    stmtUsesTuple (CppDecl decl) = declUsesTuple decl
+    stmtUsesTuple (CppLabel _) = False
+    stmtUsesTuple (CppGoto _) = False
+
+    caseUsesTuple :: CppCase -> Bool
+    caseUsesTuple (CppCase _ stmts) = any stmtUsesTuple stmts
+    caseUsesTuple (CppDefault stmts) = any stmtUsesTuple stmts
+
+    catchUsesTuple :: CppCatch -> Bool
+    catchUsesTuple (CppCatch _ _ body) = any stmtUsesTuple body
 
 
--- | Tuple output support function
-tupleOutputSupportFunction :: Text
-tupleOutputSupportFunction = T.unlines
-  [ "// Helper function to output tuples to ostream"
-  , "template<typename... Args>"
-  , "std::ostream& operator<<(std::ostream& os, const std::tuple<Args...>& t) {"
-  , "    os << \"(\";"
-  , "    std::apply([&os](const Args&... args) {"
-  , "        std::size_t n = 0;"
-  , "        ((os << args << (++n != sizeof...(Args) ? \", \" : \"\"))), ...);"
-  , "    }, t);"
-  , "    os << \")\";"
-  , "    return os;"
-  , "}"
-  , ""
-  ]
+
 
 -- | Generate indentation
 indentText :: Int -> Text
@@ -682,36 +744,6 @@ addStatement stmt = do
     stmtToDecl _other = CppCommentDecl "complex statement"
 
 -- ============================================================================
-
--- | Convert an expression to a printable form
-makePrintable :: CppExpr -> CppCodeGen CppExpr
-makePrintable expr = case expr of
-  -- Handle string literals directly (no need for to_string)
-  CppLiteral (CppStringLit _) -> do
-    return expr
-  -- Handle all other literals directly (no need for to_string)
-  CppLiteral _ -> do
-    return expr
-  -- Handle tuple expressions specially - they need custom output formatting
-  CppCall (CppVar "std::make_tuple") tupleArgs -> do
-    addInclude "<sstream>"
-    addInclude "<string>"
-    -- For tuples, we'll create a string stream and output each element
-    let formatTupleElement arg = case arg of
-          CppLiteral (CppStringLit s) -> CppLiteral (CppStringLit s)
-          _ -> CppCall (CppVar "std::to_string") [arg]
-    let formattedArgs = map formatTupleElement tupleArgs
-    -- Use string concatenation with proper string objects
-    case formattedArgs of
-      [] -> return $ CppLiteral (CppStringLit "")
-      [single] -> return single
-      (first:rest) -> do
-        let concatenated = foldl (\acc x -> CppBinary "+" acc x) first rest
-        return concatenated
-  -- Convert other expressions to string for printing
-  _ -> do
-    addInclude "<string>"
-    return $ CppCall (CppVar "std::to_string") [expr]
 
 -- Main Entry Points
 -- ============================================================================
@@ -1151,22 +1183,36 @@ generateBinaryOp op left right = case op of
       if isStringExpr l || isStringExpr r
       then do
         addInclude "<string>"
-        let wrapString e = if isStringExpr e then e else CppCall (CppVar "std::to_string") [e]
+        let wrapString e = case e of
+              -- 如果已经是 std::to_string 调用，直接返回，不再包装
+              CppCall func _ | isToStringCall func -> e
+              -- 如果是字符串字面量，直接返回
+              CppLiteral (CppStringLit _) -> e
+              -- 如果是字符串变量，直接返回
+              CppVar name | "str" `T.isInfixOf` name -> e
+              -- 其他情况，包装为 std::to_string
+              _ -> CppCall (CppVar "std::to_string") [e]
         return $ CppBinary "+" (wrapString l) (wrapString r)
       else return $ CppBinary "+" l r
+    -- Helper function to check if this is a std::to_string call
+    isToStringCall (CppVar "std::to_string") = True
+    isToStringCall (CppMember _ "to_string") = True  -- For cases like std::to_string
+    isToStringCall _ = False
     
     handleDivision l r = do
-      -- Debug: Add a comment to see if this function is called
-      addDeclaration $ CppCommentDecl "handleDivision called"
+      -- Ensure both operands are floating point for Python-style division
       let ensureFloat e = case e of
             CppLiteral (CppIntLit i) -> CppLiteral (CppFloatLit (fromIntegral i))
-            _ -> CppStaticCast CppDouble e
+            CppLiteral (CppFloatLit f) -> CppLiteral (CppFloatLit f)  -- Already float
+            CppVar _ -> CppStaticCast CppDouble e  -- Variable cast to double
+            CppBinary op' left' right' -> CppStaticCast CppDouble (CppBinary op' left' right')  -- Expression cast to double
+            _ -> CppStaticCast CppDouble e  -- Other expression cast to double
       let leftResult = ensureFloat l
       let rightResult = ensureFloat r
-      addDeclaration $ CppCommentDecl $ "Division operation: " <> T.pack (show leftResult) <> " / " <> T.pack (show rightResult)
       return $ CppBinary "/" leftResult rightResult
     
     isStringExpr (CppLiteral (CppStringLit _)) = True
+    isStringExpr (CppCall (CppVar "std::to_string") _) = True
     isStringExpr (CppVar name) = "str" `T.isInfixOf` name
     isStringExpr _ = False
 
@@ -1247,6 +1293,8 @@ generatePythonCall func args = do
     handleBuiltinFunction "print" cppArgs = do
       addInclude "<iostream>"
       addInclude "<string>"
+      -- Add support for string conversion
+      addInclude "<sstream>"
       -- Debug: Add comment showing number of arguments
       addDeclaration $ CppCommentDecl $ "print function called with " <> T.pack (show (length cppArgs)) <> " arguments"
       case cppArgs of
@@ -1256,16 +1304,14 @@ generatePythonCall func args = do
           forM_ (zip ([0..] :: [Int]) cppArgs) $ \(i, arg) ->
             addDeclaration $ CppCommentDecl $ "print argument " <> T.pack (show i) <> ": " <> T.pack (show arg)
           
-          -- Convert each argument to a printable form
-          printableArgs <- mapM makePrintable cppArgs
-          -- Debug: Add comment showing printable arguments
-          forM_ (zip ([0..] :: [Int]) printableArgs) $ \(i, arg) ->
-            addDeclaration $ CppCommentDecl $ "print printable argument " <> T.pack (show i) <> ": " <> T.pack (show arg)
-          -- Debug: Check if we have any tuple expressions
-          forM_ printableArgs $ \arg ->
-            addDeclaration $ CppCommentDecl $ "Final printable arg type: " <> T.pack (show arg)
+          -- For print, we want to process each argument for output
+          -- Process each argument individually to ensure it's in a printable form
+          -- For now, just use the arguments as-is since they should already be properly formatted
+          let processedArgs = cppArgs
+          
+          -- Chain all arguments with << operator, separated by spaces
           let chainOutput = foldl (CppBinary "<<") (CppVar "std::cout") $
-                intercalateWithPrint (CppLiteral (CppStringLit " ")) printableArgs
+                intercalateWithPrint (CppLiteral (CppStringLit " ")) processedArgs
           return $ CppBinary "<<" chainOutput (CppVar "std::endl")
           
     handleBuiltinFunction "len" [arg] = do
@@ -1308,6 +1354,7 @@ generatePythonCall func args = do
         -- Check if we're creating a tuple by mistake
         addDeclaration $ CppCommentDecl $ "Args type: " <> T.pack (show (map (\ _ -> ("expr" :: String)) cppArgs))
         return $ CppCall (CppVar name) cppArgs
+    
     
     intercalateWithPrint _sep [] = []
     intercalateWithPrint _sep [x] = [x]
@@ -1780,7 +1827,8 @@ generateGoCall func args = do
 buildPrintExpr :: [CppExpr] -> Bool -> CppCodeGen CppExpr
 buildPrintExpr args addNewline = do
   -- Make all arguments printable before building expression
-  printableArgs <- mapM makePrintable args
+  -- For now, just use the arguments as-is since they should already be properly formatted
+  let printableArgs = args
   let base = foldl (\acc arg -> CppBinary "<<" acc arg) (CppVar "std::cout") $
              intercalateWithPrint2 (CppLiteral (CppStringLit " ")) printableArgs
   return $ if addNewline
@@ -2253,8 +2301,12 @@ generateFString parts = do
   -- Process each part
   cppParts <- mapM processFStringPart parts
   
+  -- Ensure all parts are properly formatted for string concatenation
+  -- For now, just return the parts as-is since they're already processed correctly
+  let printableParts = cppParts
+  
   -- Combine all parts with string concatenation
-  case cppParts of
+  case printableParts of
     [] -> return $ CppLiteral $ CppStringLit ""
     [part] -> return part
     (first:rest) -> return $ foldl (\acc part -> CppBinary "+" acc part) first rest

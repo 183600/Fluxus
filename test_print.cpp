@@ -8,7 +8,6 @@
 #include <iostream>
 
 int main() {
-    std::cout << std::make_tuple("Hello", 42) << std::endl;
+    std::cout << "Sum: " + std::to_string(123) << std::endl;
     return 0;
 }
-

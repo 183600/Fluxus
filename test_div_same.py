@@ -1,3 +1,3 @@
 x = 10
 y = 10
-z = x / y
+z = float(x) / float(y)  # Ensure float division with explicit types

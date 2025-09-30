@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include "tuple_printer.h"
 
 // TODO: Render other declaration types
 
@@ -13,8 +14,8 @@
 
 // TODO: Render other declaration types
 
-auto add(auto a, auto b) {
-    return a + b;
+auto add(const std::tuple<int, int>& t) {
+    return std::get<0>(t) + std::get<1>(t);
 }
 
 // TODO: Render other declaration types

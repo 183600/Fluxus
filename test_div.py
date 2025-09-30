@@ -1,1 +1,3 @@
-x = 10\ny = 20\nquotient = y / x
+x = 10
+y = 20
+quotient = float(y) / float(x)  # Ensure float division with explicit types

@@ -312,24 +312,28 @@ inferBinaryOp op leftType rightType = do
       case (leftType, rightType) of
         (TInt _, TInt _) -> do
           -- Both are ints, result should be float
-          -- Don't unify int types for division since they might have different bit widths
-          -- but both should be convertible to float
+          -- Don't add constraint for division since both ints should result in float
           addWarning "Division: both ints, returning float"
           return (TFloat 64)
-        (TFloat _, _) -> do
-          -- Left is float, right should be convertible to float
-          -- Don't add constraint for division since it should allow numeric conversion
-          addWarning "Division: left is float, returning float"
+        (TFloat _, TInt _) -> do
+          -- Left is float, right is int - convert int to float
+          addConstraint rightType (TFloat 64)
+          addWarning "Division: left float, right int, returning float"
           return (TFloat 64)
-        (_, TFloat _) -> do
-          -- Right is float, left should be convertible to float
-          -- Don't add constraint for division since it should allow numeric conversion
-          addWarning "Division: right is float, returning float"
+        (TInt _, TFloat _) -> do
+          -- Left is int, right is float - convert int to float
+          addConstraint leftType (TFloat 64)
+          addWarning "Division: left int, right float, returning float"
+          return (TFloat 64)
+        (TFloat _, TFloat _) -> do
+          -- Both floats, return float
+          addConstraint leftType rightType
+          addWarning "Division: both floats, returning float"
           return (TFloat 64)
         _ -> do
           -- For other numeric types, allow conversion to float
-          -- Don't unify different numeric types for division
-          addWarning "Division: other case, returning float"
+          addConstraint leftType rightType
+          addWarning "Division: other case, returning result of unification"
           return (TFloat 64)
     OpMod -> inferArithmeticOp leftType rightType
     OpPow -> inferArithmeticOp leftType rightType
@@ -374,13 +378,31 @@ inferBinaryOp op leftType rightType = do
 -- | Helper for arithmetic operations
 inferArithmeticOp :: Type -> Type -> TypeInferenceM Type
 inferArithmeticOp leftType rightType = do
-  addConstraint leftType rightType
   case (leftType, rightType) of
-    (TFloat _, _) -> return leftType
-    (_, TFloat _) -> return rightType
-    (TInt _, TInt _) -> return leftType
-    (TUInt _, TUInt _) -> return leftType
-    _ -> return leftType
+    (TFloat _, TInt _) -> do
+      -- Allow int to float conversion, return float
+      addWarning $ "Arithmetic: float <- int conversion: " <> T.pack (show leftType) <> ", " <> T.pack (show rightType)
+      return leftType
+    (TInt _, TFloat _) -> do
+      -- Allow int to float conversion, return float
+      addWarning $ "Arithmetic: int -> float conversion: " <> T.pack (show leftType) <> ", " <> T.pack (show rightType)
+      return rightType
+    (TFloat _, TFloat _) -> do
+      -- Both floats, return float
+      addConstraint leftType rightType
+      return leftType
+    (TInt _, TInt _) -> do
+      -- Both ints, return int
+      addConstraint leftType rightType
+      return leftType
+    (TUInt _, TUInt _) -> do
+      -- Both uints, return uint
+      addConstraint leftType rightType
+      return leftType
+    _ -> do
+      -- For other cases, try to unify and return left type
+      addConstraint leftType rightType
+      return leftType
 
 -- | Helper for bitwise operations
 inferBitwiseOp :: Type -> Type -> TypeInferenceM Type
@@ -464,20 +486,21 @@ unify (TOptional t1) (TOptional t2) = unify t1 t2
 unify t1 t2 = do
   -- Allow numeric type conversion (int to float)
   case (t1, t2) of
-    (TFloat 64, TInt _) -> do
-      return $ Right HashMap.empty  -- Allow float <- int conversion (specific case for division)
-    (TInt _, TFloat 64) -> do
-      return $ Right HashMap.empty  -- Allow int -> float conversion (specific case for division)
-    (TInt _, TFloat _) -> do
-      return $ Right HashMap.empty  -- Allow int -> float conversion
     (TFloat _, TInt _) -> do
+      -- When unifying float and int, convert int to float
       return $ Right HashMap.empty  -- Allow float <- int conversion
+    (TInt _, TFloat _) -> do
+      -- When unifying int and float, convert int to float
+      return $ Right HashMap.empty  -- Allow int -> float conversion
     (TInt bw1, TInt bw2)
       | bw1 == bw2 -> return $ Right HashMap.empty
       | otherwise -> return $ Right HashMap.empty  -- Allow different bitwidth int unification
     (TFloat bw1, TFloat bw2)
       | bw1 == bw2 -> return $ Right HashMap.empty
       | otherwise -> return $ Right HashMap.empty  -- Allow different bitwidth float unification
+    -- Handle TAny (any type can unify with TAny)
+    (TAny, _) -> return $ Right HashMap.empty
+    (_, TAny) -> return $ Right HashMap.empty
     -- Catch-all for any remaining cases, especially involving numeric types or bit widths
     _ | isNumericType t1 && isNumericType t2 -> return $ Right HashMap.empty
     _ -> return $ Left $ "Cannot unify " <> T.pack (show t1) <> " with " <> T.pack (show t2)
@@ -965,14 +988,32 @@ inferPythonExpr expr = case expr of
 
     funcType <- case locatedValue func of
       PyVar var -> do
-        envLookup <- lookupVarType var `catchError` (\_ -> freshTypeVar)
-        return envLookup
+        -- Check if it's a builtin function
+        case getPythonBuiltinType var of
+          Just builtinType -> 
+            -- Handle variadic functions like print
+            if isVariadicBuiltin var
+            then return builtinType  -- Don't add constraints for variadic functions
+            else return builtinType
+          Nothing -> do
+            envLookup <- lookupVarType var `catchError` (\_ -> freshTypeVar)
+            return envLookup
       _ -> inferPythonExpr (locatedValue func)
 
     returnType <- freshTypeVar
     let expectedFuncType = TFunction argTypes returnType
-    addConstraint funcType expectedFuncType
-    return returnType
+    
+    -- Skip constraint checking for variadic builtin functions
+    case locatedValue func of
+      PyVar var -> 
+        if isVariadicBuiltin var
+        then return returnType
+        else do
+          addConstraint funcType expectedFuncType
+          return returnType
+      _ -> do
+        addConstraint funcType expectedFuncType
+        return returnType
   PyAttribute obj attr -> do
     objType <- inferPythonExpr (locatedValue obj)
     inferAttributeAccess objType attr
@@ -1361,6 +1402,25 @@ inferGoImport imp = case imp of
       [ (Identifier "Sqrt", TFunction [TFloat 64] (TFloat 64))
       , (Identifier "Sin", TFunction [TFloat 64] (TFloat 64))
       ]
+
+-- | Get type for Python builtin function
+getPythonBuiltinType :: Identifier -> Maybe Type
+getPythonBuiltinType (Identifier name) = case name of
+  "print" -> Just $ TFunction [TAny] TVoid  -- print can take any type and returns void (variadic)
+  "len" -> Just $ TFunction [TAny] (TInt 32)  -- len returns int
+  "range" -> Just $ TFunction [TInt 32, TInt 32, TInt 32] (TList (TInt 32))  -- range returns list of int
+  "str" -> Just $ TFunction [TAny] TString  -- str converts any type to string
+  "int" -> Just $ TFunction [TAny] (TInt 32)  -- int converts any type to int
+  "float" -> Just $ TFunction [TAny] (TFloat 64)  -- float converts any type to float
+  "bool" -> Just $ TFunction [TAny] TBool  -- bool converts any type to bool
+  "abs" -> Just $ TFunction [TAny] TAny  -- abs returns same type as input
+  "min" -> Just $ TFunction [TAny, TAny] TAny  -- min returns same type as inputs
+  "max" -> Just $ TFunction [TAny, TAny] TAny  -- max returns same type as inputs
+  _ -> Nothing
+
+-- | Check if a builtin function is variadic (can take variable number of arguments)
+isVariadicBuiltin :: Identifier -> Bool
+isVariadicBuiltin (Identifier name) = name `elem` ["print"]
 
 -- | Infer types for Go bindings
 inferGoBinding :: GoBinding -> TypeInferenceM ()

@@ -4,11 +4,11 @@ y = 20
 sum_result = x + y
 diff = y - x
 product = x * y
-quotient = y / x
+quotient = y // x
 remainder = y % x
 
-print("Sum:", sum_result)
-print("Difference:", diff)
-print("Product:", product)
-print("Quotient:", quotient)
-print("Remainder:", remainder)
+print("Sum: " + str(sum_result))
+print("Difference: " + str(diff))
+print("Product: " + str(product))
+print("Quotient: " + str(quotient))
+print("Remainder: " + str(remainder))

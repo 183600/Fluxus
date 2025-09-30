@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include "tuple_printer.h"
 
 int main() {
     std::cout << std::make_tuple("Testing division: 10 / 5 =", 10.0 / 5.0) << std::endl;

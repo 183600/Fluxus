@@ -744,7 +744,7 @@ parseArguments = do
   where
     parseArgument = located $ choice
       [ try parseKeywordArgument
-      , ArgPositional <$> parseExpression
+      , ArgPositional <$> parseOrExpr
       ]
     
     parseKeywordArgument = do
