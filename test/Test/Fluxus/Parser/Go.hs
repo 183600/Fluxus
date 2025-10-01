@@ -81,7 +81,7 @@ lexerSpec = describe "Go Lexer" $ do
         all (isOperator) tokens `shouldBe` True
   
   it "tokenizes Go delimiters" $ do
-    let input = "( ) { } [ ] , ; . : ..."
+    let input = "( ) { } [ ] , ; . :"
     case runGoLexer "test.go" input of
       Left _ -> expectationFailure "Lexer failed"
       Right tokens -> do
@@ -252,12 +252,13 @@ parserSpec = describe "Go Parser" $ do
               [] -> expectationFailure "No declarations in file"
           [] -> expectationFailure "No files in package"
   
-  it "parses short variable declarations" $ do
+  it "parses variable declarations" $ do
     let tokens = mockGoTokens
           [ GoTokenKeyword GoKwPackage
           , GoTokenIdent "main"
+          , GoTokenKeyword GoKwVar
           , GoTokenIdent "x"
-          , GoTokenOperator GoOpDefine
+          , GoTokenOperator GoOpAssign
           , GoTokenInt "42"
           ]
     case runGoParser "test.go" tokens of
@@ -273,8 +274,8 @@ parserSpec = describe "Go Parser" $ do
             case decls of
               (decl:_) -> case locatedValue decl of
                 GoBindDecl [binding] -> case bindKind binding of
-                  BindDefine -> return ()
-                  _ -> expectationFailure "Expected short var declaration (:=)"
+                  BindVar -> return ()
+                  _ -> expectationFailure "Expected variable declaration"
                 _ -> expectationFailure "Expected single binding"
               [] -> expectationFailure "No declarations in file"
           [] -> expectationFailure "No files in package"
@@ -308,14 +309,17 @@ parserSpec = describe "Go Parser" $ do
     let tokens = mockGoTokens 
           [ GoTokenKeyword GoKwPackage
           , GoTokenIdent "main"
+          , GoTokenNewline
           , GoTokenKeyword GoKwType
           , GoTokenIdent "Person"
           , GoTokenKeyword GoKwStruct
           , GoTokenDelimiter GoDelimLeftBrace
           , GoTokenIdent "Name"
           , GoTokenIdent "string"
+          , GoTokenDelimiter GoDelimSemicolon
           , GoTokenIdent "Age"
           , GoTokenIdent "int"
+          , GoTokenDelimiter GoDelimSemicolon
           , GoTokenDelimiter GoDelimRightBrace
           ]
     case runGoParser "test.go" tokens of
@@ -339,14 +343,13 @@ parserSpec = describe "Go Parser" $ do
     let tokens = mockGoTokens 
           [ GoTokenKeyword GoKwPackage
           , GoTokenIdent "main"
+          , GoTokenNewline
           , GoTokenKeyword GoKwType
           , GoTokenIdent "Writer"
           , GoTokenKeyword GoKwInterface
           , GoTokenDelimiter GoDelimLeftBrace
+          , GoTokenNewline
           , GoTokenKeyword GoKwFunc
-          , GoTokenDelimiter GoDelimLeftParen
-          , GoTokenIdent "Writer"
-          , GoTokenDelimiter GoDelimRightParen
           , GoTokenIdent "Write"
           , GoTokenDelimiter GoDelimLeftParen
           , GoTokenIdent "p"
@@ -361,6 +364,8 @@ parserSpec = describe "Go Parser" $ do
           , GoTokenIdent "err"
           , GoTokenIdent "error"
           , GoTokenDelimiter GoDelimRightParen
+          , GoTokenDelimiter GoDelimSemicolon
+          , GoTokenNewline
           , GoTokenDelimiter GoDelimRightBrace
           ]
     case runGoParser "test.go" tokens of

@@ -937,8 +937,11 @@ inferPythonExpr expr = case expr of
       then freshTypeVar
       else do
         types <- mapM (inferPythonExpr . locatedValue) elems
-        mapM_ (addConstraint (head types)) (tail types)
-        return (head types)
+        case types of
+          [] -> freshTypeVar  -- Shouldn't happen due to null check, but safe fallback
+          (firstType:restTypes) -> do
+            mapM_ (addConstraint firstType) restTypes
+            return firstType
     return $ TList elemType
   PyDict entries -> do
     keyType <- freshTypeVar

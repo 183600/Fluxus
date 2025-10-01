@@ -1,19 +1,15 @@
-def calculate_area(length, width):
-    return length * width
+def add(a, b):
+    return a + b
+
+def multiply(x, y):
+    return x * y
 
 def main():
-    # Test arithmetic
-    a = 10
-    b = 5
-    sum_result = a + b
-    product = a * b
-
-    print(f"Sum: {sum_result}")
-    print(f"Product: {product}")
-
-    # Test function call
-    area = calculate_area(6, 4)
-    print(f"Area: {area}")
+    result1 = add(5, 3)
+    result2 = multiply(4, 7)
+    print("5 + 3 =", result1)
+    print("4 * 7 =", result2)
+    print("Complex expression:", add(multiply(2, 3), add(1, 2)))
 
 if __name__ == "__main__":
     main()

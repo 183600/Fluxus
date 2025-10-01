@@ -35,9 +35,8 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
 import qualified Text.Megaparsec as MP
-import Text.Megaparsec.Char
-import qualified Text.Megaparsec.Char.Lexer as L
-import Text.Megaparsec (many, choice, try, notFollowedBy, optional, eof, getSourcePos, satisfy, takeWhileP, manyTill, (<|>), lookAhead, skipMany)
+import Text.Megaparsec.Char hiding (newline)
+import Text.Megaparsec (many, choice, try, notFollowedBy, optional, eof, getSourcePos, satisfy, takeWhileP, manyTill, (<|>), lookAhead, skipMany, anySingle)
 import Control.Applicative ()
 import Data.Functor (($>))
 import Data.Hashable (Hashable)
@@ -250,10 +249,10 @@ pythonToken = choice
   , try stringLiteral
   , try bytesLiteral
   , try operator
-  , try keyword
-  , identifier
-  , delimiter
-  , Fluxus.Parser.Python.Lexer.newline
+  , try delimiter
+  , try keyword  -- Try keywords before identifiers to ensure True/False are recognized as keywords
+  , try identifier
+  , newline
     ]
 
 -- | Parse a located Python token with position information
@@ -275,7 +274,10 @@ keyword = do
   return $ TokenKeyword kw
   where
     allKeywords = [minBound .. maxBound]
-    tryKeyword kw = lift (string (keywordToText kw)) $> kw
+    tryKeyword kw = do
+      let kwText = keywordToText kw
+      _ <- lift $ try $ string kwText
+      return kw
 
 -- | Parse identifiers
 identifier :: PythonLexer PythonToken
@@ -283,8 +285,9 @@ identifier = do
   first <- lift $ letterChar <|> char '_'
   rest <- lift $ many (alphaNumChar <|> char '_')
   let ident = T.pack (first : rest)
+  -- Check if the identifier is a keyword, and if so, fail to allow keyword parsing to handle it
   if isKeyword ident
-    then fail "identifier cannot be a keyword"
+    then fail $ "identifier '" ++ T.unpack ident ++ "' cannot be a keyword"
     else return $ TokenIdent ident
 
 -- | Parse operators
@@ -351,18 +354,56 @@ stringLiteral = choice
   ]
   where
     parseRegularString = do
-      quote <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
-      content <- lift $ manyTill L.charLiteral (string quote)
+      quoteStr <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
+      let quoteChar = case T.unpack quoteStr of
+            ('\"':'\"':'\"':_) -> '\"'
+            ('\'':'\'':'\'':_) -> '\''
+            ('\"':_) -> '\"'
+            ('\'':_) -> '\''
+            _ -> '\"'
+      content <- lift $ manyTill (satisfy (\c -> c /= quoteChar && c /= '\\') <|> parseEscapeSequence) (string quoteStr)
       return $ TokenString (T.pack content)
+      where
+        parseEscapeSequence = do
+          _ <- char '\\'
+          c <- choice
+            [ char 'n' $> '\n'
+            , char 't' $> '\t'
+            , char 'r' $> '\r'
+            , char '\\' $> '\\'
+            , char '\"' $> '\"'
+            , char '\'' $> '\''
+            , anySingle  -- fallback for other escape sequences
+            ]
+          return c
     
     parseFString = do
       _ <- lift $ char 'f' <|> char 'F'
-      quote <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
-      content <- lift $ manyTill L.charLiteral (string quote)
+      quoteStr <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
+      let quoteChar = case T.unpack quoteStr of
+            ('\"':'\"':'\"':_) -> '\"'
+            ('\'':'\'':'\'':_) -> '\''
+            ('\"':_) -> '\"'
+            ('\'':_) -> '\''
+            _ -> '\"'
+      content <- lift $ manyTill (satisfy (\c -> c /= quoteChar && c /= '\\') <|> parseEscapeSequence) (string quoteStr)
       let contentText = T.pack content
       -- Extract expressions from within {} braces
       let expressions = extractFStringExpressions contentText
       return $ TokenFString contentText expressions
+      where
+        parseEscapeSequence = do
+          _ <- char '\\'
+          c <- choice
+            [ char 'n' $> '\n'
+            , char 't' $> '\t'
+            , char 'r' $> '\r'
+            , char '\\' $> '\\'
+            , char '\"' $> '\"'
+            , char '\'' $> '\''
+            , anySingle  -- fallback for other escape sequences
+            ]
+          return c
     
     -- Parse characters in f-string, handling escaped characters properly\n    parseFStringChar = choice\n      [ try $ do\n          _ <- char '\\\\'\n          c <- anySingle\n          return ['\\\\', c]\n      , do\n          c <- anySingle\n          return [c]\n      ]
     
@@ -389,9 +430,28 @@ stringLiteral = choice
 bytesLiteral :: PythonLexer PythonToken
 bytesLiteral = do
   _ <- lift $ char 'b' <|> char 'B'
-  quote <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
-  content <- lift $ manyTill L.charLiteral (string quote)
+  quoteStr <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
+  let quoteChar = case T.unpack quoteStr of
+        ('\"':'\"':'\"':_) -> '\"'
+        ('\'':'\'':'\'':_) -> '\''
+        ('\"':_) -> '\"'
+        ('\'':_) -> '\''
+        _ -> '\"'
+  content <- lift $ manyTill (satisfy (\c -> c /= quoteChar && c /= '\\') <|> parseEscapeSequence) (string quoteStr)
   return $ TokenBytes (T.pack content)
+  where
+    parseEscapeSequence = do
+      _ <- char '\\'
+      c <- choice
+        [ char 'n' $> '\n'
+        , char 't' $> '\t'
+        , char 'r' $> '\r'
+        , char '\\' $> '\\'
+        , char '\"' $> '\"'
+        , char '\'' $> '\''
+        , anySingle  -- fallback for other escape sequences
+        ]
+      return c
 
 -- | Parse number literals
 numberLiteral :: PythonLexer PythonToken

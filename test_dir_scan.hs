@@ -3,7 +3,6 @@
 import System.Directory (doesDirectoryExist, getDirectoryContents, doesFileExist)
 import System.FilePath (takeFileName, takeExtension, (</>))
 import Data.List (isSuffixOf)
-import Control.Monad (when, unless)
 
 -- | Check if file has supported extension
 hasSupportedExtension :: FilePath -> Bool

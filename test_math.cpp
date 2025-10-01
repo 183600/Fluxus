@@ -7,37 +7,9 @@
 #include <string>
 #include <iostream>
 
-// DEBUG: Starting function generation for: calculate_area
+// DEBUG: Starting function generation for: add
 
 // DEBUG: Function has 1 body statements
-
-// Processing expression: BinaryOp
-
-// Processing binary operation: OpMul
-
-// Processing expression: Variable
-
-// Generated left operand: CppVar "length"
-
-// Processing expression: Variable
-
-// Generated right operand: CppVar "width"
-
-// Generated binary operation result: CppBinary "*" (CppVar "length") (CppVar "width")
-
-// DEBUG: Generated 1 C++ statements
-
-auto calculate_area(auto length, auto width) {
-    return length * width;
-}
-
-// DEBUG: Starting function generation for: main
-
-// DEBUG: Function has 8 body statements
-
-// Processing expression: Literal
-
-// Processing expression: Literal
 
 // Processing expression: BinaryOp
 
@@ -53,19 +25,39 @@ auto calculate_area(auto length, auto width) {
 
 // Generated binary operation result: CppBinary "+" (CppVar "a") (CppVar "b")
 
+// DEBUG: Generated 1 C++ statements
+
+auto add(auto a, auto b) {
+    return a + b;
+}
+
+// DEBUG: Starting function generation for: multiply
+
+// DEBUG: Function has 1 body statements
+
 // Processing expression: BinaryOp
 
 // Processing binary operation: OpMul
 
 // Processing expression: Variable
 
-// Generated left operand: CppVar "a"
+// Generated left operand: CppVar "x"
 
 // Processing expression: Variable
 
-// Generated right operand: CppVar "b"
+// Generated right operand: CppVar "y"
 
-// Generated binary operation result: CppBinary "*" (CppVar "a") (CppVar "b")
+// Generated binary operation result: CppBinary "*" (CppVar "x") (CppVar "y")
+
+// DEBUG: Generated 1 C++ statements
+
+auto multiply(auto x, auto y) {
+    return x * y;
+}
+
+// DEBUG: Starting function generation for: main
+
+// DEBUG: Function has 5 body statements
 
 // Processing expression: Call
 
@@ -75,21 +67,77 @@ int __debug_generatePythonCall_called = 1;
 
 // Processing expression: Variable
 
-// Processing expression: FString
+// Processing expression: Literal
+
+// Processing expression: Literal
+
+// Function call: add with 2 args
+
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 5)})}
+
+// Python argument 1: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 3)})}
+
+int __debug_add = 42;
+
+int __debug_add_args = 2;
+
+// Regular function call: add
+
+int __debug_add_result = 1;
+
+// Returned from generatePythonCall
+
+// Processing expression: Call
+
+// About to call generatePythonCall
 
 // Processing expression: Variable
 
-// Function call: print with 1 args
+// Processing expression: Literal
 
-// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyFString [FStringExpr {fstrExpr = Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "sum_result")}, fstrConversion = Nothing, fstrFormatSpec = Nothing}]})}
+// Processing expression: Literal
+
+// Function call: multiply with 2 args
+
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 4)})}
+
+// Python argument 1: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 7)})}
+
+int __debug_multiply = 42;
+
+int __debug_multiply_args = 2;
+
+// Regular function call: multiply
+
+int __debug_multiply_result = 1;
+
+// Returned from generatePythonCall
+
+// Processing expression: Call
+
+// About to call generatePythonCall
+
+// Processing expression: Variable
+
+// Processing expression: Literal
+
+// Processing expression: Variable
+
+// Function call: print with 2 args
+
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "5 + 3 =")})}
+
+// Python argument 1: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "result1")})}
 
 int __debug_print = 42;
 
-int __debug_print_args = 1;
+int __debug_print_args = 2;
 
-// print function called with 1 arguments
+// print function called with 2 arguments
 
-// print argument 0: CppVar "sum_result"
+// print argument 0: CppLiteral (CppStringLit "5 + 3 =")
+
+// print argument 1: CppVar "result1"
 
 // Returned from generatePythonCall
 
@@ -99,17 +147,55 @@ int __debug_print_args = 1;
 
 // Processing expression: Variable
 
-// Processing expression: FString
+// Processing expression: Literal
 
 // Processing expression: Variable
 
-// Function call: print with 1 args
+// Function call: print with 2 args
 
-// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyFString [FStringExpr {fstrExpr = Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "product")}, fstrConversion = Nothing, fstrFormatSpec = Nothing}]})}
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "4 * 7 =")})}
 
-// print function called with 1 arguments
+// Python argument 1: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "result2")})}
 
-// print argument 0: CppVar "product"
+// print function called with 2 arguments
+
+// print argument 0: CppLiteral (CppStringLit "4 * 7 =")
+
+// print argument 1: CppVar "result2"
+
+// Returned from generatePythonCall
+
+// Processing expression: Call
+
+// About to call generatePythonCall
+
+// Processing expression: Variable
+
+// Processing expression: Literal
+
+// Processing expression: Call
+
+// About to call generatePythonCall
+
+// Processing expression: Variable
+
+// Processing expression: Call
+
+// About to call generatePythonCall
+
+// Processing expression: Variable
+
+// Processing expression: Literal
+
+// Processing expression: Literal
+
+// Function call: multiply with 2 args
+
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 2)})}
+
+// Python argument 1: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 3)})}
+
+// Regular function call: multiply
 
 // Returned from generatePythonCall
 
@@ -123,53 +209,48 @@ int __debug_print_args = 1;
 
 // Processing expression: Literal
 
-// Function call: calculate_area with 2 args
+// Function call: add with 2 args
 
-// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 6)})}
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 1)})}
 
-// Python argument 1: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 4)})}
+// Python argument 1: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 2)})}
 
-int __debug_calculate_area = 42;
-
-int __debug_calculate_area_args = 2;
-
-// Regular function call: calculate_area
-
-int __debug_calculate_area_result = 1;
+// Regular function call: add
 
 // Returned from generatePythonCall
 
-// Processing expression: Call
+// Function call: add with 2 args
 
-// About to call generatePythonCall
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyCall (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "multiply")}) [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 2)})},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 3)})}]})}
 
-// Processing expression: Variable
+// Python argument 1: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyCall (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "add")}) [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 1)})},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 2)})}]})}
 
-// Processing expression: FString
-
-// Processing expression: Variable
-
-// Function call: print with 1 args
-
-// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyFString [FStringExpr {fstrExpr = Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "area")}, fstrConversion = Nothing, fstrFormatSpec = Nothing}]})}
-
-// print function called with 1 arguments
-
-// print argument 0: CppVar "area"
+// Regular function call: add
 
 // Returned from generatePythonCall
 
-// DEBUG: Generated 8 C++ statements
+// Function call: print with 2 args
+
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "Complex expression:")})}
+
+// Python argument 1: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyCall (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "add")}) [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyCall (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "multiply")}) [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 2)})},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 3)})}]})},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<no-file>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyCall (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "add")}) [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 1)})},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 2)})}]})}]})}
+
+// print function called with 2 arguments
+
+// print argument 0: CppLiteral (CppStringLit "Complex expression:")
+
+// print argument 1: CppCall (CppVar "add") [CppCall (CppVar "multiply") [CppLiteral (CppIntLit 2),CppLiteral (CppIntLit 3)],CppCall (CppVar "add") [CppLiteral (CppIntLit 1),CppLiteral (CppIntLit 2)]]
+
+// Returned from generatePythonCall
+
+// DEBUG: Generated 5 C++ statements
 
 int main() {
-    auto a = 10;
-    auto b = 5;
-    auto sum_result = a + b;
-    auto product = a * b;
-    std::cout << sum_result << std::endl;
-    std::cout << product << std::endl;
-    auto area = calculate_area(6, 4);
-    std::cout << area << std::endl;
+    auto result1 = add(5, 3);
+    auto result2 = multiply(4, 7);
+    std::cout << "5 + 3 =" << " " << result1 << std::endl;
+    std::cout << "4 * 7 =" << " " << result2 << std::endl;
+    std::cout << "Complex expression:" << " " << add(multiply(2, 3), add(1, 2)) << std::endl;
     return 0;
 }
 

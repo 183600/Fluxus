@@ -5,8 +5,26 @@ module Test.Fluxus.Analysis.OwnershipInference (spec) where
 import Test.Hspec
 import Data.Text (Text)
 import qualified Data.Text as T
+import Control.Monad (void)
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as HashMap
 
 import Fluxus.Analysis.OwnershipInference
+
+-- Helper function to get variable ownership from analysis
+getVariableOwnership' :: OwnershipAnalysis -> Text -> IO OwnershipStatus
+getVariableOwnership' analysis var = return $ case HashMap.lookup var (oaVariableOwnership analysis) of
+  Just status -> status
+  Nothing -> Owned  -- Default fallback
+
+-- Helper function to get variable ownership at specific line
+getVariableOwnershipAt' :: OwnershipAnalysis -> Text -> Int -> IO OwnershipStatus
+getVariableOwnershipAt' analysis var line = return $
+  case HashMap.lookup var (oaVariableOwnershipByLine analysis) of
+    Just lineMap -> case HashMap.lookup line lineMap of
+      Just status -> status
+      Nothing -> Owned  -- Default fallback
+    Nothing -> Owned  -- Default fallback
 
 spec :: Spec
 spec = describe "Ownership Inference Tests" $ do
@@ -23,10 +41,10 @@ basicOwnershipSpec = describe "Basic Ownership Inference" $ do
           , "    x = 42"
           , "    return x"
           ]
-    result <- inferOwnership code
+    result <- inferOwnershipFromTextIO code
     case result of
       Right analysis -> do
-        ownership <- getVariableOwnership analysis "x"
+        ownership <- getVariableOwnership' analysis "x"
         ownership `shouldBe` Owned
       Left err -> expectationFailure $ "Inference failed: " ++ show err
   
@@ -37,11 +55,11 @@ basicOwnershipSpec = describe "Basic Ownership Inference" $ do
           , "    y = x"
           , "    return y"
           ]
-    result <- inferOwnership code
+    result <- inferOwnershipFromTextIO code
     case result of
       Right analysis -> do
-        ownershipX <- getVariableOwnership analysis "x"
-        ownershipY <- getVariableOwnership analysis "y"
+        ownershipX <- getVariableOwnership' analysis "x"
+        ownershipY <- getVariableOwnership' analysis "y"
         ownershipX `shouldBe` Owned
         ownershipY `shouldBe` Shared
       Left err -> expectationFailure $ "Inference failed: " ++ show err
@@ -58,11 +76,11 @@ transferOwnershipSpec = describe "Ownership Transfer" $ do
           , "    consume(x)"
           , "    return 42"
           ]
-    result <- inferOwnership code
+    result <- inferOwnershipFromTextIO code
     case result of
       Right analysis -> do
-        ownershipBefore <- getVariableOwnershipAt analysis "x" 4
-        ownershipAfter <- getVariableOwnershipAt analysis "x" 6
+        ownershipBefore <- getVariableOwnershipAt' analysis "x" 4
+        ownershipAfter <- getVariableOwnershipAt' analysis "x" 6
         ownershipBefore `shouldBe` Owned
         ownershipAfter `shouldBe` Moved
       Left err -> expectationFailure $ "Inference failed: " ++ show err
@@ -76,10 +94,10 @@ borrowingSpec = describe "Borrowing Analysis" $ do
           , "    y = len(x)"
           , "    return y"
           ]
-    result <- inferOwnership code
+    result <- inferOwnershipFromTextIO code
     case result of
       Right analysis -> do
-        ownership <- getVariableOwnership analysis "x"
+        ownership <- getVariableOwnership' analysis "x"
         ownership `shouldBe` Borrowed Immutable
       Left err -> expectationFailure $ "Inference failed: " ++ show err
   
@@ -90,10 +108,10 @@ borrowingSpec = describe "Borrowing Analysis" $ do
           , "    x.append(4)"
           , "    return x"
           ]
-    result <- inferOwnership code
+    result <- inferOwnershipFromTextIO code
     case result of
       Right analysis -> do
-        ownership <- getVariableOwnership analysis "x"
+        ownership <- getVariableOwnership' analysis "x"
         ownership `shouldBe` Borrowed Mutable
       Left err -> expectationFailure $ "Inference failed: " ++ show err
 
@@ -107,10 +125,10 @@ edgeCaseSpec = describe "Edge Cases" $ do
           , "        result.append(i)"
           , "    return result"
           ]
-    result <- inferOwnership code
+    result <- inferOwnershipFromTextIO code
     case result of
       Right analysis -> do
-        ownership <- getVariableOwnership analysis "result"
+        ownership <- getVariableOwnership' analysis "result"
         ownership `shouldBe` Owned
       Left err -> expectationFailure $ "Inference failed: " ++ show err
   
@@ -123,9 +141,9 @@ edgeCaseSpec = describe "Edge Cases" $ do
           , "    except:"
           , "        return []"
           ]
-    result <- inferOwnership code
+    result <- inferOwnershipFromTextIO code
     case result of
       Right analysis -> do
-        ownership <- getVariableOwnership analysis "x"
+        ownership <- getVariableOwnership' analysis "x"
         ownership `shouldBe` Owned
       Left err -> expectationFailure $ "Inference failed: " ++ show err

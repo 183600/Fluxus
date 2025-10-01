@@ -5,7 +5,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module CodeGen.CPP
+module Fluxus.CodeGen.CPP
   ( -- * Code generation types
     CppCodeGen
   , CppGenState(..)
@@ -1079,6 +1079,7 @@ generateBinaryOp op left right = case op of
       return $ CppBinary "/" (ensureFloat l) (ensureFloat r)
     
     isStringExpr (CppLiteral (CppStringLit _)) = True
+    isStringExpr (CppCall (CppVar "std::to_string") _) = True
     isStringExpr (CppVar name) = "str" `T.isInfixOf` name
     isStringExpr _ = False
 
@@ -1651,12 +1652,17 @@ generateGoDefine names exprs = do
   else if length exprs == 1
   then do
     -- Tuple unpacking
-    cppExpr <- generateGoExpr (head exprs)
-    let varNames = map unIdentifier names
-        decls = map (\n -> CppDecl $ CppVariable n CppAuto Nothing) varNames
-        tie = CppCall (CppVar "std::tie") (map CppVar varNames)
-        assign = CppExprStmt $ CppBinary "=" tie cppExpr
-    return $ CppBlock (decls ++ [assign])
+    case exprs of
+      [] -> do
+        addWarning "Empty expression list in define statement"
+        return $ CppComment "Empty define"
+      (firstExpr:_) -> do
+        cppExpr <- generateGoExpr firstExpr
+        let varNames = map unIdentifier names
+            decls = map (\n -> CppDecl $ CppVariable n CppAuto Nothing) varNames
+            tie = CppCall (CppVar "std::tie") (map CppVar varNames)
+            assign = CppExprStmt $ CppBinary "=" tie cppExpr
+        return $ CppBlock (decls ++ [assign])
   else do
     addWarning "Mismatched define statement"
     return $ CppComment "Mismatched define"
@@ -1676,10 +1682,15 @@ generateGoAssign lefts rights = do
   else if length rights == 1
   then do
     -- Tuple unpacking
-    cppRight <- generateGoExpr (head rights)
-    cppLefts <- mapM generateGoExpr lefts
-    let tie = CppCall (CppVar "std::tie") cppLefts
-    return $ CppExprStmt $ CppBinary "=" tie cppRight
+    case rights of
+      [] -> do
+        addWarning "Empty right-hand side in assignment"
+        return $ CppComment "Empty assignment"
+      (firstRight:_) -> do
+        cppRight <- generateGoExpr firstRight
+        cppLefts <- mapM generateGoExpr lefts
+        let tie = CppCall (CppVar "std::tie") cppLefts
+        return $ CppExprStmt $ CppBinary "=" tie cppRight
   else do
     addWarning "Mismatched assignment"
     return $ CppComment "Mismatched assignment"
@@ -1891,13 +1902,21 @@ mapPythonTypeAnnotation (Located _ typeExpr) = case typeExpr of
     case baseType of
       CppAuto -> case locatedValue base of
         TypeName (QualifiedName _ (Identifier "List")) -> 
-          CppVector <$> mapPythonTypeAnnotation (head args)
-        TypeName (QualifiedName _ (Identifier "Dict")) -> do
-          keyType <- mapPythonTypeAnnotation (head args)
-          valType <- mapPythonTypeAnnotation (args !! 1)
-          return $ CppUnorderedMap keyType valType
+          case args of
+            [] -> return CppVector  -- Handle empty args gracefully
+            (firstArg:_) -> CppVector <$> mapPythonTypeAnnotation firstArg
+        TypeName (QualifiedName _ (Identifier "Dict")) -> 
+          case args of
+            [] -> return CppUnorderedMap  -- Handle insufficient args
+            (_:[]) -> return CppUnorderedMap  -- Handle insufficient args
+            (keyArg:valArg:_) -> do
+              keyType <- mapPythonTypeAnnotation keyArg
+              valType <- mapPythonTypeAnnotation valArg
+              return $ CppUnorderedMap keyType valType
         TypeName (QualifiedName _ (Identifier "Optional")) ->
-          CppOptional <$> mapPythonTypeAnnotation (head args)
+          case args of
+            [] -> return CppOptional  -- Handle empty args gracefully
+            (firstArg:_) -> CppOptional <$> mapPythonTypeAnnotation firstArg
         TypeName (QualifiedName _ (Identifier "Tuple")) -> do
           types <- mapM mapPythonTypeAnnotation args
           return $ CppTuple types

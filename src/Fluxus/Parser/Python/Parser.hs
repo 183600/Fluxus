@@ -109,6 +109,7 @@ parseStatement = located $ choice
   , try parseIfStmt
   , try parseWhileStmt
   , try parseForStmt
+  , try parseTryStmt
   , try parseReturnStmt
   , try parseBreakStmt
   , try parseContinueStmt
@@ -186,6 +187,34 @@ parseForStmt = do
     void $ delimiterP DelimColon
     parseBlock
   return $ PyFor False target iter body elseBody
+
+-- | Parse try statements
+parseTryStmt :: PythonParser PythonStmt
+parseTryStmt = do
+  void $ keywordP KwTry
+  void $ delimiterP DelimColon
+  tryBody <- parseBlock
+  exceptClauses <- some $ do
+    skipNewlinesAndComments
+    void $ keywordP KwExcept
+    exceptType <- optional parseExpression
+    exceptName <- optional $ do
+      void $ keywordP KwAs
+      parseIdentifier
+    void $ delimiterP DelimColon
+    exceptBody <- parseBlock
+    return $ located' $ PythonExcept exceptType exceptName exceptBody False
+  elseBody <- option [] $ do
+    skipNewlinesAndComments
+    void $ keywordP KwElse
+    void $ delimiterP DelimColon
+    parseBlock
+  finallyBody <- option [] $ do
+    skipNewlinesAndComments
+    void $ keywordP KwFinally
+    void $ delimiterP DelimColon
+    parseBlock
+  return $ PyTry tryBody exceptClauses elseBody finallyBody
 
 -- | Parse function definitions
 parseFuncDef :: PythonParser PythonStmt

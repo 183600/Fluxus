@@ -1247,7 +1247,7 @@ parseInterfaceType = do
   void $ goKeywordP GoKwInterface
   void $ goDelimiterP GoDelimLeftBrace
   skipCommentsAndNewlines
-  methods <- many (parseMethodOrConstraint <* skipCommentsAndNewlines)
+  methods <- many (parseMethodOrConstraint <* skipOptionalSemicolon <* skipCommentsAndNewlines)
   void $ goDelimiterP GoDelimRightBrace
   return $ GoInterfaceType methods
   where
@@ -1287,6 +1287,10 @@ parseInterfaceType = do
       returnType <- parseGoType
       skipCommentsAndNewlines
       return $ GoMethod name returnType
+    
+    -- Skip optional semicolon after method declaration
+    skipOptionalSemicolon :: GoParser ()
+    skipOptionalSemicolon = void $ optional $ goDelimiterP GoDelimSemicolon
 
 -- | Parse type constraints with improved approximation constraint support
 parseTypeConstraint :: GoParser (Located GoConstraint)
@@ -1420,7 +1424,7 @@ parseStructType = do
   void $ goKeywordP GoKwStruct
   void $ goDelimiterP GoDelimLeftBrace
   skipCommentsAndNewlines
-  fields <- many (parseFieldDecl <* skipCommentsAndNewlines)
+  fields <- many (parseFieldDecl <* skipOptionalSemicolon <* skipCommentsAndNewlines)
   void $ goDelimiterP GoDelimRightBrace
   return $ GoStructType (concat fields)
   where
@@ -1441,6 +1445,10 @@ parseStructType = do
             tag <- optional parseGoString
             return [GoField [] typeExpr tag]
         ]
+    
+    -- Skip optional semicolon after field declaration
+    skipOptionalSemicolon :: GoParser ()
+    skipOptionalSemicolon = void $ optional $ goDelimiterP GoDelimSemicolon
 
 -- | Parse method receivers
 parseReceiver :: GoParser GoReceiver

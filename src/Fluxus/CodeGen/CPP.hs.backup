@@ -5,6 +5,8 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 
+import Debug.Trace (trace)
+
 module Fluxus.CodeGen.CPP
   ( -- * Code generation types
     CppCodeGen
@@ -268,8 +270,9 @@ prettyCppUnit :: CppUnit -> Text
 prettyCppUnit CppUnit{..} = T.unlines $ concat
   [ map renderInclude (nub cppIncludes)
   , [""]
-  , -- Include tuple output support function only if needed
-    if needsTupleOutputSupport cppDeclarations then [tupleOutputSupportFunction] else []
+  , -- Include tuple printer header when tuple output is needed
+    if needsTupleOutputSupport cppDeclarations then ["#include \"tuple_printer.h\""] else []
+  , [""]
   , if null cppNamespaces then [] else concat
       [ map (\ns -> "namespace " <> ns <> " {") cppNamespaces
       , [""]
@@ -696,22 +699,7 @@ needsTupleOutputSupport decls = any declUsesTuple decls
     catchUsesTuple (CppCatch _ _ body) = any stmtUsesTuple body
 
 
--- | Tuple output support function
-tupleOutputSupportFunction :: Text
-tupleOutputSupportFunction = T.unlines
-  [ "// Helper function to output tuples to ostream"
-  , "template<typename... Args>"
-  , "std::ostream& operator<<(std::ostream& os, const std::tuple<Args...>& t) {"
-  , "    os << \"(\";"
-  , "    std::apply([&os](const Args&... args) {"
-  , "        std::size_t n = 0;"
-  , "        ((os << args), (++n != sizeof...(Args) ? (os << \", \") : (void)0)), ...);"
-  , "    }, t);"
-  , "    os << \")\";"
-  , "    return os;"
-  , "}"
-  , ""
-  ]
+
 
 -- | Generate indentation
 indentText :: Int -> Text
@@ -758,52 +746,6 @@ addStatement stmt = do
     stmtToDecl _other = CppCommentDecl "complex statement"
 
 -- ============================================================================
-
--- | Convert an expression to a printable form
-makePrintable :: CppExpr -> CppCodeGen CppExpr
-makePrintable expr = case expr of
-  -- Handle string literals directly (no need for to_string)
-  CppLiteral (CppStringLit _) -> do
-    return expr
-  -- Handle all other literals directly (no need for to_string)
-  CppLiteral (CppIntLit _) -> do
-    addInclude "<string>"
-    return expr
-  CppLiteral (CppFloatLit _) -> do
-    addInclude "<string>"
-    return expr
-  CppLiteral (CppBoolLit _) -> do
-    -- Convert boolean to string representation
-    addInclude "<string>"
-    return $ CppCall (CppVar "std::to_string") [expr]
-  CppLiteral CppNullPtr -> do
-    return $ CppLiteral (CppStringLit "None")
-  CppLiteral (CppCharLit _) -> do
-    addInclude "<string>"
-    return expr
-  -- Handle tuple expressions - they should be unpacked for printing
-  CppCall (CppVar "std::make_tuple") tupleArgs -> do
-    -- For tuple expressions in print statements, we need to handle them specially
-    -- Rather than trying to print the tuple directly, we should create a comma expression
-    -- that can be flattened later in the print statement processing
-    -- The print statement handler will use flattenDeep to unpack this
-    addWarning $ "Tuple expression in print statement will be flattened: " <> T.pack (show (length tupleArgs)) <> " elements"
-    case tupleArgs of
-      [] -> return $ CppLiteral (CppStringLit "")
-      [singleArg] -> return singleArg
-      _ -> return $ CppComma tupleArgs
-  -- For variables, we need to handle different types appropriately
-  CppVar _ -> do
-    addInclude "<string>"
-    return expr  -- Variables will be handled by the caller based on their type
-  -- For binary operations, we need to convert the result to string
-  CppBinary _ _ _ -> do
-    addInclude "<string>"
-    return expr  -- Binary expressions will be handled by the caller
-  -- Convert other expressions to string for printing
-  _ -> do
-    addInclude "<string>"
-    return $ CppCall (CppVar "std::to_string") [expr]
 
 -- Main Entry Points
 -- ============================================================================
@@ -1243,8 +1185,20 @@ generateBinaryOp op left right = case op of
       if isStringExpr l || isStringExpr r
       then do
         addInclude "<string>"
-        let wrapString e = if isStringExpr e then e else CppCall (CppVar "std::to_string") [e]
-        return $ CppBinary "+" (wrapString l) (wrapString r)
+        -- For string concatenation, we need to ensure non-string operands are converted to string
+        let convertIfNotString e = case e of
+              -- If it's already a string literal, keep as is
+              CppLiteral (CppStringLit _) -> e
+              -- If it's already a std::to_string call, keep as is
+              CppCall (CppVar "std::to_string") _ -> e
+              CppCall (CppVar name) _ | name == "std::to_string" -> e
+              -- If it's already a string variable, keep as is
+              CppVar name | "str" `T.isInfixOf` name || "string" `T.isInfixOf` name -> e
+              -- Otherwise, wrap with std::to_string
+              _ -> CppCall (CppVar "std::to_string") [e]
+        let leftResult = convertIfNotString l
+        let rightResult = convertIfNotString r
+        return $ CppBinary "+" leftResult rightResult
       else return $ CppBinary "+" l r
     
     handleDivision l r = do
@@ -1260,7 +1214,9 @@ generateBinaryOp op left right = case op of
       return $ CppBinary "/" leftResult rightResult
     
     isStringExpr (CppLiteral (CppStringLit _)) = True
-    isStringExpr (CppVar name) = "str" `T.isInfixOf` name
+    isStringExpr (CppCall (CppVar "std::to_string") _) = True
+    isStringExpr (CppCall (CppVar name) _) | name == "std::to_string" = True
+    isStringExpr (CppVar name) = "str" `T.isInfixOf` name || "string" `T.isInfixOf` name
     isStringExpr _ = False
 
 -- | Generate comparison
@@ -1329,8 +1285,10 @@ generatePythonCall func args = do
         _ -> do
           addDeclaration $ CppCommentDecl $ "Regular function call: " <> name
           let result = CppCall cppFunc cppArgs
-          -- Debug: Add a variable to track the result
-          addDeclaration $ CppVariable ("__debug_" <> funcName <> "_result") CppInt (Just $ CppLiteral $ CppIntLit 1)
+          -- Debug: Add a variable to track the result (only once per function)
+          debugResultExists <- isDeclared ("__debug_" <> funcName <> "_result")
+          unless debugResultExists $
+            addDeclaration $ CppVariable ("__debug_" <> funcName <> "_result") CppInt (Just $ CppLiteral $ CppIntLit 1)
           return result
     _ -> do
       addDeclaration $ CppCommentDecl "Non-function variable call"
@@ -1353,7 +1311,8 @@ generatePythonCall func args = do
           
           -- For print, we want to process each argument for output
           -- Process each argument individually to ensure it's in a printable form
-          processedArgs <- mapM makePrintable cppArgs
+          -- For now, just use the arguments as-is since they should already be properly formatted
+          let processedArgs = cppArgs
           
           -- Chain all arguments with << operator, separated by spaces
           let chainOutput = foldl (CppBinary "<<") (CppVar "std::cout") $
@@ -1370,7 +1329,17 @@ generatePythonCall func args = do
     
     handleBuiltinFunction "str" [arg] = do
       addInclude "<string>"
-      return $ CppCall (CppVar "std::to_string") [arg]
+      -- Check if arg is already a string expression to avoid double conversion
+      let isStringExprLocal (CppLiteral (CppStringLit _)) = True
+          isStringExprLocal (CppCall (CppVar "std::to_string") _) = True
+          isStringExprLocal (CppVar name) = "str" `T.isInfixOf` name
+          isStringExprLocal _ = False
+      
+      let result = if isStringExprLocal arg
+            then arg  -- Already a string, return as-is
+            else CppCall (CppVar "std::to_string") [arg]
+      
+      return result
     
     handleBuiltinFunction "int" [arg] = 
       return $ CppStaticCast CppInt arg
@@ -1418,6 +1387,8 @@ generatePythonArgument (Located _ arg) = case arg of
 generatePythonFunction :: PythonFuncDef -> CppCodeGen ()
 generatePythonFunction funcDef = do
   let funcName = case pyFuncName funcDef of Identifier name -> name
+  -- Debug: Log that we're starting function generation
+  addDeclaration $ CppCommentDecl $ "DEBUG: Starting function generation for: " <> funcName
   cppParams <- mapM mapPythonParameter (pyFuncParams funcDef)
   
   returnType <- case pyFuncReturns funcDef of
@@ -1427,8 +1398,15 @@ generatePythonFunction funcDef = do
       then return CppInt
       else inferReturnType (pyFuncBody funcDef)
   
+  -- Debug: Log number of body statements
+  let numStmts = length (pyFuncBody funcDef)
+  addDeclaration $ CppCommentDecl $ "DEBUG: Function has " <> T.pack (show numStmts) <> " body statements"
+
   bodyStmts <- mapM generatePythonStmt (pyFuncBody funcDef)
-  
+
+  -- Debug: Log what was generated
+  addDeclaration $ CppCommentDecl $ "DEBUG: Generated " <> T.pack (show (length bodyStmts)) <> " C++ statements"
+
   let finalBody = if funcName == "main" && not (hasReturn bodyStmts)
                   then bodyStmts ++ [CppReturn (Just (CppLiteral (CppIntLit 0)))]
                   else bodyStmts
@@ -1873,7 +1851,8 @@ generateGoCall func args = do
 buildPrintExpr :: [CppExpr] -> Bool -> CppCodeGen CppExpr
 buildPrintExpr args addNewline = do
   -- Make all arguments printable before building expression
-  printableArgs <- mapM makePrintable args
+  -- For now, just use the arguments as-is since they should already be properly formatted
+  let printableArgs = args
   let base = foldl (\acc arg -> CppBinary "<<" acc arg) (CppVar "std::cout") $
              intercalateWithPrint2 (CppLiteral (CppStringLit " ")) printableArgs
   return $ if addNewline
@@ -2346,8 +2325,12 @@ generateFString parts = do
   -- Process each part
   cppParts <- mapM processFStringPart parts
   
+  -- Ensure all parts are properly formatted for string concatenation
+  -- For now, just return the parts as-is since they're already processed correctly
+  let printableParts = cppParts
+  
   -- Combine all parts with string concatenation
-  case cppParts of
+  case printableParts of
     [] -> return $ CppLiteral $ CppStringLit ""
     [part] -> return part
     (first:rest) -> return $ foldl (\acc part -> CppBinary "+" acc part) first rest
@@ -2361,10 +2344,24 @@ processFStringPart (FStringExpr expr mconv mformat) = do
   cppExpr <- generatePythonExpr expr
   
   -- Handle different conversion flags
-  let convertedExpr = case mconv of
-        Just ConvStr -> CppCall (CppVar "std::to_string") [cppExpr]  -- !s
-        Just ConvRepr -> CppCall (CppVar "std::to_string") [cppExpr]  -- !r (simplified)
-        Just ConvAscii -> CppCall (CppVar "std::to_string") [cppExpr]  -- !a (simplified)
+  let isStringExprLocal (CppLiteral (CppStringLit _)) = True
+      isStringExprLocal (CppCall (CppVar "std::to_string") _) = True
+      isStringExprLocal (CppVar name) = "str" `T.isInfixOf` name
+      isStringExprLocal _ = False
+      
+      convertedExpr = case mconv of
+        Just ConvStr -> 
+          if isStringExprLocal cppExpr 
+          then cppExpr  -- Already a string, no conversion needed
+          else CppCall (CppVar "std::to_string") [cppExpr]  -- !s
+        Just ConvRepr -> 
+          if isStringExprLocal cppExpr 
+          then cppExpr  -- Already a string, no conversion needed
+          else CppCall (CppVar "std::to_string") [cppExpr]  -- !r (simplified)
+        Just ConvAscii -> 
+          if isStringExprLocal cppExpr 
+          then cppExpr  -- Already a string, no conversion needed
+          else CppCall (CppVar "std::to_string") [cppExpr]  -- !a (simplified)
         Nothing -> cppExpr  -- No conversion
   
   -- Handle format specification (simplified for now)
@@ -2546,12 +2543,27 @@ hasReturn = any isReturn where
 
 -- | Infer return type from function body
 inferReturnType :: [Located PythonStmt] -> CppCodeGen CppType
-inferReturnType stmts = 
+inferReturnType stmts =
   if any hasReturnValue stmts
   then return CppAuto
   else return CppVoid
   where
     hasReturnValue (Located _ (PyReturn (Just _))) = True
+    hasReturnValue (Located _ (PyReturn Nothing)) = True  -- Explicit return without value still means function returns
+    hasReturnValue (Located _ (PyIf _ thenStmts elseStmts)) =
+      any hasReturnValue thenStmts || any hasReturnValue elseStmts
+    hasReturnValue (Located _ (PyFor {pyForBody = bodyStmts})) = any hasReturnValue bodyStmts  -- Check for loop bodies
+    hasReturnValue (Located _ (PyWhile _ bodyStmts _)) = any hasReturnValue bodyStmts  -- Check while loop bodies
+    -- For simple expressions, check if last statement could return a value
+    hasReturnValue (Located _ (PyExprStmt expr)) =
+      case locatedValue expr of
+        PyCall _ _ -> True  -- Function calls could return values
+        PyBinaryOp _ _ _ -> True  -- Binary operations return values
+        PyUnaryOp _ _ -> True  -- Unary operations return values
+        PyComparison _ _ -> True  -- Comparisons return boolean values
+        PyLiteral _ -> True  -- Literals are values
+        PyVar _ -> True  -- Variables are values
+        _ -> False
     hasReturnValue _ = False
 
 -- | Extract base class name

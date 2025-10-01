@@ -208,7 +208,9 @@ handleIndentation = do
   
   state <- get
   let currentStack = indentStack state
-      currentLevel = head currentStack
+      currentLevel = case currentStack of
+        [] -> 0  -- Default to 0 if stack is empty
+        (level:_) -> level
   
   modify $ \s -> s { atLineStart = False }
   

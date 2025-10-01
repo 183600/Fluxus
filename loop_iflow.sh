@@ -7,7 +7,7 @@ while :; do
     
     sleep 15
 
-    iflow -p '解决stack test和cabal test显示的问题（包括warning），只修复一个bug，debug的时候可以通过加日志和打断点（在命令行当中打断点）来debug，每个问题分别运行这个shell修复claude -p "修复warning的时候可以通过加日志和打断点（在命令行当中打断点）来debug，<命令，例如cabal test>显示<内容>" --dangerously-skip-permissions --output-format json' --yolo
+    iflow -p '运行cabal test，每个问题（包括warning）分别运行这个shell命令，每次执行shell命令只输入一个问题qwen -p "<问题内容>" --dangerously-skip-permissions --output-format json' --yolo
     
     exit_code=$?
     echo "[$(date '+%F %T')] ===== 第 $counter 次运行结束，退出码 $exit_code ====="

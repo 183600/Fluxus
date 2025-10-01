@@ -430,7 +430,13 @@ parseTypeDecl :: GoParser GoDecl
 parseTypeDecl = do
   void $ goKeywordP GoKwType
   name <- parseGoIdentifier
-  typeExpr <- parseGoType
+  -- Check if the next token is struct or interface to handle those specially
+  skipCommentsAndNewlines
+  nextToken <- lookAhead anySingle
+  typeExpr <- case locValue nextToken of
+    GoTokenKeyword GoKwStruct -> located' <$> parseStructType
+    GoTokenKeyword GoKwInterface -> located' <$> parseInterfaceType
+    _ -> parseGoType
   return $ GoTypeDeclStmt $ GoTypeDecl name [] False typeExpr  -- No type params, not alias
 
 -- | Parse variable declarations
@@ -1423,7 +1429,7 @@ parseStructType = do
   void $ goKeywordP GoKwStruct
   void $ goDelimiterP GoDelimLeftBrace
   skipCommentsAndNewlines
-  fields <- many (parseFieldDecl <* skipCommentsAndNewlines)
+  fields <- many (try (parseFieldDecl <* skipCommentsAndNewlines))
   void $ goDelimiterP GoDelimRightBrace
   return $ GoStructType (concat fields)
   where
@@ -1431,12 +1437,13 @@ parseStructType = do
       choice
         [ try $ do
             -- Named fields: name1, name2 type [tag]
-            names <- parseIdentifierList
+            -- 对于struct字段，单个标识符后面直接跟类型，没有逗号
+            name <- parseGoIdentifier
             skipCommentsAndNewlines
             typeExpr <- parseGoType
             skipCommentsAndNewlines
             tag <- optional parseGoString
-            return [GoField names typeExpr tag]
+            return [GoField [name] typeExpr tag]
         , do
             -- Anonymous field: just type [tag]
             typeExpr <- parseGoType
@@ -1464,7 +1471,10 @@ parseGoIdentifier = do
 
 parseGoString :: GoParser Text
 parseGoString = do
-  stringToken <- anySingle
+  stringToken <- satisfy $ \case
+    Located _ (GoTokenString _) -> True
+    Located _ (GoTokenRawString _) -> True
+    _ -> False
   case locValue stringToken of
     GoTokenString text -> return text
     GoTokenRawString text -> return text

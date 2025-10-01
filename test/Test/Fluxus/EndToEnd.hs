@@ -5,14 +5,16 @@ module Test.Fluxus.EndToEnd (spec) where
 import Test.Hspec
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Time
 import System.Directory
 import System.FilePath
 import System.IO.Temp
 import System.Process
 import System.Exit
+import Control.Monad (forM)
 
-import Fluxus.Compiler.Driver
-import Fluxus.Compiler.Config
+import Fluxus.Compiler.Driver (runCompiler, convertConfigToDriver)
+import qualified Fluxus.Compiler.Config as Config
 
 spec :: Spec
 spec = describe "End-to-End Production Tests" $ do
@@ -82,15 +84,14 @@ productionCompilationSpec = describe "Production Compilation Tests" $ do
       writeFile inputFile (T.unpack pythonApp)
       
       -- Compile Python to C++
-      let config = defaultConfig 
-            { inputFiles = [inputFile]
-            , outputFile = cppFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
-            , optimizationLevel = 3  -- Maximum optimization for production
+      let config = Config.defaultConfig 
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just cppFile
+            , Config.ccSourceLanguage = Config.Python
+            , Config.ccOptimizationLevel = Config.O3
             }
       
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           -- Check that C++ file was created
@@ -98,12 +99,12 @@ productionCompilationSpec = describe "Production Compilation Tests" $ do
           exists `shouldBe` True
           
           -- Compile C++ to executable with production flags
-          (exitCode, _, stderr) <- readProcessWithExitCode "g++" 
+          (exitCode, _, _) <- readProcessWithExitCode "g++" 
             [cppFile, "-o", exeFile, "-std=c++20", "-O3", "-DNDEBUG", "-Wall", "-Wextra"] ""
           exitCode `shouldBe` ExitSuccess
           
           -- Run the executable
-          (exitCode', stdout, stderr') <- readProcessWithExitCode exeFile [] ""
+          (exitCode', stdout, _) <- readProcessWithExitCode exeFile [] ""
           exitCode' `shouldBe` ExitSuccess
           stdout `shouldContain` "Processed 5 items"
           
@@ -172,15 +173,15 @@ productionCompilationSpec = describe "Production Compilation Tests" $ do
       writeFile utilsFile (T.unpack goUtils)
       
       -- Compile Go to C++
-      let config = defaultConfig 
-            { inputFiles = [mainFile, utilsFile]
-            , outputFile = cppFile
-            , sourceLanguage = Go
-            , targetLanguage = Cpp
-            , optimizationLevel = 3
+      let config = Config.defaultConfig 
+            { Config.ccInputFiles = [mainFile, utilsFile]
+            , Config.ccOutputPath = Just cppFile
+            , Config.ccSourceLanguage = Config.Go
+            , Config.ccCppStandard = "c++20"
+            , Config.ccOptimizationLevel = Config.O3
             }
       
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           -- Check that C++ file was created
@@ -188,12 +189,12 @@ productionCompilationSpec = describe "Production Compilation Tests" $ do
           exists `shouldBe` True
           
           -- Compile C++ to executable
-          (exitCode, _, stderr) <- readProcessWithExitCode "g++" 
+          (exitCode, _, _) <- readProcessWithExitCode "g++" 
             [cppFile, "-o", exeFile, "-std=c++20", "-O3", "-DNDEBUG"] ""
           exitCode `shouldBe` ExitSuccess
           
           -- Run the executable
-          (exitCode', stdout, stderr') <- readProcessWithExitCode exeFile [] ""
+          (exitCode', stdout, _) <- readProcessWithExitCode exeFile [] ""
           exitCode' `shouldBe` ExitSuccess
           stdout `shouldContain` "Processed 3 strings"
           stdout `shouldContain` "PROCESSED: HELLO"
@@ -240,23 +241,23 @@ runtimeBehaviorSpec = describe "Runtime Behavior Tests" $ do
       writeFile inputFile (T.unpack memoryIntensiveCode)
       
       -- Compile Python to C++
-      let config = defaultConfig 
-            { inputFiles = [inputFile]
-            , outputFile = cppFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
-            , optimizationLevel = 3
+      let config = Config.defaultConfig 
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just cppFile
+            , Config.ccSourceLanguage = Config.Python
+            , Config.ccCppStandard = "c++20"
+            , Config.ccOptimizationLevel = Config.O3
             }
       
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           -- Compile and run
-          (exitCode, _, stderr) <- readProcessWithExitCode "g++" 
+          (exitCode, _, _) <- readProcessWithExitCode "g++" 
             [cppFile, "-o", exeFile, "-std=c++20", "-O3"] ""
           exitCode `shouldBe` ExitSuccess
           
-          (exitCode', stdout, stderr') <- readProcessWithExitCode exeFile [] ""
+          (exitCode', stdout, _) <- readProcessWithExitCode exeFile [] ""
           exitCode' `shouldBe` ExitSuccess
           stdout `shouldContain` "Size 1000:"
           stdout `shouldContain` "Size 10000:"
@@ -335,23 +336,23 @@ runtimeBehaviorSpec = describe "Runtime Behavior Tests" $ do
       writeFile inputFile (T.unpack concurrentCode)
       
       -- Compile Python to C++
-      let config = defaultConfig 
-            { inputFiles = [inputFile]
-            , outputFile = cppFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
-            , optimizationLevel = 3
+      let config = Config.defaultConfig 
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just cppFile
+            , Config.ccSourceLanguage = Config.Python
+            , Config.ccCppStandard = "c++20"
+            , Config.ccOptimizationLevel = Config.O3
             }
       
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           -- Compile and run
-          (exitCode, _, stderr) <- readProcessWithExitCode "g++" 
+          (exitCode, _, _) <- readProcessWithExitCode "g++" 
             [cppFile, "-o", exeFile, "-std=c++20", "-O3", "-pthread"] ""
           exitCode `shouldBe` ExitSuccess
           
-          (exitCode', stdout, stderr') <- readProcessWithExitCode exeFile [] ""
+          (exitCode', stdout, _) <- readProcessWithExitCode exeFile [] ""
           exitCode' `shouldBe` ExitSuccess
           stdout `shouldContain` "Processed 10 tasks"
         Left err -> expectationFailure $ "Compilation failed: " ++ show err
@@ -371,14 +372,14 @@ errorHandlingSpec = describe "Error Handling Tests" $ do
       
       writeFile inputFile (T.unpack invalidPythonCode)
       
-      let config = defaultConfig 
-            { inputFiles = [inputFile]
-            , outputFile = outputFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
+      let config = Config.defaultConfig 
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just outputFile
+            , Config.ccSourceLanguage = Config.Python
+            , Config.ccCppStandard = "c++20"
             }
       
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Left _ -> return ()  -- Expected to fail
         Right _ -> expectationFailure "Compilation should have failed with invalid syntax"
@@ -396,14 +397,14 @@ errorHandlingSpec = describe "Error Handling Tests" $ do
       
       writeFile inputFile (T.unpack undefinedVariableCode)
       
-      let config = defaultConfig 
-            { inputFiles = [inputFile]
-            , outputFile = outputFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
+      let config = Config.defaultConfig 
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just outputFile
+            , Config.ccSourceLanguage = Config.Python
+            , Config.ccCppStandard = "c++20"
             }
       
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Left errMsg -> do
           -- Check that error message is helpful
@@ -418,20 +419,20 @@ performanceSpec = describe "Performance Tests" $ do
     -- Generate a large Python file
     let largeCode = T.unlines $
           ["import sys", "import math", ""] ++
-          ["def function_" ++ show i ++ "(x):" | i <- [1..100]] ++
-          ["    # Function " ++ show i ++ " implementation" ++
+          [T.pack $ "def function_" ++ show i ++ "(x):" | i <- [1..100::Int]] ++
+          [T.pack $ "    # Function " ++ show i ++ " implementation" ++
            "    result = x * " ++ show i ++ " + math.sqrt(" ++ show i ++ ")" ++
-           "    return result" | i <- [1..100]] ++
+           "    return result" | i <- [1..100::Int]] ++
           [""] ++
-          ["def main():"] ++
-          ["    total = 0"] ++
-          ["    for i in range(1, 101):"] ++
-          ["        total += function_" ++ show i ++ "(i)" | i <- [1..100]] ++
-          ["    print(f\"Total: {total}\")"] ++
-          ["    return 0"] ++
+          [T.pack $ "def main():"] ++
+          [T.pack $ "    total = 0"] ++
+          [T.pack $ "    for i in range(1, 101::Int):"] ++
+          [T.pack $ "        total += function_" ++ show i ++ "(i)" | i <- [1..100::Int]] ++
+          [T.pack $ "    print(f\"Total: {total}\")"] ++
+          [T.pack $ "    return 0"] ++
           [""] ++
-          ["if __name__ == \"__main__\":"]
-          ["    sys.exit(main())"]
+          [T.pack $ "if __name__ == \"__main__\":"] ++
+          [T.pack $ "    sys.exit(main())"]
 
     withSystemTempDirectory "fluxus-large-test-" $ \tmpDir -> do
       let inputFile = tmpDir </> "large.py"
@@ -442,15 +443,15 @@ performanceSpec = describe "Performance Tests" $ do
 
       -- Time the compilation
       start <- getCurrentTime
-      let config = defaultConfig
-            { inputFiles = [inputFile]
-            , outputFile = cppFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
-            , optimizationLevel = 3
+      let config = Config.defaultConfig
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just cppFile
+            , Config.ccSourceLanguage = Config.Python
+            , Config.ccCppStandard = "c++20"
+            , Config.ccOptimizationLevel = Config.O3
             }
 
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       end <- getCurrentTime
 
       let compilationTime = diffUTCTime end start
@@ -474,25 +475,25 @@ performanceSpec = describe "Performance Tests" $ do
   it "handles memory-intensive compilation" $ do
     let memoryIntensiveCode = T.unlines $
           ["import sys", "import array", ""] ++
-          ["def create_large_array(size):"] ++
-          ["    return array.array('i', [i % 1000 for i in range(size)])"] ++
+          [T.pack $ "def create_large_array(size):"] ++
+          [T.pack $ "    return array.array('i', [i % 1000::Int for i in range(size)])"] ++
           [""] ++
-          ["def process_arrays(arr1, arr2):"] ++
-          ["    result = array.array('i', [])"] ++
-          ["    for i in range(min(len(arr1), len(arr2))):"] ++
-          ["        result.append(arr1[i] + arr2[i])"] ++
-          ["    return result"] ++
+          [T.pack $ "def process_arrays(arr1, arr2):"] ++
+          [T.pack $ "    result = array.array('i', [])"] ++
+          [T.pack $ "    for i in range(min(len(arr1), len(arr2))):"] ++
+          [T.pack $ "        result.append(arr1[i] + arr2[i])"] ++
+          [T.pack $ "    return result"] ++
           [""] ++
-          ["def main():"] ++
-          ["    size = 1000000"] ++
-          ["    arr1 = create_large_array(size)"] ++
-          ["    arr2 = create_large_array(size)"] ++
-          ["    result = process_arrays(arr1, arr2)"] ++
-          ["    print(f\"Processed {len(result)} elements\")"] ++
-          ["    return 0"] ++
+          [T.pack $ "def main():"] ++
+          [T.pack $ "    size = 1000000::Int"] ++
+          [T.pack $ "    arr1 = create_large_array(size)"] ++
+          [T.pack $ "    arr2 = create_large_array(size)"] ++
+          [T.pack $ "    result = process_arrays(arr1, arr2)"] ++
+          [T.pack $ "    print(f\"Processed {len(result)} elements\")"] ++
+          [T.pack $ "    return 0"] ++
           [""] ++
-          ["if __name__ == \"__main__\":"]
-          ["    sys.exit(main())"]
+          [T.pack $ "if __name__ == \"__main__\":"] ++
+          [T.pack $ "    sys.exit(main())"]
 
     withSystemTempDirectory "fluxus-memory-test-" $ \tmpDir -> do
       let inputFile = tmpDir </> "memory.py"
@@ -501,43 +502,43 @@ performanceSpec = describe "Performance Tests" $ do
 
       writeFile inputFile (T.unpack memoryIntensiveCode)
 
-      let config = defaultConfig
-            { inputFiles = [inputFile]
-            , outputFile = cppFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
-            , optimizationLevel = 3
+      let config = Config.defaultConfig
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just cppFile
+            , Config.ccSourceLanguage = Config.Python
+            , Config.ccCppStandard = "c++20"
+            , Config.ccOptimizationLevel = Config.O3
             }
 
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           -- Compile with memory optimization flags
-          (exitCode, _, stderr) <- readProcessWithExitCode "g++"
+          (exitCode, _, _) <- readProcessWithExitCode "g++"
             [cppFile, "-o", exeFile, "-std=c++20", "-O3", "-march=native", "-flto"] ""
           exitCode `shouldBe` ExitSuccess
 
-          (exitCode', stdout, stderr') <- readProcessWithExitCode exeFile [] ""
+          (exitCode', stdout, _) <- readProcessWithExitCode exeFile [] ""
           exitCode' `shouldBe` ExitSuccess
           stdout `shouldContain` "Processed 1000000 elements"
         Left err -> expectationFailure $ "Memory-intensive compilation failed: " ++ show err
 
   it "measures compilation speed across different optimization levels" $ do
-    let simpleCode = T.unlines
+    let simpleCode = T.unlines $
           ["import sys", ""] ++
-          ["def factorial(n):"] ++
-          ["    if n <= 1:"] ++
-          ["        return 1"] ++
-          ["    else:"] ++
-          ["        return n * factorial(n - 1)"] ++
+          [T.pack $ "def factorial(n):"] ++
+          [T.pack $ "    if n <= 1::Int:"] ++
+          [T.pack $ "        return 1::Int"] ++
+          [T.pack $ "    else:"] ++
+          [T.pack $ "        return n * factorial(n - 1)"] ++
           [""] ++
-          ["def main():"] ++
-          ["    result = factorial(20)"] ++
-          ["    print(f\"Factorial: {result}\")"] ++
-          ["    return 0"] ++
+          [T.pack $ "def main():"] ++
+          [T.pack $ "    result = factorial(20::Int)"] ++
+          [T.pack $ "    print(f\"Factorial: {result}\")"] ++
+          [T.pack $ "    return 0"] ++
           [""] ++
-          ["if __name__ == \"__main__\":"]
-          ["    sys.exit(main())"]
+          [T.pack $ "if __name__ == \"__main__\":"] ++
+          [T.pack $ "    sys.exit(main())"]
 
     withSystemTempDirectory "fluxus-speed-test-" $ \tmpDir -> do
       let inputFile = tmpDir </> "speed.py"
@@ -546,34 +547,29 @@ performanceSpec = describe "Performance Tests" $ do
 
       writeFile inputFile (T.unpack simpleCode)
 
-      -- Test different optimization levels
-      let testOptimization level = do
-        let config = defaultConfig
-              { inputFiles = [inputFile]
-              , outputFile = cppFile
-              , sourceLanguage = Python
-              , targetLanguage = Cpp
-              , optimizationLevel = level
+      -- Test optimization levels 0, 1, 2, 3
+      results <- forM [0::Int, 1::Int, 2::Int, 3::Int] $ \level -> do
+        let config = Config.defaultConfig
+              { Config.ccInputFiles = [inputFile]
+              , Config.ccOutputPath = Just cppFile
+              , Config.ccSourceLanguage = Config.Python
+              , Config.ccCppStandard = "c++20"
+              , Config.ccOptimizationLevel = case level of 0 -> Config.O0; 1 -> Config.O1; 2 -> Config.O2; 3 -> Config.O3; _ -> Config.O2
               }
-
-        start <- getCurrentTime
-        result <- runCompiler config
-        end <- getCurrentTime
-
-        let compilationTime = diffUTCTime end start
-
+        startTime <- getCurrentTime
+        result <- runCompiler (convertConfigToDriver config) (return ())
+        endTime <- getCurrentTime
+        let compilationTime = diffUTCTime endTime startTime
         case result of
           Right _ -> do
             -- Check that compilation was successful and timed
-            (exitCode, _, stderr) <- readProcessWithExitCode "g++"
+            (exitCode, _, _) <- readProcessWithExitCode "g++"
               [cppFile, "-o", exeFile, "-std=c++20", "-O" ++ show level] ""
             exitCode `shouldBe` ExitSuccess
-
             return (level, compilationTime)
-          Left err -> expectationFailure $ "Optimization level " ++ show level ++ " failed: " ++ show err
-
-      -- Test optimization levels 0, 1, 2, 3
-      results <- mapM testOptimization [0, 1, 2, 3]
+          Left err -> do
+            expectationFailure $ "Optimization level " ++ show level ++ " failed: " ++ show err
+            return (level, 0)  -- Return dummy value to satisfy type
 
       -- Verify that higher optimization levels don't take significantly longer
       -- (within reasonable bounds)
@@ -585,7 +581,7 @@ performanceSpec = describe "Performance Tests" $ do
       ratio `shouldSatisfy` (\r -> r < 3)
 
   it "handles concurrent compilation" $ do
-    let concurrentCode = T.unlines
+    let concurrentCode = T.unlines $
           ["import threading", "import queue", "import time", "import sys", ""] ++
           ["class Worker:", ""] ++
           ["    def __init__(self, worker_id, task_queue, result_queue):"] ++
@@ -629,7 +625,7 @@ performanceSpec = describe "Performance Tests" $ do
           ["    ", ""] ++
           ["    # Collect results", ""] ++
           ["    results = []", ""] ++
-          ["    while not result_queue.empty():"] ++
+          ["    while not result_queue.empty():", ""] ++
           ["        results.append(result_queue.get())", ""] ++
           ["    ", ""] ++
           ["    # Sort results by worker ID", ""] ++
@@ -638,7 +634,7 @@ performanceSpec = describe "Performance Tests" $ do
           ["    print(f\"Processed {len(results)} tasks\")", ""] ++
           ["    return 0", ""] ++
           ["", ""] ++
-          ["if __name__ == \"__main__\":"]
+          ["if __name__ == \"__main__\":"] ++
           ["    main()"]
 
     withSystemTempDirectory "fluxus-concurrent-test-" $ \tmpDir -> do
@@ -648,23 +644,23 @@ performanceSpec = describe "Performance Tests" $ do
 
       writeFile inputFile (T.unpack concurrentCode)
 
-      let config = defaultConfig
-            { inputFiles = [inputFile]
-            , outputFile = cppFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
-            , optimizationLevel = 3
+      let config = Config.defaultConfig
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just cppFile
+            , Config.ccSourceLanguage = Config.Python
+            , Config.ccCppStandard = "c++20"
+            , Config.ccOptimizationLevel = Config.O3
             }
 
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           -- Compile with threading support
-          (exitCode, _, stderr) <- readProcessWithExitCode "g++"
+          (exitCode, _, _) <- readProcessWithExitCode "g++"
             [cppFile, "-o", exeFile, "-std=c++20", "-O3", "-pthread"] ""
           exitCode `shouldBe` ExitSuccess
 
-          (exitCode', stdout, stderr') <- readProcessWithExitCode exeFile [] ""
+          (exitCode', stdout, _) <- readProcessWithExitCode exeFile [] ""
           exitCode' `shouldBe` ExitSuccess
           stdout `shouldContain` "Processed 100 tasks"
         Left err -> expectationFailure $ "Concurrent compilation failed: " ++ show err

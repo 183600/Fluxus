@@ -726,7 +726,10 @@ inferContainerShape expr = do
     Just elemType -> return ContainerShape
       { csElementType = elemType
       , csCapacity = case siDimensions shape of
-          dims | Vector.length dims > 0 && Vector.head dims >= 0 -> Just (Vector.head dims)
+          dims | Vector.length dims > 0 -> 
+            case Vector.head dims of
+              firstDim | firstDim >= 0 -> Just firstDim
+              _ -> Nothing
           _ -> Nothing
       , csGrowthPattern = growth
       , csIsResizable = growth /= FixedSize
@@ -754,8 +757,10 @@ analyzeAverageSize :: CommonExpr -> ShapeAnalysisM (Maybe Int)
 analyzeAverageSize expr = do
   shape <- analyzeShape expr
   case siDimensions shape of
-    dims | Vector.length dims > 0 && Vector.head dims >= 0 -> 
-      return $ Just (Vector.head dims)
+    dims | Vector.length dims > 0 -> 
+      case Vector.head dims of
+        firstDim | firstDim >= 0 -> return $ Just firstDim
+        _ -> return Nothing
     _ -> return Nothing
 
 -- | Analyze dictionary shape for C++ map optimization
@@ -824,7 +829,9 @@ generateNewMapping shape context
     && siIsKnown shape 
     && siIsHomogeneous shape
     && isJust (siElementType shape) = do
-    let size = Vector.head (siDimensions shape)
+    let size = case siDimensions shape of
+          dims | Vector.length dims > 0 -> Vector.head dims
+          _ -> 0  -- Safe fallback, though condition should prevent this
     if size > 0 && size <= scMaxInlineSize context
       then return CppMapping
         { cmType = T.concat ["std::array<", cppType (fromJust (siElementType shape)), ", ", T.pack (show size), ">"]

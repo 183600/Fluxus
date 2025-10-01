@@ -9,9 +9,10 @@ import System.Directory
 import System.FilePath
 import System.IO.Temp
 import System.Process
+import System.Exit (ExitCode(..))
 
-import Fluxus.Compiler.Driver
-import Fluxus.Compiler.Config
+import Fluxus.Compiler.Driver (runCompiler, convertConfigToDriver)
+import Fluxus.Compiler.Config as Config
 
 spec :: Spec
 spec = describe "Integration Tests" $ do
@@ -35,14 +36,12 @@ pythonToCppIntegrationSpec = describe "Python to C++ Integration" $ do
       writeFile inputFile (T.unpack pythonCode)
       
       -- Compile Python to C++
-      let config = defaultConfig 
-            { inputFiles = [inputFile]
-            , outputFile = outputFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
+      let config = Config.defaultConfig 
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           -- Check that output file was created
@@ -75,14 +74,12 @@ pythonToCppIntegrationSpec = describe "Python to C++ Integration" $ do
       
       writeFile inputFile (T.unpack pythonCode)
       
-      let config = defaultConfig 
-            { inputFiles = [inputFile]
-            , outputFile = outputFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
+      let config = Config.defaultConfig 
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -110,14 +107,12 @@ pythonToCppIntegrationSpec = describe "Python to C++ Integration" $ do
       
       writeFile inputFile (T.unpack pythonCode)
       
-      let config = defaultConfig 
-            { inputFiles = [inputFile]
-            , outputFile = outputFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
+      let config = Config.defaultConfig 
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -146,14 +141,12 @@ goToCppIntegrationSpec = describe "Go to C++ Integration" $ do
       
       writeFile inputFile (T.unpack goCode)
       
-      let config = defaultConfig 
-            { inputFiles = [inputFile]
-            , outputFile = outputFile
-            , sourceLanguage = Go
-            , targetLanguage = Cpp
+      let config = Config.defaultConfig 
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -185,14 +178,12 @@ goToCppIntegrationSpec = describe "Go to C++ Integration" $ do
       
       writeFile inputFile (T.unpack goCode)
       
-      let config = defaultConfig 
-            { inputFiles = [inputFile]
-            , outputFile = outputFile
-            , sourceLanguage = Go
-            , targetLanguage = Cpp
+      let config = Config.defaultConfig 
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -224,22 +215,20 @@ endToEndSpec = describe "End-to-End Tests" $ do
       writeFile inputFile (T.unpack pythonCode)
       
       -- Compile Python to C++
-      let config = defaultConfig 
-            { inputFiles = [inputFile]
-            , outputFile = cppFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
+      let config = Config.defaultConfig 
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just cppFile
             }
       
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           -- Compile C++ to executable
-          (exitCode, _, stderr) <- readProcessWithExitCode "g++" [cppFile, "-o", exeFile] ""
+          (exitCode, _, _) <- readProcessWithExitCode "g++" [cppFile, "-o", exeFile] ""
           exitCode `shouldBe` ExitSuccess
           
           -- Run the executable and check output
-          (exitCode', stdout, stderr') <- readProcessWithExitCode exeFile [] ""
+          (exitCode', stdout, _) <- readProcessWithExitCode exeFile [] ""
           exitCode' `shouldBe` ExitSuccess
           stdout `shouldContain` "14"  -- 2 + 3 * 4 = 14
         Left err -> expectationFailure $ "Compilation failed: " ++ show err
@@ -257,14 +246,12 @@ endToEndSpec = describe "End-to-End Tests" $ do
       
       writeFile inputFile (T.unpack invalidPythonCode)
       
-      let config = defaultConfig 
-            { inputFiles = [inputFile]
-            , outputFile = outputFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
+      let config = Config.defaultConfig 
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Left _ -> return ()  -- Expected to fail
         Right _ -> expectationFailure "Compilation should have failed with invalid syntax"
@@ -290,14 +277,12 @@ endToEndSpec = describe "End-to-End Tests" $ do
       writeFile inputFile1 (T.unpack pythonCode1)
       writeFile inputFile2 (T.unpack pythonCode2)
 
-      let config = defaultConfig
-            { inputFiles = [inputFile1, inputFile2]
-            , outputFile = outputFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
+      let config = Config.defaultConfig
+            { Config.ccInputFiles = [inputFile1, inputFile2]
+            , Config.ccOutputPath = Just outputFile
             }
 
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -338,14 +323,12 @@ endToEndSpec = describe "End-to-End Tests" $ do
       writeFile goFile (T.unpack goCode)
 
       -- Test Python compilation
-      let pyConfig = defaultConfig
-            { inputFiles = [pyFile]
-            , outputFile = pyOutput
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
+      let pyConfig = Config.defaultConfig
+            { Config.ccInputFiles = [pyFile]
+            , Config.ccOutputPath = Just pyOutput
             }
 
-      pyResult <- runCompiler pyConfig
+      pyResult <- runCompiler (convertConfigToDriver pyConfig) (return ())
       case pyResult of
         Right _ -> do
           pyExists <- doesFileExist pyOutput
@@ -353,14 +336,12 @@ endToEndSpec = describe "End-to-End Tests" $ do
         Left err -> expectationFailure $ "Python compilation failed: " ++ show err
 
       -- Test Go compilation
-      let goConfig = defaultConfig
-            { inputFiles = [goFile]
-            , outputFile = goOutput
-            , sourceLanguage = Go
-            , targetLanguage = Cpp
+      let goConfig = Config.defaultConfig
+            { Config.ccInputFiles = [goFile]
+            , Config.ccOutputPath = Just goOutput
             }
 
-      goResult <- runCompiler goConfig
+      goResult <- runCompiler (convertConfigToDriver goConfig) (return ())
       case goResult of
         Right _ -> do
           goExists <- doesFileExist goOutput
@@ -399,14 +380,12 @@ endToEndSpec = describe "End-to-End Tests" $ do
       writeFile fileB (T.unpack moduleB)
       writeFile fileC (T.unpack moduleC)
 
-      let config = defaultConfig
-            { inputFiles = [fileA, fileB, fileC]
-            , outputFile = outputFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
+      let config = Config.defaultConfig
+            { Config.ccInputFiles = [fileA, fileB, fileC]
+            , Config.ccOutputPath = Just outputFile
             }
 
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -448,14 +427,12 @@ endToEndSpec = describe "End-to-End Tests" $ do
       writeFile fileA (T.unpack moduleA)
       writeFile fileB (T.unpack moduleB)
 
-      let config = defaultConfig
-            { inputFiles = [fileA, fileB]
-            , outputFile = outputFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
+      let config = Config.defaultConfig
+            { Config.ccInputFiles = [fileA, fileB]
+            , Config.ccOutputPath = Just outputFile
             }
 
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -483,14 +460,13 @@ endToEndSpec = describe "End-to-End Tests" $ do
 
       writeFile inputFile (T.unpack pythonCode)
 
-      let config = defaultConfig
-            { inputFiles = [inputFile]
-            , outputFile = outputFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
+      let config = Config.defaultConfig
+            { Config.ccInputFiles = [inputFile]
+            , Config.ccOutputPath = Just outputFile
+            , Config.ccSourceLanguage = Config.Python
             }
 
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -547,21 +523,19 @@ endToEndSpec = describe "End-to-End Tests" $ do
     withSystemTempDirectory "fluxus-large-integration-test-" $ \tmpDir -> do
       -- Create modules
       mapM_ (\(name, content) -> do
-        let filename = tmpDir </> name ++ ".py"
-        writeFile filename (T.unpack content)
-      ) modules
+              let filename = tmpDir </> name ++ ".py"
+              writeFile filename (T.unpack content)
+            ) modules
 
       let inputFiles = [tmpDir </> name ++ ".py" | (name, _) <- modules]
       let outputFile = tmpDir </> "large_project.cpp"
 
-      let config = defaultConfig
-            { inputFiles = inputFiles
-            , outputFile = outputFile
-            , sourceLanguage = Python
-            , targetLanguage = Cpp
+      let config = Config.defaultConfig
+            { Config.ccInputFiles = inputFiles
+            , Config.ccOutputPath = Just outputFile
             }
 
-      result <- runCompiler config
+      result <- runCompiler (convertConfigToDriver config) (return ())
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile

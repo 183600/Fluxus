@@ -131,9 +131,9 @@ data GoGenError
 generateGoFromPython :: PythonAST -> GoGenConfig -> Either GoGenError Text
 generateGoFromPython (PythonAST module_) config = do
   (result, finalState) <- runStateT (generateModule module_ config) initialState
-  if not (null (gsErrors finalState))
-    then Left (head (gsErrors finalState))
-    else Right result
+  case gsErrors finalState of
+    [] -> Right result
+    (firstError:_) -> Left firstError
 
 -- | Generate complete module
 generateModule :: PythonModule -> GoGenConfig -> GenM Text

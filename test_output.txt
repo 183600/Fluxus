@@ -1,0 +1,112 @@
+Build profile: -w ghc-9.6.7 -O1
+In order, the following will be built (use -v for more details):
+ - fluxus-0.1.0.0 (test:fluxus-test) (ephemeral targets)
+Preprocessing test suite 'fluxus-test' for fluxus-0.1.0.0...
+Building test suite 'fluxus-test' for fluxus-0.1.0.0...
+Running 1 test suites...
+Test suite fluxus-test: RUNNING...
+
+Fluxus Compiler Comprehensive Test Suite
+  Type Inference
+    Basic Type Inference
+      infers integer literal types [✔]
+      infers string literal types [✔]
+      infers boolean literal types [✔]
+      infers list types [✔]
+      infers function types [✔]
+      infers dictionary types [✔]
+      infers optional types [✔]
+      infers tuple types [✔]
+      infers generic types [✔]
+      infers owned types [✔]
+      infers shared types [✔]
+    Type Unification
+      unifies identical types [✔]
+      fails to unify different types [✔]
+      unifies type variables [✔]
+      unifies complex types [✔]
+      unifies nested types [✔]
+      unifies function types [✔]
+      fails to unify function types with different arity [✔]
+      unifies recursive types [✔]
+      detects occurs check failure [✔]
+    Constraint Solving
+      solves simple constraints [✔]
+      detects inconsistent constraints [✔]
+      propagates constraints [✔]
+      solves complex constraint chains [✔]
+      solves function type constraints [✔]
+      handles cyclic constraints gracefully [✔]
+      solves mixed type constraints [✔]
+  Python Parser
+    Python Lexer
+      tokenizes simple expressions [✔]
+      tokenizes Python keywords [✔]
+      tokenizes string literals [✔]
+      tokenizes number literals [✔]
+      tokenizes complex expressions [✔]
+      tokenizes indentation and newlines [✔]
+      tokenizes escape sequences in strings [✔]
+      tokenizes boolean literals [✔]
+      tokenizes comments [✔]
+    Python Parser
+      parses simple expressions [✔]
+      parses function definitions [✔]
+      parses function definitions with parameters [✔]
+      parses class definitions [✔]
+      parses class definitions with inheritance [✔]
+      parses if statements [✔]
+      parses if-else statements [✔]
+      parses while loops [✔]
+      parses for loops [✔]
+      parses try-except blocks [✔]
+      parses list comprehensions [✔]
+  Go Parser
+    Go Lexer
+      tokenizes simple expressions [✔]
+      tokenizes Go keywords [✔]
+      tokenizes string literals [✔]
+      tokenizes raw string literals [✔]
+      tokenizes number literals [✔]
+      tokenizes Go operators [✔]
+      tokenizes Go delimiters [✔]
+      tokenizes Go comments [✔]
+      tokenizes complex expressions [✔]
+    Go Parser
+      parses package declaration [✔]
+      parses function declarations [✔]
+      parses function declarations with parameters [✔]
+      parses variable declarations [✔]
+      parses variable declarations with initialization [✔]
+      parses variable declarations [✔]
+      parses type declarations [✔]
+      parses struct declarations [✘]
+      parses interface declarations [✘]
+      parses if statements [✔]
+      parses for loops [✔]
+  Escape Analysis Tests
+    Basic Escape Analysis
+      identifies non-escaping local variables [✔]
+      identifies escaping variables [✘]
+    Complex Escape Analysis
+      analyzes escape behavior in nested functions [✘]
+      analyzes escape behavior in data structures [✘]
+    Edge Cases
+      handles empty functions [✔]
+      handles recursive functions [✔]
+  Ownership Inference Tests
+    Basic Ownership Inference
+      infers ownership of local variables [✔]
+      identifies shared references [✔]
+    Ownership Transfer
+      detects ownership transfer in function calls [✔]
+    Borrowing Analysis
+      identifies immutable borrows [✘]
+      identifies mutable borrows [✘]
+    Edge Cases
+      handles ownership in loops [✔]
+      handles ownership in exception handling [✔]
+  Shape Analysis Tests
+    Basic Shape Analysis
+terminated
+terminated

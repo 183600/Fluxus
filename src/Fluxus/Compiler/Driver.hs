@@ -65,9 +65,11 @@ import Fluxus.Analysis.TypeInference (runTypeInference, inferASTType, solveConst
 import Fluxus.CodeGen.CPP
   ( CppUnit(..), CppDecl(..), CppStmt(..), CppExpr(..), CppType(..)
   , CppLiteral(..), CppParam(..), CppGenConfig(..)
+  , CppFunction(..), CppClass(..), CppVar(..), CppTypeDef(..)
   , generateCpp, generateCppMain
   )
 import Fluxus.Optimization.ConstantPropagation (constantPropagation)
+import Fluxus.Debug.Logger (debugLog, enableDebug, isDebugEnabled)
 import Fluxus.Optimization.Inlining (inlineFunctions)
 import Fluxus.Optimization.Vectorization (vectorizeLoops)
 import Fluxus.Optimization.SizeReduction (reduceCodeSize)
@@ -99,6 +101,9 @@ convertConfigToDriver config = CompilerConfig
   , ccEnableAnalysis = Config.ccEnableAnalysis config
   , ccStopAtCodegen = Config.ccStopAtCodegen config
   , ccBuiltinEnv = defaultBuiltinEnv  -- Use default for now
+  , ccEnableDebug = False  -- Default value
+  , ccDebugBreakpoints = []  -- Default empty list
+  , ccStepMode = False  -- Default value
   }
 
 -- | Convert Driver.CompilerConfig to Config.CompilerConfig (reverse conversion)
@@ -167,6 +172,9 @@ data CompilerConfig = CompilerConfig
   , ccStrictMode        :: !Bool
   , ccEnableAnalysis    :: !Bool
   , ccStopAtCodegen     :: !Bool
+  , ccEnableDebug       :: !Bool
+  , ccDebugBreakpoints  :: ![Text]
+  , ccStepMode          :: !Bool
   , ccBuiltinEnv        :: !(HashMap Identifier Type)  -- Made configurable
   } deriving stock (Eq, Show, Generic)
 
@@ -256,6 +264,9 @@ defaultConfig = CompilerConfig
   , ccStrictMode = False
   , ccEnableAnalysis = True
   , ccStopAtCodegen = False
+  , ccEnableDebug = False
+  , ccDebugBreakpoints = []
+  , ccStepMode = False
   , ccBuiltinEnv = defaultBuiltinEnv
   }
 
@@ -467,6 +478,8 @@ compileProject inputFiles = do
 parseStage :: FilePath -> CompilerM (Either PythonAST GoAST)
 parseStage inputFile = do
   config <- ask
+  when (ccEnableDebug config) $ liftIO enableDebug
+  debugLog $ "Starting parse stage for: " <> T.pack inputFile
   content <- liftIO $ TIO.readFile inputFile
   
   let detectedLanguage = case takeExtension inputFile of
@@ -476,20 +489,26 @@ parseStage inputFile = do
   
   case detectedLanguage of
     Python -> do
+      debugLog "Running Python lexer"
       tokens <- case runPythonLexer (T.pack inputFile) content of
         Left err -> 
           -- Extract line/column from error if available
           let (line, col) = extractPosFromError err
               srcSpan = SourceSpan (T.pack inputFile) (SourcePos line col) (SourcePos line col)
           in throwError $ ParseError (T.pack $ show err) srcSpan
-        Right toks -> return toks
+        Right toks -> do
+          debugLog $ "Python lexer succeeded with " <> T.pack (show (length toks)) <> " tokens"
+          return toks
       
+      debugLog "Running Python parser"
       case runPythonParser (T.pack inputFile) tokens of
         Left err -> 
           let (line, col) = extractPosFromError err
               srcSpan = SourceSpan (T.pack inputFile) (SourcePos line col) (SourcePos line col)
           in throwError $ ParseError (T.pack $ show err) srcSpan
-        Right ast -> return $ Left ast
+        Right ast -> do
+          debugLog "Python parser succeeded"
+          return $ Left ast
     
     Go -> do
       tokens <- case runGoLexer (T.pack inputFile) content of
@@ -516,6 +535,7 @@ parseStage inputFile = do
 typeInferenceStage :: Either PythonAST GoAST -> CompilerM (Either PythonAST GoAST)
 typeInferenceStage ast = do
   config <- ask
+  debugLog "Starting type inference stage"
   logInfo "Running type inference analysis"
   
   let result = runTypeInference (ccBuiltinEnv config) $ do
@@ -596,14 +616,14 @@ codeGenStageMain ast = do
 
 buildCppGenConfig :: CompilerConfig -> Bool -> CppGenConfig
 buildCppGenConfig config _withMain = CppGenConfig
-  { cgcOptimizationLevel = fromEnum $ ccOptimizationLevel config
-  , cgcEnableInterop = ccEnableInterop config
-  , cgcTargetCppStd = ccCppStandard config
-  , cgcUseSmartPointers = ccOptimizationLevel config >= O2
-  , cgcEnableParallel = ccEnableParallel config
-  , cgcEnableCoroutines = ccCppStandard config >= "c++20"
-  , cgcNamespace = "hyperstatic"
-  , cgcHeaderGuard = "HYPERSTATIC_GENERATED"
+  { cgOptimizeLevel = fromEnum $ ccOptimizationLevel config
+  , cgUseModernCpp = ccCppStandard config >= "c++17"
+  , cgDebugMode = ccEnableDebugInfo config
+  , cgTargetStandard = ccCppStandard config
+  , cgUseExceptions = True
+  , cgUseRTTI = True
+  , cgNamespace = Just "hyperstatic"
+  , cgHeaderGuardPrefix = "HYPERSTATIC_GENERATED"
   }
 
 -- | Compile C++ file to object file
@@ -772,44 +792,60 @@ renderCppUnit (CppUnit includes _ decls) =
 
 renderCppDecl :: CppDecl -> Text
 renderCppDecl = \case
-  CppFunction name retType params body -> 
-    renderCppType retType <> " " <> name <> "(" <> 
+  CppFunctionDecl (CppFunction name retType params body _inline _const _virtual _pureVirtual _template) ->
+    renderCppType retType <> " " <> name <> "(" <>
     T.intercalate ", " (map renderCppParam params) <> ") {\n" <>
     T.unlines (map ("    " <>) (map renderCppStmt body)) <>
     "}\n"
-  CppVariable name varType Nothing -> 
-    renderCppType varType <> " " <> name <> ";\n"
-  CppVariable name varType (Just expr) -> 
-    renderCppType varType <> " " <> name <> " = " <> renderCppExpr expr <> ";\n"
-  CppNamespace nsName innerDecls ->
+  CppVarDecl (CppVar name varType mExpr) ->
+    renderCppType varType <> " " <> name <>
+    case mExpr of
+      Nothing -> ";\n"
+      Just expr -> " = " <> renderCppExpr expr <> ";\n"
+  CppNamespaceDecl nsName innerDecls ->
     "namespace " <> nsName <> " {\n" <>
     T.unlines (map renderCppDecl innerDecls) <>
     "}\n"
-  CppClass className baseClasses members ->
+  CppClassDecl (CppClass className baseClasses _members _methods _isStruct _template) ->
     "class " <> className <>
     (if null baseClasses then "" else " : " <> T.intercalate ", " baseClasses) <> " {\n" <>
-    T.unlines (map ("    " <>) (map renderCppDecl members)) <>
+    -- TODO: Render members and methods
+    "    // TODO: Render class members and methods\n" <>
     "};\n"
-  CppStruct name members ->
-    "struct " <> name <> " {\n" <>
-    T.unlines (map ("    " <>) (map renderCppDecl members)) <>
-    "};\n"
-  CppCommentDecl comment ->
-    "// " <> comment <> "\n"
+  CppIncludeDecl includePath ->
+    "#include " <> includePath <> "\n"
+  CppUsingDecl alias typeName ->
+    "using " <> alias <> " = " <> typeName <> ";\n"
   _ -> "// TODO: Render other declaration types\n"
 
 renderCppType :: CppType -> Text
 renderCppType = \case
   CppVoid -> "void"
-  CppInt -> "int"
-  CppDouble -> "double"
   CppBool -> "bool"
+  CppInt _ -> "int"
+  CppUInt _ -> "unsigned int"
+  CppFloat -> "float"
+  CppDouble -> "double"
+  CppChar -> "char"
   CppString -> "std::string"
-  CppAuto -> "auto"
   CppPointer t -> renderCppType t <> "*"
   CppReference t -> renderCppType t <> "&"
-  CppVector t -> "std::vector<" <> renderCppType t <> ">"
-  _ -> "auto"
+  CppConst t -> "const " <> renderCppType t
+  CppVolatile t -> "volatile " <> renderCppType t
+  CppSizeT -> "size_t"
+  CppFunctionType params ret -> renderCppType ret <> "(*)(" <> T.intercalate ", " (map renderCppType params) <> ")"
+  CppClassType name args -> name <> (if null args then "" else "<" <> T.intercalate ", " (map renderCppType args) <> ">")
+  CppTemplateType name args -> name <> "<" <> T.intercalate ", " (map renderCppType args) <> ">"
+  CppUniquePtr t -> "std::unique_ptr<" <> renderCppType t <> ">"
+  CppSharedPtr t -> "std::shared_ptr<" <> renderCppType t <> ">"
+  CppOptional t -> "std::optional<" <> renderCppType t <> ">"
+  CppVariant types -> "std::variant<" <> T.intercalate ", " (map renderCppType types) <> ">"
+  CppPair t1 t2 -> "std::pair<" <> renderCppType t1 <> ", " <> renderCppType t2 <> ">"
+  CppTuple types -> "std::tuple<" <> T.intercalate ", " (map renderCppType types) <> ">"
+  CppMap k v -> "std::map<" <> renderCppType k <> ", " <> renderCppType v <> ">"
+  CppUnorderedMap k v -> "std::unordered_map<" <> renderCppType k <> ", " <> renderCppType v <> ">"
+  CppTypeVar name -> name
+  CppDecltype _ -> "decltype(...)"
 
 renderCppParam :: CppParam -> Text
 renderCppParam (CppParam name paramType mdefault) = 
@@ -821,35 +857,35 @@ renderCppStmt = \case
   CppReturn Nothing -> "return;"
   CppReturn (Just expr) -> "return " <> renderCppExpr expr <> ";"
   CppExprStmt expr -> renderCppExpr expr <> ";"
-  CppDecl decl -> T.stripEnd (renderCppDecl decl)
-  CppComment comment -> "/* " <> comment <> " */"
-  CppIf condition thenStmts elseStmts ->
-    "if (" <> renderCppExpr condition <> ") {\n" <>
-    T.intercalate "\n" (map renderCppStmt thenStmts) <> "\n" <>
-    "} else {\n" <>
-    T.intercalate "\n" (map renderCppStmt elseStmts) <> "\n}"
-  CppWhile condition bodyStmts ->
-    "while (" <> renderCppExpr condition <> ") {\n" <>
-    T.intercalate "\n" (map renderCppStmt bodyStmts) <> "\n}"
-  CppFor initStmt condition post bodyStmts ->
+  CppIf condition thenStmt elseStmt ->
+    "if (" <> renderCppExpr condition <> ") " <>
+    renderCppStmt thenStmt <>
+    case elseStmt of
+      Nothing -> ""
+      Just stmt -> " else " <> renderCppStmt stmt
+  CppWhile condition bodyStmt ->
+    "while (" <> renderCppExpr condition <> ") " <> renderCppStmt bodyStmt
+  CppFor init condition post bodyStmt ->
     "for (" <>
-    maybe "" (\stmt -> renderCppStmt stmt <> " ") initStmt <>
-    maybe "" (\cond -> renderCppExpr cond) condition <> ";" <>
-    maybe "" (\post -> renderCppExpr post) post <>
-    ") {\n" <>
-    T.intercalate "\n" (map renderCppStmt bodyStmts) <> "\n}"
-  CppForRange varName iterExpr bodyStmts ->
-    "for (auto " <> varName <> " : " <> renderCppExpr iterExpr <> ") {\n" <>
-    T.intercalate "\n" (map renderCppStmt bodyStmts) <> "\n}"
+    maybe "" (\expr -> renderCppExpr expr <> " ") init <> "; " <>
+    maybe "" (\cond -> renderCppExpr cond) condition <> "; " <>
+    maybe "" (\postExpr -> renderCppExpr postExpr) post <>
+    ") " <> renderCppStmt bodyStmt
   CppBlock stmts ->
-    "{\n" <> T.intercalate "\n" (map renderCppStmt stmts) <> "\n}"
+    "{\n" <> T.unlines (map ("    " <>) (map renderCppStmt stmts)) <> "\n}"
+  CppVarDeclStmt var ->
+    renderCppType (cvType var) <> " " <> cvName var <>
+    maybe "" (\expr -> " = " <> renderCppExpr expr) (cvInitialiser var) <> ";"
   CppBreak -> "break;"
   CppContinue -> "continue;"
-  CppDoWhile bodyStmts condition ->
-    "do {\n" <>
-    T.intercalate "\n" (map renderCppStmt bodyStmts) <> "\n" <>
-    "} while (" <> renderCppExpr condition <> ");"
-  _ -> "// TODO: Render statement"
+  CppThrow expr -> "throw " <> renderCppExpr expr <> ";"
+  CppTry bodyStmt catches ->
+    "try " <> renderCppStmt bodyStmt <> "\n" <>
+    T.unlines (map renderCatch catches)
+  _ -> "// TODO: Render other statement types"
+  where
+    renderCatch (excType, excName, handler) =
+      " catch (" <> renderCppType excType <> " " <> excName <> ") " <> renderCppStmt handler
 
 renderCppExpr :: CppExpr -> Text
 renderCppExpr = \case
@@ -900,9 +936,7 @@ renderCppExpr = \case
     "std::make_shared<" <> renderCppType typ <> ">(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
   CppInitList typ exprs ->
     renderCppType typ <> "{" <> T.intercalate ", " (map renderCppExpr exprs) <> "}"
-  CppMakeTuple args ->
-    "std::make_tuple(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
-
+  
 renderCppLiteral :: CppLiteral -> Text
 renderCppLiteral = \case
   CppIntLit i -> T.pack $ show i
@@ -911,8 +945,7 @@ renderCppLiteral = \case
   CppBoolLit True -> "true"
   CppBoolLit False -> "false"
   CppStringLit s -> "\"" <> escapeString s <> "\""
-  CppNullPtr -> "nullptr"
-  CppUserDefinedLit value suffix -> value <> suffix
+  CppNullLit -> "nullptr"
   where
     escapeString = T.concatMap $ \case
       '\n' -> "\\n"

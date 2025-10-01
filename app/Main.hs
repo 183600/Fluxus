@@ -17,17 +17,30 @@ import System.FilePath ((</>))
 import Fluxus.Compiler.Driver as Driver
 import Fluxus.Compiler.Config as Config
 import Fluxus.AST.Common (SourceSpan(..), SourcePos(..))
+import Fluxus.Debug.CLI (runDebugCLI)
+import Fluxus.Debug.Logger (enableDebug)
 
 -- | Main entry point
 main :: IO ()
 main = do
   args <- getArgs
   
-  if null args
-    then printUsage >> exitFailure
+  -- Check for debug mode
+  let isDebugMode = "--debug" `elem` args || "-d" `elem` args
+  
+  if isDebugMode
+    then do
+      -- Enable debug logging
+      enableDebug
+      -- Run debug CLI
+      runDebugCLI
     else do
-      -- Parse configuration from command line and config files
-      configResult <- loadConfig args
+      -- Normal compilation mode
+      if null args
+        then printUsage >> exitFailure
+        else do
+          -- Parse configuration from command line and config files
+          configResult <- loadConfig args
       case configResult of
         Left err -> do
           hPutStrLn stderr $ "Configuration error: " ++ err

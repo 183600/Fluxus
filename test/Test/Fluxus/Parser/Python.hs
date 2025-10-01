@@ -102,7 +102,13 @@ lexerSpec = describe "Python Lexer" $ do
         length tokens `shouldBe` 4
         let isBool (Located _ (Lexer.TokenKeyword kw)) = kw == Lexer.KwTrue || kw == Lexer.KwFalse
             isBool _ = False
-        all (isBool) tokens `shouldBe` True
+            isIdent (Located _ (Lexer.TokenIdent _)) = True
+            isIdent _ = False
+        -- Only True and False should be boolean keywords, true and false should be identifiers
+        (isBool (tokens !! 0)) `shouldBe` True  -- True
+        (isBool (tokens !! 1)) `shouldBe` True  -- False  
+        (isIdent (tokens !! 2)) `shouldBe` True -- true (identifier)
+        (isIdent (tokens !! 3)) `shouldBe` True -- false (identifier)
   
   it "tokenizes comments" $ do
     let input = "x = 1  # This is a comment\ny = 2"

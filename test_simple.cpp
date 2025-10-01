@@ -19,7 +19,7 @@ int __debug_generatePythonCall_called = 1;
 
 // Function call: print with 1 args
 
-// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "hello")})}
+// Python argument 0: Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = ArgPositional (Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "Hello from Fluxus!")})}
 
 int __debug_print = 42;
 
@@ -27,12 +27,12 @@ int __debug_print_args = 1;
 
 // print function called with 1 arguments
 
-// print argument 0: CppLiteral (CppStringLit "hello")
+// print argument 0: CppLiteral (CppStringLit "Hello from Fluxus!")
 
 // Returned from generatePythonCall
 
 int main() {
-    std::cout << "hello" << std::endl;
+    std::cout << "Hello from Fluxus!" << std::endl;
     return 0;
 }
 

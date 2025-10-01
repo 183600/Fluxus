@@ -58,7 +58,7 @@ int __debug_print_args = 1;
 int main() {
     auto result = 42;
     std::cout << result << std::endl;
-    std::cout << str(result) << std::endl;
+    std::cout << std::to_string(result) << std::endl;
     return 0;
 }
 

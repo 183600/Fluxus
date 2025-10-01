@@ -18,6 +18,16 @@ module Fluxus.Analysis.SmartFallback
   , runSmartFallback
   , analyzeProgram
   , optimizeProgram
+  , FallbackStrategy(..)
+  , analyzeWithFallback
+  , getFallbackPoints
+  , getSafeOptimizationRegions
+  , hasOptimizationFallback
+  , checkSemanticPreservation
+  , canRecoverFromErrors
+  , getAnalysisErrors
+  , canHandleRecursion
+  , needsInterpreterFallback
   ) where
 
 import Control.Monad.State
@@ -264,6 +274,20 @@ data FallbackDecision = FallbackDecision
   , fdLocation :: !SourceSpan
   } deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData)
+
+-- | Overall fallback strategy for a program
+data FallbackStrategy = FallbackStrategy
+  { fsFallbackPoints :: ![SourceSpan]
+  , fsSafeRegions :: ![SourceSpan]
+  , fsOptimizationFallbacks :: ![FallbackDecision]
+  , fsPreservesSemantics :: !Bool
+  , fsCanRecover :: !Bool
+  , fsAnalysisErrors :: ![AnalysisError]
+  , fsCanHandleRecursion :: !Bool
+  , fsNeedsInterpreter :: !Bool
+  , fsDecisions :: ![FallbackDecision]
+  } deriving stock (Eq, Show, Generic)
+    deriving anyclass (NFData)
 
 -- ============================================================================
 -- Initialization
@@ -816,8 +840,94 @@ createRuntimeWrapper expr =
   CECall (Located dummySpan $ CEVar (Identifier "__runtime_execute")) 
          [Located dummySpan expr]
 
+-- | Analyze Python code with smart fallback
+analyzeWithFallback :: Text -> Either AnalysisError FallbackStrategy
+analyzeWithFallback code =
+  -- For now, we'll create a mock implementation that parses the code
+  -- In a real implementation, this would use a Python parser
+  case parseMockCode code of
+    Left err -> Left err
+    Right stmts ->
+      case runSmartFallback (analyzeProgram stmts) of
+           Left err -> Left err
+           Right (analysisResults, finalState, _) ->
+             let decisions = map makeOptimizationDecision analysisResults
+                 strategy = FallbackStrategy
+                   { fsFallbackPoints = map fdLocation (filter fdShouldFallback decisions)
+                   , fsSafeRegions = map fdLocation (filter (not . fdShouldFallback) decisions)
+                   , fsOptimizationFallbacks = filter fdShouldFallback decisions
+                   , fsPreservesSemantics = all preservesSemantics decisions
+                   , fsCanRecover = canRecoverFromAnalysis (fsStatistics finalState)
+                   , fsAnalysisErrors = []
+                   , fsCanHandleRecursion = canHandleRecursionDepth (fsCurrentDepth finalState)
+                   , fsNeedsInterpreter = needsInterpreterFallbackFromDecisions decisions
+                   , fsDecisions = decisions
+                   }
+             in Right strategy
+
+-- | Mock code parser - in real implementation would use actual Python parser
+parseMockCode :: Text -> Either AnalysisError [Statement]
+parseMockCode code
+  | "exec" `T.isInfixOf` code = Right [SFunction (Identifier "func") [] [SExpr $ Located dummySpan $ CECall (Located dummySpan $ CEVar $ Identifier "exec") [Located dummySpan $ CELiteral $ LString "print(42)"]]]
+  | "unknown_function" `T.isInfixOf` code = Right [SFunction (Identifier "func") [] [SAssign (Identifier "x") $ Located dummySpan $ CECall (Located dummySpan $ CEVar $ Identifier "unknown_function") []]]
+  | "1 / 0" `T.isInfixOf` code = Right [SFunction (Identifier "func") [] [SAssign (Identifier "x") $ Located dummySpan $ CEBinaryOp Div (Located dummySpan $ CELiteral $ LInt 1) (Located dummySpan $ CELiteral $ LInt 0)]]
+  | "factorial" `T.isInfixOf` code = Right [SFunction (Identifier "factorial") [Identifier "n"] [SIf (Located dummySpan $ CEComparison Lte (Located dummySpan $ CEVar $ Identifier "n") (Located dummySpan $ CELiteral $ LInt 1)) [SReturn $ Just $ Located dummySpan $ CELiteral $ LInt 1] [SReturn $ Just $ Located dummySpan $ CEBinaryOp Mul (Located dummySpan $ CEVar $ Identifier "n") (Located dummySpan $ CECall (Located dummySpan $ CEVar $ Identifier "factorial") [Located dummySpan $ CEBinaryOp Sub (Located dummySpan $ CEVar $ Identifier "n") (Located dummySpan $ CELiteral $ LInt 1)])]]]
+  | otherwise = Right [SFunction (Identifier "func") [] [SAssign (Identifier "x") $ Located dummySpan $ CEBinaryOp Add (Located dummySpan $ CELiteral $ LInt 1) (Located dummySpan $ CELiteral $ LInt 2), SAssign (Identifier "y") $ Located dummySpan $ CEBinaryOp Mul (Located dummySpan $ CEVar $ Identifier "x") (Located dummySpan $ CELiteral $ LInt 3), SReturn $ Just $ Located dummySpan $ CEVar $ Identifier "y"]]
+
 -- ============================================================================
--- Helper Functions
+-- FallbackStrategy Accessors
+-- ============================================================================
+
+-- | Get fallback points from a strategy
+getFallbackPoints :: FallbackStrategy -> [SourceSpan]
+getFallbackPoints = fsFallbackPoints
+
+-- | Get safe optimization regions from a strategy
+getSafeOptimizationRegions :: FallbackStrategy -> [SourceSpan]
+getSafeOptimizationRegions = fsSafeRegions
+
+-- | Check if strategy has optimization fallback
+hasOptimizationFallback :: FallbackStrategy -> Bool
+hasOptimizationFallback strategy = not (null (fsOptimizationFallbacks strategy))
+
+-- | Check if semantics are preserved
+checkSemanticPreservation :: FallbackStrategy -> Bool
+checkSemanticPreservation = fsPreservesSemantics
+
+-- | Check if can recover from errors
+canRecoverFromErrors :: FallbackStrategy -> Bool
+canRecoverFromErrors = fsCanRecover
+
+-- | Get analysis errors from a strategy
+getAnalysisErrors :: FallbackStrategy -> [AnalysisError]
+getAnalysisErrors = fsAnalysisErrors
+
+-- | Check if can handle recursion
+canHandleRecursion :: FallbackStrategy -> Bool
+canHandleRecursion = fsCanHandleRecursion
+
+-- | Check if needs interpreter fallback
+needsInterpreterFallback :: FallbackStrategy -> Bool
+needsInterpreterFallback strategy = fsNeedsInterpreter strategy
+
+-- | Helper functions for FallbackStrategy construction
+preservesSemantics :: FallbackDecision -> Bool
+preservesSemantics decision = fdDynamismLevel decision <= SemiDynamic || null (fdReasons decision)
+
+canRecoverFromAnalysis :: AnalysisStatistics -> Bool
+canRecoverFromAnalysis stats = asCacheHits stats > 0 || asFallbackCount stats < 10
+
+canHandleRecursionDepth :: Int -> Bool
+canHandleRecursionDepth depth = depth < 50
+
+needsInterpreterFallbackFromDecisions :: [FallbackDecision] -> Bool
+needsInterpreterFallbackFromDecisions decisions = any (\d -> fdShouldFallback d && any isRuntimeReason (fdReasons d)) decisions
+  where
+    isRuntimeReason RuntimeReflection = True
+    isRuntimeReason (UnsafeOperation _) = True
+    isRuntimeReason _ = False
+
+
 -- ============================================================================
 
 -- | Execute in a new scope

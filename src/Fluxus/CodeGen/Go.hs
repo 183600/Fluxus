@@ -9,6 +9,7 @@
 module Fluxus.CodeGen.Go
   ( -- * Code generation functions
     generateGoFromPython
+  , generateGoCode
     -- * Configuration
   , GoGenConfig(..)
   , defaultGoConfig
@@ -30,6 +31,8 @@ import Control.Monad (forM, when)
 
 import Fluxus.AST.Common
 import Fluxus.AST.Python
+import qualified Fluxus.Parser.Python.Lexer as Lexer
+import qualified Fluxus.Parser.Python.Parser as Parser
 
 -- | Go type representation
 data GoType 
@@ -606,4 +609,24 @@ unaryOpToGo = \case
   OpPositive -> "+"
   OpNot -> "!"
   OpBitNot -> "^"
+
+-- | Generate Go code from Python source text
+generateGoCode :: Text -> IO (Either String String)
+generateGoCode pythonCode = do
+  let filename = "<input>"
+
+  -- Step 1: Lex the Python code
+  case Lexer.runPythonLexer filename pythonCode of
+    Left lexerError -> return $ Left $ "Lexer error: " ++ show lexerError
+    Right tokens ->
+      -- Step 2: Parse the tokens to AST
+      case Parser.runPythonParser filename tokens of
+        Left parseError -> return $ Left $ "Parse error: " ++ show parseError
+        Right ast ->
+          -- Step 3: Generate Go code
+          let config = defaultGoConfig "main"
+              result = generateGoFromPython ast config
+          in return $ case result of
+            Left genError -> Left $ "Generation error: " ++ show genError
+            Right goCode -> Right $ T.unpack goCode
   

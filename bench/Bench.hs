@@ -1,6 +1,24 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Main where
+module Main (
+    main
+  , inferSimpleTypes
+  , inferComplexTypes
+  , unifyBasicTypes
+  , unifyComplexTypes
+  , solveSimpleConstraints
+  , solveComplexConstraints
+  , foldArithmeticConstants
+  , foldComplexConstants
+  , eliminateBasicDeadCode
+  , eliminateComplexDeadCode
+  , mapBasicTypes
+  , mapComplexTypes
+  , generateLiteralExpressions
+  , generateComplexExpressions
+  , generateBasicStatements
+  , generateFunctionDeclarations
+) where
 
 import Criterion.Main
 import Data.Text (Text)
@@ -10,85 +28,81 @@ import Fluxus.Parser.Python.Lexer
 import Fluxus.Parser.Python.Parser
 import Fluxus.Parser.Go.Lexer
 import Fluxus.Parser.Go.Parser
-import Fluxus.Analysis.TypeInference
-import Fluxus.CodeGen.CPP
-import Fluxus.Optimization.ConstantFolding
-import Fluxus.Optimization.DeadCodeElimination
 
 main :: IO ()
 main = defaultMain [
     bgroup "Parser Benchmarks" [
         bench "Python Lexer - simple expression" $
-            whnfIO $ runPythonLexer "test.py" "x + 42"
+            whnfIO $ either (error . show) return $ runPythonLexer "test.py" "x + 42"
         
       , bench "Python Lexer - complex code" $
-            whnfIO $ runPythonLexer "test.py" complexPythonCode
+            whnfIO $ either (error . show) return $ runPythonLexer "test.py" complexPythonCode
         
       , bench "Python Parser - simple function" $
-            whnfIO $ runPythonParser "test.py" =<< runPythonLexer "test.py" simplePythonFunc
+            whnfIO $ either (error . show) return $ runPythonLexer "test.py" simplePythonFunc >>= either (error . show) return . runPythonParser "test.py"
         
       , bench "Go Lexer - simple expression" $
-            whnfIO $ runGoLexer "test.go" "x + 42"
+            whnfIO $ either (error . show) return $ runGoLexer "test.go" "x + 42"
         
       , bench "Go Lexer - complex code" $
-            whnfIO $ runGoLexer "test.go" complexGoCode
+            whnfIO $ either (error . show) return $ runGoLexer "test.go" complexGoCode
         
       , bench "Go Parser - simple function" $
-            whnfIO $ runGoParser "test.go" =<< runGoLexer "test.go" simpleGoFunc
+            whnfIO $ either (error . show) return $ runGoLexer "test.go" simpleGoFunc >>= either (error . show) return . runGoParser "test.go"
     ],
     
     bgroup "Analysis Benchmarks" [
         bench "Type Inference - simple types" $
-            whnf inferSimpleTypes
+            whnf (\_ -> inferSimpleTypes) ()
         
       , bench "Type Inference - complex types" $
-            whnf inferComplexTypes
+            whnf (\_ -> inferComplexTypes) ()
         
       , bench "Type Unification - basic" $
-            whnf unifyBasicTypes
+            whnf (\_ -> unifyBasicTypes) ()
         
       , bench "Type Unification - complex" $
-            whnf unifyComplexTypes
+            whnf (\_ -> unifyComplexTypes) ()
         
       , bench "Constraint Solving - simple" $
-            whnf solveSimpleConstraints
+            whnf (\_ -> solveSimpleConstraints) ()
         
       , bench "Constraint Solving - complex" $
-            whnf solveComplexConstraints
+            whnf (\_ -> solveComplexConstraints) ()
     ],
     
     bgroup "Optimization Benchmarks" [
         bench "Constant Folding - arithmetic" $
-            whnf foldArithmeticConstants
+            whnf (\_ -> foldArithmeticConstants) ()
         
       , bench "Constant Folding - complex expressions" $
-            whnf foldComplexConstants
+            whnf (\_ -> foldComplexConstants) ()
         
       , bench "Dead Code Elimination - basic" $
-            whnf eliminateBasicDeadCode
+            whnf (\_ -> eliminateBasicDeadCode) ()
         
       , bench "Dead Code Elimination - complex" $
-            whnf eliminateComplexDeadCode
+            whnf (\_ -> eliminateComplexDeadCode) ()
     ],
     
     bgroup "Code Generation Benchmarks" [
         bench "C++ Type Mapping - basic types" $
-            whnf mapBasicTypes
+            whnf (\_ -> mapBasicTypes) ()
         
       , bench "C++ Type Mapping - complex types" $
-            whnf mapComplexTypes
+            whnf (\_ -> mapComplexTypes) ()
         
       , bench "C++ Expression Generation - literals" $
-            whnf generateLiteralExpressions
+            whnf (\_ -> generateLiteralExpressions) ()
         
       , bench "C++ Expression Generation - complex" $
-            whnf generateComplexExpressions
+            whnf (\_ -> generateComplexExpressions) ()
         
       , bench "C++ Statement Generation - basic" $
-            whnf generateBasicStatements
+            whnf (\_ -> generateBasicStatements) ()
         
       , bench "C++ Declaration Generation - functions" $
-            whnf generateFunctionDeclarations
+            whnf (\_ -> generateFunctionDeclarations) ()
     ]
   ]
 
@@ -171,6 +185,10 @@ inferSimpleTypes :: ()
 inferSimpleTypes = ()
   -- This would call actual type inference functions
   -- For now, it's a placeholder
+
+-- Define a function for use with whnf
+runInferSimpleTypes :: () -> ()
+runInferSimpleTypes _ = inferSimpleTypes
 
 inferComplexTypes :: ()
 inferComplexTypes = ()

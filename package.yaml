@@ -33,7 +33,14 @@ ghc-options:
   - -O2
 
 library:
-  source-dirs: src
+  source-dirs: 
+    - src
+    - libs/ast/src
+    - libs/cli/src
+    - libs/codegen/src
+    - libs/optimization/src
+    - libs/parser/src
+    - libs/type-inference/src
   exposed-modules:
     - Fluxus.AST.Common
     - Fluxus.AST.Python
@@ -124,11 +131,24 @@ tests:
     main: Spec.hs
     source-dirs: test
     other-modules:
+      - Test.Fluxus.Analysis.EscapeAnalysis
+      - Test.Fluxus.Analysis.OwnershipInference
+      - Test.Fluxus.Analysis.ShapeAnalysis
+      - Test.Fluxus.Analysis.SmartFallback
+      - Test.Fluxus.CodeGen.Go
+      - Test.Fluxus.EndToEnd
+      - Test.Fluxus.Integration
+      - Test.Fluxus.Optimization
+      - Test.Fluxus.Optimization.ConstantFolding
+      - Test.Fluxus.Optimization.DeadCodeElimination
+      - Test.Fluxus.Optimization.Inlining
       - Test.Fluxus.Parser.Python
       - Test.Fluxus.Parser.Go
       - Test.Fluxus.Analysis.TypeInference
       - Test.Fluxus.CodeGen.CPP
       - Test.Fluxus.ConvertCommand
+      - Test.Fluxus.Runtime.Go
+      - Test.Fluxus.Runtime.Python
     dependencies:
       - fluxus
       - hspec >= 2.10
@@ -139,6 +159,9 @@ tests:
       - filepath
       - process
       - unix
+      - time >= 1.12
+      - unordered-containers >= 0.2.19
+      - temporary >= 1.3
     ghc-options:
       - -threaded
       - -rtsopts

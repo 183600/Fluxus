@@ -63,7 +63,7 @@ import Parser.Go.Lexer (runGoLexer)
 import Parser.Go.Parser (runGoParser)
 import Text.PrettyPrint (ppShow)  -- For AST debugging
 import Analysis.TypeInference (runTypeInference, inferASTType, solveConstraints, checkTypes)
-import CodeGen.CPP
+import Fluxus.CodeGen.CPP
   ( CppUnit(..), CppDecl(..), CppStmt(..), CppExpr(..), CppType(..)
   , CppLiteral(..), CppParam(..), CppCase(..), CppGenConfig(..)
   , generateCpp, generateCppMain
@@ -444,19 +444,30 @@ parseStage inputFile = do
   case detectedLanguage of
     Python -> do
       tokens <- case runPythonLexer (T.pack inputFile) content of
-        Left err -> 
+        Left err ->
           -- Extract line/column from error if available
           let (line, col) = extractPosFromError err
               span = SourceSpan (T.pack inputFile) (SourcePos line col) (SourcePos line col)
           in throwError $ ParseError (T.pack $ show err) span
-        Right toks -> return toks
-      
+        Right toks -> do
+          -- Debug: Print token information
+          liftIO $ putStrLn $ "[DEBUG] Python lexer tokens:"
+          liftIO $ putStrLn $ "[DEBUG] Token count: " ++ show (length toks)
+          mapM_ (\t -> liftIO $ putStrLn $ "[DEBUG] Token: " ++ show t) (take 10 toks)
+          if length toks > 10
+            then liftIO $ putStrLn $ "[DEBUG] ... and " ++ show (length toks - 10) ++ " more tokens"
+            else return ()
+          return toks
+
       case runPythonParser (T.pack inputFile) tokens of
-        Left err -> 
+        Left err ->
           let (line, col) = extractPosFromError err
               span = SourceSpan (T.pack inputFile) (SourcePos line col) (SourcePos line col)
           in throwError $ ParseError (T.pack $ show err) span
-        Right ast -> return $ Left ast
+        Right ast -> do
+          -- Debug: Print AST info
+          liftIO $ putStrLn $ "[DEBUG] Python parsing successful"
+          return $ Left ast
     
     Go -> do
       tokens <- case runGoLexer (T.pack inputFile) content of
@@ -769,7 +780,7 @@ renderCppDecl = \case
     renderCppType varType <> " " <> name <> ";\n"
   CppVariable name varType (Just expr) -> 
     renderCppType varType <> " " <> name <> " = " <> renderCppExpr expr <> ";\n"
-  CppNamespace nsName innerDecls ->
+  CppNamespaceDecl nsName innerDecls ->
     "namespace " <> nsName <> " {\n" <>
     T.unlines (map renderCppDecl innerDecls) <>
     "}\n"
@@ -810,6 +821,7 @@ renderCppStmt = \case
   CppReturn (Just expr) -> "return " <> renderCppExpr expr <> ";"
   CppExprStmt expr -> renderCppExpr expr <> ";"
   CppDecl decl -> T.stripEnd (renderCppDecl decl)
+  CppComment comment -> "// " <> comment
   _ -> "// TODO: Render statement"
 
 renderCppExpr :: CppExpr -> Text

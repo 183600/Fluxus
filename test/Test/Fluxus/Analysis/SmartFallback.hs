@@ -3,7 +3,6 @@
 module Test.Fluxus.Analysis.SmartFallback (spec) where
 
 import Test.Hspec
-import Data.Text (Text)
 import qualified Data.Text as T
 
 import Fluxus.Analysis.SmartFallback
@@ -23,10 +22,10 @@ basicFallbackSpec = describe "Basic Fallback Mechanisms" $ do
           , "    exec('print(42)')"
           , "    return 42"
           ]
-    result <- analyzeWithFallback code
+    let result = analyzeWithFallback code
     case result of
       Right strategy -> do
-        fallbackPoints <- getFallbackPoints strategy
+        let fallbackPoints = getFallbackPoints strategy
         fallbackPoints `shouldNotBe` []
       Left err -> expectationFailure $ "Analysis failed: " ++ show err
   
@@ -37,10 +36,10 @@ basicFallbackSpec = describe "Basic Fallback Mechanisms" $ do
           , "    y = x * 3"
           , "    return y"
           ]
-    result <- analyzeWithFallback code
+    let result = analyzeWithFallback code
     case result of
       Right strategy -> do
-        safeRegions <- getSafeOptimizationRegions strategy
+        let safeRegions = getSafeOptimizationRegions strategy
         safeRegions `shouldNotBe` []
       Left err -> expectationFailure $ "Analysis failed: " ++ show err
 
@@ -56,10 +55,10 @@ optimizationFallbackSpec = describe "Optimization Fallback" $ do
           , "        result = fallback_operation()"
           , "    return result"
           ]
-    result <- analyzeWithFallback code
+    let result = analyzeWithFallback code
     case result of
       Right strategy -> do
-        hasFallback <- hasOptimizationFallback strategy
+        let hasFallback = hasOptimizationFallback strategy
         hasFallback `shouldBe` True
       Left err -> expectationFailure $ "Analysis failed: " ++ show err
   
@@ -71,10 +70,10 @@ optimizationFallbackSpec = describe "Optimization Fallback" $ do
           , "    y = map(lambda i: i * 2, x)"
           , "    return list(y)"
           ]
-    result <- analyzeWithFallback code
+    let result = analyzeWithFallback code
     case result of
       Right strategy -> do
-        semanticsPreserved <- checkSemanticPreservation strategy
+        let semanticsPreserved = checkSemanticPreservation strategy
         semanticsPreserved `shouldBe` True
       Left err -> expectationFailure $ "Analysis failed: " ++ show err
 
@@ -87,10 +86,10 @@ errorRecoverySpec = describe "Error Recovery" $ do
           , "    x = unknown_function()"
           , "    return x"
           ]
-    result <- analyzeWithFallback code
+    let result = analyzeWithFallback code
     case result of
       Right strategy -> do
-        canRecover <- canRecoverFromErrors strategy
+        let canRecover = canRecoverFromErrors strategy
         canRecover `shouldBe` True
       Left err -> expectationFailure $ "Analysis failed: " ++ show err
   
@@ -100,10 +99,10 @@ errorRecoverySpec = describe "Error Recovery" $ do
           , "    x = 1 / 0"
           , "    return x"
           ]
-    result <- analyzeWithFallback code
+    let result = analyzeWithFallback code
     case result of
       Right strategy -> do
-        errors <- getAnalysisErrors strategy
+        let errors = getAnalysisErrors strategy
         errors `shouldNotBe` []
       Left err -> expectationFailure $ "Analysis failed: " ++ show err
 
@@ -117,10 +116,10 @@ edgeCaseSpec = describe "Edge Cases" $ do
           , "    else:"
           , "        return n * factorial(n - 1)"
           ]
-    result <- analyzeWithFallback code
+    let result = analyzeWithFallback code
     case result of
       Right strategy -> do
-        canHandle <- canHandleRecursion strategy
+        let canHandle = canHandleRecursion strategy
         canHandle `shouldBe` True
       Left err -> expectationFailure $ "Analysis failed: " ++ show err
   
@@ -131,9 +130,9 @@ edgeCaseSpec = describe "Edge Cases" $ do
           , "    exec(code)"
           , "    return 42"
           ]
-    result <- analyzeWithFallback code
+    let result = analyzeWithFallback code
     case result of
       Right strategy -> do
-        needsFallback <- needsInterpreterFallback strategy
+        let needsFallback = needsInterpreterFallback strategy
         needsFallback `shouldBe` True
       Left err -> expectationFailure $ "Analysis failed: " ++ show err

@@ -15,14 +15,20 @@ module Fluxus.Analysis.EscapeAnalysis
   , runEscapeAnalysis
   , analyzeProgramEscape
   , optimizeProgram
+  , analyzeEscape
+  , getEscapingVariables
+  , getIndirectlyEscapingVariables
   ) where
 
 import Fluxus.AST.Common
 import Fluxus.AST.Python
+import Fluxus.Parser.Python.Lexer (runPythonLexer)
+import Fluxus.Parser.Python.Parser (runPythonParser)
 
 import Control.Monad.State
 import Control.Monad.Reader
 import Control.Monad (forM_, void, when)
+import Control.Monad.IO.Class ()
 import Data.Text (Text)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
@@ -132,6 +138,7 @@ data EscapeResult = EscapeResult
 data ProgramAnalysis = ProgramAnalysis
   { paFunctions :: !(HashMap Identifier FunctionSummary)
   , paGlobalEscapes :: !(HashSet Identifier)
+  , paEscapeMap :: !(HashMap Identifier EscapeInfo)
   , paOptimizationOpportunities :: ![OptimizationOpportunity]
   , paStatistics :: !AnalysisStatistics
   } deriving stock (Show, Generic)
@@ -218,6 +225,7 @@ analyzeProgramEscape stmts =
   in ProgramAnalysis
      { paFunctions = easFunctionSummaries finalState
      , paGlobalEscapes = gatherGlobalEscapes finalState
+     , paEscapeMap = easEscapeMap finalState
      , paOptimizationOpportunities = []  -- Filled by identifyOptimizations
      , paStatistics = stats
      }
@@ -512,7 +520,10 @@ analyzeStatement (Located _ stmt) = case stmt of
   
   PyReturn Nothing -> return ()
   
-  PyReturn (Just _expr) -> do
+  PyReturn (Just expr) -> do
+    -- Analyze the return expression and mark variables as escaping via return
+    escapeInfo <- analyzePythonExpression (locValue expr)
+    markReturnExpressionEscape (locValue expr) escapeInfo
     exitScope
   
   PyAugAssign _ _ _ -> return ()
@@ -567,6 +578,39 @@ trackAllocationSite _ _ _ = return ()
                   
 -- | Mark variable as escaping
 markEscape :: Identifier -> EscapeInfo -> EscapeAnalysisM ()
+-- | Mark variables in return expressions as escaping via return
+markReturnExpressionEscape :: PythonExpr -> EscapeInfo -> EscapeAnalysisM ()
+markReturnExpressionEscape expr escapeInfo = case expr of
+  PyVar var -> when (escapeInfo /= NoEscape) $ markEscape var EscapeToReturn
+  PyBinaryOp _ left right -> do
+    markReturnExpressionEscape (locValue left) escapeInfo
+    markReturnExpressionEscape (locValue right) escapeInfo
+  PyUnaryOp _ expr' -> markReturnExpressionEscape (locValue expr') escapeInfo
+  PyComparison _ exprs -> mapM_ (\e -> markReturnExpressionEscape (locValue e) escapeInfo) exprs
+  PyBoolOp _ exprs -> mapM_ (\e -> markReturnExpressionEscape (locValue e) escapeInfo) exprs
+  PyCall func args -> do
+    markReturnExpressionEscape (locValue func) escapeInfo
+    mapM_ (\arg -> markReturnExpressionEscape (locValue (extractArgExpr arg)) escapeInfo) args
+  PySubscript container idx -> do
+    markReturnExpressionEscape (locValue container) escapeInfo
+    markReturnExpressionEscapeSlice (locValue idx) escapeInfo
+  PySlice container start end -> do
+    maybe (return ()) (\c -> markReturnExpressionEscape (locValue c) escapeInfo) container
+    maybe (return ()) (\s -> markReturnExpressionEscape (locValue s) escapeInfo) start
+    maybe (return ()) (\e -> markReturnExpressionEscape (locValue e) escapeInfo) end
+  PyAttribute obj _ -> markReturnExpressionEscape (locValue obj) escapeInfo
+  _ -> return ()
+
+-- | Mark variables in slice expressions as escaping via return
+markReturnExpressionEscapeSlice :: PythonSlice -> EscapeInfo -> EscapeAnalysisM ()
+markReturnExpressionEscapeSlice slice escapeInfo = case slice of
+  SliceIndex expr -> markReturnExpressionEscape (locValue expr) escapeInfo
+  SliceSlice start stop step -> do
+    maybe (return ()) (\s -> markReturnExpressionEscape (locValue s) escapeInfo) start
+    maybe (return ()) (\s -> markReturnExpressionEscape (locValue s) escapeInfo) stop
+    maybe (return ()) (\s -> markReturnExpressionEscape (locValue s) escapeInfo) step
+  SliceExtSlice slices -> mapM_ (\s -> markReturnExpressionEscapeSlice (locValue s) escapeInfo) slices
+
 markEscape var escapeInfo = do
   ctx <- ask
   let blockId = fromMaybe 0 $ listToMaybe $ ecScopeStack ctx
@@ -700,6 +744,55 @@ optimizeStatement analysis (Located srcSpan stmt) = Located srcSpan $ case stmt 
     optimizeWithItem _ (Located itemSpan item) = Located itemSpan $ case item of
       PythonWithItem contextExpr varPat ->
         PythonWithItem contextExpr varPat  -- TODO: Add Python-specific allocation optimization
+
+-- | Analyze escape for Python code from Text
+analyzeEscape :: Text -> IO (Either String ProgramAnalysis)
+analyzeEscape code = do
+  case runPythonLexer "test.py" code of
+    Left err -> return $ Left $ "Lexer error: " ++ show err
+    Right tokens ->
+      case runPythonParser "test.py" tokens of
+        Left parseErr -> return $ Left $ "Parser error: " ++ show parseErr
+        Right ast -> return $ Right $ analyzeProgramEscape (pyModuleStatements ast)
+  where
+    -- Helper to extract module statements
+    pyModuleStatements (PythonAST module_) =
+      pyModuleBody module_
+
+-- | Get escaping variables from program analysis
+getEscapingVariables :: ProgramAnalysis -> IO [Identifier]
+getEscapingVariables analysis = do
+  -- Return all variables that escape (including via return)
+  let allEscapes = HashSet.fromList [var | (var, esc) <- HashMap.toList (paEscapeMap analysis), 
+                                           esc /= NoEscape]
+  return $ HashSet.toList allEscapes
+
+-- | Get indirectly escaping variables from program analysis
+getIndirectlyEscapingVariables :: ProgramAnalysis -> IO [Identifier]
+getIndirectlyEscapingVariables analysis = do
+  -- Analyze function summaries to find variables that escape indirectly
+  -- through data structures, closures, or function parameters
+  let summaries = paFunctions analysis
+      indirectEscapes = collectIndirectEscapes summaries
+  return indirectEscapes
+  where
+    collectIndirectEscapes :: HashMap Identifier FunctionSummary -> [Identifier]
+    collectIndirectEscapes summs =
+      let capturedVars = concatMap (HashSet.toList . fsCapturedVars) (HashMap.elems summs)
+          -- Variables that are captured by closures are indirectly escaping
+          indirectFromCaptures = capturedVars
+          -- Variables that escape through parameters but aren't directly returned
+          indirectFromParams = concatMap getIndirectParamEscapes (HashMap.toList summs)
+      in indirectFromCaptures ++ indirectFromParams
+
+    getIndirectParamEscapes :: (Identifier, FunctionSummary) -> [Identifier]
+    getIndirectParamEscapes (_, summary) =
+      -- Find parameters that escape to heap but not through return
+      let paramEscapes = HashMap.toList (fsParameterEscapes summary)
+          indirectParams = [fsParameters summary !! idx
+                           | (idx, EscapeToHeap) <- paramEscapes,
+                             idx `notElem` fsReturnEscapes summary]
+      in indirectParams
 
 
 

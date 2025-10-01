@@ -3,10 +3,11 @@
 module Test.Fluxus.Analysis.EscapeAnalysis (spec) where
 
 import Test.Hspec
-import Data.Text (Text)
+import Data.Text ()
 import qualified Data.Text as T
 
 import Fluxus.Analysis.EscapeAnalysis
+import Fluxus.AST.Common (Identifier(..))
 
 spec :: Spec
 spec = describe "Escape Analysis Tests" $ do
@@ -39,7 +40,7 @@ basicEscapeAnalysisSpec = describe "Basic Escape Analysis" $ do
     case result of
       Right analysis -> do
         escapes <- getEscapingVariables analysis
-        escapes `shouldContain` ["x"]
+        escapes `shouldContain` [Identifier "x"]
       Left err -> expectationFailure $ "Analysis failed: " ++ show err
 
 complexEscapeAnalysisSpec :: Spec
@@ -56,7 +57,7 @@ complexEscapeAnalysisSpec = describe "Complex Escape Analysis" $ do
     case result of
       Right analysis -> do
         escapes <- getEscapingVariables analysis
-        escapes `shouldContain` ["x"]
+        escapes `shouldContain` [Identifier "x"]
       Left err -> expectationFailure $ "Analysis failed: " ++ show err
   
   it "analyzes escape behavior in data structures" $ do
@@ -70,9 +71,9 @@ complexEscapeAnalysisSpec = describe "Complex Escape Analysis" $ do
     case result of
       Right analysis -> do
         escapes <- getEscapingVariables analysis
-        escapes `shouldContain` ["y"]
+        escapes `shouldContain` [Identifier "y"]
         indirectEscapes <- getIndirectlyEscapingVariables analysis
-        indirectEscapes `shouldContain` ["x"]
+        indirectEscapes `shouldContain` [Identifier "x"]
       Left err -> expectationFailure $ "Analysis failed: " ++ show err
 
 edgeCaseSpec :: Spec
