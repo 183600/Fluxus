@@ -1202,6 +1202,8 @@ inferPythonImport imp = case imp of
       case modName of
         "typing" -> return typingModule
         "math" -> return mathModule
+        "array" -> return arrayModule
+        "sys" -> return sysModule
         _ -> return HashMap.empty
     
     typingModule = HashMap.fromList
@@ -1214,6 +1216,14 @@ inferPythonImport imp = case imp of
       [ (Identifier "sqrt", TFunction [TFloat 64] (TFloat 64))
       , (Identifier "sin", TFunction [TFloat 64] (TFloat 64))
       , (Identifier "cos", TFunction [TFloat 64] (TFloat 64))
+      ]
+    
+    arrayModule = HashMap.fromList
+      [ (Identifier "array", TFunction [TString, TList (TInt (BitWidth 32))] (TList (TInt (BitWidth 32))))
+      ]
+    
+    sysModule = HashMap.fromList
+      [ (Identifier "exit", TFunction [TInt 32] TVoid)
       ]
 
 -- | Infer type from Go expression

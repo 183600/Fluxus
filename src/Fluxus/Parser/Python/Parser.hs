@@ -737,10 +737,10 @@ parseAttributeTrailer = do
 
 -- | Parse patterns
 parsePattern :: PythonParser (Located PythonPattern)
-parsePattern = located $ choice
+parsePattern = located (choice
   [ try (PatVar <$> parseIdentifier)
   , try (PatWildcard <$ parseUnderscore)
-  ]
+  ] <?> "variable name or underscore pattern")
 
 -- | Parse type expressions
 parseTypeExpr :: PythonParser (Located PythonTypeExpr)

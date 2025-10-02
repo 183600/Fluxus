@@ -17,6 +17,7 @@ module Fluxus.Compiler.Driver
   , CompilerM
   , runCompiler
   , compileFile
+  , compileFileToObject
   , compileProject
     -- * Pipeline stages
   , parseStage
@@ -68,7 +69,7 @@ import Fluxus.Parser.Go.Parser (runGoParser)
 import Fluxus.Analysis.TypeInference (runTypeInference, inferASTType, solveConstraints, checkTypes)
 import Fluxus.CodeGen.CPP
   ( CppUnit(..), CppDecl(..), CppStmt(..), CppExpr(..), CppType(..)
-  , CppLiteral(..), CppParam(..), CppCatch(..)
+  , CppLiteral(..), CppParam(..), CppCatch(..), CppGenConfig(..), generateCpp, generateCppMain
   )
 import Fluxus.Optimization.ConstantPropagation (constantPropagation)
 import Fluxus.Debug.Logger (debugLog, enableDebug)
@@ -644,14 +645,31 @@ optimizationStage ast = do
 
 -- | Code generation stages
 codeGenStage :: Either PythonAST GoAST -> CompilerM CppUnit
-codeGenStage _ast = do
-  -- For now, return a placeholder CppUnit since generateCpp expects CppUnit
-  return $ CppUnit { cppIncludes = [], cppNamespaces = [], cppDeclarations = [] }
+codeGenStage ast = do
+  config <- ask
+  let cppConfig = buildCppGenConfig config False
+  let (cppUnit, _warnings) = generateCpp cppConfig ast
+  return cppUnit
 
 codeGenStageMain :: Either PythonAST GoAST -> CompilerM CppUnit
-codeGenStageMain _ast = do
-  -- For now, return a placeholder CppUnit since generateCppMain expects CppUnit
-  return $ CppUnit { cppIncludes = [], cppNamespaces = [], cppDeclarations = [] }
+codeGenStageMain ast = do
+  config <- ask
+  let cppConfig = buildCppGenConfig config True
+  let (cppUnit, _warnings) = generateCppMain cppConfig ast
+  return cppUnit
+
+-- | Build C++ generation config from compiler config
+buildCppGenConfig :: CompilerConfig -> Bool -> CppGenConfig
+buildCppGenConfig config withMain = CppGenConfig
+  { cgcOptimizationLevel = fromEnum $ ccOptimizationLevel config
+  , cgcEnableInterop = ccEnableInterop config
+  , cgcTargetCppStd = ccCppStandard config
+  , cgcUseSmartPointers = ccOptimizationLevel config >= O3
+  , cgcEnableParallel = ccEnableParallel config
+  , cgcEnableCoroutines = ccCppStandard config >= "c++20"
+  , cgcNamespace = "fluxus"
+  , cgcHeaderGuard = "FLUXUS_GENERATED"
+  }
 
 -- | Compile C++ file to object file
 compileCpp :: FilePath -> CompilerM FilePath
