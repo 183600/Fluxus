@@ -16,7 +16,8 @@ module Fluxus.Debug.CLI
   ) where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.State (MonadState, get, put, modify, runStateT)
+import Control.Monad (when)
+import Control.Monad.State (MonadState, get, put, modify, runStateT, evalStateT)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -26,7 +27,7 @@ import Data.List (isPrefixOf)
 import Data.Maybe (fromMaybe)
 
 import Fluxus.Debug.Logger
-import Fluxus.Compiler.Driver (compileFile, CompileOptions(..), defaultCompileOptions)
+import Fluxus.Compiler.Driver (runCompiler, compileFileWithOptions, CompileOptions(..), defaultCompileOptions, defaultConfig)
 
 -- | Debug commands available in the CLI
 data DebugCommand
@@ -140,16 +141,17 @@ executeDebugCommand cmd = case cmd of
     debugLog $ "Compiling file: " <> T.pack file
     -- Set up compile options with debugging enabled
     let options = defaultCompileOptions
-          { coDebug = True
-          , coVerbose = True
+          { coSourceFile = file
+          , coEnableDebugInfo = True
+          , coVerboseLevel = 2
           }
-    
-    result <- liftIO $ compileFile file options
+
+    result <- liftIO $ runCompiler defaultConfig (compileFileWithOptions options)
     case result of
       Left err -> do
-        debugLog $ "Compilation failed: " <> T.pack err
+        debugLog $ "Compilation failed: " <> T.pack (show err)
         modify $ \ctx -> ctx { dcLastResult = Just "compilation failed" }
-      Right output -> do
+      Right (output, _) -> do
         debugLog $ "Compilation successful: " <> T.pack output
         modify $ \ctx -> ctx { dcLastResult = Just "compilation successful" }
     return True
@@ -187,6 +189,6 @@ runDebugCLI = do
   let initialContext = initDebugContext
   
   -- Run the command loop
-  flip runStateT initialContext $ do
+  flip evalStateT initialContext $ do
     debugCommandLoop
     debugLog "Debug session ended"

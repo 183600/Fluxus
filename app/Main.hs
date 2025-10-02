@@ -41,18 +41,18 @@ main = do
         else do
           -- Parse configuration from command line and config files
           configResult <- loadConfig args
-      case configResult of
-        Left err -> do
-          hPutStrLn stderr $ "Configuration error: " ++ err
-          exitFailure
-        Right config -> do
-          -- Validate configuration
-          let driverConfig = Driver.convertConfigToDriver config
-          case Driver.validateConfig driverConfig of
+          case configResult of
             Left err -> do
-              hPutStrLn stderr $ "Invalid configuration: " ++ formatCompilerError err
+              hPutStrLn stderr $ "Configuration error: " ++ err
               exitFailure
-            Right validConfig -> runCompilerMain (Driver.convertDriverToConfig validConfig) args
+            Right config -> do
+              -- Validate configuration
+              let driverConfig = Driver.convertConfigToDriver config
+              case Driver.validateConfig driverConfig of
+                Left err -> do
+                  hPutStrLn stderr $ "Invalid configuration: " ++ formatCompilerError err
+                  exitFailure
+                Right validConfig -> runCompilerMain (Driver.convertDriverToConfig validConfig) args
 
 -- | Run the main compiler workflow
 runCompilerMain :: Config.CompilerConfig -> [String] -> IO ()

@@ -1289,12 +1289,15 @@ parseInterfaceType = do
       return $ GoEmbeddedInterface (located' genericType)
     
     parseMethodSpec = do
+      void $ goKeywordP GoKwFunc  -- Consume 'func' keyword for interface methods
       name <- parseGoIdentifier
       void $ goDelimiterP GoDelimLeftParen
       _ <- parseParameterList
       void $ goDelimiterP GoDelimRightParen
       returnType <- parseGoType
       skipCommentsAndNewlines
+      -- Consume optional semicolon at end of interface method
+      void $ optional $ goDelimiterP GoDelimSemicolon
       return $ GoMethod name returnType
 
 -- | Parse type constraints with improved approximation constraint support
@@ -1443,12 +1446,16 @@ parseStructType = do
             typeExpr <- parseGoType
             skipCommentsAndNewlines
             tag <- optional parseGoString
+            -- Consume optional semicolon at end of field declaration
+            void $ optional $ goDelimiterP GoDelimSemicolon
             return [GoField [name] typeExpr tag]
         , do
             -- Anonymous field: just type [tag]
             typeExpr <- parseGoType
             skipCommentsAndNewlines
             tag <- optional parseGoString
+            -- Consume optional semicolon at end of field declaration
+            void $ optional $ goDelimiterP GoDelimSemicolon
             return [GoField [] typeExpr tag]
         ]
 

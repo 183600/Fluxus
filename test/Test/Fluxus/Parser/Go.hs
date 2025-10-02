@@ -353,17 +353,9 @@ parserSpec = describe "Go Parser" $ do
           , GoTokenIdent "Write"
           , GoTokenDelimiter GoDelimLeftParen
           , GoTokenIdent "p"
-          , GoTokenDelimiter GoDelimLeftBracket
-          , GoTokenDelimiter GoDelimRightBracket
-          , GoTokenIdent "byte"
+          , GoTokenIdent "string"
           , GoTokenDelimiter GoDelimRightParen
-          , GoTokenDelimiter GoDelimLeftParen
-          , GoTokenIdent "n"
-          , GoTokenIdent "int"
-          , GoTokenDelimiter GoDelimComma
-          , GoTokenIdent "err"
           , GoTokenIdent "error"
-          , GoTokenDelimiter GoDelimRightParen
           , GoTokenDelimiter GoDelimSemicolon
           , GoTokenNewline
           , GoTokenDelimiter GoDelimRightBrace

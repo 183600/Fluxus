@@ -780,7 +780,7 @@ renderCppDecl = \case
     renderCppType varType <> " " <> name <> ";\n"
   CppVariable name varType (Just expr) -> 
     renderCppType varType <> " " <> name <> " = " <> renderCppExpr expr <> ";\n"
-  CppNamespaceDecl nsName innerDecls ->
+  CppNamespace nsName innerDecls ->
     "namespace " <> nsName <> " {\n" <>
     T.unlines (map renderCppDecl innerDecls) <>
     "}\n"

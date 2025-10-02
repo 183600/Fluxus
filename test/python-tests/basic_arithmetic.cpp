@@ -16,11 +16,11 @@ int main() {
     auto product = x * y;
     auto quotient = std::floor(y / x);
     auto remainder = y % x;
-    std::cout << "Sum: " + std::to_string(sum_result) << std::endl;
-    std::cout << "Difference: " + std::to_string(diff) << std::endl;
-    std::cout << "Product: " + std::to_string(product) << std::endl;
-    std::cout << "Quotient: " + std::to_string(quotient) << std::endl;
-    std::cout << "Remainder: " + std::to_string(remainder) << std::endl;
+    std::cout << "Sum: " + std::to_string(std::to_string(sum_result)) << std::endl;
+    std::cout << "Difference: " + std::to_string(std::to_string(diff)) << std::endl;
+    std::cout << "Product: " + std::to_string(std::to_string(product)) << std::endl;
+    std::cout << "Quotient: " + std::to_string(std::to_string(quotient)) << std::endl;
+    std::cout << "Remainder: " + std::to_string(std::to_string(remainder)) << std::endl;
     return 0;
 }
 

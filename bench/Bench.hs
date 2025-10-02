@@ -186,9 +186,6 @@ inferSimpleTypes = ()
   -- This would call actual type inference functions
   -- For now, it's a placeholder
 
--- Define a function for use with whnf
-runInferSimpleTypes :: () -> ()
-runInferSimpleTypes _ = inferSimpleTypes
 
 inferComplexTypes :: ()
 inferComplexTypes = ()

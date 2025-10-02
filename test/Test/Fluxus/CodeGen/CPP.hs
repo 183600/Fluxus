@@ -40,10 +40,10 @@ typeMappingSpec = describe "Type Mapping" $ do
     mapCommonTypeToCpp (TInt 16) `shouldBe` CppInt
     mapCommonTypeToCpp (TInt 32) `shouldBe` CppInt
     mapCommonTypeToCpp (TInt 64) `shouldBe` CppInt
-    mapCommonTypeToCpp (TUInt 8) `shouldBe` CppInt
-    mapCommonTypeToCpp (TUInt 16) `shouldBe` CppInt
-    mapCommonTypeToCpp (TUInt 32) `shouldBe` CppInt
-    mapCommonTypeToCpp (TUInt 64) `shouldBe` CppInt
+    mapCommonTypeToCpp (TUInt 8) `shouldBe` CppUInt
+    mapCommonTypeToCpp (TUInt 16) `shouldBe` CppUInt
+    mapCommonTypeToCpp (TUInt 32) `shouldBe` CppUInt
+    mapCommonTypeToCpp (TUInt 64) `shouldBe` CppUInt
   
   it "maps floating point types correctly" $ do
     mapCommonTypeToCpp (TFloat 32) `shouldBe` CppFloat
@@ -90,15 +90,15 @@ expressionGenerationSpec = describe "Expression Generation" $ do
     let left = CppVar "x"
     let right = CppLiteral (CppIntLit 10)
     let addExpr = CppBinary "+" left right
-    
+
     addExpr `shouldBe` CppBinary "+" (CppVar "x") (CppLiteral (CppIntLit 10))
   
   it "generates complex binary expressions" $ do
     let expr = CppBinary "*" 
                   (CppBinary "+" (CppVar "a") (CppVar "b"))
                   (CppBinary "-" (CppVar "c") (CppVar "d"))
-    
-    expr `shouldBe` CppBinary "*" 
+
+    expr `shouldBe` CppBinary "*"
                         (CppBinary "+" (CppVar "a") (CppVar "b"))
                         (CppBinary "-" (CppVar "c") (CppVar "d"))
   
@@ -115,33 +115,38 @@ expressionGenerationSpec = describe "Expression Generation" $ do
     let falseExpr = CppVar "negative"
     let ternaryExpr = CppTernary cond trueExpr falseExpr
     
-    ternaryExpr `shouldBe` CppTernary cond trueExpr falseExpr
+    ternaryExpr `shouldBe` CppTernary 
+      (CppBinary ">" (CppVar "x") (CppLiteral (CppIntLit 0)))
+      (CppVar "positive")
+      (CppVar "negative")
   
-  it "generates function calls" $ do
+  it "generates function call expressions" $ do
     let args = [CppLiteral (CppStringLit "Hello %s"), CppVar "name"]
     let funcCall = CppCall (CppVar "printf") args
     
     funcCall `shouldBe` CppCall (CppVar "printf") [CppLiteral (CppStringLit "Hello %s"), CppVar "name"]
   
-  it "generates method calls" $ do
-    let args = [CppLiteral (CppIntLit 42)]
+  it "generates method call expressions" $ do
+    let args = [CppLiteral (CppStringLit "value")]
     let methodCall = CppMember (CppVar "obj") "setValue" `CppCall` args
     
     methodCall `shouldBe` CppMember (CppVar "obj") "setValue" `CppCall` args
   
-  it "generates member access" $ do
+  it "generates member access expressions" $ do
     let memberAccess = CppMember (CppVar "obj") "field"
+    
     memberAccess `shouldBe` CppMember (CppVar "obj") "field"
   
-  it "generates array access" $ do
+  it "generates array access expressions" $ do
     let arrayAccess = CppIndex (CppVar "arr") (CppLiteral (CppIntLit 0))
+    
     arrayAccess `shouldBe` CppIndex (CppVar "arr") (CppLiteral (CppIntLit 0))
   
   it "generates lambda expressions" $ do
     let params = [CppParam "x" CppInt Nothing]
     let body = [CppReturn (Just (CppBinary "*" (CppVar "x") (CppVar "x")))]
     let lambda = CppLambda params body False
-    
+
     lambda `shouldBe` CppLambda params body False
 
 statementGenerationSpec :: Spec
@@ -164,7 +169,7 @@ statementGenerationSpec = describe "Statement Generation" $ do
     let cond = CppBinary ">" (CppVar "x") (CppLiteral (CppIntLit 0))
     let thenBody = [CppReturn (Just (CppLiteral (CppIntLit 1)))]
     let ifStmt = CppIf cond thenBody []
-    
+
     ifStmt `shouldBe` CppIf cond thenBody []
   
   it "generates if-else statements" $ do
@@ -172,24 +177,24 @@ statementGenerationSpec = describe "Statement Generation" $ do
     let thenBody = [CppReturn (Just (CppLiteral (CppIntLit 1)))]
     let elseBody = [CppReturn (Just (CppLiteral (CppIntLit (-1))))]
     let ifElseStmt = CppIf cond thenBody elseBody
-    
+
     ifElseStmt `shouldBe` CppIf cond thenBody elseBody
   
   it "generates while loops" $ do
     let cond = CppBinary "<" (CppVar "i") (CppLiteral (CppIntLit 10))
     let body = [CppExprStmt (CppUnary "++" (CppVar "i"))]
     let whileStmt = CppWhile cond body
-    
+
     whileStmt `shouldBe` CppWhile cond body
   
   it "generates for loops" $ do
-    let initVar = CppVariable "i" CppInt (Just (CppLiteral (CppIntLit 0)))
+    let initStmt = CppExprStmt (CppBinary "=" (CppVar "i") (CppLiteral (CppIntLit 0)))
     let condVar = CppBinary "<" (CppVar "i") (CppLiteral (CppIntLit 10))
-    let incrementVar = CppUnary "++" (CppVar "i")
+    let incrementExpr = CppUnary "++" (CppVar "i")
     let body = [CppExprStmt (CppCall (CppVar "printf") [CppLiteral (CppStringLit "%d"), CppVar "i"])]
-    let forStmt = CppFor (Just (CppDecl initVar)) (Just condVar) (Just incrementVar) body
+    let forStmt = CppFor (Just initStmt) (Just condVar) (Just incrementExpr) body
 
-    forStmt `shouldBe` CppFor (Just (CppDecl initVar)) (Just condVar) (Just incrementVar) body
+    forStmt `shouldBe` CppFor (Just initStmt) (Just condVar) (Just incrementExpr) body
   
   it "generates range-based for loops" $ do
     let elemVar = "elem"
@@ -207,7 +212,7 @@ statementGenerationSpec = describe "Statement Generation" $ do
           CppDefault [CppReturn (Just (CppLiteral (CppStringLit "other")))]
           ]
     let switchStmt = CppSwitch expr cases
-    
+
     switchStmt `shouldBe` CppSwitch expr cases
   
   it "generates try-catch blocks" $ do
@@ -215,7 +220,7 @@ statementGenerationSpec = describe "Statement Generation" $ do
     let catchBody = [CppExprStmt (CppCall (CppVar "handleError") [CppVar "e"])]
     let catchClause = CppCatch CppString "e" catchBody
     let tryCatchStmt = CppTry tryBody [catchClause] []
-    
+
     tryCatchStmt `shouldBe` CppTry tryBody [catchClause] []
 
 declarationGenerationSpec :: Spec
@@ -224,7 +229,7 @@ declarationGenerationSpec = describe "Declaration Generation" $ do
     let varDecl = CppVariable "counter" CppInt (Just (CppLiteral (CppIntLit 0)))
     varDecl `shouldBe` CppVariable "counter" CppInt (Just (CppLiteral (CppIntLit 0)))
   
-  it "generates variable declarations without initialization" $ do
+  it "generates uninitialized variable declarations" $ do
     let varDecl = CppVariable "uninitialized" CppInt Nothing
     varDecl `shouldBe` CppVariable "uninitialized" CppInt Nothing
   
@@ -237,50 +242,53 @@ declarationGenerationSpec = describe "Declaration Generation" $ do
     refDecl `shouldBe` CppVariable "ref" (CppReference CppInt) (Just (CppVar "original"))
   
   it "generates function declarations" $ do
-    let params = [CppParam "x" CppInt Nothing, CppParam "y" CppInt Nothing]
-    let body = [CppReturn (Just (CppBinary "+" (CppVar "x") (CppVar "y")))]
-    let funcDecl = CppFunction "add" CppInt params body
-    
-    funcDecl `shouldBe` CppFunction "add" CppInt params body
+    let params = [CppParam "x" CppInt Nothing]
+    let body = [CppReturn (Just (CppBinary "*" (CppVar "x") (CppVar "x")))]
+    let funcDecl = CppFunction "square" CppInt params body
+
+    funcDecl `shouldBe` CppFunction "square" CppInt params body
   
   it "generates function declarations with default parameters" $ do
-    let params = [
-          CppParam "required" CppInt Nothing,
-          CppParam "optional" CppInt (Just (CppLiteral (CppIntLit 42)))
-          ]
+    let params = [CppParam "required" CppInt Nothing,
+                  CppParam "optional" CppInt (Just (CppLiteral (CppIntLit 42)))]
     let body = [CppReturn (Just (CppVar "required"))]
     let funcDecl = CppFunction "withDefault" CppInt params body
-    
+
     funcDecl `shouldBe` CppFunction "withDefault" CppInt params body
   
   it "generates template function declarations" $ do
-    let templateFunc = CppTemplate ["T"] (CppFunction "max" (CppAuto) [CppParam "a" CppAuto Nothing, CppParam "b" CppAuto Nothing] [CppReturn (Just (CppBinary ">" (CppVar "a") (CppVar "b")))])
-    
-    templateFunc `shouldBe` CppTemplate ["T"] (CppFunction "max" (CppAuto) [CppParam "a" CppAuto Nothing, CppParam "b" CppAuto Nothing] [CppReturn (Just (CppBinary ">" (CppVar "a") (CppVar "b")))])
+    let body = [CppReturn (Just (CppTernary (CppBinary ">" (CppVar "a") (CppVar "b")) (CppVar "a") (CppVar "b")))]
+    let templateFunc = CppTemplate ["T"] (CppFunction "max" CppAuto [CppParam "a" CppAuto Nothing, CppParam "b" CppAuto Nothing] body)
+
+    templateFunc `shouldBe` CppTemplate ["T"] (CppFunction "max" CppAuto [CppParam "a" CppAuto Nothing, CppParam "b" CppAuto Nothing] body)
   
   it "generates class declarations" $ do
     let methods = [CppMethod "getValue" CppInt [] [CppReturn (Just (CppVar "value"))] False]
-    let members = ["public", "private"]  -- Base classes as Text list
-    let classDecl = CppClass "MyClass" members methods
-    
-    classDecl `shouldBe` CppClass "MyClass" members methods
+    let members = [CppVariable "value" CppInt Nothing]
+    let classDecl = CppClass "MyClass" [] (members ++ methods)
+
+    classDecl `shouldBe` CppClass "MyClass" [] (members ++ methods)
   
   it "generates class declarations with inheritance" $ do
     let methods = [CppMethod "derivedMethod" CppVoid [] [CppExprStmt (CppCall (CppVar "printf") [CppLiteral (CppStringLit "Derived")])] False]
-    let members = ["public BaseClass"]  -- Base classes as Text list
-    let classDecl = CppClass "DerivedClass" members methods
-    
-    classDecl `shouldBe` CppClass "DerivedClass" members methods
+    let members = []
+    let baseClasses = ["BaseClass"]
+    let classDecl = CppClass "DerivedClass" baseClasses (members ++ methods)
+
+    classDecl `shouldBe` CppClass "DerivedClass" baseClasses (members ++ methods)
   
   it "generates template class declarations" $ do
     let methods = [
-          CppConstructor "Container" [CppParam "value" CppAuto Nothing] 
-                       [CppExprStmt (CppBinary "=" (CppMember CppThis "data") (CppVar "value"))],
           CppMethod "getData" CppAuto [] [CppReturn (Just (CppMember CppThis "data"))] False
           ]
-    let templateClass = CppTemplate ["T"] (CppClass "Container" [] methods)
+    let constructors = [
+          CppConstructor "Container" [CppParam "value" CppAuto Nothing] [CppExprStmt (CppBinary "=" (CppMember CppThis "data") (CppVar "value"))]
+          ]
+    let members = [CppVariable "data" CppAuto Nothing]
+    let classDecl = CppTemplate ["T"] (CppClass "Container" [] (members ++ constructors ++ methods))
     
-    templateClass `shouldBe` CppTemplate ["T"] (CppClass "Container" [] methods)
+    -- Simplified test for template class
+    classDecl `shouldBe` CppTemplate ["T"] (CppClass "Container" [] (members ++ constructors ++ methods))
   
   it "generates namespace declarations" $ do
     let decls = [
@@ -288,7 +296,7 @@ declarationGenerationSpec = describe "Declaration Generation" $ do
           CppFunction "helper" CppVoid [] [CppExprStmt (CppCall (CppVar "printf") [CppLiteral (CppStringLit "Helper")])]
           ]
     let namespace = CppNamespace "myNamespace" decls
-    
+
     namespace `shouldBe` CppNamespace "myNamespace" decls
   
   it "generates enum declarations" $ do
