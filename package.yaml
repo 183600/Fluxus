@@ -80,6 +80,7 @@ library:
     - Fluxus.AST.Go.Types
     - Fluxus.AST.Go.Helpers
     - Fluxus.AST.Go.Expressions
+    - Fluxus.Debug.Debugger
   dependencies:
     - containers >= 0.6.7
     - text >= 2.0

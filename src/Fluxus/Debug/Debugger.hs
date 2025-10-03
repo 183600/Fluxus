@@ -7,6 +7,7 @@ module Fluxus.Debug.Debugger
   , DebugBreakpoint(..)
   , DebugLogLevel(..)
   , runDebugger
+  , initialDebuggerState
   , setBreakpoint
   , removeBreakpoint
   , logDebug
@@ -16,21 +17,24 @@ module Fluxus.Debug.Debugger
   , withBreakpoint
   , traceFunction
   , debugPrintState
+  , debugPause
+  , breakpoint
+  , conditionalBreakpoint
   ) where
 
 import Control.Monad.State
 import Control.Monad.Reader
+import Control.Monad (when, filterM, forM_)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.IO (putStrLn, hPutStrLn)
-import System.IO (stderr, stdout)
+import Data.Text.IO (putStrLn, hPutStrLn, appendFile)
+import System.IO (stderr, stdout, putStrLn, getLine)
 import Data.Time (getCurrentTime, formatTime, defaultTimeLocale)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Control.Concurrent (threadDelay)
-import System.Console.ANSI
 import System.IO.Unsafe (unsafePerformIO)
 
 -- | Debug log levels
@@ -49,6 +53,12 @@ data DebugBreakpoint = DebugBreakpoint
   , bpHitCount :: Int
   , bpEnabled :: Bool
   }
+
+instance Eq DebugBreakpoint where
+  bp1 == bp2 = bpId bp1 == bpId bp2
+
+instance Ord DebugBreakpoint where
+  compare bp1 bp2 = compare (bpId bp1) (bpId bp2)
 
 -- | Debugger state
 data DebuggerState = DebuggerState
@@ -99,12 +109,12 @@ setBreakpoint functionName mCondition = do
 
 -- | Remove a breakpoint
 removeBreakpoint :: Text -> Int -> DebuggerM Bool
-removeBreakpoint functionName bpId = do
+removeBreakpoint functionName targetBpId = do
   state <- get
   case HashMap.lookup functionName (dsBreakpoints state) of
     Nothing -> return False
     Just breakpoints -> do
-      let newBreakpoints = Set.filter ((/= bpId) . bpId) breakpoints
+      let newBreakpoints = Set.filter (\bp -> bpId bp /= targetBpId) breakpoints
       put $ state
         { dsBreakpoints = HashMap.insert functionName newBreakpoints (dsBreakpoints state)
         }
@@ -152,7 +162,7 @@ logMessage level message = do
     
     -- Also log to file if specified
     case dsLogFile state of
-      Just filePath -> liftIO $ T.appendFile filePath (logLine <> "\n")
+      Just filePath -> liftIO $ Data.Text.IO.appendFile filePath (logLine <> "\n")
       Nothing -> return ()
 
 -- | Execute action with breakpoint checking
@@ -183,9 +193,9 @@ withBreakpoint functionName action = do
           
           -- Pause execution
           liftIO $ do
-            putStrLn $ "\ESC[1m\ESC[44mBREAKPOINT HIT: " <> T.unpack functionName <> " (ID: " <> show (bpId bp) <> ")\ESC[0m"
-            putStrLn "Press Enter to continue, or 'q' to quit..."
-            input <- getLine
+            System.IO.putStrLn $ "=== BREAKPOINT HIT === " ++ T.unpack functionName ++ " (ID: " ++ show (bpId bp) ++ ")"
+            System.IO.putStrLn "Press Enter to continue, or 'q' to quit..."
+            input <- System.IO.getLine
             when (input == "q") $ error "User requested quit"
           
           -- Continue execution

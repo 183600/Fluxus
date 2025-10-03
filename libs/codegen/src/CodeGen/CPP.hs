@@ -48,9 +48,9 @@ import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Data.Maybe (fromMaybe, mapMaybe, catMaybes)
 
-import AST.Common
-import AST.Python
-import AST.Go
+import Fluxus.AST.Common as Common
+import Fluxus.AST.Python as Python
+import Fluxus.AST.Go as Go
 
 -- ============================================================================
 -- Core Types
@@ -663,7 +663,7 @@ generateCppMain config ast =
 
 -- | Generate C++ from Python AST
 generateCppFromPython :: PythonAST -> Bool -> CppCodeGen CppUnit
-generateCppFromPython (PythonAST pyModule) isMainFile = do
+generateCppFromPython (Python.PythonAST pyModule) isMainFile = do
   -- Add standard includes
   addInclude "<iostream>"
   addInclude "<string>"
@@ -707,8 +707,8 @@ generatePythonStmtMaybe stmt = do
 
 -- | Generate C++ from Python statement
 generatePythonStmt :: Located PythonStmt -> CppCodeGen CppStmt
-generatePythonStmt (Located _ stmt) = case stmt of
-  PyFuncDef funcDef -> do
+generatePythonStmt (Python.Located _ stmt) = case stmt of
+  Python.PyFuncDef funcDef -> do
     generatePythonFunction funcDef
     return $ CppComment "Function definition processed"
   
@@ -1261,8 +1261,8 @@ generatePythonExceptHandler (Located _ (ExceptHandler mtype mname body)) = do
 -- ============================================================================
 
 -- | Generate C++ from Go AST
-generateCppFromGo :: GoAST -> Bool -> CppCodeGen CppUnit
-generateCppFromGo (GoAST goPackage) isMainFile = do
+generateCppFromGo :: Go.GoAST -> Bool -> CppCodeGen CppUnit
+generateCppFromGo (Go.GoAST goPackage) isMainFile = do
   -- Add standard includes
   addInclude "<iostream>"
   addInclude "<string>"
@@ -2011,13 +2011,18 @@ mapPythonComparisonOp op = case op of
 mapPythonTypeToCpp :: Type -> CppType
 mapPythonTypeToCpp typ = case typ of
   TInt _ -> CppInt
+  TUInt _ -> CppUInt
   TFloat _ -> CppDouble
   TBool -> CppBool
   TString -> CppString
   TVoid -> CppVoid
   TList t -> CppVector (mapPythonTypeToCpp t)
+  TTuple ts -> CppTuple (map mapPythonTypeToCpp ts)
   TDict k v -> CppUnorderedMap (mapPythonTypeToCpp k) (mapPythonTypeToCpp v)
   TOptional t -> CppOptional (mapPythonTypeToCpp t)
+  TOwned t -> CppUniquePtr (mapPythonTypeToCpp t)
+  TShared t -> CppSharedPtr (mapPythonTypeToCpp t)
+  TFunction args ret -> CppFunctionType (map mapPythonTypeToCpp args) (mapPythonTypeToCpp ret)
   _ -> CppAuto
 
 mapGoTypeToCpp :: GoType -> CppType

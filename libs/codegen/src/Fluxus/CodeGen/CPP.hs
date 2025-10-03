@@ -593,7 +593,7 @@ mapPythonTypeToCpp t = case t of
   TDict k v -> CppUnorderedMap (mapPythonTypeToCpp k) (mapPythonTypeToCpp v)
   TOptional a -> CppOptional (mapPythonTypeToCpp a)
   TTuple xs -> CppTuple (map mapPythonTypeToCpp xs)
-  TFunction _ _ -> CppAuto
+  TFunction params ret -> CppFunctionType (map mapPythonTypeToCpp params) (mapPythonTypeToCpp ret)
   TOwned a -> CppUniquePtr (mapPythonTypeToCpp a)
   TShared a -> CppSharedPtr (mapPythonTypeToCpp a)
   _ -> CppAuto

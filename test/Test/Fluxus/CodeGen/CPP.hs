@@ -32,7 +32,7 @@ typeMappingSpec = describe "Type Mapping" $ do
     mapCommonTypeToCpp (TShared (TString)) `shouldBe` CppSharedPtr CppString
   
   it "maps complex types correctly" $ do
-    let complexType = TFunction [TInt 32, TString] TBool
+    let complexType = TUnion [TInt 32, TString]
     mapCommonTypeToCpp complexType `shouldBe` CppAuto  -- Fallback to auto for complex types
   
   it "maps integer types of different sizes" $ do

@@ -3,7 +3,7 @@
 module Test.Fluxus.Integration (spec) where
 
 import Test.Hspec
-import Data.Text (Text)
+-- import Data.Text (Text)
 import qualified Data.Text as T
 import System.Directory
 import System.FilePath
@@ -11,7 +11,7 @@ import System.IO.Temp
 import System.Process
 import System.Exit (ExitCode(..))
 
-import Fluxus.Compiler.Driver (runCompiler, convertConfigToDriver)
+import Fluxus.Compiler.Driver (runCompiler, convertConfigToDriver, compileProject)
 import Fluxus.Compiler.Config as Config
 
 spec :: Spec
@@ -41,7 +41,7 @@ pythonToCppIntegrationSpec = describe "Python to C++ Integration" $ do
             , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           -- Check that output file was created
@@ -79,7 +79,7 @@ pythonToCppIntegrationSpec = describe "Python to C++ Integration" $ do
             , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -112,7 +112,7 @@ pythonToCppIntegrationSpec = describe "Python to C++ Integration" $ do
             , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -146,7 +146,7 @@ goToCppIntegrationSpec = describe "Go to C++ Integration" $ do
             , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -183,7 +183,7 @@ goToCppIntegrationSpec = describe "Go to C++ Integration" $ do
             , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -220,7 +220,7 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just cppFile
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           -- Compile C++ to executable
@@ -251,7 +251,7 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Left _ -> return ()  -- Expected to fail
         Right _ -> expectationFailure "Compilation should have failed with invalid syntax"
@@ -282,7 +282,7 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just outputFile
             }
 
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -385,7 +385,7 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just outputFile
             }
 
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -432,7 +432,7 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just outputFile
             }
 
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -466,7 +466,7 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccSourceLanguage = Config.Python
             }
 
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -535,7 +535,7 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just outputFile
             }
 
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile

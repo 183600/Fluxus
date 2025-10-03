@@ -62,6 +62,7 @@ library
       Fluxus.AST.Go.Types
       Fluxus.AST.Go.Helpers
       Fluxus.AST.Go.Expressions
+      Fluxus.Debug.Debugger
   hs-source-dirs:
       src
       libs/ast/src

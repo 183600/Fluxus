@@ -2,7 +2,6 @@ module Main (main) where
 
 import Test.Hspec
 import Test.Hspec.Runner (hspecWith, defaultConfig, Config(..), ColorMode(..))
-import Test.Hspec.Core.Formatters (specdoc, progress)
 import System.IO (hIsTerminalDevice, stdout)
 
 
@@ -25,9 +24,7 @@ import qualified Test.Fluxus.EndToEnd as EndToEndTests
 main :: IO ()
 main = do
   isTerm <- hIsTerminalDevice stdout
-  let fmt = if isTerm then progress else specdoc
-      cfg = defaultConfig { configFormatter = Just fmt
-                         , configColorMode = if isTerm then ColorAuto else ColorNever }
+  let cfg = defaultConfig { configColorMode = if isTerm then ColorAuto else ColorNever }
   hspecWith cfg $ do
     describe "Fluxus Compiler Comprehensive Test Suite" $ do
       -- Unit Tests

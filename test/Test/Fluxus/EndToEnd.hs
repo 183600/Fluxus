@@ -12,7 +12,7 @@ import System.Exit (ExitCode(..))
 import Control.Monad (forM, when)
 import Data.List (isInfixOf)
 import qualified Data.Text as T
-import Fluxus.Compiler.Driver (runCompiler, convertConfigToDriver, compileFileToObject, compileFile)
+import Fluxus.Compiler.Driver (runCompiler, convertConfigToDriver, compileFileToObject, compileFile, compileProject)
 import qualified Fluxus.Compiler.Config as Config
 
 spec :: Spec
@@ -90,7 +90,7 @@ productionCompilationSpec = describe "Production Compilation Tests" $ do
             , Config.ccOptimizationLevel = Config.O3
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           -- Check that C++ file was created
@@ -180,7 +180,7 @@ productionCompilationSpec = describe "Production Compilation Tests" $ do
             , Config.ccOptimizationLevel = Config.O3
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           -- Check that C++ file was created
@@ -248,7 +248,7 @@ runtimeBehaviorSpec = describe "Runtime Behavior Tests" $ do
             , Config.ccOptimizationLevel = Config.O3
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           -- Compile and run
@@ -343,7 +343,7 @@ runtimeBehaviorSpec = describe "Runtime Behavior Tests" $ do
             , Config.ccOptimizationLevel = Config.O3
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           -- Compile and run
@@ -378,7 +378,7 @@ errorHandlingSpec = describe "Error Handling Tests" $ do
             , Config.ccCppStandard = "c++20"
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Left _ -> return ()  -- Expected to fail
         Right _ -> expectationFailure "Compilation should have failed with invalid syntax"
@@ -403,7 +403,7 @@ errorHandlingSpec = describe "Error Handling Tests" $ do
             , Config.ccCppStandard = "c++20"
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Left errMsg -> do
           -- Check that error message is helpful
@@ -450,7 +450,7 @@ performanceSpec = describe "Performance Tests" $ do
             , Config.ccOptimizationLevel = Config.O3
             }
 
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       end <- getCurrentTime
 
       let compilationTime = diffUTCTime end start
@@ -498,8 +498,11 @@ performanceSpec = describe "Performance Tests" $ do
       
       case result of
         Right _ -> do
-          -- The driver already created the executable, so just run it
-          (exitCode', stdout, _) <- readProcessWithExitCode cppFile [] ""
+          -- Compile and run the generated C++
+          let exeFile = tmpDir </> "memory"
+          (exitCode, _, _) <- readProcessWithExitCode "g++" [cppFile, "-o", exeFile, "-std=c++20", "-O3"] ""
+          exitCode `shouldBe` ExitSuccess
+          (exitCode', stdout, _) <- readProcessWithExitCode exeFile [] ""
           exitCode' `shouldBe` ExitSuccess
           stdout `shouldContain` "Processed"
         Left err -> expectationFailure $ "Memory-intensive compilation failed: " ++ show err
@@ -575,7 +578,7 @@ performanceSpec = describe "Performance Tests" $ do
             , Config.ccOutputPath = Just cppFile
             }
 
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject $ Config.ccInputFiles config)
       case result of
         Right _ -> do
           -- For now, we just verify that the compilation process completes
