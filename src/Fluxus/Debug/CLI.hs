@@ -17,14 +17,11 @@ module Fluxus.Debug.CLI
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad (when)
-import Control.Monad.State (MonadState, get, put, modify, runStateT, evalStateT)
+import Control.Monad.State (MonadState, get, modify, evalStateT)
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import System.IO (hFlush, stdout)
 import System.Console.Haskeline
-import Data.List (isPrefixOf)
-import Data.Maybe (fromMaybe)
+import Data.Maybe ()
 
 import Fluxus.Debug.Logger
 import Fluxus.Compiler.Driver (runCompiler, compileFileWithOptions, CompileOptions(..), defaultCompileOptions, defaultConfig)

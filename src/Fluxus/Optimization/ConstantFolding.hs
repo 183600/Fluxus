@@ -23,6 +23,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Maybe (fromMaybe)
 import Data.Bits (Bits(..))
+import Data.Int (Int64)
 
 -- ============================================================================
 -- AST Definitions
@@ -168,7 +169,16 @@ foldPyBinaryOp op left right = fmap PyLiteral $ case op of
     _ -> Nothing
   
   Mul -> case (left, right) of
-    (PyInt a, PyInt b) -> Just $ PyInt (a * b)
+    (PyInt a, PyInt b) ->
+      -- Check for potential overflow before folding (simplified check)
+      -- Use safe bounds checking with Int64 conversion
+      if (b == 0) || (a == 0) || (b == 1) || (a == 1) ||
+         (a > 0 && b > 0 && a <= (toInteger (maxBound :: Int64)) `div` b) ||
+         (a > 0 && b < 0 && b >= (toInteger (minBound :: Int64)) `div` a) ||
+         (a < 0 && b > 0 && a >= (toInteger (minBound :: Int64)) `div` b) ||
+         (a < 0 && b < 0 && a >= (toInteger (maxBound :: Int64)) `div` b)
+      then Just $ PyInt (a * b)
+      else Nothing  -- Potential overflow, don't fold
     (PyFloat a, PyFloat b) -> Just $ PyFloat (a * b)
     (PyInt a, PyFloat b) -> Just $ PyFloat (fromIntegral a * b)
     (PyFloat a, PyInt b) -> Just $ PyFloat (a * fromIntegral b)

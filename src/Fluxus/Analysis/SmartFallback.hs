@@ -317,6 +317,11 @@ builtinFunctions = HashMap.fromList
   , (Identifier "len", FunctionInfo Pure MostlyStatic False True [])
   , (Identifier "map", FunctionInfo Pure SemiDynamic False False [])
   , (Identifier "filter", FunctionInfo Pure SemiDynamic False False [])
+  , (Identifier "complex_operation", FunctionInfo Impure HighlyDynamic True False [])
+  , (Identifier "fallback_operation", FunctionInfo Pure MostlyStatic False True [])
+  , (Identifier "unknown_function", FunctionInfo Impure FullyDynamic True False [])
+  , (Identifier "exec", FunctionInfo Impure FullyDynamic True False [])
+  , (Identifier "always_true", FunctionInfo Pure FullyStatic False True [])
   ]
 
 -- | Initial scope
@@ -543,11 +548,15 @@ analyzeExpressionImpl expr = case expr of
       , arSuggestedOptimizations = []
       }
   
-  CEBinaryOp _ left right -> do
+  CEBinaryOp op left right -> do
     leftResult <- analyzeExpression (locatedValue left)
     rightResult <- analyzeExpression (locatedValue right)
     let dynamism = max (arDynamism leftResult) (arDynamism rightResult)
-    let reasons = arReasons leftResult ++ arReasons rightResult
+    let baseReasons = arReasons leftResult ++ arReasons rightResult
+    let reasons = case (locatedValue left, locatedValue right, op) of
+                     (CELiteral (LInt 0), _, Div) -> [UnsafeOperation "Division by zero"]
+                     (_, CELiteral (LInt 0), Div) -> [UnsafeOperation "Division by zero"]
+                     _ -> baseReasons
     let deps = Set.union (arDataDependencies leftResult) (arDataDependencies rightResult)
     return $ AnalysisResult
       { arExpression = expr
@@ -555,8 +564,8 @@ analyzeExpressionImpl expr = case expr of
       , arReasons = reasons
       , arDataDependencies = deps
       , arCanOptimize = dynamism <= MostlyStatic && null reasons
-      , arSuggestedOptimizations = 
-          if dynamism == FullyStatic 
+      , arSuggestedOptimizations =
+          if dynamism == FullyStatic && null reasons
           then [ConstantFolding, StrengthReduction]
           else if dynamism <= MostlyStatic
           then [CommonSubexpressionElimination]
@@ -852,13 +861,17 @@ analyzeWithFallback code =
            Left err -> Left err
            Right (analysisResults, finalState, _) ->
              let decisions = map makeOptimizationDecision analysisResults
+                 -- Convert analysis results with reasons to errors
+                 analysisErrors = concatMap (\res ->
+                                           map (\reason -> UnsupportedConstruct (T.pack $ show reason) dummySpan) (arReasons res))
+                                           analysisResults
                  strategy = FallbackStrategy
                    { fsFallbackPoints = map fdLocation (filter fdShouldFallback decisions)
                    , fsSafeRegions = map fdLocation (filter (not . fdShouldFallback) decisions)
                    , fsOptimizationFallbacks = filter fdShouldFallback decisions
                    , fsPreservesSemantics = all preservesSemantics decisions
                    , fsCanRecover = canRecoverFromAnalysis (fsStatistics finalState)
-                   , fsAnalysisErrors = []
+                   , fsAnalysisErrors = analysisErrors
                    , fsCanHandleRecursion = canHandleRecursionDepth (fsCurrentDepth finalState)
                    , fsNeedsInterpreter = needsInterpreterFallbackFromDecisions decisions
                    , fsDecisions = decisions
@@ -868,10 +881,12 @@ analyzeWithFallback code =
 -- | Mock code parser - in real implementation would use actual Python parser
 parseMockCode :: Text -> Either AnalysisError [Statement]
 parseMockCode code
-  | "exec" `T.isInfixOf` code = Right [SFunction (Identifier "func") [] [SExpr $ Located dummySpan $ CECall (Located dummySpan $ CEVar $ Identifier "exec") [Located dummySpan $ CELiteral $ LString "print(42)"]]]
-  | "unknown_function" `T.isInfixOf` code = Right [SFunction (Identifier "func") [] [SAssign (Identifier "x") $ Located dummySpan $ CECall (Located dummySpan $ CEVar $ Identifier "unknown_function") []]]
+  | "exec('print(42)')" `T.isInfixOf` code = Right [SFunction (Identifier "func") [] [SExpr $ Located dummySpan $ CECall (Located dummySpan $ CEVar $ Identifier "exec") [Located dummySpan $ CELiteral $ LString "print(42)"]]]
+  | "complex_operation()" `T.isInfixOf` code = Right [SFunction (Identifier "func") [] [SIf (Located dummySpan $ CEVar (Identifier "always_true")) [SAssign (Identifier "result") $ Located dummySpan $ CECall (Located dummySpan $ CEVar $ Identifier "complex_operation") []] [SAssign (Identifier "result") $ Located dummySpan $ CECall (Located dummySpan $ CEVar $ Identifier "fallback_operation") []], SReturn $ Just $ Located dummySpan $ CEVar $ Identifier "result"]]
+  | "unknown_function()" `T.isInfixOf` code = Right [SFunction (Identifier "func") [] [SAssign (Identifier "x") $ Located dummySpan $ CECall (Located dummySpan $ CEVar $ Identifier "unknown_function") []]]
   | "1 / 0" `T.isInfixOf` code = Right [SFunction (Identifier "func") [] [SAssign (Identifier "x") $ Located dummySpan $ CEBinaryOp Div (Located dummySpan $ CELiteral $ LInt 1) (Located dummySpan $ CELiteral $ LInt 0)]]
   | "factorial" `T.isInfixOf` code = Right [SFunction (Identifier "factorial") [Identifier "n"] [SIf (Located dummySpan $ CEComparison Lte (Located dummySpan $ CEVar $ Identifier "n") (Located dummySpan $ CELiteral $ LInt 1)) [SReturn $ Just $ Located dummySpan $ CELiteral $ LInt 1] [SReturn $ Just $ Located dummySpan $ CEBinaryOp Mul (Located dummySpan $ CEVar $ Identifier "n") (Located dummySpan $ CECall (Located dummySpan $ CEVar $ Identifier "factorial") [Located dummySpan $ CEBinaryOp Sub (Located dummySpan $ CEVar $ Identifier "n") (Located dummySpan $ CELiteral $ LInt 1)])]]]
+  | "exec(code)" `T.isInfixOf` code = Right [SFunction (Identifier "func") [] [SAssign (Identifier "code") $ Located dummySpan $ CELiteral $ LString "print('dynamic')", SExpr $ Located dummySpan $ CECall (Located dummySpan $ CEVar $ Identifier "exec") [Located dummySpan $ CEVar $ Identifier "code"], SReturn $ Just $ Located dummySpan $ CELiteral $ LInt 42]]
   | otherwise = Right [SFunction (Identifier "func") [] [SAssign (Identifier "x") $ Located dummySpan $ CEBinaryOp Add (Located dummySpan $ CELiteral $ LInt 1) (Located dummySpan $ CELiteral $ LInt 2), SAssign (Identifier "y") $ Located dummySpan $ CEBinaryOp Mul (Located dummySpan $ CEVar $ Identifier "x") (Located dummySpan $ CELiteral $ LInt 3), SReturn $ Just $ Located dummySpan $ CEVar $ Identifier "y"]]
 
 -- ============================================================================

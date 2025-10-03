@@ -1,6 +1,10 @@
 module Main (main) where
 
 import Test.Hspec
+import Test.Hspec.Runner (hspecWith, defaultConfig, Config(..), ColorMode(..))
+import Test.Hspec.Core.Formatters (specdoc, progress)
+import System.IO (hIsTerminalDevice, stdout)
+
 
 import qualified Test.Fluxus.Analysis.TypeInference as TypeInferenceTests
 import qualified Test.Fluxus.ConvertCommand as ConvertCommandTests
@@ -19,33 +23,38 @@ import qualified Test.Fluxus.Integration as IntegrationTests
 import qualified Test.Fluxus.EndToEnd as EndToEndTests
 
 main :: IO ()
-main = hspec $ do
-  describe "Fluxus Compiler Comprehensive Test Suite" $ do
-    -- Unit Tests
-    TypeInferenceTests.spec
-    PythonParserTests.spec
-    GoParserTests.spec
-    EscapeAnalysisTests.spec
-    OwnershipInferenceTests.spec
-    -- ShapeAnalysisTests.spec  -- Temporarily disabled due to timeout issues
-    SmartFallbackTests.spec
+main = do
+  isTerm <- hIsTerminalDevice stdout
+  let fmt = if isTerm then progress else specdoc
+      cfg = defaultConfig { configFormatter = Just fmt
+                         , configColorMode = if isTerm then ColorAuto else ColorNever }
+  hspecWith cfg $ do
+    describe "Fluxus Compiler Comprehensive Test Suite" $ do
+      -- Unit Tests
+      TypeInferenceTests.spec
+      PythonParserTests.spec
+      GoParserTests.spec
+      EscapeAnalysisTests.spec
+      OwnershipInferenceTests.spec
+      -- ShapeAnalysisTests.spec  -- Temporarily disabled due to timeout issues
+      SmartFallbackTests.spec
 
-    -- Optimization Tests
-    OptimizationTests.spec
+      -- Optimization Tests
+      OptimizationTests.spec
 
-    -- Code Generation Tests
-    CodeGenCppTests.spec
-    CodeGenGoTests.spec
+      -- Code Generation Tests
+      CodeGenCppTests.spec
+      CodeGenGoTests.spec
 
-    -- Runtime Tests
-    RuntimePythonTests.spec
-    RuntimeGoTests.spec
+      -- Runtime Tests
+      RuntimePythonTests.spec
+      RuntimeGoTests.spec
 
-    -- Integration Tests
-    IntegrationTests.spec
+      -- Integration Tests
+      IntegrationTests.spec
 
-    -- End-to-End Tests
-    EndToEndTests.spec
+      -- End-to-End Tests
+      EndToEndTests.spec
 
-    -- Command Tests
-    ConvertCommandTests.spec
+      -- Command Tests
+      ConvertCommandTests.spec

@@ -71,6 +71,8 @@ library:
     - Fluxus.Compiler.Config
     - Fluxus.Utils.Pretty
     - Fluxus.Utils.Graph
+    - Fluxus.Debug.Logger
+    - Fluxus.Debug.CLI
   other-modules:
     - Fluxus.Internal.Types
     - Fluxus.Internal.Monad
@@ -109,6 +111,7 @@ library:
     - ansi-terminal >= 1.1
     - time >= 1.12
     - stm >= 2.5
+    - haskeline >= 0.8
 
 executables:
   fluxus:
@@ -152,6 +155,7 @@ tests:
     dependencies:
       - fluxus
       - hspec >= 2.10
+      - hspec-core >= 2.10
       - QuickCheck >= 2.14
       - text
       - containers

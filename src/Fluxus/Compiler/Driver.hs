@@ -660,7 +660,7 @@ codeGenStageMain ast = do
 
 -- | Build C++ generation config from compiler config
 buildCppGenConfig :: CompilerConfig -> Bool -> CppGenConfig
-buildCppGenConfig config withMain = CppGenConfig
+buildCppGenConfig config _withMain = CppGenConfig
   { cgcOptimizationLevel = fromEnum $ ccOptimizationLevel config
   , cgcEnableInterop = ccEnableInterop config
   , cgcTargetCppStd = ccCppStandard config
@@ -892,7 +892,7 @@ renderCppDecl = \case
     "}\n"
   CppCommentDecl comment ->
     "// " <> comment <> "\n"
-  _ -> "// TODO: Render other declaration types\n"
+
 
 renderCppType :: CppType -> Text
 renderCppType = \case
@@ -923,6 +923,7 @@ renderCppType = \case
   CppUnorderedMap k v -> "std::unordered_map<" <> renderCppType k <> ", " <> renderCppType v <> ">"
   CppTypeVar name -> name
   CppDecltype _ -> "decltype(...)"
+  _ -> "auto"
 
 renderCppParam :: CppParam -> Text
 renderCppParam (CppParam name paramType mdefault) = 
@@ -1025,6 +1026,7 @@ renderCppLiteral = \case
   CppBoolLit False -> "false"
   CppStringLit s -> "\"" <> escapeString s <> "\""
   CppNullPtr -> "nullptr"
+  _ -> "0"
   where
     escapeString = T.concatMap $ \case
       '\n' -> "\\n"
