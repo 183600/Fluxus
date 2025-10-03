@@ -18,34 +18,39 @@ import qualified Test.Fluxus.Runtime.Go as RuntimeGoTests
 import qualified Test.Fluxus.Integration as IntegrationTests
 import qualified Test.Fluxus.EndToEnd as EndToEndTests
 
+import GHC.IO.Encoding (setLocaleEncoding, latin1)
+
 main :: IO ()
-main = hspec $ do
-  describe "Fluxus Compiler Comprehensive Test Suite" $ do
-    -- Unit Tests
-    TypeInferenceTests.spec
-    PythonParserTests.spec
-    GoParserTests.spec
-    EscapeAnalysisTests.spec
-    OwnershipInferenceTests.spec
-    -- ShapeAnalysisTests.spec  -- Temporarily disabled due to timeout issues
-    SmartFallbackTests.spec
+main = do
+  -- Ensure process I/O decoding never crashes on non-UTF8 output
+  setLocaleEncoding latin1
+  hspec $ do
+    describe "Fluxus Compiler Comprehensive Test Suite" $ do
+      -- Unit Tests
+      TypeInferenceTests.spec
+      PythonParserTests.spec
+      GoParserTests.spec
+      EscapeAnalysisTests.spec
+      OwnershipInferenceTests.spec
+      -- ShapeAnalysisTests.spec  -- Temporarily disabled due to timeout issues
+      SmartFallbackTests.spec
 
-    -- Optimization Tests
-    OptimizationTests.spec
+      -- Optimization Tests
+      OptimizationTests.spec
 
-    -- Code Generation Tests
-    CodeGenCppTests.spec
-    CodeGenGoTests.spec
+      -- Code Generation Tests
+      CodeGenCppTests.spec
+      CodeGenGoTests.spec
 
-    -- Runtime Tests
-    RuntimePythonTests.spec
-    RuntimeGoTests.spec
+      -- Runtime Tests
+      RuntimePythonTests.spec
+      RuntimeGoTests.spec
 
-    -- Integration Tests
-    IntegrationTests.spec
+      -- Integration Tests
+      IntegrationTests.spec
 
-    -- End-to-End Tests
-    EndToEndTests.spec
+      -- End-to-End Tests
+      EndToEndTests.spec
 
-    -- Command Tests
-    ConvertCommandTests.spec
+      -- Command Tests
+      ConvertCommandTests.spec

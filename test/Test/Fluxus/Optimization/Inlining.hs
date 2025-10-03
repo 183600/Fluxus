@@ -3,10 +3,10 @@
 module Test.Fluxus.Optimization.Inlining (spec) where
 
 import Test.Hspec
-import Data.Text (Text)
+import Data.Text ()
 
 import Fluxus.AST.Common
-import Fluxus.Optimization.Inlining
+import Fluxus.Optimization.Inlining ()
 
 spec :: Spec
 spec = describe "Function Inlining" $ do
@@ -19,7 +19,7 @@ basicInliningSpec = describe "Basic Function Inlining" $ do
   it "inlines simple function calls" $ do
     -- Create a simple function representation for testing
     let funcExpr = CECall (noLoc $ CEVar (Identifier "add_one")) [noLoc $ CELiteral (LInt 5)]
-    let expectedResult = CEBinaryOp OpAdd (noLoc $ CELiteral (LInt 5)) (noLoc $ CELiteral (LInt 1))
+    let _expectedResult = CEBinaryOp OpAdd (noLoc $ CELiteral (LInt 5)) (noLoc $ CELiteral (LInt 1))
     
     -- For now, test that the inlining function accepts the input
     -- In a real implementation, this would test actual inlining
@@ -29,7 +29,7 @@ basicInliningSpec = describe "Basic Function Inlining" $ do
   
   it "inlines functions with multiple parameters" $ do
     let call = CECall (noLoc $ CEVar (Identifier "add")) [noLoc $ CELiteral (LInt 3), noLoc $ CELiteral (LInt 4)]
-    let expectedResult = CEBinaryOp OpAdd (noLoc $ CELiteral (LInt 3)) (noLoc $ CELiteral (LInt 4))
+    let _expectedResult = CEBinaryOp OpAdd (noLoc $ CELiteral (LInt 3)) (noLoc $ CELiteral (LInt 4))
     
     -- For now, test that the expression structure is correct
     case call of
@@ -38,7 +38,7 @@ basicInliningSpec = describe "Basic Function Inlining" $ do
   
   it "inlines functions with multiple statements" $ do
     let call = CECall (noLoc $ CEVar (Identifier "compute")) [noLoc $ CELiteral (LInt 5)]
-    let expectedResult = CEBinaryOp OpAdd (noLoc $ CEBinaryOp OpMul (noLoc $ CELiteral (LInt 5)) (noLoc $ CELiteral (LInt 2))) (noLoc $ CELiteral (LInt 1))
+    let _expectedResult = CEBinaryOp OpAdd (noLoc $ CEBinaryOp OpMul (noLoc $ CELiteral (LInt 5)) (noLoc $ CELiteral (LInt 2))) (noLoc $ CELiteral (LInt 1))
     
     -- For now, test that the call expression is correctly formed
     case call of
@@ -57,7 +57,7 @@ optimizationSpec :: Spec
 optimizationSpec = describe "Inlining Optimizations" $ do
   it "applies constant propagation after inlining" $ do
     let call = CECall (noLoc $ CEVar (Identifier "get_value")) []
-    let expectedResult = CELiteral (LInt 42)
+    let _expectedResult = CELiteral (LInt 42)
     
     -- Test constant folding in function calls
     case call of
@@ -74,7 +74,7 @@ optimizationSpec = describe "Inlining Optimizations" $ do
   
   it "inlines nested function calls" $ do
     let call = CECall (noLoc $ CEVar (Identifier "add_square")) [noLoc $ CELiteral (LInt 3), noLoc $ CELiteral (LInt 4)]
-    let expectedResult = CEBinaryOp OpAdd 
+    let _expectedResult = CEBinaryOp OpAdd 
                           (noLoc $ CEBinaryOp OpMul (noLoc $ CELiteral (LInt 3)) (noLoc $ CELiteral (LInt 3)))
                           (noLoc $ CEBinaryOp OpMul (noLoc $ CELiteral (LInt 4)) (noLoc $ CELiteral (LInt 4)))
     
@@ -95,7 +95,7 @@ edgeCaseSpec = describe "Edge Cases" $ do
   
   it "handles functions with complex control flow" $ do
     let call = CECall (noLoc $ CEVar (Identifier "complex")) [noLoc $ CELiteral (LInt 5)]
-    let expectedResult = CELiteral (LInt 0)
+    let _expectedResult = CELiteral (LInt 0)
     
     -- Test complex control flow handling
     case call of
@@ -103,13 +103,10 @@ edgeCaseSpec = describe "Edge Cases" $ do
       result -> expectationFailure $ "Expected complex function call, got: " ++ show result
   
   it "handles function calls in expressions" $ do
-    let expr = CEBinaryOp OpAdd 
+    let expr = CEBinaryOp OpAdd
                   (noLoc $ CECall (noLoc $ CEVar (Identifier "double")) [noLoc $ CELiteral (LInt 3)])
                   (noLoc $ CECall (noLoc $ CEVar (Identifier "double")) [noLoc $ CELiteral (LInt 4)])
-    let expectedResult = CEBinaryOp OpAdd 
-                          (noLoc $ CEBinaryOp OpMul (noLoc $ CELiteral (LInt 3)) (noLoc $ CELiteral (LInt 2)))
-                          (noLoc $ CEBinaryOp OpMul (noLoc $ CELiteral (LInt 4)) (noLoc $ CELiteral (LInt 2)))
-    
+
     -- Test function calls within larger expressions
     case expr of
       CEBinaryOp OpAdd 

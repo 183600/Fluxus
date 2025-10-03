@@ -3,8 +3,8 @@
 module Test.Fluxus.Runtime.Python (spec) where
 
 import Test.Hspec
-import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Text ()
+-- removed
 
 import Fluxus.Runtime.Python
 

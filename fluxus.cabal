@@ -53,6 +53,8 @@ library
       Fluxus.Compiler.Config
       Fluxus.Utils.Pretty
       Fluxus.Utils.Graph
+      Fluxus.Debug.CLI
+      Fluxus.Debug.Logger
   other-modules:
       Fluxus.Internal.Types
       Fluxus.Internal.Monad
@@ -82,6 +84,7 @@ library
     , fgl >=5.8
     , filepath >=1.4
     , hashable >=1.4
+    , haskeline >=0.8
     , lens >=5.2
     , megaparsec >=9.5
     , monad-logger >=0.3.40
@@ -148,6 +151,7 @@ test-suite fluxus-test
   build-depends:
       QuickCheck >=2.14
     , base >=4.17 && <5
+    , bytestring
     , containers
     , directory
     , filepath

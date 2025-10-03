@@ -539,7 +539,7 @@ mapCommonTypeToCpp :: Type -> CppType
 mapCommonTypeToCpp = mapPythonTypeToCpp
 
 generateCppFromPython :: PythonAST -> Bool -> CppCodeGen CppUnit
-generateCppFromPython ast isMain = do
+generateCppFromPython _ast isMain = do
   -- Add necessary includes
   modify $ \s -> s { cgsIncludes = ["<iostream>", "<string>"] }
   
@@ -596,7 +596,6 @@ mapPythonTypeToCpp t = case t of
   TFunction _ _ -> CppAuto
   TOwned a -> CppUniquePtr (mapPythonTypeToCpp a)
   TShared a -> CppSharedPtr (mapPythonTypeToCpp a)
-  TList (TInt _) -> CppVector CppInt
   _ -> CppAuto
 
 mapGoTypeToCpp :: GoType -> CppType

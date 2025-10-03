@@ -3,8 +3,8 @@
 module Test.Fluxus.Runtime.Go (spec) where
 
 import Test.Hspec
-import Data.Text (unlines)
 import qualified Data.Text as T
+
 
 import Fluxus.Runtime.Go
 

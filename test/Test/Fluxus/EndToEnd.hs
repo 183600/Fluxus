@@ -13,8 +13,15 @@ import Control.Monad (forM, when)
 import Data.List (isInfixOf)
 import Data.Typeable (typeOf)
 import qualified Data.Text as T
+import qualified Data.ByteString.Char8 as BSC
 import Fluxus.Compiler.Driver (runCompiler, convertConfigToDriver, compileFileToObject, compileFile)
 import qualified Fluxus.Compiler.Config as Config
+
+-- Safely read a file as text, handling encoding issues
+safeReadFile :: FilePath -> IO String
+safeReadFile filePath = do
+  bytes <- BSC.readFile filePath
+  return $ BSC.unpack bytes
 
 spec :: Spec
 spec = describe "End-to-End Production Tests" $ do
@@ -113,7 +120,7 @@ productionCompilationSpec = describe "Production Compilation Tests" $ do
           outputExists `shouldBe` True
           
           -- Verify output file content
-          outputContent <- readFile outputFile
+          outputContent <- safeReadFile outputFile
           lines outputContent `shouldBe` ["hello", "42", "3.14", "world", "100"]
         Left err -> expectationFailure $ "Compilation failed: " ++ show err
   
@@ -459,7 +466,7 @@ performanceSpec = describe "Performance Tests" $ do
       inputExists <- doesFileExist inputFile
       inputExists `shouldBe` True
       when inputExists $ do
-        inputContent <- readFile inputFile
+        inputContent <- safeReadFile inputFile
         putStrLn $ "Input file content (first 200 chars): " ++ take 200 inputContent
         putStrLn $ "Input file length: " ++ show (length inputContent)
 
@@ -618,7 +625,7 @@ performanceSpec = describe "Performance Tests" $ do
           -- Don't fail the test if the file doesn't exist - this indicates
           -- the compiler is still being developed
           when exists $ do
-            cppContent <- readFile cppFile
+            cppContent <- safeReadFile cppFile
             -- Verify that the C++ code contains expected elements if file exists
             when ("process_task" `isInfixOf` cppContent) $ do
               cppContent `shouldContain` "int"

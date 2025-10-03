@@ -10,6 +10,13 @@ import Control.Monad (when, forM_)
 import Data.Char (isSpace)
 import System.Posix.Files (ownerReadMode, ownerWriteMode, ownerExecuteMode, groupReadMode, groupExecuteMode, otherReadMode, otherExecuteMode, setFileMode, unionFileModes)
 import System.Posix.Types (FileMode)
+import qualified Data.ByteString.Char8 as BSC
+
+-- Safely read a file as text, handling encoding issues
+safeReadFile :: FilePath -> IO String
+safeReadFile filePath = do
+  bytes <- BSC.readFile filePath
+  return $ BSC.unpack bytes
 
 spec :: Spec
 spec = describe "Fluxus Convert Command Tests" $ do
@@ -49,7 +56,7 @@ spec = describe "Fluxus Convert Command Tests" $ do
           (exitCodePy, stdoutPy, _stderrPy) <- readProcessWithExitCode "python" [pyPath] ""
 
           -- Read expected output
-          expectedContent <- readFile expectedFile
+          expectedContent <- safeReadFile expectedFile
 
           -- Compare Python output with expected
           let cleanPyOutput = trimWhitespace stdoutPy

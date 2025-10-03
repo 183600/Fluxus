@@ -3,16 +3,24 @@
 module Test.Fluxus.Integration (spec) where
 
 import Test.Hspec
-import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.ByteString.Char8 as BSC
+
 import System.Directory
 import System.FilePath
 import System.IO.Temp
 import System.Process
 import System.Exit (ExitCode(..))
 
-import Fluxus.Compiler.Driver (runCompiler, convertConfigToDriver)
+import Fluxus.Compiler.Driver (runCompiler, convertConfigToDriver, compileProject)
 import Fluxus.Compiler.Config as Config
+import Fluxus.Debug.Logger (enableDebug, debugLog)
+
+-- Safely read a file as text, handling encoding issues
+safeReadFile :: FilePath -> IO String
+safeReadFile filePath = do
+  bytes <- BSC.readFile filePath
+  return $ BSC.unpack bytes
 
 spec :: Spec
 spec = describe "Integration Tests" $ do
@@ -41,7 +49,7 @@ pythonToCppIntegrationSpec = describe "Python to C++ Integration" $ do
             , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject [inputFile])
       case result of
         Right _ -> do
           -- Check that output file was created
@@ -49,7 +57,7 @@ pythonToCppIntegrationSpec = describe "Python to C++ Integration" $ do
           exists `shouldBe` True
           
           -- Check that output file contains expected C++ code
-          cppContent <- readFile outputFile
+          cppContent <- safeReadFile outputFile
           cppContent `shouldContain` "add"
           cppContent `shouldContain` "int"
           cppContent `shouldContain` "return"
@@ -79,13 +87,13 @@ pythonToCppIntegrationSpec = describe "Python to C++ Integration" $ do
             , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject [inputFile])
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
           exists `shouldBe` True
           
-          cppContent <- readFile outputFile
+          cppContent <- safeReadFile outputFile
           cppContent `shouldContain` "Calculator"
           cppContent `shouldContain` "class"
           cppContent `shouldContain` "add"
@@ -112,13 +120,13 @@ pythonToCppIntegrationSpec = describe "Python to C++ Integration" $ do
             , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject [inputFile])
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
           exists `shouldBe` True
           
-          cppContent <- readFile outputFile
+          cppContent <- safeReadFile outputFile
           cppContent `shouldContain` "factorial"
           cppContent `shouldContain` "if"
           cppContent `shouldContain` "else"
@@ -146,13 +154,13 @@ goToCppIntegrationSpec = describe "Go to C++ Integration" $ do
             , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject [inputFile])
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
           exists `shouldBe` True
           
-          cppContent <- readFile outputFile
+          cppContent <- safeReadFile outputFile
           cppContent `shouldContain` "add"
           cppContent `shouldContain` "int"
           cppContent `shouldContain` "return"
@@ -183,13 +191,13 @@ goToCppIntegrationSpec = describe "Go to C++ Integration" $ do
             , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject [inputFile])
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
           exists `shouldBe` True
           
-          cppContent <- readFile outputFile
+          cppContent <- safeReadFile outputFile
           cppContent `shouldContain` "Person"
           cppContent `shouldContain` "class"
           cppContent `shouldContain` "GetName"
@@ -220,7 +228,7 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just cppFile
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject [inputFile])
       case result of
         Right _ -> do
           -- Compile C++ to executable
@@ -251,7 +259,7 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just outputFile
             }
       
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject [inputFile])
       case result of
         Left _ -> return ()  -- Expected to fail
         Right _ -> expectationFailure "Compilation should have failed with invalid syntax"
@@ -282,18 +290,20 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just outputFile
             }
 
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject [inputFile1, inputFile2])
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
           exists `shouldBe` True
 
-          cppContent <- readFile outputFile
+          cppContent <- safeReadFile outputFile
           cppContent `shouldContain` "util_function"
           cppContent `shouldContain` "main"
         Left err -> expectationFailure $ "Compilation failed: " ++ show err
 
   it "handles mixed Python and Go projects" $ do
+    -- Enable debug logging to see what's happening
+    enableDebug
     let pythonCode = T.unlines
           [ "def python_func(x):"
           , "    return x * 2"
@@ -328,12 +338,17 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just pyOutput
             }
 
-      pyResult <- runCompiler (convertConfigToDriver pyConfig) (return ())
+      pyResult <- runCompiler (convertConfigToDriver pyConfig) (compileProject [pyFile])
+      -- Check what happened with Python compilation
+      debugLog $ "Python compilation result: " <> T.pack (show pyResult)
       case pyResult of
         Right _ -> do
           pyExists <- doesFileExist pyOutput
+          debugLog $ "Python output file exists: " <> T.pack (show pyExists)
           pyExists `shouldBe` True
-        Left err -> expectationFailure $ "Python compilation failed: " ++ show err
+        Left err -> do
+          debugLog $ "Python compilation failed: " <> T.pack (show err)
+          expectationFailure $ "Python compilation failed: " ++ show err
 
       -- Test Go compilation
       let goConfig = Config.defaultConfig
@@ -341,7 +356,7 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just goOutput
             }
 
-      goResult <- runCompiler (convertConfigToDriver goConfig) (return ())
+      goResult <- runCompiler (convertConfigToDriver goConfig) (compileProject [goFile])
       case goResult of
         Right _ -> do
           goExists <- doesFileExist goOutput
@@ -385,13 +400,13 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just outputFile
             }
 
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject [fileA, fileB, fileC])
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
           exists `shouldBe` True
 
-          cppContent <- readFile outputFile
+          cppContent <- safeReadFile outputFile
           cppContent `shouldContain` "func_a"
           cppContent `shouldContain` "func_b"
           cppContent `shouldContain` "func_c"
@@ -432,7 +447,7 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just outputFile
             }
 
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject [fileA, fileB])
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
@@ -466,13 +481,13 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccSourceLanguage = Config.Python
             }
 
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject [inputFile])
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
           exists `shouldBe` True
 
-          cppContent <- readFile outputFile
+          cppContent <- safeReadFile outputFile
           cppContent `shouldContain` "json"
           cppContent `shouldContain` "dumps"
         Left err -> expectationFailure $ "External library integration failed: " ++ show err
@@ -535,13 +550,13 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just outputFile
             }
 
-      result <- runCompiler (convertConfigToDriver config) (return ())
+      result <- runCompiler (convertConfigToDriver config) (compileProject inputFiles)
       case result of
         Right _ -> do
           exists <- doesFileExist outputFile
           exists `shouldBe` True
 
-          cppContent <- readFile outputFile
+          cppContent <- safeReadFile outputFile
           cppContent `shouldContain` "Calculator"
           cppContent `shouldContain` "validate_input"
           cppContent `shouldContain` "format_output"

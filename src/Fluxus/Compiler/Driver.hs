@@ -330,9 +330,17 @@ initialCompilerState startTime = CompilerState
 -- | Run the compiler with configuration
 runCompiler :: CompilerConfig -> CompilerM a -> IO (Either CompilerError (a, CompilerState))
 runCompiler config action = do
+  debugLog $ "Starting compiler with config: " <> T.pack (show config)
   startTime <- getCurrentTime
   let initialState = initialCompilerState startTime
-  runExceptT $ runStateT (runReaderT action config) initialState
+  result <- runExceptT $ runStateT (runReaderT action config) initialState
+  case result of
+    Left err -> do
+      debugLog $ "Compiler failed with error: " <> T.pack (show err)
+      return $ Left err
+    Right (a, state) -> do
+      debugLog $ "Compiler completed successfully. Files processed: " <> T.pack (show (csProcessedFiles state))
+      return $ Right (a, state)
 
 -- | Validate compiler configuration
 validateConfig :: CompilerConfig -> Either CompilerError CompilerConfig
@@ -403,6 +411,8 @@ processSourceFile inputFile = do
 compileFile :: FilePath -> CompilerM FilePath
 compileFile inputFile = do
   config <- ask
+  debugLog $ "Compiling file: " <> T.pack inputFile
+  debugLog $ "Source language: " <> T.pack (show $ ccSourceLanguage config)
   
   -- Use common processing pipeline
   optimizedAst <- processSourceFile inputFile
@@ -660,7 +670,7 @@ codeGenStageMain ast = do
 
 -- | Build C++ generation config from compiler config
 buildCppGenConfig :: CompilerConfig -> Bool -> CppGenConfig
-buildCppGenConfig config withMain = CppGenConfig
+buildCppGenConfig config _ = CppGenConfig
   { cgcOptimizationLevel = fromEnum $ ccOptimizationLevel config
   , cgcEnableInterop = ccEnableInterop config
   , cgcTargetCppStd = ccCppStandard config
@@ -892,21 +902,30 @@ renderCppDecl = \case
     "}\n"
   CppCommentDecl comment ->
     "// " <> comment <> "\n"
-  _ -> "// TODO: Render other declaration types\n"
+
 
 renderCppType :: CppType -> Text
 renderCppType = \case
   CppVoid -> "void"
   CppBool -> "bool"
   CppInt -> "int"
+  CppLong -> "long"
+  CppULong -> "unsigned long"
+  CppLongLong -> "long long"
+  CppULongLong -> "unsigned long long"
   CppUInt -> "unsigned int"
+  CppShort -> "short"
+  CppUShort -> "unsigned short"
   CppFloat -> "float"
   CppDouble -> "double"
+  CppLongDouble -> "long double"
   CppChar -> "char"
+  CppUChar -> "unsigned char"
   CppString -> "std::string"
   CppAuto -> "auto"
   CppPointer t -> renderCppType t <> "*"
   CppReference t -> renderCppType t <> "&"
+  CppRvalueRef t -> renderCppType t <> "&&"
   CppConst t -> "const " <> renderCppType t
   CppVolatile t -> "volatile " <> renderCppType t
   CppSizeT -> "size_t"
@@ -917,6 +936,8 @@ renderCppType = \case
   CppSharedPtr t -> "std::shared_ptr<" <> renderCppType t <> ">"
   CppOptional t -> "std::optional<" <> renderCppType t <> ">"
   CppVariant types -> "std::variant<" <> T.intercalate ", " (map renderCppType types) <> ">"
+  CppVector t -> "std::vector<" <> renderCppType t <> ">"
+  CppArray t n -> renderCppType t <> "[" <> T.pack (show n) <> "]"
   CppPair t1 t2 -> "std::pair<" <> renderCppType t1 <> ", " <> renderCppType t2 <> ">"
   CppTuple types -> "std::tuple<" <> T.intercalate ", " (map renderCppType types) <> ">"
   CppMap k v -> "std::map<" <> renderCppType k <> ", " <> renderCppType v <> ">"
@@ -1025,6 +1046,7 @@ renderCppLiteral = \case
   CppBoolLit False -> "false"
   CppStringLit s -> "\"" <> escapeString s <> "\""
   CppNullPtr -> "nullptr"
+  CppUserDefinedLit val suffix -> val <> suffix
   where
     escapeString = T.concatMap $ \case
       '\n' -> "\\n"
