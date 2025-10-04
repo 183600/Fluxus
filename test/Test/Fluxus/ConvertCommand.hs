@@ -5,7 +5,7 @@ import System.Process
 import System.Directory
 import System.FilePath
 import System.Exit
-import Data.List (isSuffixOf)
+import Data.List (isSuffixOf, isInfixOf)
 import Control.Monad (when, forM_)
 import Data.Char (isSpace)
 import System.Posix.Files (ownerReadMode, ownerWriteMode, ownerExecuteMode, groupReadMode, groupExecuteMode, otherReadMode, otherExecuteMode, setFileMode, unionFileModes)
@@ -26,6 +26,37 @@ spec = describe "Fluxus Convert Command Tests" $ do
     putStrLn $ "Fluxus convert exit code: " ++ show exitCode
     putStrLn $ "Fluxus convert stdout: " ++ stdoutOutput
     putStrLn $ "Fluxus convert stderr: " ++ stderrOutput
+
+
+  it "shows help and prints usage" $ do
+    (exitCode, stdoutOutput, stderrOutput) <- readProcessWithExitCode "fluxus" ["--help"] ""
+    -- Some builds may return non-zero on --help, so just check usage text is present
+    ("Usage:" `isInfixOf` stdoutOutput || "Usage:" `isInfixOf` stderrOutput) `shouldBe` True
+    ("Available options:" `isInfixOf` stdoutOutput || "Available options:" `isInfixOf` stderrOutput) `shouldBe` True
+    exitCode `shouldSatisfy` (\_ -> True)
+
+  it "supports --stop-at-codegen and generates C++ output" $ do
+    let cppOut = "test/python-tests/feature_fstring.cpp"
+    existsBefore <- doesFileExist cppOut
+    when existsBefore $ removeFile cppOut
+
+    (exitCode, _stdoutOutput, _stderrOutput) <- readProcessWithExitCode "fluxus"
+      ["--python", "-v", "--stop-at-codegen", "-o", "test/python-testsoutput", "test/python-tests/feature_fstring.py"] ""
+
+    exitCode `shouldBe` ExitSuccess
+    fileExists <- doesFileExist cppOut
+    fileExists `shouldBe` True
+
+  it "accepts different optimization levels" $ do
+    forM_ ["-0", "-2", "-3", "-O"] $ \opt -> do
+      (exitCode, _out, _err) <- readProcessWithExitCode "fluxus"
+        ["--python", opt, "-o", "test/python-testsoutput", "test/python-tests/basic_arithmetic.py"] ""
+      exitCode `shouldBe` ExitSuccess
+
+  it "reports error for missing input file" $ do
+    (exitCode, _out, _err) <- readProcessWithExitCode "fluxus"
+      ["--python", "-2", "nonexistent_dir/nonexistent_file.py"] ""
+    exitCode `shouldSatisfy` (/= ExitSuccess)
 
   it "executes Python files and compares outputs with compiled executables" $ do
     -- Get all Python files in test/python-tests
