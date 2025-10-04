@@ -303,12 +303,12 @@ endToEndSpec = describe "End-to-End Tests" $ do
           , ""
           , "import \"fmt\""
           , ""
-          , "func go_func(x int) int {"
+          , "func triple(x int) int {"
           , "    return x * 3"
           , "}"
           , ""
           , "func main() {"
-          , "    result := go_func(5)"
+          , "    result := triple(5)"
           , "    fmt.Printf(\"%d\\n\", result)"
           , "}"
           ]
@@ -328,7 +328,7 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just pyOutput
             }
 
-      pyResult <- runCompiler (convertConfigToDriver pyConfig) (return ())
+      pyResult <- runCompiler (convertConfigToDriver pyConfig) (compileProject $ Config.ccInputFiles pyConfig)
       case pyResult of
         Right _ -> do
           pyExists <- doesFileExist pyOutput
@@ -341,7 +341,7 @@ endToEndSpec = describe "End-to-End Tests" $ do
             , Config.ccOutputPath = Just goOutput
             }
 
-      goResult <- runCompiler (convertConfigToDriver goConfig) (return ())
+      goResult <- runCompiler (convertConfigToDriver goConfig) (compileProject $ Config.ccInputFiles goConfig)
       case goResult of
         Right _ -> do
           goExists <- doesFileExist goOutput

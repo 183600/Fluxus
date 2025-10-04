@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 module Fluxus.Debug.Debugger
   ( DebuggerM
@@ -20,22 +21,23 @@ module Fluxus.Debug.Debugger
   , debugPause
   , breakpoint
   , conditionalBreakpoint
+  , setDebugVariable
+  , getDebugVariable
+  , clearAllBreakpoints
+  , listBreakpoints
+  , debugMemory
   ) where
 
-import Control.Monad.State
-import Control.Monad.Reader
+import Control.Monad.State hiding (state)
 import Control.Monad (when, filterM, forM_)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.IO (putStrLn, hPutStrLn, appendFile)
-import System.IO (stderr, stdout, putStrLn, getLine)
+import qualified Data.Text.IO as TIO
 import Data.Time (getCurrentTime, formatTime, defaultTimeLocale)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Control.Concurrent (threadDelay)
-import System.IO.Unsafe (unsafePerformIO)
 
 -- | Debug log levels
 data DebugLogLevel
@@ -94,7 +96,7 @@ setBreakpoint functionName mCondition = do
   state <- get
   let nextId = maybe 1 ((+1) . maximum . map bpId . Set.toList) 
                (HashMap.lookup functionName (dsBreakpoints state))
-  let breakpoint = DebugBreakpoint
+  let newBreakpoint = DebugBreakpoint
         { bpId = nextId
         , bpFunction = functionName
         , bpCondition = mCondition
@@ -103,7 +105,7 @@ setBreakpoint functionName mCondition = do
         }
   let existingBreakpoints = HashMap.lookupDefault Set.empty functionName (dsBreakpoints state)
   put $ state
-    { dsBreakpoints = HashMap.insert functionName (Set.insert breakpoint existingBreakpoints) (dsBreakpoints state)
+    { dsBreakpoints = HashMap.insert functionName (Set.insert newBreakpoint existingBreakpoints) (dsBreakpoints state)
     }
   return nextId
 
@@ -143,12 +145,6 @@ logMessage level message = do
   when (level >= dsLogLevel state) $ do
     timestamp <- liftIO getCurrentTime
     let formattedTime = T.pack $ formatTime defaultTimeLocale "%H:%M:%S.%3q" timestamp
-    let levelText = case level of
-          DebugLevel -> "[DEBUG]"
-          InfoLevel  -> "[INFO ]"
-          WarnLevel  -> "[WARN ]"
-          ErrorLevel -> "[ERROR]"
-    
     let coloredLevel = case level of
           DebugLevel -> "\ESC[36m[DEBUG]\ESC[0m"  -- Cyan
           InfoLevel  -> "\ESC[32m[INFO ]\ESC[0m"  -- Green
@@ -156,13 +152,13 @@ logMessage level message = do
           ErrorLevel -> "\ESC[31m[ERROR]\ESC[0m"  -- Red
     
     let logLine = T.unwords [coloredLevel, formattedTime, message]
-    
+
     -- Print to console
-    liftIO $ Data.Text.IO.putStrLn logLine
-    
+    liftIO $ TIO.putStrLn logLine
+
     -- Also log to file if specified
     case dsLogFile state of
-      Just filePath -> liftIO $ Data.Text.IO.appendFile filePath (logLine <> "\n")
+      Just filePath -> liftIO $ TIO.appendFile filePath (logLine <> "\n")
       Nothing -> return ()
 
 -- | Execute action with breakpoint checking
@@ -179,7 +175,9 @@ withBreakpoint functionName action = do
         then action
         else do
           -- Hit breakpoint
-          let bp = head matchingBreakpoints
+          let bp = case matchingBreakpoints of
+                (x:_) -> x
+                []    -> error "withBreakpoint: unexpected empty matchingBreakpoints"
           logDebug $ "Hit breakpoint " <> T.pack (show (bpId bp)) <> " in " <> functionName
           
           -- Update hit count
@@ -193,16 +191,16 @@ withBreakpoint functionName action = do
           
           -- Pause execution
           liftIO $ do
-            System.IO.putStrLn $ "=== BREAKPOINT HIT === " ++ T.unpack functionName ++ " (ID: " ++ show (bpId bp) ++ ")"
-            System.IO.putStrLn "Press Enter to continue, or 'q' to quit..."
-            input <- System.IO.getLine
+            putStrLn $ "=== BREAKPOINT HIT === " ++ T.unpack functionName ++ " (ID: " ++ show (bpId bp) ++ ")"
+            putStrLn "Press Enter to continue, or 'q' to quit..."
+            input <- getLine
             when (input == "q") $ error "User requested quit"
-          
+
           -- Continue execution
           result <- action
-          
+
           -- Pop from call stack
-          modify $ \s -> s { dsCallStack = tail (dsCallStack s) }
+          modify $ \s -> s { dsCallStack = drop 1 (dsCallStack s) }
           return result
 
 -- | Check if breakpoint should be hit
@@ -222,7 +220,7 @@ traceFunction functionName action = do
   
   result <- action
   
-  modify $ \s -> s { dsCallStack = tail (dsCallStack s) }
+  modify $ \s -> s { dsCallStack = drop 1 (dsCallStack s) }
   logDebug $ "Exiting function: " <> functionName
   return result
 
@@ -235,11 +233,11 @@ debugPrintState = do
   logInfo $ "Log level: " <> T.pack (show $ dsLogLevel state)
   logInfo $ "Active breakpoints: " <> T.pack (show $ countActiveBreakpoints state)
   logInfo $ "Variables: " <> T.pack (show $ HashMap.size $ dsVariables state)
-  
+
   -- Print call stack details
   when (not $ null $ dsCallStack state) $ do
     logInfo "\nCall Stack Details:"
-    mapM_ (\(i, func) -> logInfo $ "  " <> T.pack (show i) <> ": " <> func) 
+    mapM_ (\(i, func) -> logInfo $ "  " <> T.pack (show (i :: Int)) <> ": " <> func)
           (zip [0..] $ reverse $ dsCallStack state)
   where
     countActiveBreakpoints s = sum $ map Set.size $ HashMap.elems $ dsBreakpoints s

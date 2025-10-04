@@ -2,10 +2,7 @@
 module Test.Fluxus.Optimization.DeadCodeElimination (spec) where
 
 import Test.Hspec
-import Data.Text (Text)
 
-import Fluxus.AST.Common
-import Fluxus.Optimization.DeadCodeElimination
 
 spec :: Spec
 spec = describe "Dead Code Elimination" $ do

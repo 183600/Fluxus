@@ -1,0 +1,203 @@
+All test running disabled by --no-run-tests flag. To mute this message in future, set
+notify-if-no-run-tests: false in Stack's configuration.
+fluxus> build (lib + exe + test) with ghc-9.8.4
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+[14 of 38] Compiling Fluxus.Debug.Debugger
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:149:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘levelText’
+    |
+149 |     let levelText = case level of
+    |         ^^^^^^^^^
+[37 of 38] Compiling Fluxus.Compiler.Driver
+[38 of 38] Compiling Fluxus.Debug.CLI
+Preprocessing executable 'fluxus' for fluxus-0.1.0.0..
+Building executable 'fluxus' for fluxus-0.1.0.0..
+[1 of 2] Compiling Main
+[2 of 2] Compiling Paths_fluxus
+[3 of 3] Linking .stack-work/dist/x86_64-linux/ghc-9.8.4/build/fluxus/fluxus
+Preprocessing test suite 'fluxus-test' for fluxus-0.1.0.0..
+Building test suite 'fluxus-test' for fluxus-0.1.0.0..
+[ 1 of 19] Compiling Test.Fluxus.Analysis.EscapeAnalysis
+[ 2 of 19] Compiling Test.Fluxus.Analysis.OwnershipInference
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Analysis/OwnershipInference.hs:8:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Control.Monad’ is redundant
+      except perhaps to import instances from ‘Control.Monad’
+    To import instances alone, use: import Control.Monad()
+  |
+8 | import Control.Monad (void)
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Analysis/OwnershipInference.hs:9:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Data.HashMap.Strict’ is redundant
+      except perhaps to import instances from ‘Data.HashMap.Strict’
+    To import instances alone, use: import Data.HashMap.Strict()
+  |
+9 | import Data.HashMap.Strict (HashMap)
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[ 3 of 19] Compiling Test.Fluxus.Analysis.ShapeAnalysis
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Analysis/ShapeAnalysis.hs:11:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Data.HashMap.Strict’ is redundant
+      except perhaps to import instances from ‘Data.HashMap.Strict’
+    To import instances alone, use: import Data.HashMap.Strict()
+   |
+11 | import Data.HashMap.Strict (HashMap)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[ 4 of 19] Compiling Test.Fluxus.Analysis.SmartFallback
+[ 5 of 19] Compiling Test.Fluxus.Analysis.TypeInference
+[ 6 of 19] Compiling Test.Fluxus.CodeGen.CPP
+[ 7 of 19] Compiling Test.Fluxus.CodeGen.Go
+[ 8 of 19] Compiling Test.Fluxus.ConvertCommand
+[ 9 of 19] Compiling Test.Fluxus.EndToEnd
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/EndToEnd.hs:81:11: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘outputFile’
+   |
+81 |       let outputFile = tmpDir </> "output.txt"
+   |           ^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/EndToEnd.hs:162:11: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘exeFile’
+    |
+162 |       let exeFile = tmpDir </> "combined"
+    |           ^^^^^^^
+[10 of 19] Compiling Test.Fluxus.Integration
+[11 of 19] Compiling Test.Fluxus.Optimization.ConstantFolding
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/ConstantFolding.hs:6:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Data.Text’ is redundant
+      except perhaps to import instances from ‘Data.Text’
+    To import instances alone, use: import Data.Text()
+  |
+6 | import Data.Text (Text)
+  | ^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/ConstantFolding.hs:9:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Fluxus.AST.Common’ is redundant
+      except perhaps to import instances from ‘Fluxus.AST.Common’
+    To import instances alone, use: import Fluxus.AST.Common()
+  |
+9 | import Fluxus.AST.Common
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
+[12 of 19] Compiling Test.Fluxus.Optimization.DeadCodeElimination
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/DeadCodeElimination.hs:5:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Data.Text’ is redundant
+      except perhaps to import instances from ‘Data.Text’
+    To import instances alone, use: import Data.Text()
+  |
+5 | import Data.Text (Text)
+  | ^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/DeadCodeElimination.hs:7:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Fluxus.AST.Common’ is redundant
+      except perhaps to import instances from ‘Fluxus.AST.Common’
+    To import instances alone, use: import Fluxus.AST.Common()
+  |
+7 | import Fluxus.AST.Common
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/DeadCodeElimination.hs:8:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Fluxus.Optimization.DeadCodeElimination’ is redundant
+      except perhaps to import instances from ‘Fluxus.Optimization.DeadCodeElimination’
+    To import instances alone, use: import Fluxus.Optimization.DeadCodeElimination()
+  |
+8 | import Fluxus.Optimization.DeadCodeElimination
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[13 of 19] Compiling Test.Fluxus.Optimization.Inlining
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:6:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Data.Text’ is redundant
+      except perhaps to import instances from ‘Data.Text’
+    To import instances alone, use: import Data.Text()
+  |
+6 | import Data.Text (Text)
+  | ^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:9:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Fluxus.Optimization.Inlining’ is redundant
+      except perhaps to import instances from ‘Fluxus.Optimization.Inlining’
+    To import instances alone, use: import Fluxus.Optimization.Inlining()
+  |
+9 | import Fluxus.Optimization.Inlining
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:22:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘expectedResult’
+   |
+22 |     let expectedResult = CEBinaryOp OpAdd (noLoc $ CELiteral (LInt 5)) (noLoc $ CELiteral (LInt 1))
+   |         ^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:32:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘expectedResult’
+   |
+32 |     let expectedResult = CEBinaryOp OpAdd (noLoc $ CELiteral (LInt 3)) (noLoc $ CELiteral (LInt 4))
+   |         ^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:41:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘expectedResult’
+   |
+41 |     let expectedResult = CEBinaryOp OpAdd (noLoc $ CEBinaryOp OpMul (noLoc $ CELiteral (LInt 5)) (noLoc $ CELiteral (LInt 2))) (noLoc $ CELiteral (LInt 1))
+   |         ^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:60:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘expectedResult’
+   |
+60 |     let expectedResult = CELiteral (LInt 42)
+   |         ^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:77:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘expectedResult’
+   |
+77 |     let expectedResult = CEBinaryOp OpAdd 
+   |         ^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:98:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘expectedResult’
+   |
+98 |     let expectedResult = CELiteral (LInt 0)
+   |         ^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:109:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘expectedResult’
+    |
+109 |     let expectedResult = CEBinaryOp OpAdd 
+    |         ^^^^^^^^^^^^^^
+[14 of 19] Compiling Test.Fluxus.Optimization
+[15 of 19] Compiling Test.Fluxus.Parser.Go
+[16 of 19] Compiling Test.Fluxus.Parser.Python
+[17 of 19] Compiling Test.Fluxus.Runtime.Go
+[18 of 19] Compiling Test.Fluxus.Runtime.Python
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Runtime/Python.hs:6:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Data.Text’ is redundant
+      except perhaps to import instances from ‘Data.Text’
+    To import instances alone, use: import Data.Text()
+  |
+6 | import Data.Text (Text)
+  | ^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Runtime/Python.hs:7:1: warning: [GHC-66111] [-Wunused-imports]
+    The qualified import of ‘Data.Text’ is redundant
+      except perhaps to import instances from ‘Data.Text’
+    To import instances alone, use: import Data.Text()
+  |
+7 | import qualified Data.Text as T
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Runtime/Python.hs:9:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Fluxus.Runtime.Python’ is redundant
+      except perhaps to import instances from ‘Fluxus.Runtime.Python’
+    To import instances alone, use: import Fluxus.Runtime.Python()
+  |
+9 | import Fluxus.Runtime.Python
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[19 of 19] Compiling Main
+[20 of 20] Linking .stack-work/dist/x86_64-linux/ghc-9.8.4/build/fluxus-test/fluxus-test
+fluxus> copy/register
+Installing library in /home/qwe12345678/hyperstatic2/.stack-work/install/x86_64-linux/2a42907f94f022bb546dec6cd9ecfcdcae21b985a1b0099a2bd97a2a1d45b651/9.8.4/lib/x86_64-linux-ghc-9.8.4/fluxus-0.1.0.0-JGG2xle87QtArgy2CEs9tD
+Installing executable fluxus in /home/qwe12345678/hyperstatic2/.stack-work/install/x86_64-linux/2a42907f94f022bb546dec6cd9ecfcdcae21b985a1b0099a2bd97a2a1d45b651/9.8.4/bin
+Registering library for fluxus-0.1.0.0..

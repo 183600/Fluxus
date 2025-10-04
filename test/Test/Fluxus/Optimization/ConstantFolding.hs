@@ -3,10 +3,9 @@
 module Test.Fluxus.Optimization.ConstantFolding (spec) where
 
 import Test.Hspec
-import Data.Text (Text)
 import Data.Int (Int64)
 
-import Fluxus.AST.Common
+
 import Fluxus.Optimization.ConstantFolding
 
 spec :: Spec

@@ -1,0 +1,73 @@
+fluxus-0.1.0.0: unregistering (local file changes: test/Test/Fluxus/EndToEnd.hs
+test/Test/Fluxus/Optimization/ConstantFolding.hs test/Test/Fluxus/Op...)
+All test running disabled by --no-run-tests flag. To mute this message in future, set
+notify-if-no-run-tests: false in Stack's configuration.
+fluxus> build (lib + exe + test) with ghc-9.8.4
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+Preprocessing executable 'fluxus' for fluxus-0.1.0.0..
+Building executable 'fluxus' for fluxus-0.1.0.0..
+Preprocessing test suite 'fluxus-test' for fluxus-0.1.0.0..
+Building test suite 'fluxus-test' for fluxus-0.1.0.0..
+[ 9 of 19] Compiling Test.Fluxus.EndToEnd [Source file changed]
+[11 of 19] Compiling Test.Fluxus.Optimization.ConstantFolding [Source file changed]
+[12 of 19] Compiling Test.Fluxus.Optimization.DeadCodeElimination [Source file changed]
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/DeadCodeElimination.hs:5:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Fluxus.Optimization.DeadCodeElimination’ is redundant
+      except perhaps to import instances from ‘Fluxus.Optimization.DeadCodeElimination’
+    To import instances alone, use: import Fluxus.Optimization.DeadCodeElimination()
+  |
+5 | import Fluxus.Optimization.DeadCodeElimination
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[13 of 19] Compiling Test.Fluxus.Optimization.Inlining [Source file changed]
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:20:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘expectedResult’
+   |
+20 |     let expectedResult = CEBinaryOp OpAdd (noLoc $ CELiteral (LInt 5)) (noLoc $ CELiteral (LInt 1))
+   |         ^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:30:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘expectedResult’
+   |
+30 |     let expectedResult = CEBinaryOp OpAdd (noLoc $ CELiteral (LInt 3)) (noLoc $ CELiteral (LInt 4))
+   |         ^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:39:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘expectedResult’
+   |
+39 |     let expectedResult = CEBinaryOp OpAdd (noLoc $ CEBinaryOp OpMul (noLoc $ CELiteral (LInt 5)) (noLoc $ CELiteral (LInt 2))) (noLoc $ CELiteral (LInt 1))
+   |         ^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:58:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘expectedResult’
+   |
+58 |     let expectedResult = CELiteral (LInt 42)
+   |         ^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:75:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘expectedResult’
+   |
+75 |     let expectedResult = CEBinaryOp OpAdd 
+   |         ^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:96:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘expectedResult’
+   |
+96 |     let expectedResult = CELiteral (LInt 0)
+   |         ^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/test/Test/Fluxus/Optimization/Inlining.hs:107:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘expectedResult’
+    |
+107 |     let expectedResult = CEBinaryOp OpAdd 
+    |         ^^^^^^^^^^^^^^
+[14 of 19] Compiling Test.Fluxus.Optimization [Test.Fluxus.Optimization.ConstantFolding changed]
+[18 of 19] Compiling Test.Fluxus.Runtime.Python [Source file changed]
+[19 of 19] Compiling Main [Test.Fluxus.Optimization changed]
+[20 of 20] Linking .stack-work/dist/x86_64-linux/ghc-9.8.4/build/fluxus-test/fluxus-test [Objects changed]
+fluxus> copy/register
+Installing library in /home/qwe12345678/hyperstatic2/.stack-work/install/x86_64-linux/2a42907f94f022bb546dec6cd9ecfcdcae21b985a1b0099a2bd97a2a1d45b651/9.8.4/lib/x86_64-linux-ghc-9.8.4/fluxus-0.1.0.0-JGG2xle87QtArgy2CEs9tD
+Installing executable fluxus in /home/qwe12345678/hyperstatic2/.stack-work/install/x86_64-linux/2a42907f94f022bb546dec6cd9ecfcdcae21b985a1b0099a2bd97a2a1d45b651/9.8.4/bin
+Registering library for fluxus-0.1.0.0..

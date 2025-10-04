@@ -1,0 +1,63 @@
+fluxus-0.1.0.0: unregistering (local file changes: CHANGELOG.md README.md app/Main.hs fluxus.cabal
+libs/codegen/src/Fluxus/CodeGen/CPP.hs package.ya...)
+All test running disabled by --no-run-tests flag. To mute this message in future, set
+notify-if-no-run-tests: false in Stack's configuration.
+fluxus> configure (lib + exe + test)
+Configuring fluxus-0.1.0.0...
+fluxus> build (lib + exe + test) with ghc-9.8.4
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+[ 1 of 38] Compiling Fluxus.AST.Common
+[ 2 of 38] Compiling Fluxus.AST.Go.Common
+[ 3 of 38] Compiling Fluxus.AST.Go.Expressions
+[ 4 of 38] Compiling Fluxus.AST.Go.Types
+[ 5 of 38] Compiling Fluxus.AST.Go.Helpers
+[ 6 of 38] Compiling Fluxus.AST.Go
+[ 7 of 38] Compiling Fluxus.AST.Python
+[ 8 of 38] Compiling Fluxus.Analysis.OwnershipInference
+[ 9 of 38] Compiling Fluxus.Analysis.ShapeAnalysis
+[10 of 38] Compiling Fluxus.Analysis.SmartFallback
+[11 of 38] Compiling Fluxus.Analysis.TypeInference
+[12 of 38] Compiling Fluxus.CodeGen.CPP
+[13 of 38] Compiling Fluxus.Compiler.Config
+[14 of 38] Compiling Fluxus.Debug.Debugger
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:247:14: error: [GHC-74097]
+[15 of 38] Compiling Fluxus.Debug.Logger
+    Illegal type signature: ‘Int’
+      Type signatures are only allowed in patterns with ScopedTypeVariables
+    Suggested fix: Perhaps you intended to use ScopedTypeVariables
+    |
+247 |     mapM_ (\(i :: Int, func) -> logInfo $ "  " <> T.pack (show i) <> ": " <> func)
+    |              ^^^^^^^^
+[16 of 38] Compiling Fluxus.Internal.Monad
+[17 of 38] Compiling Fluxus.Internal.Types
+[18 of 38] Compiling Fluxus.Optimization.BasicPasses
+[19 of 38] Compiling Fluxus.Optimization.ConstantFolding
+[20 of 38] Compiling Fluxus.Optimization.ConstantPropagation
+[21 of 38] Compiling Fluxus.Optimization.DeadCodeElimination
+[22 of 38] Compiling Fluxus.Optimization.Devirtualization
+[23 of 38] Compiling Fluxus.Optimization.Inlining
+[24 of 38] Compiling Fluxus.Optimization.Monomorphization
+[25 of 38] Compiling Fluxus.Optimization.SizeReduction
+[26 of 38] Compiling Fluxus.Optimization.Vectorization
+[27 of 38] Compiling Fluxus.Parser.Go.Lexer
+[28 of 38] Compiling Fluxus.Parser.Go.Parser
+[29 of 38] Compiling Fluxus.Parser.Python.Lexer
+[30 of 38] Compiling Fluxus.Parser.Python.Parser
+[31 of 38] Compiling Fluxus.CodeGen.Go
+[32 of 38] Compiling Fluxus.Analysis.EscapeAnalysis
+[33 of 38] Compiling Fluxus.Runtime.Go
+[34 of 38] Compiling Fluxus.Runtime.Python
+[35 of 38] Compiling Fluxus.Utils.Graph
+[36 of 38] Compiling Fluxus.Utils.Pretty
+
+Error: [S-7282]
+       Stack failed to execute the build plan.
+       
+       While executing the build plan, Stack encountered the error:
+       
+       [S-7011]
+       While building package fluxus-0.1.0.0 (scroll up to its section to see the error) using:
+       /home/qwe12345678/.stack/setup-exe-cache/x86_64-linux/Cabal-simple_w2MFVN35_3.10.3.0_ghc-9.8.4 --verbose=1 --builddir=.stack-work/dist/x86_64-linux/ghc-9.8.4 build lib:fluxus exe:fluxus test:fluxus-test --ghc-options ""
+       Process exited with code: ExitFailure 1 

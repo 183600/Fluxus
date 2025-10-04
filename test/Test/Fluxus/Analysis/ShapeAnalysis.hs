@@ -8,7 +8,6 @@ import qualified Data.Text as T
 
 import Fluxus.Analysis.ShapeAnalysis
 import Fluxus.AST.Common (Identifier(..))
-import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Maybe (isJust)
 

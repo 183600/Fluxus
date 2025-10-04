@@ -1,0 +1,190 @@
+fluxus-0.1.0.0: unregistering (local file changes: src/Fluxus/Debug/Debugger.hs)
+All test running disabled by --no-run-tests flag. To mute this message in future, set
+notify-if-no-run-tests: false in Stack's configuration.
+fluxus> build (lib + exe + test) with ghc-9.8.4
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+[14 of 38] Compiling Fluxus.Debug.Debugger [Source file changed]
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:30:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘System.IO’ is redundant
+      except perhaps to import instances from ‘System.IO’
+    To import instances alone, use: import System.IO()
+   |
+30 | import System.IO (getLine)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:91:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘state’ shadows the existing binding
+      imported from ‘Control.Monad.State’ at src/Fluxus/Debug/Debugger.hs:25:1-26
+      (and originally defined in ‘Control.Monad.State.Class’)
+   |
+91 |   state <- get
+   |   ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:94:7: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘breakpoint’ shadows the existing binding
+      defined at src/Fluxus/Debug/Debugger.hs:285:1
+   |
+94 |   let breakpoint = DebugBreakpoint
+   |       ^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:110:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘state’ shadows the existing binding
+      imported from ‘Control.Monad.State’ at src/Fluxus/Debug/Debugger.hs:25:1-26
+      (and originally defined in ‘Control.Monad.State.Class’)
+    |
+110 |   state <- get
+    |   ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:139:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘state’ shadows the existing binding
+      imported from ‘Control.Monad.State’ at src/Fluxus/Debug/Debugger.hs:25:1-26
+      (and originally defined in ‘Control.Monad.State.Class’)
+    |
+139 |   state <- get
+    |   ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:143:9: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘levelText’
+    |
+143 |     let levelText = case level of
+    |         ^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:144:25: warning: [GHC-18042] [-Wtype-defaults]
+    • Defaulting the type variable ‘a0’ to type ‘String’ in the following constraint
+        Data.String.IsString a0 arising from the literal ‘"[DEBUG]"’
+    • In the expression: "[DEBUG]"
+      In a case alternative: DebugLevel -> "[DEBUG]"
+      In the expression:
+        case level of
+          DebugLevel -> "[DEBUG]"
+          InfoLevel -> "[INFO ]"
+          WarnLevel -> "[WARN ]"
+          ErrorLevel -> "[ERROR]"
+    |
+144 |           DebugLevel -> "[DEBUG]"
+    |                         ^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:168:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘state’ shadows the existing binding
+      imported from ‘Control.Monad.State’ at src/Fluxus/Debug/Debugger.hs:25:1-26
+      (and originally defined in ‘Control.Monad.State.Class’)
+    |
+168 |   state <- get
+    |   ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:179:20: warning: [GHC-63394] [-Wx-partial]
+    In the use of ‘head’
+    (imported from Prelude, but defined in GHC.List):
+    "This is a partial function, it throws an error on empty lists. Use pattern matching or Data.List.uncons instead. Consider refactoring to use Data.List.NonEmpty."
+    |
+179 |           let bp = head matchingBreakpoints
+    |                    ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:202:44: warning: [GHC-63394] [-Wx-partial]
+    In the use of ‘tail’
+    (imported from Prelude, but defined in GHC.List):
+    "This is a partial function, it throws an error on empty lists. Replace it with drop 1, or use pattern matching or Data.List.uncons instead. Consider refactoring to use Data.List.NonEmpty."
+    |
+202 |           modify $ \s -> s { dsCallStack = tail (dsCallStack s) }
+    |                                            ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:217:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘state’ shadows the existing binding
+      imported from ‘Control.Monad.State’ at src/Fluxus/Debug/Debugger.hs:25:1-26
+      (and originally defined in ‘Control.Monad.State.Class’)
+    |
+217 |   state <- get
+    |   ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:222:36: warning: [GHC-63394] [-Wx-partial]
+    In the use of ‘tail’
+    (imported from Prelude, but defined in GHC.List):
+    "This is a partial function, it throws an error on empty lists. Replace it with drop 1, or use pattern matching or Data.List.uncons instead. Consider refactoring to use Data.List.NonEmpty."
+    |
+222 |   modify $ \s -> s { dsCallStack = tail (dsCallStack s) }
+    |                                    ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:229:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘state’ shadows the existing binding
+      imported from ‘Control.Monad.State’ at src/Fluxus/Debug/Debugger.hs:25:1-26
+      (and originally defined in ‘Control.Monad.State.Class’)
+    |
+229 |   state <- get
+    |   ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:239:52: warning: [GHC-18042] [-Wtype-defaults]
+    • Defaulting the type variable ‘a0’ to type ‘Integer’ in the following constraints
+        (Show a0)
+          arising from a use of ‘show’
+          at src/Fluxus/Debug/Debugger.hs:239:52-55
+        (Num a0)
+          arising from the literal ‘0’ at src/Fluxus/Debug/Debugger.hs:240:17
+        (Enum a0)
+          arising from the arithmetic sequence ‘0 .. ’
+          at src/Fluxus/Debug/Debugger.hs:240:16-20
+    • In the first argument of ‘T.pack’, namely ‘(show i)’
+      In the first argument of ‘(<>)’, namely ‘T.pack (show i)’
+      In the second argument of ‘(<>)’, namely
+        ‘T.pack (show i) <> ": " <> func’
+    |
+239 |     mapM_ (\(i, func) -> logInfo $ "  " <> T.pack (show i) <> ": " <> func) 
+    |                                                    ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:246:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘setDebugVariable’
+    |
+246 | setDebugVariable name value = do
+    | ^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:251:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘getDebugVariable’
+    |
+251 | getDebugVariable name = do
+    | ^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:252:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘state’ shadows the existing binding
+      imported from ‘Control.Monad.State’ at src/Fluxus/Debug/Debugger.hs:25:1-26
+      (and originally defined in ‘Control.Monad.State.Class’)
+    |
+252 |   state <- get
+    |   ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:257:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘clearAllBreakpoints’
+    |
+257 | clearAllBreakpoints = do
+    | ^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:263:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘listBreakpoints’
+    |
+263 | listBreakpoints = do
+    | ^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:264:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘state’ shadows the existing binding
+      imported from ‘Control.Monad.State’ at src/Fluxus/Debug/Debugger.hs:25:1-26
+      (and originally defined in ‘Control.Monad.State.Class’)
+    |
+264 |   state <- get
+    |   ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Debug/Debugger.hs:298:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘debugMemory’
+    |
+298 | debugMemory context = do
+    | ^^^^^^^^^^^
+[37 of 38] Compiling Fluxus.Compiler.Driver [Fluxus.Debug.Debugger changed]
+Preprocessing executable 'fluxus' for fluxus-0.1.0.0..
+Building executable 'fluxus' for fluxus-0.1.0.0..
+[3 of 3] Linking .stack-work/dist/x86_64-linux/ghc-9.8.4/build/fluxus/fluxus [Library changed]
+Preprocessing test suite 'fluxus-test' for fluxus-0.1.0.0..
+Building test suite 'fluxus-test' for fluxus-0.1.0.0..
+[20 of 20] Linking .stack-work/dist/x86_64-linux/ghc-9.8.4/build/fluxus-test/fluxus-test [Library changed]
+fluxus> copy/register
+Installing library in /home/qwe12345678/hyperstatic2/.stack-work/install/x86_64-linux/2a42907f94f022bb546dec6cd9ecfcdcae21b985a1b0099a2bd97a2a1d45b651/9.8.4/lib/x86_64-linux-ghc-9.8.4/fluxus-0.1.0.0-JGG2xle87QtArgy2CEs9tD
+Installing executable fluxus in /home/qwe12345678/hyperstatic2/.stack-work/install/x86_64-linux/2a42907f94f022bb546dec6cd9ecfcdcae21b985a1b0099a2bd97a2a1d45b651/9.8.4/bin
+Registering library for fluxus-0.1.0.0..

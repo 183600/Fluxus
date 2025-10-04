@@ -3,10 +3,7 @@
 module Test.Fluxus.Runtime.Python (spec) where
 
 import Test.Hspec
-import Data.Text (Text)
-import qualified Data.Text as T
 
-import Fluxus.Runtime.Python
 
 spec :: Spec
 spec = describe "Python Runtime Tests" $ do

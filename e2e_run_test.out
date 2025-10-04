@@ -1,0 +1,35 @@
+
+Fluxus Compiler Comprehensive Test Suite
+  Integration Tests
+    End-to-End Tests
+[INFO] Compiling project with 1 files
+[INFO] Processing file: /tmp/fluxus-test--32077fe21f2be5e5/main.py
+[INFO] [DRIVER] === Starting compilation pipeline for: /tmp/fluxus-test--32077fe21f2be5e5/main.py ===
+[INFO] [DRIVER] Debug breakpoint: processSourceFile called with file: /tmp/fluxus-test--32077fe21f2be5e5/main.py
+[INFO] Phase: parsing
+[INFO] [DRIVER] Parse stage started for: /tmp/fluxus-test--32077fe21f2be5e5/main.py
+[INFO] [DRIVER] Python lexer starting for: /tmp/fluxus-test--32077fe21f2be5e5/main.py
+[INFO] [DRIVER] Python lexer succeeded: 24 tokens
+[INFO] [DRIVER] Python parser starting
+[INFO] [DRIVER] Python parser succeeded
+[INFO] Phase: type-inference
+[INFO] [DRIVER] Starting type inference for: /tmp/fluxus-test--32077fe21f2be5e5/main.py
+[INFO] Running type inference analysis
+[INFO] [DRIVER] Type inference stage started
+[INFO] Type inference completed successfully
+[INFO] [DRIVER] Type inference completed successfully
+[INFO] Phase: optimization
+[INFO] [DRIVER] Starting optimization for: /tmp/fluxus-test--32077fe21f2be5e5/main.py
+[INFO] Running optimizations at level O2
+[INFO] [DRIVER] === Pipeline completed for: /tmp/fluxus-test--32077fe21f2be5e5/main.py ===
+[INFO] Phase: code-generation
+[INFO] [DRIVER] Main code generation stage started
+[INFO] [DRIVER] Main code generation completed successfully
+[INFO] Phase: c++-compilation
+[INFO] Successfully compiled: /tmp/fluxus-test--32077fe21f2be5e5/main.py
+[INFO] Compiling 0 files sequentially
+[INFO] Wrote combined C++ file: /tmp/fluxus-test--32077fe21f2be5e5/main.cpp
+      compiles and runs generated C++ code [✔]
+
+Finished in 0.6640 seconds
+1 example, 0 failures

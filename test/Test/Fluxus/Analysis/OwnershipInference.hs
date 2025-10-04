@@ -5,8 +5,6 @@ module Test.Fluxus.Analysis.OwnershipInference (spec) where
 import Test.Hspec
 import Data.Text (Text)
 import qualified Data.Text as T
-import Control.Monad (void)
-import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 
 import Fluxus.Analysis.OwnershipInference

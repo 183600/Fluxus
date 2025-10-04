@@ -1,0 +1,20 @@
+fluxus-0.1.0.0: unregistering (local file changes:
+test/Test/Fluxus/Optimization/DeadCodeElimination.hs test/Test/Fluxus/Optimization/Inlining.hs)
+All test running disabled by --no-run-tests flag. To mute this message in future, set
+notify-if-no-run-tests: false in Stack's configuration.
+fluxus> build (lib + exe + test) with ghc-9.8.4
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+Preprocessing executable 'fluxus' for fluxus-0.1.0.0..
+Building executable 'fluxus' for fluxus-0.1.0.0..
+Preprocessing test suite 'fluxus-test' for fluxus-0.1.0.0..
+Building test suite 'fluxus-test' for fluxus-0.1.0.0..
+[12 of 19] Compiling Test.Fluxus.Optimization.DeadCodeElimination [Source file changed]
+[13 of 19] Compiling Test.Fluxus.Optimization.Inlining [Source file changed]
+[14 of 19] Compiling Test.Fluxus.Optimization [Test.Fluxus.Optimization.DeadCodeElimination changed]
+[19 of 19] Compiling Main [Test.Fluxus.Optimization changed]
+[20 of 20] Linking .stack-work/dist/x86_64-linux/ghc-9.8.4/build/fluxus-test/fluxus-test [Objects changed]
+fluxus> copy/register
+Installing library in /home/qwe12345678/hyperstatic2/.stack-work/install/x86_64-linux/2a42907f94f022bb546dec6cd9ecfcdcae21b985a1b0099a2bd97a2a1d45b651/9.8.4/lib/x86_64-linux-ghc-9.8.4/fluxus-0.1.0.0-JGG2xle87QtArgy2CEs9tD
+Installing executable fluxus in /home/qwe12345678/hyperstatic2/.stack-work/install/x86_64-linux/2a42907f94f022bb546dec6cd9ecfcdcae21b985a1b0099a2bd97a2a1d45b651/9.8.4/bin
+Registering library for fluxus-0.1.0.0..
