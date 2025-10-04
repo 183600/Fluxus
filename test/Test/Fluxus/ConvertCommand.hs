@@ -47,6 +47,10 @@ spec = describe "Fluxus Convert Command Tests" $ do
     fileExists <- doesFileExist cppOut
     fileExists `shouldBe` True
 
+    -- Generated C++ should contain original source header
+    cppContent <- readFile cppOut
+    ("Original Source (test/python-tests/feature_fstring.py)" `isInfixOf` cppContent) `shouldBe` True
+
   it "accepts different optimization levels" $ do
     forM_ ["-0", "-2", "-3", "-O"] $ \opt -> do
       (exitCode, _out, _err) <- readProcessWithExitCode "fluxus"
@@ -57,6 +61,35 @@ spec = describe "Fluxus Convert Command Tests" $ do
     (exitCode, _out, _err) <- readProcessWithExitCode "fluxus"
       ["--python", "-2", "nonexistent_dir/nonexistent_file.py"] ""
     exitCode `shouldSatisfy` (/= ExitSuccess)
+
+  it "fails fast on invalid option" $ do
+    (exitCode, _out, err) <- readProcessWithExitCode "fluxus" ["--this-flag-does-not-exist"] ""
+    exitCode `shouldSatisfy` (/= ExitSuccess)
+    ("Configuration error:" `isInfixOf` err || "Invalid option" `isInfixOf` err) `shouldBe` True
+
+  it "respects environment overrides (FLUXUS_CPP_STD) and prints in verbose config" $ do
+    -- Use env to set FLUXUS_CPP_STD and run with -vv to print configuration
+    (exitCode, out, _err) <- readProcessWithExitCode "env"
+      ["FLUXUS_CPP_STD=c++23", "fluxus", "--python", "-v", "-v", "--stop-at-codegen", "test/python-tests/basic_arithmetic.py"] ""
+    exitCode `shouldBe` ExitSuccess
+    ("C++ Standard       : c++23" `isInfixOf` out) `shouldBe` True
+
+  it "can generate a combined .cpp from multiple inputs when -o points to .cpp" $ do
+    let combined = "test/python-tests/combined.cpp"
+    exists <- doesFileExist combined
+    when exists $ removeFile combined
+
+    (exitCode, _out, _err) <- readProcessWithExitCode "fluxus"
+      ["--python", "--stop-at-codegen", "-o", combined
+      , "test/python-tests/feature_fstring.py", "test/python-tests/basic_arithmetic.py"] ""
+    exitCode `shouldBe` ExitSuccess
+
+    existsAfter <- doesFileExist combined
+    existsAfter `shouldBe` True
+
+    content <- readFile combined
+    ("Original Source (test/python-tests/feature_fstring.py)" `isInfixOf` content) `shouldBe` True
+    ("Original Source (test/python-tests/basic_arithmetic.py)" `isInfixOf` content) `shouldBe` True
 
   it "executes Python files and compares outputs with compiled executables" $ do
     -- Get all Python files in test/python-tests
