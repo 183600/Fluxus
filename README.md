@@ -198,6 +198,35 @@ sudo apt install fluxus
 
 **macOS (Homebrew):**
 ```bash
+brew install fluxus
+```
+
+## 🏭 Production usage
+
+For production builds, use the production preset to enable strict mode, maximum optimizations, and quiet logging by default.
+
+- Command line:
+  - stack run -- --production <inputs...>
+  - or: stack run -- --prod <inputs...>
+
+What the preset does:
+- Sets optimization level to O3
+- Disables debug info and profiler
+- Enables strict mode (treat warnings as errors)
+- Disables keeping intermediate files
+- Sets verbosity to 0
+
+You can still override options via flags or environment variables:
+- FLUXUS_VERBOSE=1
+- FLUXUS_STRICT=1
+- FLUXUS_OPTIMIZATION=O2|O3|Os
+- FLUXUS_OUTPUT=dist/app
+- CXX=clang++ FLUXUS_CPP_STD=c++20
+
+Example:
+- stack run -- --production src/ -o dist/fluxus_app
+- FLUXUS_VERBOSE=1 stack run -- --prod project/ --enable-analysis -Iinclude -Llib -lstdc++
+
 # Install from Homebrew (when available)
 brew install fluxus
 ```

@@ -425,12 +425,25 @@ commandLineInterface = info (configParser <**> helper)
 
 loadConfig :: [String] -> IO (Either String CompilerConfig)
 loadConfig args = do
+  -- Support a production preset flag while keeping parser strict
+  let (isProduction, filteredArgs) =
+        let prods = ["--production","--prod"]
+        in (any (`elem` prods) args, filter (`notElem` prods) args)
   -- Parse command line arguments using optparse-applicative
-  let parseResult = execParserPure defaultPrefs commandLineInterface args
+  let parseResult = execParserPure defaultPrefs commandLineInterface filteredArgs
   case parseResult of
     Options.Applicative.Success cliConfig -> do
       -- Load from config file if it exists
       configFromFile <- loadConfigFromFile "fluxus.yaml"
+      let applyProd cfg = if isProduction then cfg
+                            { ccOptimizationLevel = O3
+                            , ccEnableDebugInfo = False
+                            , ccEnableProfiler = False
+                            , ccVerboseLevel = 0
+                            , ccKeepIntermediates = False
+                            , ccStrictMode = True
+                            }
+                          else cfg
       case configFromFile of
         Left err -> do
           -- Only warn if file exists but can't be parsed
@@ -438,7 +451,8 @@ loadConfig args = do
           when exists $ hPutStrLn stderr $ "Warning: " ++ err
 
           -- Apply environment overrides to CLI config
-          finalConfig <- applyEnvironmentOverrides cliConfig
+          let prodCfg = applyProd cliConfig
+          finalConfig <- applyEnvironmentOverrides prodCfg
           -- Validate the configuration
           validation <- checkSystemRequirements finalConfig
           case validation of
@@ -448,7 +462,8 @@ loadConfig args = do
         Right fileConfig -> do
           -- Merge: CLI > Environment > File > Default
           let mergedConfig = mergeConfigs Override fileConfig cliConfig
-          finalConfig <- applyEnvironmentOverrides mergedConfig
+          let prodCfg = applyProd mergedConfig
+          finalConfig <- applyEnvironmentOverrides prodCfg
           -- Validate the configuration
           validation <- checkSystemRequirements finalConfig
           case validation of
