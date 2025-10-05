@@ -5,7 +5,9 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Fluxus.CodeGen.CPP
+-- NOTE: Renamed to avoid duplicate module warning with src/Fluxus/CodeGen/CPP.hs
+-- Original module name was Fluxus.CodeGen.CPP. This variant is currently unused.
+module Fluxus.CodeGen.CPP.Duplicate
   ( CppCodeGen
   , CppGenState(..)
   , CppGenConfig(..)
