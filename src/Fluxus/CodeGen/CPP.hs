@@ -192,15 +192,26 @@ standardIncludes _config =
   , "<vector>"
   , "<memory>"
   , "<functional>"
+  , "<cmath>"  -- for std::pow
   ]
 
 -- | Generate main function
+-- Improved logic: if a Python function named 'main' exists (renamed to 'main_func'),
+-- generate a wrapper that calls it. Otherwise fall back to flattening top-level stmts.
 generateMainFunction :: CppGenConfig -> Either PythonAST GoAST -> CppDecl
 generateMainFunction _config ast = 
-  let mainBody = case ast of
-        Left pyAst -> generateMainBodyFromPython pyAst
-        Right _goAst -> [CppExprStmt (CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit "Go main not implemented")))]
-  in CppFunction "main" CppInt [] (mainBody ++ [CppReturn (Just (CppLiteral (CppIntLit 0)))])
+  case ast of
+    Left (PythonAST (PythonModule _ _ _ stmts)) ->
+      let hasUserMain = any (\(Fluxus.AST.Common.Located _ s) -> case s of
+                                   PyFuncDef PythonFuncDef{ pyFuncName = Identifier n } -> n == "main"
+                                   _ -> False) stmts
+          body | hasUserMain = [CppExprStmt (CppCall (CppVar "main_func") []), CppReturn (Just (CppLiteral (CppIntLit 0)))]
+               | otherwise   = generateMainBodyFromPython (PythonAST (PythonModule Nothing Nothing [] stmts)) ++ [CppReturn (Just (CppLiteral (CppIntLit 0)))]
+      in CppFunction "main" CppInt [] body
+    Right _goAst -> CppFunction "main" CppInt []
+        [ CppExprStmt (CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit "Go main not implemented")))
+        , CppReturn (Just (CppLiteral (CppIntLit 0)))
+        ]
 
 -- | Generate main function body from Python AST
 generateMainBodyFromPython :: PythonAST -> [CppStmt]
@@ -245,12 +256,9 @@ convertPythonFunction PythonFuncDef{..} =
           else name
       params = map convertPythonParam pyFuncParams
       body = concatMap convertPythonStmtToStmt pyFuncBody
-      -- Determine return type based on function body
-      returnType = if any hasReturn body then CppInt else CppVoid
+      -- Use auto return type for flexibility (simple heuristic)
+      returnType = CppAuto
   in CppFunction funcName returnType params body
-  where
-    hasReturn (CppReturn _) = True
-    hasReturn _ = False
 
 -- | Convert Python parameter to C++ parameter
 convertPythonParam :: Fluxus.AST.Common.Located PythonParameter -> CppParam
@@ -297,8 +305,18 @@ convertPythonStmtToStmt :: Fluxus.AST.Common.Located PythonStmt -> [CppStmt]
 convertPythonStmtToStmt (Fluxus.AST.Common.Located _ stmt) = case stmt of
   PyReturn (Just expr) -> [CppReturn (Just (convertPythonExpr expr))]
   PyReturn Nothing -> [CppReturn Nothing]
-  PyExprStmt expr -> [CppExprStmt (convertPythonExpr expr)]
+  PyExprStmt expr -> [wrapPrint (convertPythonExpr expr)]
+  PyAssign (t:_) value -> case t of
+    Fluxus.AST.Common.Located _ (PatVar (Identifier name)) -> [CppDecl (CppVariable name CppAuto (Just (convertPythonExpr value)))]
+    _ -> []
+  PyAssign [] _ -> []
   _ -> []
+  where
+    -- Ensure expressions printing via std::cout append newline
+    wrapPrint e@(CppBinary op (CppVar "std::cout") rhs)
+      | op == "<<" = CppExprStmt (CppBinary "<<" (CppBinary "<<" (CppVar "std::cout") rhs) (CppLiteral (CppStringLit "\n")))
+      | otherwise = CppExprStmt e
+    wrapPrint e = CppExprStmt e
 
 -- | Convert Python expression to C++ expression
 convertPythonExpr :: Fluxus.AST.Common.Located PythonExpr -> CppExpr
@@ -309,7 +327,9 @@ convertPythonExpr (Fluxus.AST.Common.Located _ expr) = case expr of
     let cppOp = convertBinaryOp op
         leftExpr = convertPythonExpr left
         rightExpr = convertPythonExpr right
-    in CppBinary cppOp leftExpr rightExpr
+    in if cppOp == "pow"
+         then CppCall (CppVar "std::pow") [leftExpr, rightExpr]
+         else CppBinary cppOp leftExpr rightExpr
   PyCall func args -> 
     let funcExpr = convertPythonExpr func
         argExprs = map convertPythonArg args
@@ -319,8 +339,11 @@ convertPythonExpr (Fluxus.AST.Common.Located _ expr) = case expr of
         case argExprs of
           [arg] -> CppBinary "<<" (CppVar "std::cout") arg
           _ -> CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit ""))
+      -- Avoid generating invalid calls like 0(...)
+      CppLiteral (CppIntLit 0) -> CppLiteral (CppIntLit 0)
       _ -> CppCall funcExpr argExprs
-  _ -> CppLiteral (CppIntLit 0)  -- Default to 0 instead of undefined variable
+  -- Fallback literal for unsupported expressions
+  _ -> CppLiteral (CppIntLit 0)
 
 -- | Convert Python literal to C++ literal
 convertPythonLiteral :: PythonLiteral -> CppLiteral
