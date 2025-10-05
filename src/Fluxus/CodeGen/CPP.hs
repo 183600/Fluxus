@@ -196,6 +196,7 @@ standardIncludes _config =
   , "<memory>"
   , "<functional>"
   , "<cmath>"  -- for std::pow
+  , "<sstream>"  -- for future string stream composition
   ]
 
 -- | Generate main function
@@ -403,9 +404,23 @@ convertPythonExpr (Common.Located _ expr) = case expr of
     let cppOp = convertBinaryOp op
         leftExpr = convertPythonExpr left
         rightExpr = convertPythonExpr right
+        isStringLiteral e = case e of
+          CppLiteral (CppStringLit _) -> True
+          _ -> False
+        ensureString e = case e of
+          CppLiteral (CppStringLit _) -> CppCall (CppVar "std::string") [e]
+          _ -> e
+        toStringIfNeeded e = case e of
+          CppLiteral (CppStringLit _) -> e
+          CppCall (CppVar "std::to_string") _ -> e
+          _ -> CppCall (CppVar "std::to_string") [e]
     in if cppOp == "pow"
          then CppCall (CppVar "std::pow") [leftExpr, rightExpr]
-         else CppBinary cppOp leftExpr rightExpr
+         else if cppOp == "+" && (isStringLiteral leftExpr || isStringLiteral rightExpr)
+                then let l' = ensureString leftExpr
+                         r' = toStringIfNeeded rightExpr
+                     in CppBinary "+" l' r'
+                else CppBinary cppOp leftExpr rightExpr
   PyComparison [op] [left, right] ->
     -- Handle simple binary comparisons
     let cppOp = convertComparisonOp op
@@ -420,10 +435,17 @@ convertPythonExpr (Common.Located _ expr) = case expr of
         argExprs = map convertPythonArg args
     in case funcExpr of
       CppVar "print" -> 
-        -- Convert print to std::cout
+        -- Convert print to std::cout; if the argument is a + chain of strings/numbers, just stream it
         case argExprs of
-          [arg] -> CppBinary "<<" (CppVar "std::cout") arg
+          [arg] -> case arg of
+                     CppBinary "+" _ _ -> CppBinary "<<" (CppVar "std::cout") arg
+                     _ -> CppBinary "<<" (CppVar "std::cout") arg
           _ -> CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit ""))
+      CppVar "str" -> 
+        -- Map Python str() to std::to_string (best-effort for ints/floats)
+        case argExprs of
+          [arg] -> CppCall (CppVar "std::to_string") [arg]
+          _ -> CppCall (CppVar "std::string") []
       -- Avoid generating invalid calls like 0(...)
       CppLiteral (CppIntLit 0) -> CppLiteral (CppIntLit 0)
       _ -> CppCall funcExpr argExprs

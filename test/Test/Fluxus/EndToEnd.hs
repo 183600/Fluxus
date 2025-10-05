@@ -491,10 +491,11 @@ performanceSpec = describe "Performance Tests" $ do
           
           -- Compile and run the generated C++
           let exeFile = tmpDir </> "memory"
-          (exitCode, stdout, stderr) <- readProcessWithExitCode "g++" [cppFile, "-o", exeFile, "-std=c++20", "-O3"] ""
+          (exitCode, gppStdout, gppStderr) <- readProcessWithExitCode "g++" [cppFile, "-o", exeFile, "-std=c++20", "-O3"] ""
           putStrLn $ "[DEBUG] g++ exit code: " ++ show exitCode
-          putStrLn $ "[DEBUG] g++ stdout: " ++ stdout
-          putStrLn $ "[DEBUG] g++ stderr: " ++ stderr
+          putStrLn $ "[DEBUG] g++ stdout: " ++ gppStdout
+            -- stderr from g++ retained for debugging clarity
+          putStrLn $ "[DEBUG] g++ stderr: " ++ gppStderr
           exitCode `shouldBe` ExitSuccess
           (exitCode', stdout, _) <- readProcessWithExitCode exeFile [] ""
           exitCode' `shouldBe` ExitSuccess
