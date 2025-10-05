@@ -1,0 +1,32 @@
+/home/qwe12345678/hyperstatic2/fluxus.cabal was generated with a newer version of Hpack. Ignoring /home/qwe12345678/hyperstatic2/package.yaml in favor of the Cabal file.
+Either please upgrade and try again or, if you want to use the package.yaml file instead of the Cabal file,
+then please delete the Cabal file.
+
+Warning: There were multiple candidates for the Cabal entry Fluxus.CodeGen.CPP 
+         * /home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/CPP.hs
+         * /home/qwe12345678/hyperstatic2/libs/codegen/src/Fluxus/CodeGen/CPP.hs 
+         picking: /home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/CPP.hs
+fluxus-0.1.0.0: unregistering (local file changes: fluxus.cabal)
+All test running disabled by --no-run-tests flag. To mute this message in future, set
+notify-if-no-run-tests: false in Stack's configuration.
+fluxus> configure (lib + exe + test)
+Configuring fluxus-0.1.0.0...
+fluxus> build (lib + exe + test) with ghc-9.8.4
+Preprocessing library for fluxus-0.1.0.0..
+Error: Cabal-simple_w2MFVN35_3.10.3.0_ghc-9.8.4: can't find source for
+Fluxus/CodeGen/CPP/Duplicate in src, libs/ast/src, libs/cli/src,
+libs/codegen/src, libs/optimization/src, libs/parser/src,
+libs/type-inference/src,
+.stack-work/dist/x86_64-linux/ghc-9.8.4/build/autogen,
+.stack-work/dist/x86_64-linux/ghc-9.8.4/build/global-autogen
+
+
+Error: [S-7282]
+       Stack failed to execute the build plan.
+       
+       While executing the build plan, Stack encountered the error:
+       
+       [S-7011]
+       While building package fluxus-0.1.0.0 (scroll up to its section to see the error) using:
+       /home/qwe12345678/.stack/setup-exe-cache/x86_64-linux/Cabal-simple_w2MFVN35_3.10.3.0_ghc-9.8.4 --verbose=1 --builddir=.stack-work/dist/x86_64-linux/ghc-9.8.4 build lib:fluxus exe:fluxus test:fluxus-test --ghc-options ""
+       Process exited with code: ExitFailure 1 

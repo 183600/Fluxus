@@ -23,9 +23,12 @@ module Fluxus.CodeGen.CPP
 
 import Data.Text (Text)
 import qualified Data.Text as T
-import Fluxus.AST.Common
+import qualified Fluxus.AST.Common as Common
+import Fluxus.AST.Common (Type(..))
 import Fluxus.AST.Python
 import Fluxus.AST.Go as Go
+-- removed GoC import
+-- removed GoC import
 
 -- | C++ compilation unit
 data CppUnit = CppUnit
@@ -202,17 +205,21 @@ generateMainFunction :: CppGenConfig -> Either PythonAST GoAST -> CppDecl
 generateMainFunction _config ast = 
   case ast of
     Left (PythonAST (PythonModule _ _ _ stmts)) ->
-      let hasUserMain = any (\(Fluxus.AST.Common.Located _ s) -> case s of
+      let hasUserMain = any (\(Common.Located _ s) -> case s of
                                    PyFuncDef PythonFuncDef{ pyFuncName = Identifier n } -> n == "main"
                                    _ -> False) stmts
           body | hasUserMain = [CppExprStmt (CppCall (CppVar "main_func") []), CppReturn (Just (CppLiteral (CppIntLit 0)))]
                | otherwise   = generateMainBodyFromPython (PythonAST (PythonModule Nothing Nothing [] stmts)) ++ [CppReturn (Just (CppLiteral (CppIntLit 0)))]
       in CppFunction "main" CppInt [] body
-    Right _goAst -> CppFunction "main" CppInt []
-        [ CppExprStmt (CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit "Go main not implemented")))
-        , CppReturn (Just (CppLiteral (CppIntLit 0)))
-        ]
-
+    Right (GoAST (GoPackage _ files)) ->
+      let hasMain = any (\(GoFile _ _ _ decls) -> any isMain decls) files
+          isMain (Go.Located _ (GoFuncDecl GoFunction{ goFuncName = Just (Identifier n) })) = n == "main"
+          isMain _ = False
+          body | hasMain = [CppExprStmt (CppCall (CppVar "main_impl") []), CppReturn (Just (CppLiteral (CppIntLit 0)))]
+               | otherwise = [ CppExprStmt (CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit "Go main not implemented")))
+                             , CppReturn (Just (CppLiteral (CppIntLit 0))) ]
+      in CppFunction "main" CppInt [] body
+    
 -- | Generate main function body from Python AST
 generateMainBodyFromPython :: PythonAST -> [CppStmt]
 generateMainBodyFromPython (PythonAST (PythonModule _ _ _ stmts)) = 
@@ -226,15 +233,51 @@ generateFromPython _config (PythonAST (PythonModule _ _ _ stmts)) =
   in (decls, warnings)
 
 -- | Generate C++ from Go AST  
+-- Minimal mapping: struct -> class with member vars, functions -> stub returning 0.
 generateFromGo :: CppGenConfig -> GoAST -> ([CppDecl], [Text])
-generateFromGo _config _goAst = 
-  let decls = [CppCommentDecl "Go code generation not yet implemented"]
-      warnings = ["Go code generation is not yet implemented"]
+generateFromGo _config goAst = 
+  let GoAST (GoPackage _ files) = goAst
+      fileDeclPairs = concatMap extractFileDecls files
+      decls = concatMap fst fileDeclPairs
+      warnings = concatMap snd fileDeclPairs
   in (decls, warnings)
+  where
+    extractFileDecls :: GoFile -> [([CppDecl],[Text])]
+    extractFileDecls (GoFile _ _ _ decls) = map handleDecl decls
 
+    handleDecl :: Go.Located GoDecl -> ([CppDecl],[Text])
+    handleDecl (Go.Located _ d) = case d of
+      GoTypeDeclStmt td -> case goTypeDeclType td of
+        Go.Located _ (GoStructType fields) ->
+          let name = identText (goTypeDeclName td)
+              members = concatMap fieldDecls fields
+          in ([CppClass name [] members], [])
+        _ -> ([CppCommentDecl "Unsupported Go type (only struct->class mapping)"],["unsupported go type"])
+      GoFuncDecl fn -> ([convertFunc fn], [])
+      _ -> ([CppCommentDecl "Unsupported Go declaration"],["unsupported go decl skipped"])
+
+    -- Simple Go type mapping for primitive identifiers
+    mapGoType :: GoType -> CppType
+    mapGoType (GoBasicType (Identifier "int")) = CppInt
+    mapGoType (GoBasicType (Identifier "string")) = CppString
+    mapGoType _ = CppAuto
+
+
+    fieldDecls :: GoField -> [CppDecl]
+    fieldDecls (GoField names (Go.Located _ gty) _) = [ CppVariable (identText n) (mapGoType gty) Nothing | n <- names ]
+
+    convertFunc :: GoFunction -> CppDecl
+    convertFunc GoFunction{ goFuncName = Just name } =
+      let nm = identText name
+          outName = if nm == "main" then "main_impl" else nm
+      in CppFunction outName CppAuto [] [CppReturn (Just (CppLiteral (CppIntLit 0)))]
+    convertFunc _ = CppCommentDecl "Anonymous Go function not emitted"
+
+    identText :: Identifier -> Text
+    identText (Identifier t) = t
 -- | Convert Python statement to C++ declarations
-convertPythonStmt :: Fluxus.AST.Common.Located PythonStmt -> [CppDecl]
-convertPythonStmt (Fluxus.AST.Common.Located _ stmt) = case stmt of
+convertPythonStmt :: Common.Located PythonStmt -> [CppDecl]
+convertPythonStmt (Common.Located _ stmt) = case stmt of
   PyFuncDef funcDef -> [convertPythonFunction funcDef]
   PyClassDef classDef -> [convertPythonClass classDef]
   PyAssign targets value -> convertPythonAssignment targets value
@@ -255,14 +298,20 @@ convertPythonFunction PythonFuncDef{..} =
           then "main_func"  -- Avoid conflict with generated main
           else name
       params = map convertPythonParam pyFuncParams
-      body = concatMap convertPythonStmtToStmt pyFuncBody
+      bodyRaw = concatMap convertPythonStmtToStmt pyFuncBody
+      body = if null (filter hasReturn bodyRaw)
+               then bodyRaw ++ [CppReturn (Just (CppLiteral (CppIntLit 0)))]
+               else bodyRaw
       -- Use auto return type for flexibility (simple heuristic)
       returnType = CppAuto
   in CppFunction funcName returnType params body
+  where
+    hasReturn (CppReturn _) = True
+    hasReturn _ = False
 
 -- | Convert Python parameter to C++ parameter
-convertPythonParam :: Fluxus.AST.Common.Located PythonParameter -> CppParam
-convertPythonParam (Fluxus.AST.Common.Located _ param) = case param of
+convertPythonParam :: Common.Located PythonParameter -> CppParam
+convertPythonParam (Common.Located _ param) = case param of
   ParamNormal (Identifier name) _ _ -> CppParam name CppAuto Nothing
   ParamVarArgs (Identifier name) _ -> CppParam name CppAuto Nothing
   ParamKwArgs (Identifier name) _ -> CppParam name CppAuto Nothing
@@ -278,36 +327,36 @@ convertPythonClass PythonClassDef{..} =
   in CppClass className [] members
 
 -- | Convert Python assignment to C++ variable declarations
-convertPythonAssignment :: [Fluxus.AST.Common.Located PythonPattern] -> Fluxus.AST.Common.Located PythonExpr -> [CppDecl]
+convertPythonAssignment :: [Common.Located PythonPattern] -> Common.Located PythonExpr -> [CppDecl]
 convertPythonAssignment targets _value = 
   map (\target -> case target of
-    Fluxus.AST.Common.Located _ (PatVar (Identifier name)) -> CppVariable name CppAuto Nothing
+    Common.Located _ (PatVar (Identifier name)) -> CppVariable name CppAuto Nothing
     _ -> CppCommentDecl "Complex assignment target"
   ) targets
 
 -- | Convert Python if statement to C++ function (as a workaround)
-convertPythonIf :: Fluxus.AST.Common.Located PythonExpr -> [Fluxus.AST.Common.Located PythonStmt] -> [Fluxus.AST.Common.Located PythonStmt] -> CppDecl
+convertPythonIf :: Common.Located PythonExpr -> [Common.Located PythonStmt] -> [Common.Located PythonStmt] -> CppDecl
 convertPythonIf _condition _thenStmts _elseStmts = 
   CppCommentDecl "If statement converted to comment"
 
 -- | Convert Python while loop to C++ function (as a workaround)
-convertPythonWhile :: Fluxus.AST.Common.Located PythonExpr -> [Fluxus.AST.Common.Located PythonStmt] -> CppDecl
+convertPythonWhile :: Common.Located PythonExpr -> [Common.Located PythonStmt] -> CppDecl
 convertPythonWhile _condition _body = 
   CppCommentDecl "While loop converted to comment"
 
 -- | Convert Python for loop to C++ function (as a workaround)
-convertPythonFor :: Fluxus.AST.Common.Located PythonPattern -> Fluxus.AST.Common.Located PythonExpr -> [Fluxus.AST.Common.Located PythonStmt] -> CppDecl
+convertPythonFor :: Common.Located PythonPattern -> Common.Located PythonExpr -> [Common.Located PythonStmt] -> CppDecl
 convertPythonFor _target _iter _body = 
   CppCommentDecl "For loop converted to comment"
 
 -- | Convert Python statement to C++ statement
-convertPythonStmtToStmt :: Fluxus.AST.Common.Located PythonStmt -> [CppStmt]
-convertPythonStmtToStmt (Fluxus.AST.Common.Located _ stmt) = case stmt of
+convertPythonStmtToStmt :: Common.Located PythonStmt -> [CppStmt]
+convertPythonStmtToStmt (Common.Located _ stmt) = case stmt of
   PyReturn (Just expr) -> [CppReturn (Just (convertPythonExpr expr))]
   PyReturn Nothing -> [CppReturn Nothing]
   PyExprStmt expr -> [wrapPrint (convertPythonExpr expr)]
   PyAssign (t:_) value -> case t of
-    Fluxus.AST.Common.Located _ (PatVar (Identifier name)) -> [CppDecl (CppVariable name CppAuto (Just (convertPythonExpr value)))]
+    Common.Located _ (PatVar (Identifier name)) -> [CppDecl (CppVariable name CppAuto (Just (convertPythonExpr value)))]
     _ -> []
   PyAssign [] _ -> []
   _ -> []
@@ -319,8 +368,8 @@ convertPythonStmtToStmt (Fluxus.AST.Common.Located _ stmt) = case stmt of
     wrapPrint e = CppExprStmt e
 
 -- | Convert Python expression to C++ expression
-convertPythonExpr :: Fluxus.AST.Common.Located PythonExpr -> CppExpr
-convertPythonExpr (Fluxus.AST.Common.Located _ expr) = case expr of
+convertPythonExpr :: Common.Located PythonExpr -> CppExpr
+convertPythonExpr (Common.Located _ expr) = case expr of
   PyLiteral lit -> CppLiteral (convertPythonLiteral lit)
   PyVar (Identifier name) -> CppVar name
   PyBinaryOp op left right -> 
@@ -358,30 +407,30 @@ convertPythonLiteral = \case
   PyEllipsis -> CppIntLit 0  -- Placeholder
 
 -- | Convert binary operator to C++ operator
-convertBinaryOp :: Fluxus.AST.Common.BinaryOp -> Text
+convertBinaryOp :: Common.BinaryOp -> Text
 convertBinaryOp = \case
-  Fluxus.AST.Common.OpAdd -> "+"
-  Fluxus.AST.Common.OpSub -> "-"
-  Fluxus.AST.Common.OpMul -> "*"
-  Fluxus.AST.Common.OpDiv -> "/"
-  Fluxus.AST.Common.OpMod -> "%"
-  Fluxus.AST.Common.OpPow -> "pow"  -- Will need special handling
-  Fluxus.AST.Common.OpShiftL -> "<<"
-  Fluxus.AST.Common.OpShiftR -> ">>"
-  Fluxus.AST.Common.OpBitOr -> "|"
-  Fluxus.AST.Common.OpBitXor -> "^"
-  Fluxus.AST.Common.OpBitAnd -> "&"
-  Fluxus.AST.Common.OpFloorDiv -> "/"  -- Approximate
-  Fluxus.AST.Common.OpAnd -> "&&"
-  Fluxus.AST.Common.OpOr -> "||"
-  Fluxus.AST.Common.OpXor -> "^"
-  Fluxus.AST.Common.OpConcat -> "+"
-  Fluxus.AST.Common.OpIn -> "in"  -- Will need special handling
-  Fluxus.AST.Common.OpNotIn -> "not_in"  -- Will need special handling
+  Common.OpAdd -> "+"
+  Common.OpSub -> "-"
+  Common.OpMul -> "*"
+  Common.OpDiv -> "/"
+  Common.OpMod -> "%"
+  Common.OpPow -> "pow"  -- Will need special handling
+  Common.OpShiftL -> "<<"
+  Common.OpShiftR -> ">>"
+  Common.OpBitOr -> "|"
+  Common.OpBitXor -> "^"
+  Common.OpBitAnd -> "&"
+  Common.OpFloorDiv -> "/"  -- Approximate
+  Common.OpAnd -> "&&"
+  Common.OpOr -> "||"
+  Common.OpXor -> "^"
+  Common.OpConcat -> "+"
+  Common.OpIn -> "in"  -- Will need special handling
+  Common.OpNotIn -> "not_in"  -- Will need special handling
 
 -- | Convert Python argument to C++ expression
-convertPythonArg :: Fluxus.AST.Common.Located PythonArgument -> CppExpr
-convertPythonArg (Fluxus.AST.Common.Located _ arg) = case arg of
+convertPythonArg :: Common.Located PythonArgument -> CppExpr
+convertPythonArg (Common.Located _ arg) = case arg of
   ArgPositional expr -> convertPythonExpr expr
   ArgKeyword _ expr -> convertPythonExpr expr
   ArgStarred expr -> convertPythonExpr expr

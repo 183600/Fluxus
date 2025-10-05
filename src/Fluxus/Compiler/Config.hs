@@ -271,11 +271,11 @@ languageOption =
 
 optimizationOption :: Options.Applicative.Parser OptimizationLevel
 optimizationOption =
-  flag' O0 (short 'O' <> short '0' <> long "O0" <> help "No optimization") <|>
-  flag' O1 (short 'O' <> short '1' <> long "O1" <> help "Basic optimization") <|>
-  flag' O2 (short 'O' <> short '2' <> long "O2" <> help "Standard optimization") <|>
-  flag' O3 (short 'O' <> short '3' <> long "O3" <> help "Aggressive optimization") <|>
-  flag' Os (short 'O' <> short 's' <> long "Os" <> help "Size optimization") <|>
+  flag' O0 (short 'O' <> long "O0" <> help "No optimization") <|>
+  flag' O1 (short '1' <> long "O1" <> help "Basic optimization") <|>
+  flag' O2 (short '2' <> long "O2" <> help "Standard optimization") <|>
+  flag' O3 (short '3' <> long "O3" <> help "Aggressive optimization") <|>
+  flag' Os (short 's' <> long "Os" <> help "Size optimization") <|>
   pure (ccOptimizationLevel defaultConfig)
 
 targetOption :: Options.Applicative.Parser TargetPlatform

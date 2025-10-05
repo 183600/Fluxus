@@ -1,0 +1,19 @@
+fluxus> test (suite: fluxus-test, args: --match 'compiles and runs generated C++ code$')
+
+fluxus-test: unexpected argument `and'
+Try `fluxus-test --help' for more information.
+
+
+
+fluxus> Test suite fluxus-test failed
+
+Error: [S-7282]
+       Stack failed to execute the build plan.
+       
+       While executing the build plan, Stack encountered the error:
+       
+       Error: [S-1995]
+       Test suite failure for package fluxus-0.1.0.0
+           fluxus-test:  exited with: ExitFailure 1
+       Logs printed to console
+       

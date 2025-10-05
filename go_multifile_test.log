@@ -1,0 +1,10 @@
+fluxus> test (suite: fluxus-test, args: -m 'multi-file')
+
+
+
+Finished in 0.0002 seconds
+0 examples, 0 failures
+
+
+
+fluxus> Test suite fluxus-test passed

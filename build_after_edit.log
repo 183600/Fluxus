@@ -1,0 +1,11 @@
+/home/qwe12345678/hyperstatic2/fluxus.cabal was generated with a newer version of Hpack. Ignoring /home/qwe12345678/hyperstatic2/package.yaml in favor of the Cabal file.
+Either please upgrade and try again or, if you want to use the package.yaml file instead of the Cabal file,
+then please delete the Cabal file.
+
+Error: [S-242]
+       Unable to parse Cabal file from package /home/qwe12345678/hyperstatic2/fluxus.cabal:
+       * 73:7: 
+unexpected 'l'
+expecting space, ",", "\"", white space or end of input
+
+       
