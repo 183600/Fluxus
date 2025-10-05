@@ -145,9 +145,9 @@ expressionGenerationSpec = describe "Expression Generation" $ do
   it "generates lambda expressions" $ do
     let params = [CppParam "x" CppInt Nothing]
     let body = [CppReturn (Just (CppBinary "*" (CppVar "x") (CppVar "x")))]
-    let lambda = CppLambda params body False
+    let lambda = CppLambda params body Nothing
 
-    lambda `shouldBe` CppLambda params body False
+    lambda `shouldBe` CppLambda params body Nothing
 
 statementGenerationSpec :: Spec
 statementGenerationSpec = describe "Statement Generation" $ do

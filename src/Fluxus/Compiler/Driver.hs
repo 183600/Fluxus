@@ -1161,7 +1161,7 @@ renderCppLiteral = \case
   CppBoolLit False -> "false"
   CppStringLit s -> "\"" <> escapeString s <> "\""
   CppNullPtr -> "nullptr"
-  _ -> "0"
+  -- No other constructors presently; remove redundant wildcard to silence -Woverlapping-patterns
   where
     escapeString = T.concatMap $ \case
       '\n' -> "\\n"
