@@ -202,20 +202,22 @@ standardIncludes _config =
 -- Improved logic: if a Python function named 'main' exists (renamed to 'main_func'),
 -- generate a wrapper that calls it. Otherwise fall back to flattening top-level stmts.
 generateMainFunction :: CppGenConfig -> Either PythonAST GoAST -> CppDecl
-generateMainFunction _config ast = 
+generateMainFunction config ast =
   case ast of
     Left (PythonAST (PythonModule _ _ _ stmts)) ->
       let hasUserMain = any (\(Common.Located _ s) -> case s of
                                    PyFuncDef PythonFuncDef{ pyFuncName = Identifier n } -> n == "main"
                                    _ -> False) stmts
-          body | hasUserMain = [CppExprStmt (CppCall (CppVar "main_func") []), CppReturn (Just (CppLiteral (CppIntLit 0)))]
+          namespace = cgcNamespace config
+          body | hasUserMain = [CppExprStmt (CppCall (CppVar (namespace <> "::main_func")) []), CppReturn (Just (CppLiteral (CppIntLit 0)))]
                | otherwise   = generateMainBodyFromPython (PythonAST (PythonModule Nothing Nothing [] stmts)) ++ [CppReturn (Just (CppLiteral (CppIntLit 0)))]
       in CppFunction "main" CppInt [] body
     Right (GoAST (GoPackage _ files)) ->
       let hasMain = any (\(GoFile _ _ _ decls) -> any isMain decls) files
           isMain (Go.Located _ (GoFuncDecl GoFunction{ goFuncName = Just (Identifier n) })) = n == "main"
           isMain _ = False
-          body | hasMain = [CppExprStmt (CppCall (CppVar "main_impl") []), CppReturn (Just (CppLiteral (CppIntLit 0)))]
+          namespace = cgcNamespace config
+          body | hasMain = [CppExprStmt (CppCall (CppVar (namespace <> "::main_impl")) []), CppReturn (Just (CppLiteral (CppIntLit 0)))]
                | otherwise = [ CppExprStmt (CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit "Go main not implemented")))
                              , CppReturn (Just (CppLiteral (CppIntLit 0))) ]
       in CppFunction "main" CppInt [] body
@@ -354,13 +356,6 @@ convertPythonClass PythonClassDef{..} =
       members = concatMap convertPythonStmt pyClassBody
   in CppClass className [] members
 
--- | Convert Python assignment to C++ variable declarations
-convertPythonAssignment :: [Common.Located PythonPattern] -> Common.Located PythonExpr -> [CppDecl]
-convertPythonAssignment targets value = 
-  map (\target -> case target of
-    Common.Located _ (PatVar (Identifier name)) -> CppVariable name CppAuto (Just (convertPythonExpr value))
-    _ -> CppCommentDecl "Complex assignment target"
-  ) targets
 
 -- | Convert Python if statement to C++ function (as a workaround)
 convertPythonIf :: Common.Located PythonExpr -> [Common.Located PythonStmt] -> [Common.Located PythonStmt] -> CppDecl
@@ -391,12 +386,13 @@ convertPythonStmtToStmt (Common.Located _ stmt) = case stmt of
   PyAssign [] _ -> []
   PyWhile condition body _elseClause -> [CppWhile (convertPythonExpr condition) (concatMap convertPythonStmtToStmt body)]
   _ -> []
-  where
-    -- Ensure expressions printing via std::cout append newline
-    wrapPrint e@(CppBinary op (CppVar "std::cout") rhs)
-      | op == "<<" = CppExprStmt (CppBinary "<<" (CppBinary "<<" (CppVar "std::cout") rhs) (CppLiteral (CppStringLit "\n")))
-      | otherwise = CppExprStmt e
-    wrapPrint e = CppExprStmt e
+
+-- | Ensure expressions printing via std::cout append newline
+wrapPrint :: CppExpr -> CppStmt
+wrapPrint e@(CppBinary op (CppVar "std::cout") rhs)
+  | op == "<<" = CppExprStmt (CppBinary "<<" (CppBinary "<<" (CppVar "std::cout") rhs) (CppLiteral (CppStringLit "\n")))
+  | otherwise = CppExprStmt e
+wrapPrint e = CppExprStmt e
 
 -- | Convert Python expression to C++ expression
 convertPythonExpr :: Common.Located PythonExpr -> CppExpr
