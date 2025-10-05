@@ -519,51 +519,70 @@ compileProject inputFiles = do
   
   logInfo $ "Compiling project with " <> T.pack (show $ length inputFiles) <> " files"
   
-  -- Compile files to object files (with parallel support)
-  objFiles <- case inputFiles of
-    [] -> return []
-    (mainFile:otherFiles) -> do
-      -- Compile main file (always sequential)
-      mainObj <- compileFileToObject mainFile True
-      
-      -- Compile other files (parallel if enabled)
-      otherObjs <- do
-          -- Sequential compilation
-          logInfo $ "Compiling " <> T.pack (show $ length otherFiles) <> " files sequentially"
-          mapM (\f -> compileFileToObject f False) otherFiles
-      
-      return (mainObj : otherObjs)
-  
-  -- If user asked for a .cpp output, emit a combined C++ translation unit
-  case ccOutputPath config of
-    Just out | takeExtension out == ".cpp" -> do
+  -- Special case: when requesting a combined .cpp output, skip per-file C++ compilation.
+  let wantsCombinedCpp = case ccOutputPath config of
+        Just out | takeExtension out == ".cpp" -> True
+        _ -> False
+  if wantsCombinedCpp
+    then do
+      -- Generate C++ for each file only (no object compilation) so cross-file references work in the combined unit.
+      case inputFiles of
+        [] -> return ()
+        (mainFile:otherFiles) -> do
+          -- Force stop-at-codegen for each file locally
+          _ <- local (\c -> c { ccStopAtCodegen = True }) (compileFileToObject mainFile True)
+          mapM_ (\f -> local (\c -> c { ccStopAtCodegen = True }) (compileFileToObject f False)) otherFiles
+      -- Now concatenate
       let cppFiles = map (`replaceExtension` ".cpp") inputFiles
       contents <- liftIO $ mapM TIO.readFile cppFiles
-      liftIO $ TIO.writeFile out (T.unlines contents)
-      logInfo $ "Wrote combined C++ file: " <> T.pack out
-      return out
-    _ -> if ccStopAtCodegen config
-      then do
-        logInfo $ "Code generation completed for all files"
-        let outputPath = fromMaybe "." (ccOutputPath config)
-        return outputPath
-      else do
-        -- Generate better default output name based on main file
-        let defaultOutput = case inputFiles of
-              (mainFile:_) -> dropExtension (takeFileName mainFile)
-              [] -> "hyperstatic_output"
-        let outputPath = fromMaybe defaultOutput (ccOutputPath config)
-        
-        setCurrentPhase "final-linking"
-        finalBinary <- linkObjects objFiles outputPath
-        
-        unless (ccKeepIntermediates config) $ do
-          intermediates <- gets csIntermediateFiles
-          liftIO $ mapM_ removeFile intermediates
-          logInfo $ "Cleaned up intermediate files"
-        
-        logInfo $ "Project compilation completed: " <> T.pack finalBinary
-        return finalBinary
+      case ccOutputPath config of
+        Just out -> do
+          liftIO $ TIO.writeFile out (T.unlines contents)
+          logInfo $ "Wrote combined C++ file: " <> T.pack out
+          return out
+        Nothing -> do
+          -- Should not happen with wantsCombinedCpp True, fallback
+          let fallback = "combined.cpp"
+          liftIO $ TIO.writeFile fallback (T.unlines contents)
+          logInfo $ "Wrote combined C++ file: " <> T.pack fallback
+          return fallback
+    else do
+      -- Compile files to object files (with parallel support)
+      objFiles <- case inputFiles of
+        [] -> return []
+        (mainFile:otherFiles) -> do
+          -- Compile main file (always sequential)
+          mainObj <- compileFileToObject mainFile True
+          
+          -- Compile other files (sequential for now)
+          otherObjs <- do
+              logInfo $ "Compiling " <> T.pack (show $ length otherFiles) <> " files sequentially"
+              mapM (\f -> compileFileToObject f False) otherFiles
+          
+          return (mainObj : otherObjs)
+      
+      if ccStopAtCodegen config
+        then do
+          logInfo $ "Code generation completed for all files"
+          let outputPath = fromMaybe "." (ccOutputPath config)
+          return outputPath
+        else do
+          -- Generate better default output name based on main file
+          let defaultOutput = case inputFiles of
+                (mainFile:_) -> dropExtension (takeFileName mainFile)
+                [] -> "hyperstatic_output"
+          let outputPath = fromMaybe defaultOutput (ccOutputPath config)
+          
+          setCurrentPhase "final-linking"
+          finalBinary <- linkObjects objFiles outputPath
+          
+          unless (ccKeepIntermediates config) $ do
+            intermediates <- gets csIntermediateFiles
+            liftIO $ mapM_ removeFile intermediates
+            logInfo $ "Cleaned up intermediate files"
+          
+          logInfo $ "Project compilation completed: " <> T.pack finalBinary
+          return finalBinary
 
 -- | Helper for parallel compilation - runs in fresh context
 
