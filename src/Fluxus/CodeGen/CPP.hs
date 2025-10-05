@@ -223,7 +223,34 @@ generateMainFunction _config ast =
 -- | Generate main function body from Python AST
 generateMainBodyFromPython :: PythonAST -> [CppStmt]
 generateMainBodyFromPython (PythonAST (PythonModule _ _ _ stmts)) = 
-  concatMap convertPythonStmtToStmt stmts
+  convertPythonStmtsToStmts stmts []
+
+-- | Convert Python statements to C++ statements with variable tracking
+convertPythonStmtsToStmts :: [Common.Located PythonStmt] -> [Text] -> [CppStmt]
+convertPythonStmtsToStmts [] _ = []
+convertPythonStmtsToStmts (stmt:stmts) declaredVars = 
+  let (newStmts, newDeclaredVars) = convertPythonStmtToStmtWithTracking stmt declaredVars
+  in newStmts ++ convertPythonStmtsToStmts stmts newDeclaredVars
+
+-- | Convert Python statement to C++ statement with variable tracking
+convertPythonStmtToStmtWithTracking :: Common.Located PythonStmt -> [Text] -> ([CppStmt], [Text])
+convertPythonStmtToStmtWithTracking (Common.Located _ stmt) declaredVars = case stmt of
+  PyReturn (Just expr) -> ([CppReturn (Just (convertPythonExpr expr))], declaredVars)
+  PyReturn Nothing -> ([CppReturn Nothing], declaredVars)
+  PyExprStmt expr -> ([wrapPrint (convertPythonExpr expr)], declaredVars)
+  PyAssign (t:_) value -> case t of
+    Common.Located _ (PatVar (Identifier name)) -> 
+      if name `elem` declaredVars
+      then -- Variable already declared, generate assignment
+           ([CppExprStmt (CppBinary "=" (CppVar name) (convertPythonExpr value))], declaredVars)
+      else -- First declaration, generate variable declaration
+           ([CppDecl (CppVariable name CppAuto (Just (convertPythonExpr value)))], name : declaredVars)
+    _ -> ([], declaredVars)
+  PyAssign [] _ -> ([], declaredVars)
+  PyWhile condition body _elseClause -> 
+    let bodyStmts = convertPythonStmtsToStmts body declaredVars
+    in ([CppWhile (convertPythonExpr condition) bodyStmts], declaredVars)
+  _ -> ([], declaredVars)
 
 -- | Generate C++ from Python AST
 generateFromPython :: CppGenConfig -> PythonAST -> ([CppDecl], [Text])
@@ -280,7 +307,8 @@ convertPythonStmt :: Common.Located PythonStmt -> [CppDecl]
 convertPythonStmt (Common.Located _ stmt) = case stmt of
   PyFuncDef funcDef -> [convertPythonFunction funcDef]
   PyClassDef classDef -> [convertPythonClass classDef]
-  PyAssign targets value -> convertPythonAssignment targets value
+  -- Skip simple assignments - they will be handled in main function
+  PyAssign _ _ -> []
   PyExprStmt expr -> [CppCommentDecl $ "Expression statement: " <> T.pack (show expr)]
   PyReturn (Just expr) -> [CppCommentDecl $ "Return statement: " <> T.pack (show expr)]
   PyReturn Nothing -> [CppCommentDecl "Return statement"]
@@ -328,9 +356,9 @@ convertPythonClass PythonClassDef{..} =
 
 -- | Convert Python assignment to C++ variable declarations
 convertPythonAssignment :: [Common.Located PythonPattern] -> Common.Located PythonExpr -> [CppDecl]
-convertPythonAssignment targets _value = 
+convertPythonAssignment targets value = 
   map (\target -> case target of
-    Common.Located _ (PatVar (Identifier name)) -> CppVariable name CppAuto Nothing
+    Common.Located _ (PatVar (Identifier name)) -> CppVariable name CppAuto (Just (convertPythonExpr value))
     _ -> CppCommentDecl "Complex assignment target"
   ) targets
 
@@ -356,9 +384,12 @@ convertPythonStmtToStmt (Common.Located _ stmt) = case stmt of
   PyReturn Nothing -> [CppReturn Nothing]
   PyExprStmt expr -> [wrapPrint (convertPythonExpr expr)]
   PyAssign (t:_) value -> case t of
-    Common.Located _ (PatVar (Identifier name)) -> [CppDecl (CppVariable name CppAuto (Just (convertPythonExpr value)))]
+    Common.Located _ (PatVar (Identifier name)) -> 
+      -- Generate variable declaration with initialization for main function
+      [CppDecl (CppVariable name CppAuto (Just (convertPythonExpr value)))]
     _ -> []
   PyAssign [] _ -> []
+  PyWhile condition body _elseClause -> [CppWhile (convertPythonExpr condition) (concatMap convertPythonStmtToStmt body)]
   _ -> []
   where
     -- Ensure expressions printing via std::cout append newline
@@ -379,6 +410,15 @@ convertPythonExpr (Common.Located _ expr) = case expr of
     in if cppOp == "pow"
          then CppCall (CppVar "std::pow") [leftExpr, rightExpr]
          else CppBinary cppOp leftExpr rightExpr
+  PyComparison [op] [left, right] ->
+    -- Handle simple binary comparisons
+    let cppOp = convertComparisonOp op
+        leftExpr = convertPythonExpr left
+        rightExpr = convertPythonExpr right
+    in CppBinary cppOp leftExpr rightExpr
+  PyComparison _ _ ->
+    -- For chained comparisons, fall back to 0 for now
+    CppLiteral (CppIntLit 0)
   PyCall func args -> 
     let funcExpr = convertPythonExpr func
         argExprs = map convertPythonArg args
@@ -427,6 +467,18 @@ convertBinaryOp = \case
   Common.OpConcat -> "+"
   Common.OpIn -> "in"  -- Will need special handling
   Common.OpNotIn -> "not_in"  -- Will need special handling
+
+-- | Convert comparison operator to C++ operator
+convertComparisonOp :: Common.ComparisonOp -> Text
+convertComparisonOp = \case
+  Common.OpEq -> "=="
+  Common.OpNe -> "!="
+  Common.OpLt -> "<"
+  Common.OpLe -> "<="
+  Common.OpGt -> ">"
+  Common.OpGe -> ">="
+  Common.OpIs -> "=="  -- Approximate with ==
+  Common.OpIsNot -> "!="  -- Approximate with !=
 
 -- | Convert Python argument to C++ expression
 convertPythonArg :: Common.Located PythonArgument -> CppExpr

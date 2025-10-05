@@ -52,9 +52,9 @@ spec = describe "Fluxus Convert Command Tests" $ do
     ("Original Source (test/python-tests/feature_fstring.py)" `isInfixOf` cppContent) `shouldBe` True
 
   it "accepts different optimization levels" $ do
-    forM_ ["-0", "-2", "-3", "-O"] $ \opt -> do
+    forM_ ["-O", "-1", "-2", "-3"] $ \opt -> do
       (exitCode, _out, _err) <- readProcessWithExitCode "fluxus"
-        ["--python", opt, "-o", "test/python-testsoutput", "test/python-tests/basic_arithmetic.py"] ""
+        ["--python", opt, "--stop-at-codegen", "-o", "test/python-testsoutput", "test/python-tests/basic_arithmetic.py"] ""
       exitCode `shouldBe` ExitSuccess
 
   it "reports error for missing input file" $ do

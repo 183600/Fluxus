@@ -481,9 +481,20 @@ performanceSpec = describe "Performance Tests" $ do
       
       case result of
         Right _ -> do
+          -- Debug: Check if C++ file exists and read its content
+          cppExists <- doesFileExist cppFile
+          putStrLn $ "[DEBUG] C++ file exists: " ++ show cppExists
+          when cppExists $ do
+            cppContent <- readFile cppFile
+            putStrLn $ "[DEBUG] C++ file content length: " ++ show (length cppContent)
+            putStrLn $ "[DEBUG] Full C++ file content:\n" ++ cppContent
+          
           -- Compile and run the generated C++
           let exeFile = tmpDir </> "memory"
-          (exitCode, _, _) <- readProcessWithExitCode "g++" [cppFile, "-o", exeFile, "-std=c++20", "-O3"] ""
+          (exitCode, stdout, stderr) <- readProcessWithExitCode "g++" [cppFile, "-o", exeFile, "-std=c++20", "-O3"] ""
+          putStrLn $ "[DEBUG] g++ exit code: " ++ show exitCode
+          putStrLn $ "[DEBUG] g++ stdout: " ++ stdout
+          putStrLn $ "[DEBUG] g++ stderr: " ++ stderr
           exitCode `shouldBe` ExitSuccess
           (exitCode', stdout, _) <- readProcessWithExitCode exeFile [] ""
           exitCode' `shouldBe` ExitSuccess

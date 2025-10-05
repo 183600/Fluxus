@@ -245,10 +245,16 @@ prettyCppUnit CppUnit{..} = T.unlines $ concat
       [ map (\ns -> "namespace " <> ns <> " {") cppNamespaces
       , [""]
       ]
-  , map (renderDecl 0) cppDeclarations
+  , map (renderDecl 0) nonMainDecls
   , if null cppNamespaces then [] else
       map (const "}") cppNamespaces
+  , [""]  -- Empty line before main
+  , map (renderDecl 0) mainDecls
   ]
+  where
+    (mainDecls, nonMainDecls) = partition isMainFunction cppDeclarations
+    isMainFunction (CppFunction "main" _ _ _) = True
+    isMainFunction _ = False
   where
     renderInclude inc
       | T.isPrefixOf "<" inc = "#include " <> inc
