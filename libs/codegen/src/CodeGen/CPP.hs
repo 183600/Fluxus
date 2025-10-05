@@ -1091,9 +1091,9 @@ generatePythonComparison ops exprs = do
     ([op], [left, right]) -> 
       return $ CppBinary (mapPythonComparisonOp op) left right
     _ -> do
-      -- Chain comparisons with &&
+      -- Chain comparisons with && (fix: previously malformed lambda causing codegen errors)
       let pairs = zip3 ops cppExprs (tail cppExprs)
-          comparisons = map (KATEX_INLINE_OPENop, l, r) -> CppBinary (mapPythonComparisonOp op) l r) pairs
+          comparisons = map (\(op,l,r) -> CppBinary (mapPythonComparisonOp op) l r) pairs
       return $ foldr1 (CppBinary "&&") comparisons
 
 -- | Generate function call
