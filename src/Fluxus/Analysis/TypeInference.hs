@@ -1179,8 +1179,9 @@ inferPythonImport imp = case imp of
     let aliasText = case moduleName of
             ModuleName name -> name
         alias = fromMaybe (Identifier aliasText) maybeAlias
-    -- Store module environment
+    -- Store module environment & bind alias name into current scope to avoid undefined variable warnings
     modify $ \s -> s { importedModules = HashMap.insert (case alias of Identifier name -> name) moduleEnv (importedModules s) }
+    bindVarType alias TAny
   ImportFrom moduleName items _level -> do
     let modIdentifier = case moduleName of
             ModuleName name -> Identifier name
