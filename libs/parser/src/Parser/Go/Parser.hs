@@ -396,7 +396,7 @@ parseFuncDecl = do
               -- Multiple return values: (int, error)
               void $ goDelimiterP GoDelimLeftParen
               types <- parseParameterList
-              void $ goDelimiterP GoDelimRightBracket
+              void $ goDelimiterP GoDelimRightParen  -- FIX: should close with right parenthesis
               return types
           , do
               -- Single return value: int
