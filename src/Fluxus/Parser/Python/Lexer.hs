@@ -355,15 +355,10 @@ stringLiteral = choice
   where
     parseRegularString = do
       quoteStr <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
-      let quoteChar = case T.unpack quoteStr of
-            ('\"':'\"':'\"':_) -> '\"'
-            ('\'':'\'':'\'':_) -> '\''
-            ('\"':_) -> '\"'
-            ('\'':_) -> '\''
-            _ -> '\"'
-      content <- lift $ manyTill (satisfy (\c -> c /= quoteChar && c /= '\\') <|> parseEscapeSequence) (string quoteStr)
+      content <- lift $ manyTill parseChar (try (string quoteStr))
       return $ TokenString (T.pack content)
       where
+        parseChar = parseEscapeSequence <|> anySingle
         parseEscapeSequence = do
           _ <- char '\\'
           c <- choice
