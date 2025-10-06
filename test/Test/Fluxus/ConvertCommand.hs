@@ -11,6 +11,13 @@ import Data.Char (isSpace)
 import System.Posix.Files (ownerReadMode, ownerWriteMode, ownerExecuteMode, groupReadMode, groupExecuteMode, otherReadMode, otherExecuteMode, setFileMode, unionFileModes)
 import System.Posix.Types (FileMode)
 
+-- Minimal logging: avoid printing large stdout/stderr blobs during CI
+quiet :: Bool
+quiet = True
+
+logInfo :: String -> IO ()
+logInfo msg = if quiet then pure () else putStrLn msg
+
 spec :: Spec
 spec = describe "Fluxus Convert Command Tests" $ do
   it "runs fluxus --python -2 convert without errors" $ do
@@ -23,9 +30,9 @@ spec = describe "Fluxus Convert Command Tests" $ do
 
     -- Note: fluxus compiler has known code generation issues, so we expect it to fail
     -- This test ensures the command interface works correctly
-    putStrLn $ "Fluxus convert exit code: " ++ show exitCode
-    putStrLn $ "Fluxus convert stdout: " ++ stdoutOutput
-    putStrLn $ "Fluxus convert stderr: " ++ stderrOutput
+    logInfo $ "Fluxus convert exit code: " ++ show exitCode
+    logInfo $ "Fluxus convert stdout: " ++ stdoutOutput
+    logInfo $ "Fluxus convert stderr: " ++ stderrOutput
 
 
   it "shows help and prints usage" $ do
@@ -148,9 +155,9 @@ spec = describe "Fluxus Convert Command Tests" $ do
           let cleanPyOutput = trimWhitespace stdoutPy
           let cleanExpected = trimWhitespace expectedContent
 
-          putStrLn $ "Python file: " ++ pyFile
-          putStrLn $ "Python stdout: " ++ cleanPyOutput
-          putStrLn $ "Expected: " ++ cleanExpected
+          logInfo $ "Python file: " ++ pyFile
+          logInfo $ "Python stdout: " ++ cleanPyOutput
+          logInfo $ "Expected: " ++ cleanExpected
 
           exitCodePy `shouldBe` ExitSuccess
           cleanPyOutput `shouldBe` cleanExpected
@@ -178,11 +185,11 @@ spec = describe "Fluxus Convert Command Tests" $ do
           let cleanExeOutput = trimWhitespace stdoutExe
           let cleanPyOutput = trimWhitespace stdoutPy
 
-          putStrLn $ "Executable: " ++ outputFile
-          putStrLn $ "Executable stdout: " ++ cleanExeOutput
-          putStrLn $ "Python stdout: " ++ cleanPyOutput
-          putStrLn $ "Executable stderr: " ++ stderrExe
-          putStrLn $ "Python stderr: " ++ stderrPy
+          logInfo $ "Executable: " ++ outputFile
+          logInfo $ "Executable stdout: " ++ cleanExeOutput
+          logInfo $ "Python stdout: " ++ cleanPyOutput
+          logInfo $ "Executable stderr: " ++ stderrExe
+          logInfo $ "Python stderr: " ++ stderrPy
 
           exitCodeExe `shouldBe` ExitSuccess
           exitCodePy `shouldBe` ExitSuccess
