@@ -102,12 +102,19 @@ runCompilerMain config args = do
 -- | Extract input files from command line arguments
 extractInputFiles :: [String] -> IO [FilePath]
 extractInputFiles args = do
-  let nonOptions = filter isInputFileOrDir args
-  expandedFiles <- mapM expandInput nonOptions
+  let inputArgs = collect args
+  expandedFiles <- mapM expandInput inputArgs
   return $ concat expandedFiles
   where
-    isInputFileOrDir arg = not ("--" `isPrefixOf` arg) &&
-                           not ("-" `isPrefixOf` arg)
+    collect :: [String] -> [String]
+    collect [] = []
+    collect ("-o":_out:rest) = collect rest
+    collect ("--output":_out:rest) = collect rest
+    collect (arg:rest)
+      | isOption arg = collect rest
+      | otherwise    = arg : collect rest
+
+    isOption a = ("--" `isPrefixOf` a) || ("-" `isPrefixOf` a)
 
     -- Expand input to list of files (handles directories)
     hasSupportedExtension file =
