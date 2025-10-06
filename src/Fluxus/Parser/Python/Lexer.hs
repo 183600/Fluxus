@@ -176,11 +176,11 @@ processLine = do
                    then handleIndentation
                    else return []
   
-  -- Parse tokens on this line
-  lineTokens <- manyTill (try locatedPythonToken) (lookAhead $ eof <|> void (Fluxus.Parser.Python.Lexer.newline))
-  
+  -- Parse tokens on this line (use lookAhead with peekNewline that doesn't modify state)
+  lineTokens <- manyTill (try locatedPythonToken) (lookAhead $ eof <|> peekNewline)
+
   -- Parse newlines
-  newlineTokens <- many (Fluxus.Parser.Python.Lexer.newline)
+  newlineTokens <- many newline
   
   end <- lift getSourcePos
   let sourceSpan = SourceSpan "<input>" (convertPos start) (convertPos end)
@@ -254,6 +254,13 @@ pythonToken = choice
   , try identifier
   , newline
     ]
+
+
+-- | Peek a newline without consuming it (used for lookAhead)
+peekNewline :: PythonLexer ()
+peekNewline = do
+  _ <- lift $ choice [try (string "\r\n"), try (string "\n"), try (string "\r")] <|> fail "no newline"
+  return ()
 
 -- | Parse a located Python token with position information
 locatedPythonToken :: PythonLexer (Located PythonToken)
