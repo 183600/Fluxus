@@ -682,7 +682,7 @@ typeInferenceStage ast = do
       let astSpan = extractSpanFromAST ast
       let errLower = T.toLower err
       if T.isInfixOf "undefined_variable" errLower
-        then throwError $ TypeError err astSpan
+        then throwError $ TypeError (T.toLower err) astSpan
         else if T.isInfixOf "undefined variable: identifier \"module_" errLower
           then do
             if ccStrictMode config
