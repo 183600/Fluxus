@@ -621,20 +621,10 @@ parseStage inputFile = do
       case runPythonParser (T.pack inputFile) tokens of
         Left err -> do
           logError $ "[DRIVER] Python parser failed: " <> T.pack (show err)
-          if ccStrictMode config
-            then logWarning $ "[DRIVER] Falling back to stub parser for basic integration support"
-            else logInfo $ "[DRIVER] Falling back to stub parser for basic integration support (non-strict mode)"
-          contentTxt <- liftIO $ TIO.readFile inputFile
-          let linesTxt = T.lines contentTxt
-              hasObviousInvalidDef l = let t = T.strip l in T.isPrefixOf "def " t && (not (T.isInfixOf ")" t) || not (T.isInfixOf ":" t))
-          if any hasObviousInvalidDef linesTxt
-            then do
-              let (line, col) = extractPosFromError err
-                  srcSpan = SourceSpan (T.pack inputFile) (SourcePos line col) (SourcePos line col)
-              throwError $ ParseError (T.pack $ show err) srcSpan
-            else do
-              let stubAst = buildStubPythonAST contentTxt
-              return $ Left stubAst
+          -- Strict mode: fail fast, no stub fallback
+          let (line, col) = extractPosFromError err
+              srcSpan = SourceSpan (T.pack inputFile) (SourcePos line col) (SourcePos line col)
+          throwError $ ParseError (T.pack $ show err) srcSpan
         Right ast -> do
           debugLog "Python parser succeeded"
           logInfo $ "[DRIVER] Python parser succeeded"
@@ -668,50 +658,9 @@ parseStage inputFile = do
           return $ Right ast
   where
     -- Helper to extract position from error (stub - should parse actual error)
-    -- Extremely permissive stub to recover from parser failures in integration tests
-    buildStubPythonAST :: Text -> PythonAST
-    buildStubPythonAST src =
-      let linesTxt = T.lines src
-          indexed :: [(Int, Text)]
-          indexed = zip ([0..] :: [Int]) linesTxt
-          mkFunc name = noLoc $ PyFuncDef PythonFuncDef
-                          { pyFuncName = Identifier name
-                          , pyFuncDecorators = []
-                          , pyFuncTypeParams = []
-                          , pyFuncParams = []
-                          , pyFuncReturns = Nothing
-                          , pyFuncBody = [noLoc (PyReturn (Just (noLoc (PyLiteral (PyInt 0))))) ]
-                          , pyFuncDoc = Nothing
-                          , pyFuncIsAsync = False
-                          }
-          mkClass name methods = noLoc $ PyClassDef PythonClassDef
-                          { pyClassName = Identifier name
-                          , pyClassDecorators = []
-                          , pyClassTypeParams = []
-                          , pyClassBases = []
-                          , pyClassKeywords = []
-                          , pyClassBody = map mkFunc methods
-                          , pyClassDoc = Nothing
-                          }
-          funcs = [ mkFunc (sanitizeName $ T.strip $ T.dropWhile (== ' ') $ T.takeWhile (/= '(') $ T.drop 4 l)
-                  | (_,l) <- indexed, T.isPrefixOf "def " (T.strip l) ]
-          classes = [ mkClass (sanitizeName $ T.strip $ T.takeWhile (/= ':') $ T.drop 6 l)
-                            (collectMethods (dropWhile (\(k,_) -> k <= i) indexed) (i+1))
-                    | (i,l) <- indexed, T.isPrefixOf "class " (T.strip l) ]
-          collectMethods ls startIdx =
-            [ T.strip $ T.takeWhile (/= '(') $ T.drop 4 l
-            | (j,l) <- ls
-            , j > startIdx
-            , T.isPrefixOf "def " (T.strip l)
-            ]
-          sanitizeName t = T.filter (\c -> T.any (== c) (T.pack ['_'] ) || (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) t
-
-      in PythonAST $ PythonModule Nothing Nothing [] (classes ++ funcs)
-
+    -- Removed legacy stub AST code in strict mode.
     extractPosFromError :: a -> (Int, Int)
-    extractPosFromError _err = 
-      -- In real implementation, parse error message for line/column
-      (1, 1)  -- Default to line 1, column 1 if can't extract
+    extractPosFromError _err = (1,1)
 
 -- | Enhanced type inference with proper error locations
 typeInferenceStage :: Either PythonAST GoAST -> CompilerM (Either PythonAST GoAST)
