@@ -369,8 +369,12 @@ cppCompilerOption = fmap T.pack $ strOption
   )
 
 verboseOption :: Options.Applicative.Parser Int
-verboseOption = length <$> many
-  (flag' () (short 'v' <> long "verbose" <> help "Increase verbosity"))
+verboseOption =
+  -- --quiet forces level 0
+  flag' 0 (long "quiet" <> help "Suppress all output except errors") <|>
+  -- Otherwise start from default (usually 1) and add one per -v
+  (fmap (\n -> n + ccVerboseLevel defaultConfig) $ length <$> many
+      (flag' () (short 'v' <> long "verbose" <> help "Increase verbosity")))
 
 workDirOption :: Options.Applicative.Parser (Maybe FilePath)
 workDirOption = optional $ strOption

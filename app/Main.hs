@@ -258,7 +258,7 @@ printUsage = do
   putStrLn ""
   putStrLn "Output Options:"
   putStrLn "  -v, --verbose         Increase verbosity level"
-  putStrLn "  --quiet              Suppress all output except errors"
+  putStrLn "  --quiet               Suppress all output except errors"
   putStrLn ""
   putStrLn "Information Options:"
   putStrLn "  --help               Show this help message"
