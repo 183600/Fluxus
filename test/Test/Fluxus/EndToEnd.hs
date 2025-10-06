@@ -402,10 +402,11 @@ performanceSpec = describe "Performance Tests" $ do
     -- Generate a large Python file
     let largeCode = T.unlines $
           ["import sys", "import math", ""] ++
-          [T.pack $ "def function_" ++ show i ++ "(x):" | i <- [1..100::Int]] ++
-          [T.pack $ "    # Function " ++ show i ++ " implementation" ++
-           "    result = x * " ++ show i ++ " + math.sqrt(" ++ show i ++ ")" ++
-           "    return result" | i <- [1..100::Int]] ++
+          concat [ [ T.pack $ "def function_" ++ show i ++ "(x):"
+                   , T.pack $ "    # Function " ++ show i ++ " implementation"
+                   , T.pack $ "    result = x * " ++ show i ++ " + math.sqrt(" ++ show i ++ ")"
+                   , T.pack $ "    return result"
+                   ] | i <- [1..100::Int]] ++
           [""] ++
           [T.pack $ "def main():"] ++
           [T.pack $ "    total = 0"] ++
