@@ -12,6 +12,7 @@ import System.Exit (ExitCode(..))
 import Control.Monad (forM, when)
 import Data.List (isInfixOf)
 import qualified Data.Text as T
+import System.Environment (lookupEnv)
 import Fluxus.Compiler.Driver (runCompiler, convertConfigToDriver, compileFileToObject, compileFile, compileProject)
 import qualified Fluxus.Compiler.Config as Config
 
@@ -483,12 +484,16 @@ performanceSpec = describe "Performance Tests" $ do
         Right _ -> do
           -- Debug logging disabled to reduce stack test output volume
           cppExists <- doesFileExist cppFile
-          when False $ do
+          -- Set env FLUXUS_E2E_DEBUG=1 and remove '&& False' to re-enable verbose output
+          -- Keep suppressed by default to avoid massive stack test logs
+          debugEnv <- lookupEnv "FLUXUS_E2E_DEBUG"
+          let debugEnabled = maybe False (== "1") debugEnv
+          when (debugEnabled && False) $ do
             putStrLn $ "[DEBUG] C++ file exists: " ++ show cppExists
             when cppExists $ do
               cppContent <- readFile cppFile
               putStrLn $ "[DEBUG] C++ file content length: " ++ show (length cppContent)
-              putStrLn $ "[DEBUG] Full C++ file content:\n" ++ cppContent
+              putStrLn $ "[DEBUG] Full C++ file content:\n" ++ take 2000 cppContent ++ if length cppContent > 2000 then "\n[TRUNCATED]" else ""
           
           -- Compile and run the generated C++
           let exeFile = tmpDir </> "memory"
