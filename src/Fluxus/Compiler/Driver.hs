@@ -849,7 +849,7 @@ buildCppCompilerArgs config cppFile objFile = concat
   , if ccEnableProfiler config then ["-pg"] else []
   , concatMap (\path -> ["-I", T.pack path]) (ccIncludePaths config)
   , ["-Wall", "-Wextra"]
-  , if ccStrictMode config then ["-Werror"] else []
+  , if ccStrictMode config then ["-Werror","-Wno-error=unused-parameter","-Wno-error=unused-variable"] else []
   , if ccEnableParallel config then ["-pthread"] else []
   ]
 
