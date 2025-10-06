@@ -1291,16 +1291,27 @@ parseInterfaceType = do
       return $ GoEmbeddedInterface (located' genericType)
     
     parseMethodSpec = do
-      void $ goKeywordP GoKwFunc  -- Consume 'func' keyword for interface methods
+      -- Interface method specs do not include 'func'
       name <- parseGoIdentifier
       void $ goDelimiterP GoDelimLeftParen
-      _ <- parseParameterList
+      params <- parseParameterList
       void $ goDelimiterP GoDelimRightParen
-      returnType <- parseGoType
+      -- Optional return type(s)
+      results <- optional $ choice
+        [ do
+            void $ goDelimiterP GoDelimLeftParen
+            res <- parseParameterList
+            void $ goDelimiterP GoDelimRightParen
+            return res
+        , do
+            resType <- parseGoType
+            return [GoField [] resType Nothing]
+        ]
       skipCommentsAndNewlines
       -- Consume optional semicolon at end of interface method
       void $ optional $ goDelimiterP GoDelimSemicolon
-      return $ GoMethod name returnType
+      let funcType = GoFuncType params (maybe [] id results)
+      return $ GoMethod name (located' funcType)
 
 -- | Parse type constraints with improved approximation constraint support
 parseTypeConstraint :: GoParser (Located GoConstraint)
