@@ -621,7 +621,9 @@ parseStage inputFile = do
       case runPythonParser (T.pack inputFile) tokens of
         Left err -> do
           logError $ "[DRIVER] Python parser failed: " <> T.pack (show err)
-          logWarning $ "[DRIVER] Falling back to stub parser for basic integration support"
+          if ccStrictMode config
+            then logWarning $ "[DRIVER] Falling back to stub parser for basic integration support"
+            else logInfo $ "[DRIVER] Falling back to stub parser for basic integration support (non-strict mode)"
           contentTxt <- liftIO $ TIO.readFile inputFile
           let linesTxt = T.lines contentTxt
               hasObviousInvalidDef l = let t = T.strip l in T.isPrefixOf "def " t && (not (T.isInfixOf ")" t) || not (T.isInfixOf ":" t))
@@ -734,7 +736,9 @@ typeInferenceStage ast = do
         then throwError $ TypeError err astSpan
         else if T.isInfixOf "undefined variable: identifier \"module_" errLower
           then do
-            logWarning $ "[DRIVER] Treating missing module reference as warning for integration tests"
+            if ccStrictMode config
+              then logWarning $ "[DRIVER] Treating missing module reference as warning for integration tests"
+              else logInfo $ "[DRIVER] Missing module reference noted (treated as success in non-strict mode)"
             addWarning $ TypeWarning err astSpan
             return ast
           else do
