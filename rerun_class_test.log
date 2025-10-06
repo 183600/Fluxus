@@ -1,0 +1,35 @@
+fluxus-0.1.0.0: unregistering (local file changes: src/Fluxus/Parser/Python/Parser.hs)
+fluxus> build (lib + exe + test) with ghc-9.8.4
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+[30 of 38] Compiling Fluxus.Parser.Python.Parser [Source file changed]
+Preprocessing executable 'fluxus' for fluxus-0.1.0.0..
+Building executable 'fluxus' for fluxus-0.1.0.0..
+[3 of 3] Linking .stack-work/dist/x86_64-linux/ghc-9.8.4/build/fluxus/fluxus [Library changed]
+Preprocessing test suite 'fluxus-test' for fluxus-0.1.0.0..
+Building test suite 'fluxus-test' for fluxus-0.1.0.0..
+[20 of 20] Linking .stack-work/dist/x86_64-linux/ghc-9.8.4/build/fluxus-test/fluxus-test [Library changed]
+fluxus> copy/register
+Installing library in /home/qwe12345678/hyperstatic2/.stack-work/install/x86_64-linux/2a42907f94f022bb546dec6cd9ecfcdcae21b985a1b0099a2bd97a2a1d45b651/9.8.4/lib/x86_64-linux-ghc-9.8.4/fluxus-0.1.0.0-JGG2xle87QtArgy2CEs9tD
+Installing executable fluxus in /home/qwe12345678/hyperstatic2/.stack-work/install/x86_64-linux/2a42907f94f022bb546dec6cd9ecfcdcae21b985a1b0099a2bd97a2a1d45b651/9.8.4/bin
+Registering library for fluxus-0.1.0.0..
+fluxus> test (suite: fluxus-test, args: -m 'compiles Python class to C++')
+
+fluxus-test: unexpected argument `Python'
+Try `fluxus-test --help' for more information.
+
+
+
+fluxus> Test suite fluxus-test failed
+Completed 2 action(s).
+
+Error: [S-7282]
+       Stack failed to execute the build plan.
+       
+       While executing the build plan, Stack encountered the error:
+       
+       Error: [S-1995]
+       Test suite failure for package fluxus-0.1.0.0
+           fluxus-test:  exited with: ExitFailure 1
+       Logs printed to console
+       
