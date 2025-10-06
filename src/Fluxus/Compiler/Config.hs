@@ -271,6 +271,8 @@ languageOption =
 
 optimizationOption :: Options.Applicative.Parser OptimizationLevel
 optimizationOption =
+  flag' O0 (short '0' <> help "No optimization (alias -0 / -O)") <|> -- accept -0 as alias
+
   flag' O0 (short 'O' <> long "O0" <> help "No optimization") <|>
   flag' O1 (short '1' <> long "O1" <> help "Basic optimization") <|>
   flag' O2 (short '2' <> long "O2" <> help "Standard optimization") <|>
