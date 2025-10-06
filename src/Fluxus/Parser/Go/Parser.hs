@@ -910,14 +910,16 @@ parseOrExpr = chainl1 parseAndExpr parseOrOp
   where
     parseOrOp = do
       void $ goOperatorP GoOpOr
-      return $ \l r -> located' $ GoBinaryOp OpOr l r
+      -- Logical OR (||) maps to OpOrOr, not bitwise OpOr
+      return $ \l r -> located' $ GoBinaryOp OpOrOr l r
 
 parseAndExpr :: GoParser (Located GoExpr)
 parseAndExpr = chainl1 parseEqualityExpr parseAndOp
   where
     parseAndOp = do
       void $ goOperatorP GoOpAnd
-      return $ \l r -> located' $ GoBinaryOp OpAnd l r
+      -- Logical AND (&&) maps to OpAndAnd, not bitwise OpAnd
+      return $ \l r -> located' $ GoBinaryOp OpAndAnd l r
 
 parseEqualityExpr :: GoParser (Located GoExpr)
 parseEqualityExpr = chainl1 parseRelationalExpr parseEqOp
