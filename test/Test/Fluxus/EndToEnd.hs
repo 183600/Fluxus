@@ -408,7 +408,7 @@ performanceSpec = describe "Performance Tests" $ do
           [""] ++
           [T.pack $ "def main():"] ++
           [T.pack $ "    total = 0"] ++
-          [T.pack $ "    for i in range(1, 101::Int):"] ++
+          [T.pack $ "    for i in range(1, 101):"] ++
           [T.pack $ "        total += function_" ++ show i ++ "(i)" | i <- [1..100::Int]] ++
           [T.pack $ "    print(f\"Total: {total}\")"] ++
           [T.pack $ "    return 0"] ++

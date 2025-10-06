@@ -81,6 +81,10 @@ parseModule :: PythonParser PythonModule
 parseModule = do
   skipNewlinesAndComments
   imports <- many (try parseImportStmt <* skipNewlinesAndComments)
+  -- Extra skip to ensure we consume any trailing newlines/comments after imports
+  -- This mitigates a stack test parse failure where a class at top-level
+  -- following blank lines triggered an unexpected EOF due to misplaced dedent tokens
+  skipNewlinesAndComments
   body <- parseModuleBody
   
   -- Extract docstring from module body
