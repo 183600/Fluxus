@@ -1,0 +1,52 @@
+Build profile: -w ghc-9.6.7 -O1
+In order, the following will be built (use -v for more details):
+ - fluxus-0.1.0.0 (exe:fluxus) (file /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.7/fluxus-0.1.0.0/cache/build changed)
+ - fluxus-0.1.0.0 (bench:fluxus-bench) (first run)
+ - fluxus-0.1.0.0 (test:fluxus-test) (additional components to build)
+Preprocessing executable 'fluxus' for fluxus-0.1.0.0...
+Building executable 'fluxus' for fluxus-0.1.0.0...
+Preprocessing benchmark 'fluxus-bench' for fluxus-0.1.0.0...
+Preprocessing test suite 'fluxus-test' for fluxus-0.1.0.0...
+Building benchmark 'fluxus-bench' for fluxus-0.1.0.0...
+Building test suite 'fluxus-test' for fluxus-0.1.0.0...
+[1 of 2] Compiling Main             ( bench/Bench.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.7/fluxus-0.1.0.0/b/fluxus-bench/build/fluxus-bench/fluxus-bench-tmp/Main.o )
+[3 of 3] Linking /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.7/fluxus-0.1.0.0/x/fluxus/build/fluxus/fluxus [Library changed]
+
+bench/Bench.hs:1:1: warning: [GHC-85401] [-Wmissing-export-lists]
+    The export item ‘module Main’ is missing an export list
+  |
+1 | {-# LANGUAGE OverloadedStrings #-}
+  | ^
+
+bench/Bench.hs:13:1: warning: [-Wunused-imports]
+    The import of ‘Fluxus.Analysis.TypeInference’ is redundant
+      except perhaps to import instances from ‘Fluxus.Analysis.TypeInference’
+    To import instances alone, use: import Fluxus.Analysis.TypeInference()
+   |
+13 | import Fluxus.Analysis.TypeInference
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+bench/Bench.hs:14:1: warning: [-Wunused-imports]
+    The import of ‘Fluxus.CodeGen.CPP’ is redundant
+      except perhaps to import instances from ‘Fluxus.CodeGen.CPP’
+    To import instances alone, use: import Fluxus.CodeGen.CPP()
+   |
+14 | import Fluxus.CodeGen.CPP
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+bench/Bench.hs:15:1: warning: [-Wunused-imports]
+    The import of ‘Fluxus.Optimization.ConstantFolding’ is redundant
+      except perhaps to import instances from ‘Fluxus.Optimization.ConstantFolding’
+    To import instances alone, use: import Fluxus.Optimization.ConstantFolding()
+   |
+15 | import Fluxus.Optimization.ConstantFolding
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+bench/Bench.hs:16:1: warning: [-Wunused-imports]
+    The import of ‘Fluxus.Optimization.DeadCodeElimination’ is redundant
+      except perhaps to import instances from ‘Fluxus.Optimization.DeadCodeElimination’
+    To import instances alone, use: import Fluxus.Optimization.DeadCodeElimination()
+   |
+16 | import Fluxus.Optimization.DeadCodeElimination
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[3 of 3] Linking /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.7/fluxus-0.1.0.0/b/fluxus-bench/build/fluxus-bench/fluxus-bench

@@ -1,127 +1,182 @@
-cabal-version: 3.0
-name: fluxus
-version: 0.1.0.0
-synopsis: High-performance hybrid C++ AOT compiler for Python and Go
-description: Fluxus is an experimental hybrid Ahead-of-Time (AOT) compiler 
-             that translates high-level languages (initially Python and Go) into 
-             highly optimized modern C++ (C++20/23) while maintaining full language 
-             compatibility through runtime interoperability.
-license: Apache-2.0
-license-file: LICENSE
-author: Fluxus Team
-maintainer: fluxus@example.com
-copyright: 2024 Fluxus Team
-category: Compiler
-build-type: Simple
-extra-source-files: CHANGELOG.md, README.md
+cabal-version: 1.12
 
-common shared-properties
-  default-language: Haskell2010
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates
-               -Wincomplete-uni-patterns -Wmissing-export-lists
-               -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
-               -O2
+-- This file has been generated from package.yaml by hpack version 0.38.2.
+--
+-- see: https://github.com/sol/hpack
+
+name:           fluxus
+version:        0.1.0.0
+synopsis:       High-performance hybrid C++ AOT compiler for Python and Go
+description:    Fluxus is an experimental hybrid Ahead-of-Time (AOT) compiler 
+                that translates high-level languages (initially Python and Go) into 
+                highly optimized modern C++ (C++20/23) while maintaining full language 
+                compatibility through runtime interoperability.
+category:       Compiler
+author:         Fluxus Team
+maintainer:     fluxus@example.com
+copyright:      2024 Fluxus Team
+license:        Apache-2.0
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    CHANGELOG.md
+    README.md
 
 library
-  import: shared-properties
-  hs-source-dirs: src
   exposed-modules:
-    Fluxus.AST.Common
-    Fluxus.AST.Python
-    Fluxus.AST.Go
-    Fluxus.Parser.Python.Lexer
-    Fluxus.Parser.Python.Parser
-    Fluxus.Parser.Go.Lexer
-    Fluxus.Parser.Go.Parser
-    Fluxus.Analysis.TypeInference
-    Fluxus.Analysis.EscapeAnalysis
-    Fluxus.Analysis.ShapeAnalysis
-    Fluxus.Analysis.OwnershipInference
-    Fluxus.Optimization.Monomorphization
-    Fluxus.Optimization.Devirtualization
-    Fluxus.CodeGen.CPP
-    Fluxus.Runtime.Python
-    Fluxus.Runtime.Go
-    Fluxus.Compiler.Driver
-    Fluxus.Compiler.Config
-    Fluxus.Utils.Pretty
-    Fluxus.Utils.Graph
+      Fluxus.AST.Common
+      Fluxus.AST.Python
+      Fluxus.AST.Go
+      Fluxus.Parser.Python.Lexer
+      Fluxus.Parser.Python.Parser
+      Fluxus.Parser.Go.Lexer
+      Fluxus.Parser.Go.Parser
+      Fluxus.Analysis.EscapeAnalysis
+      Fluxus.Analysis.OwnershipInference
+      Fluxus.Analysis.ShapeAnalysis
+      Fluxus.Analysis.SmartFallback
+      Fluxus.Analysis.TypeInference
+      Fluxus.Optimization.BasicPasses
+      Fluxus.Optimization.ConstantFolding
+      Fluxus.Optimization.ConstantPropagation
+      Fluxus.Optimization.DeadCodeElimination
+      Fluxus.Optimization.Devirtualization
+      Fluxus.Optimization.Inlining
+      Fluxus.Optimization.Monomorphization
+      Fluxus.Optimization.SizeReduction
+      Fluxus.Optimization.Vectorization
+      Fluxus.CodeGen.CPP
+      Fluxus.CodeGen.Go
+      Fluxus.Runtime.Python
+      Fluxus.Runtime.Go
+      Fluxus.Compiler.Driver
+      Fluxus.Compiler.Config
+      Fluxus.Utils.Pretty
+      Fluxus.Utils.Graph
+      Fluxus.Debug.Logger
+      Fluxus.Debug.CLI
   other-modules:
-    Fluxus.Internal.Types
-    Fluxus.Internal.Monad
+      Fluxus.Internal.Types
+      Fluxus.Internal.Monad
+      Fluxus.AST.Go.Common
+      Fluxus.AST.Go.Types
+      Fluxus.AST.Go.Helpers
+      Fluxus.AST.Go.Expressions
+  hs-source-dirs:
+      src
+      libs/ast/src
+      libs/cli/src
+      libs/codegen/src
+      libs/optimization/src
+      libs/parser/src
+      libs/type-inference/src
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2
   build-depends:
-    base >= 4.17 && < 5,
-    containers >= 0.6.7,
-    text >= 2.0,
-    bytestring >= 0.11,
-    mtl >= 2.3,
-    transformers >= 0.6,
-    parsec >= 3.1.16,
-    megaparsec >= 9.5,
-    parser-combinators >= 1.3,
-    prettyprinter >= 1.7,
-    prettyprinter-ansi-terminal >= 1.1,
-    hashable >= 1.4,
-    unordered-containers >= 0.2.19,
-    vector >= 0.13,
-    array >= 0.5,
-    deepseq >= 1.4,
-    filepath >= 1.4,
-    directory >= 1.3,
-    process >= 1.6,
-    temporary >= 1.3,
-    optparse-applicative >= 0.17,
-    aeson >= 2.1,
-    yaml >= 0.11,
-    scientific >= 0.3,
-    lens >= 5.2,
-    fgl >= 5.8,
-    monad-logger >= 0.3.40,
-    fast-logger >= 3.2,
-    ansi-terminal >= 1.1,
-    time >= 1.12,
-    stm >= 2.5,
+      aeson >=2.1
+    , ansi-terminal >=1.1
+    , array >=0.5
+    , base >=4.17 && <5
+    , bytestring >=0.11
+    , containers >=0.6.7
+    , deepseq >=1.4
+    , directory >=1.3
+    , fast-logger >=3.2
+    , fgl >=5.8
+    , filepath >=1.4
+    , hashable >=1.4
+    , haskeline >=0.8
+    , lens >=5.2
+    , megaparsec >=9.5
+    , monad-logger >=0.3.40
+    , mtl >=2.3
+    , optparse-applicative >=0.17
+    , parsec >=3.1.16
+    , parser-combinators >=1.3
+    , prettyprinter >=1.7
+    , prettyprinter-ansi-terminal >=1.1
+    , process >=1.6
+    , scientific >=0.3
+    , stm >=2.5
+    , temporary >=1.3
+    , text >=2.0
+    , time >=1.12
+    , transformers >=0.6
+    , unordered-containers >=0.2.19
+    , vector >=0.13
+    , yaml >=0.11
+  default-language: Haskell2010
 
 executable fluxus
-  import: shared-properties
   main-is: Main.hs
-  hs-source-dirs: app
+  other-modules:
+      Paths_fluxus
+  hs-source-dirs:
+      app
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-    base,
-    fluxus,
-    optparse-applicative,
-    text,
-    monad-logger
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+      base >=4.17 && <5
+    , directory
+    , filepath
+    , fluxus
+    , monad-logger
+    , optparse-applicative
+    , text
+  default-language: Haskell2010
 
 test-suite fluxus-test
-  import: shared-properties
   type: exitcode-stdio-1.0
-  hs-source-dirs: test
   main-is: Spec.hs
   other-modules:
-    Test.Fluxus.Parser.Python
-    Test.Fluxus.Parser.Go
-    Test.Fluxus.Analysis.TypeInference
-    Test.Fluxus.CodeGen.CPP
+      Test.Fluxus.Analysis.EscapeAnalysis
+      Test.Fluxus.Analysis.OwnershipInference
+      Test.Fluxus.Analysis.ShapeAnalysis
+      Test.Fluxus.Analysis.SmartFallback
+      Test.Fluxus.CodeGen.Go
+      Test.Fluxus.EndToEnd
+      Test.Fluxus.Integration
+      Test.Fluxus.Optimization
+      Test.Fluxus.Optimization.ConstantFolding
+      Test.Fluxus.Optimization.DeadCodeElimination
+      Test.Fluxus.Optimization.Inlining
+      Test.Fluxus.Parser.Python
+      Test.Fluxus.Parser.Go
+      Test.Fluxus.Analysis.TypeInference
+      Test.Fluxus.CodeGen.CPP
+      Test.Fluxus.ConvertCommand
+      Test.Fluxus.Runtime.Go
+      Test.Fluxus.Runtime.Python
+  hs-source-dirs:
+      test
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-    base,
-    fluxus,
-    hspec >= 2.10,
-    QuickCheck >= 2.14,
-    text,
-    containers
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+      QuickCheck >=2.14
+    , base >=4.17 && <5
+    , containers
+    , directory
+    , filepath
+    , fluxus
+    , hspec >=2.10
+    , hspec-core >=2.10
+    , process
+    , temporary >=1.3
+    , text
+    , time >=1.12
+    , unix
+    , unordered-containers >=0.2.19
+  default-language: Haskell2010
 
 benchmark fluxus-bench
-  import: shared-properties
   type: exitcode-stdio-1.0
-  hs-source-dirs: bench
   main-is: Bench.hs
+  other-modules:
+      Paths_fluxus
+  hs-source-dirs:
+      bench
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-    base,
-    fluxus,
-    criterion >= 1.6,
-    text,
-    deepseq
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+      base >=4.17 && <5
+    , criterion >=1.6
+    , deepseq
+    , fluxus
+    , text
+  default-language: Haskell2010

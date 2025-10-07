@@ -1,0 +1,81 @@
+Build profile: -w ghc-9.6.3 -O1
+In order, the following will be built (use -v for more details):
+ - fluxus-0.1.0.0 (lib) (first run)
+ - fluxus-0.1.0.0 (test:fluxus-test) (first run)
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+[ 7 of 37] Compiling Fluxus.AST.Python ( src/Fluxus/AST/Python.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Python.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Python.dyn_o )
+[ 8 of 37] Compiling Fluxus.Analysis.OwnershipInference ( src/Fluxus/Analysis/OwnershipInference.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/OwnershipInference.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/OwnershipInference.dyn_o )
+[ 9 of 37] Compiling Fluxus.Analysis.ShapeAnalysis ( src/Fluxus/Analysis/ShapeAnalysis.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/ShapeAnalysis.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/ShapeAnalysis.dyn_o )
+
+src/Fluxus/Analysis/ShapeAnalysis.hs:346:5: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘stringShape’ shadows the existing binding
+      defined at src/Fluxus/Analysis/ShapeAnalysis.hs:143:1
+    |
+346 |     stringShape = inferShape TString
+    |     ^^^^^^^^^^^
+
+src/Fluxus/Analysis/ShapeAnalysis.hs:347:5: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘booleanShape’ shadows the existing binding
+      defined at src/Fluxus/Analysis/ShapeAnalysis.hs:139:1
+    |
+347 |     booleanShape = inferShape TBool
+    |     ^^^^^^^^^^^^
+
+src/Fluxus/Analysis/ShapeAnalysis.hs:348:5: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘listShape’ shadows the existing binding
+      defined at src/Fluxus/Analysis/ShapeAnalysis.hs:1005:1
+    |
+348 |     listShape = inferShape (TList TVoid)
+    |     ^^^^^^^^^
+[10 of 37] Compiling Fluxus.Analysis.SmartFallback ( src/Fluxus/Analysis/SmartFallback.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/SmartFallback.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/SmartFallback.dyn_o )
+[11 of 37] Compiling Fluxus.Analysis.TypeInference ( src/Fluxus/Analysis/TypeInference.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/TypeInference.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/TypeInference.dyn_o )
+[12 of 37] Compiling Fluxus.CodeGen.CPP ( src/Fluxus/CodeGen/CPP.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/CodeGen/CPP.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/CodeGen/CPP.dyn_o )
+[13 of 37] Compiling Fluxus.Compiler.Config ( src/Fluxus/Compiler/Config.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Compiler/Config.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Compiler/Config.dyn_o )
+[14 of 37] Compiling Fluxus.Debug.Logger ( src/Fluxus/Debug/Logger.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Debug/Logger.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Debug/Logger.dyn_o )
+
+src/Fluxus/Debug/Logger.hs:78:3: error: [GHC-88464]
+    Variable not in scope: when :: Bool -> m0 () -> m ()
+   |
+78 |   when enabled $ do
+   |   ^^^^
+
+src/Fluxus/Debug/Logger.hs:88:3: error: [GHC-88464]
+    Variable not in scope: when :: Bool -> m1 () -> m ()
+   |
+88 |   when enabled $ debugLog msg
+   |   ^^^^
+
+src/Fluxus/Debug/Logger.hs:104:3: error: [GHC-88464]
+    Variable not in scope: when :: Bool -> m3 b0 -> m ()
+    |
+104 |   when (enabled && name `elem` breakpoints) $ do
+    |   ^^^^
+
+src/Fluxus/Debug/Logger.hs:109:5: error: [GHC-88464]
+    Variable not in scope: when :: Bool -> m2 () -> m3 b0
+    |
+109 |     when (input == "q") $ do
+    |     ^^^^
+[15 of 37] Compiling Fluxus.Internal.Monad ( src/Fluxus/Internal/Monad.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Internal/Monad.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Internal/Monad.dyn_o )
+[16 of 37] Compiling Fluxus.Internal.Types ( src/Fluxus/Internal/Types.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Internal/Types.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Internal/Types.dyn_o )
+[17 of 37] Compiling Fluxus.Optimization.BasicPasses ( src/Fluxus/Optimization/BasicPasses.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/BasicPasses.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/BasicPasses.dyn_o )
+[18 of 37] Compiling Fluxus.Optimization.ConstantFolding ( src/Fluxus/Optimization/ConstantFolding.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/ConstantFolding.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/ConstantFolding.dyn_o )
+[19 of 37] Compiling Fluxus.Optimization.ConstantPropagation ( src/Fluxus/Optimization/ConstantPropagation.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/ConstantPropagation.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/ConstantPropagation.dyn_o )
+[20 of 37] Compiling Fluxus.Optimization.DeadCodeElimination ( src/Fluxus/Optimization/DeadCodeElimination.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/DeadCodeElimination.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/DeadCodeElimination.dyn_o )
+[21 of 37] Compiling Fluxus.Optimization.Devirtualization ( src/Fluxus/Optimization/Devirtualization.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Devirtualization.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Devirtualization.dyn_o )
+[22 of 37] Compiling Fluxus.Optimization.Inlining ( src/Fluxus/Optimization/Inlining.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Inlining.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Inlining.dyn_o )
+[23 of 37] Compiling Fluxus.Optimization.Monomorphization ( src/Fluxus/Optimization/Monomorphization.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Monomorphization.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Monomorphization.dyn_o )
+[24 of 37] Compiling Fluxus.Optimization.SizeReduction ( src/Fluxus/Optimization/SizeReduction.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/SizeReduction.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/SizeReduction.dyn_o )
+[25 of 37] Compiling Fluxus.Optimization.Vectorization ( src/Fluxus/Optimization/Vectorization.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Vectorization.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Vectorization.dyn_o )
+[26 of 37] Compiling Fluxus.Parser.Go.Lexer ( src/Fluxus/Parser/Go/Lexer.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Go/Lexer.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Go/Lexer.dyn_o )
+[27 of 37] Compiling Fluxus.Parser.Go.Parser ( src/Fluxus/Parser/Go/Parser.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Go/Parser.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Go/Parser.dyn_o )
+
+src/Fluxus/Parser/Go/Parser.hs:52:1: warning: [-Wunused-imports]
+    The import of ‘Debug.Trace’ is redundant
+      except perhaps to import instances from ‘Debug.Trace’
+    To import instances alone, use: import Debug.Trace()
+   |
+52 | import Debug.Trace (traceM)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[28 of 37] Compiling Fluxus.Parser.Python.Lexer ( src/Fluxus/Parser/Python/Lexer.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Python/Lexer.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Python/Lexer.dyn_o )

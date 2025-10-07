@@ -1,0 +1,27 @@
+{
+  "name": "fluxus-compiler-tests",
+  "version": "1.0.0",
+  "description": "Test suite for Fluxus Python to C++ compiler",
+  "main": "test/test-runner.js",
+  "scripts": {
+    "test": "node test/test-runner.js",
+    "test:verbose": "node test/test-runner.js --verbose",
+    "test:debug": "node test/test-runner.js --debug"
+  },
+  "keywords": [
+    "compiler",
+    "python",
+    "cpp",
+    "fluxus",
+    "testing"
+  ],
+  "author": "Fluxus Team",
+  "license": "MIT",
+  "devDependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^9.4.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

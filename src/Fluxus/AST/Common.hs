@@ -23,6 +23,7 @@ module Fluxus.AST.Common
   , Type(..)
   , TypeVar(..)
   , TypeConstraint(..)
+  , BitWidth(..)
     -- * Literals
   , Literal(..)
     -- * Binary and unary operators
@@ -39,10 +40,9 @@ module Fluxus.AST.Common
 
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.ByteString (ByteString)
 import Data.Int (Int64)
 import Data.Word (Word64)
-import Data.Scientific (Scientific)
-import Data.HashMap.Strict (HashMap)
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
@@ -67,9 +67,7 @@ data Located a = Located
   { locSpan  :: !SourceSpan
   , locValue :: !a
   } deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable, Generic)
-    deriving anyclass (NFData)
-
-instance Hashable a => Hashable (Located a)
+    deriving anyclass (NFData, Hashable)  -- Fixed: Now derives Hashable correctly
 
 -- | Create a node without location information (for testing/internal use)
 noLoc :: a -> Located a
@@ -92,9 +90,7 @@ data QualifiedName = QualifiedName
   { qnModule :: ![ModuleName]
   , qnName   :: !Identifier
   } deriving stock (Eq, Ord, Show, Generic)
-    deriving anyclass (NFData)
-
-instance Hashable QualifiedName
+    deriving anyclass (NFData, Hashable)  -- Fixed: Consistent derivation
 
 -- | Module name component
 newtype ModuleName = ModuleName Text
@@ -106,22 +102,26 @@ newtype TypeVar = TypeVar Text
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype (Hashable, NFData)
 
+-- | Bit width for numeric types
+newtype BitWidth = BitWidth Int
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving newtype (Hashable, NFData, Num)
+
 -- | Type constraints/bounds
 data TypeConstraint = TypeConstraint
   { tcVar        :: !TypeVar
   , tcBounds     :: ![Type]
   , tcTraits     :: ![QualifiedName]  -- Rust-like traits or Go interfaces
   } deriving stock (Eq, Ord, Show, Generic)
-    deriving anyclass (NFData)
-
-instance Hashable TypeConstraint
+    deriving anyclass (NFData, Hashable)  -- Fixed: Consistent derivation
 
 -- | Unified type system across all source languages
 data Type
-  = -- Primitive types
-    TInt !Int                           -- Sized integers (8, 16, 32, 64)
-  | TUInt !Int                          -- Unsigned integers
-  | TFloat !Int                         -- Floating point (32, 64)
+  = -- Primitive types (Fixed: Using BitWidth instead of raw Int)
+    TInt !BitWidth                      -- Sized integers (8, 16, 32, 64)
+  | TUInt !BitWidth                     -- Unsigned integers
+  | TFloat !BitWidth                    -- Floating point (32, 64)
+  | TComplex !Type                      -- Complex numbers (real, imaginary)
   | TBool
   | TString
   | TBytes
@@ -162,18 +162,16 @@ data Type
   | TInfer !Int                         -- Type inference variable
   
   deriving stock (Eq, Ord, Show, Generic)
-  deriving anyclass (NFData)
+  deriving anyclass (NFData, Hashable)
 
-instance Hashable Type
-
--- | Literal values
+-- | Literal values (Fixed: Using ByteString instead of Text for bytes)
 data Literal
   = LInt !Int64
   | LUInt !Word64
   | LFloat !Double
   | LBool !Bool
   | LString !Text
-  | LBytes !Text                        -- Base64 encoded for now
+  | LBytes !ByteString                  -- Fixed: Using ByteString for raw bytes
   | LChar !Char
   | LNone                               -- Python None, Go nil
   deriving stock (Eq, Ord, Show, Generic)
@@ -190,7 +188,7 @@ data BinaryOp
   | OpShiftL | OpShiftR
   
   -- Logical
-  | OpAnd | OpOr
+  | OpAnd | OpOr | OpXor
   
   -- String/list operations
   | OpConcat                            -- String/list concatenation
@@ -227,9 +225,7 @@ data CommonExpr
   | CESlice !(Located CommonExpr) !(Maybe (Located CommonExpr)) !(Maybe (Located CommonExpr))
   | CEAttribute !(Located CommonExpr) !Identifier
   deriving stock (Eq, Show, Generic)
-  deriving anyclass (NFData)
-
-instance Hashable CommonExpr
+  deriving anyclass (NFData, Hashable)  -- Fixed: Consistent derivation
 
 -- | Ownership information for memory management optimization
 data OwnershipInfo = OwnershipInfo

@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE StrictData #-}
+{-# OPTIONS_GHC -Wno-partial-fields #-}
 
 -- | Python-specific AST definitions
 module Fluxus.AST.Python
@@ -18,13 +19,18 @@ module Fluxus.AST.Python
   , PythonImport(..)
   , PythonExcept(..)
   , PythonWithItem(..)
+  , PythonMatch(..)
+  , PythonCase(..)
     -- * Python literals and constants
   , PythonLiteral(..)
+  , FStringPart(..)
+  , ConversionFlag(..)
     -- * Function and class definitions
   , PythonFuncDef(..)
   , PythonClassDef(..)
   , PythonArgument(..)
   , PythonParameter(..)
+  , TypeParam(..)
     -- * Type annotations
   , PythonTypeExpr(..)
     -- * Utilities
@@ -33,7 +39,7 @@ module Fluxus.AST.Python
   ) where
 
 import Data.Text (Text)
-import Data.HashMap.Strict (HashMap)
+import Data.HashMap.Strict ()
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
@@ -74,22 +80,35 @@ data PythonStmt
   | PyGlobal ![Identifier]
   | PyNonlocal ![Identifier]
   
-  -- Compound statements
+  -- Compound statements with async support
   | PyIf !(Located PythonExpr) ![Located PythonStmt] ![Located PythonStmt]
   | PyWhile !(Located PythonExpr) ![Located PythonStmt] ![Located PythonStmt]
-  | PyFor !(Located PythonPattern) !(Located PythonExpr) ![Located PythonStmt] ![Located PythonStmt]
-  | PyWith ![Located PythonWithItem] ![Located PythonStmt]
-  | PyTry ![Located PythonStmt] ![Located PythonExcept] ![Located PythonStmt] ![Located PythonStmt]
+  | PyFor
+    { pyForAsync  :: !Bool
+    , pyForTarget :: !(Located PythonPattern)
+    , pyForIter   :: !(Located PythonExpr)
+    , pyForBody   :: ![Located PythonStmt]
+    , pyForElse   :: ![Located PythonStmt]
+    }
+  | PyWith
+    { pyWithAsync :: !Bool
+    , pyWithItems :: ![Located PythonWithItem]
+    , pyWithBody  :: ![Located PythonStmt]
+    }
+  | PyTry
+    { pyTryBody    :: ![Located PythonStmt]
+    , pyTryExcepts :: ![Located PythonExcept]
+    , pyTryElse    :: ![Located PythonStmt]
+    , pyTryFinally :: ![Located PythonStmt]
+    }
   | PyRaise !(Maybe (Located PythonExpr)) !(Maybe (Located PythonExpr))
   
   -- Function and class definitions
   | PyFuncDef !PythonFuncDef
   | PyClassDef !PythonClassDef
   
-  -- Async variants
-  | PyAsyncFuncDef !PythonFuncDef
-  | PyAsyncWith ![Located PythonWithItem] ![Located PythonStmt]
-  | PyAsyncFor !(Located PythonPattern) !(Located PythonExpr) ![Located PythonStmt] ![Located PythonStmt]
+  -- Pattern matching (Python 3.10+)
+  | PyMatch !PythonMatch
   
   deriving stock (Eq, Show, Generic)
   deriving anyclass (Hashable, NFData)
@@ -99,7 +118,6 @@ data PythonExpr
   = -- Literals and identifiers
     PyLiteral !PythonLiteral
   | PyVar !Identifier
-  | PyConst !QualifiedName              -- True, False, None, etc.
   
   -- Operators
   | PyBinaryOp !BinaryOp !(Located PythonExpr) !(Located PythonExpr)
@@ -137,25 +155,54 @@ data PythonExpr
   
   -- Async expressions
   | PyAwait !(Located PythonExpr)
-  | PyAsyncCall !(Located PythonExpr) ![Located PythonArgument]
   
   -- String formatting
-  | PyJoinedStr ![Located PythonExpr]   -- f-string
-  | PyFormatSpec !(Located PythonExpr)  -- Format specifier in f-string
+  | PyFString ![FStringPart]   -- Improved f-string representation
   
   deriving stock (Eq, Show, Generic)
   deriving anyclass (Hashable, NFData)
 
--- | Python patterns (for assignment, function parameters, etc.)
+-- | Python patterns (for assignment, function parameters, and pattern matching)
 data PythonPattern
-  = PatVar !Identifier
+  = -- Basic patterns
+    PatVar !Identifier
+  | PatWildcard                         -- _
   | PatLiteral !PythonLiteral
+  
+  -- Sequence patterns
   | PatTuple ![Located PythonPattern]
   | PatList ![Located PythonPattern]
   | PatStarred !(Located PythonPattern)
-  | PatWildcard                         -- _
+  
+  -- Pattern matching patterns (Python 3.10+)
+  | PatCapture !Identifier              -- name
+  | PatAs !(Located PythonPattern) !Identifier  -- pattern as name
+  | PatOr ![Located PythonPattern]      -- pattern | pattern
+  | PatValue !(Located PythonExpr)      -- Literal or constant value pattern
+  | PatSequence ![Located PythonPattern] -- Sequence pattern
+  | PatMapping ![(Located PythonExpr, Located PythonPattern)] !(Maybe Identifier) -- {key: pattern, **rest}
+  | PatClass !(Located PythonExpr) ![Located PythonPattern] ![(Identifier, Located PythonPattern)] -- Class(pos, keyword=pattern)
+  
   deriving stock (Eq, Show, Generic)
+  deriving anyclass (Hashable, NFData)
+
+-- | F-string parts
+data FStringPart
+  = FStringLiteral !Text
+  | FStringExpr
+    { fstrExpr       :: !(Located PythonExpr)
+    , fstrConversion :: !(Maybe ConversionFlag)
+    , fstrFormatSpec :: !(Maybe Text)
+    } deriving stock (Eq, Show, Generic)
     deriving anyclass (Hashable, NFData)
+
+-- | F-string conversion flags
+data ConversionFlag
+  = ConvStr     -- !s
+  | ConvRepr    -- !r
+  | ConvAscii   -- !a
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (Hashable, NFData)
 
 -- | Python slice expressions
 data PythonSlice
@@ -163,7 +210,7 @@ data PythonSlice
   | SliceSlice !(Maybe (Located PythonExpr)) !(Maybe (Located PythonExpr)) !(Maybe (Located PythonExpr))
   | SliceExtSlice ![Located PythonSlice]
   deriving stock (Eq, Show, Generic)
-    deriving anyclass (Hashable, NFData)
+  deriving anyclass (Hashable, NFData)
 
 -- | Python literals
 data PythonLiteral
@@ -176,30 +223,40 @@ data PythonLiteral
   | PyNone
   | PyEllipsis
   deriving stock (Eq, Show, Generic)
-    deriving anyclass (Hashable, NFData)
+  deriving anyclass (Hashable, NFData)
+
+-- | Type parameters (Python 3.12+, PEP 695)
+data TypeParam
+  = TypeParamVar !Identifier !(Maybe (Located PythonTypeExpr))      -- T: bound
+  | TypeParamTypeVar !Identifier !(Maybe (Located PythonTypeExpr))  -- *T: bound
+  | TypeParamParamSpec !Identifier                                  -- **P
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (Hashable, NFData)
 
 -- | Function definitions
 data PythonFuncDef = PythonFuncDef
   { pyFuncName       :: !Identifier
   , pyFuncDecorators :: ![Located PythonDecorator]
+  , pyFuncTypeParams :: ![TypeParam]      -- Type parameters [T, U] (Python 3.12+)
   , pyFuncParams     :: ![Located PythonParameter]
   , pyFuncReturns    :: !(Maybe (Located PythonTypeExpr))
   , pyFuncBody       :: ![Located PythonStmt]
   , pyFuncDoc        :: !(Maybe Text)
   , pyFuncIsAsync    :: !Bool
   } deriving stock (Eq, Show, Generic)
-    deriving anyclass (Hashable, NFData)
+  deriving anyclass (Hashable, NFData)
 
 -- | Class definitions
 data PythonClassDef = PythonClassDef
-  { pyClassName      :: !Identifier
+  { pyClassName       :: !Identifier
   , pyClassDecorators :: ![Located PythonDecorator]
-  , pyClassBases     :: ![Located PythonExpr]
-  , pyClassKeywords  :: ![(Identifier, Located PythonExpr)]
-  , pyClassBody      :: ![Located PythonStmt]
-  , pyClassDoc       :: !(Maybe Text)
+  , pyClassTypeParams :: ![TypeParam]     -- Type parameters [T, U] (Python 3.12+)
+  , pyClassBases      :: ![Located PythonExpr]
+  , pyClassKeywords   :: ![(Identifier, Located PythonExpr)]
+  , pyClassBody       :: ![Located PythonStmt]
+  , pyClassDoc        :: !(Maybe Text)
   } deriving stock (Eq, Show, Generic)
-    deriving anyclass (Hashable, NFData)
+  deriving anyclass (Hashable, NFData)
 
 -- | Function parameter
 data PythonParameter
@@ -207,8 +264,9 @@ data PythonParameter
   | ParamVarArgs !Identifier !(Maybe (Located PythonTypeExpr))    -- *args
   | ParamKwArgs !Identifier !(Maybe (Located PythonTypeExpr))     -- **kwargs
   | ParamKwOnly !Identifier !(Maybe (Located PythonTypeExpr)) !(Maybe (Located PythonExpr))
+  | ParamPosOnly !Identifier !(Maybe (Located PythonTypeExpr)) !(Maybe (Located PythonExpr)) -- Before /
   deriving stock (Eq, Show, Generic)
-    deriving anyclass (Hashable, NFData)
+  deriving anyclass (Hashable, NFData)
 
 -- | Function call argument
 data PythonArgument
@@ -217,14 +275,14 @@ data PythonArgument
   | ArgStarred !(Located PythonExpr)    -- *expr
   | ArgKwStarred !(Located PythonExpr)  -- **expr
   deriving stock (Eq, Show, Generic)
-    deriving anyclass (Hashable, NFData)
+  deriving anyclass (Hashable, NFData)
 
 -- | Decorators
 data PythonDecorator = PythonDecorator
   { pyDecoratorName :: !(Located PythonExpr)
   , pyDecoratorArgs :: ![Located PythonArgument]
   } deriving stock (Eq, Show, Generic)
-    deriving anyclass (Hashable, NFData)
+  deriving anyclass (Hashable, NFData)
 
 -- | Comprehension clauses
 data PythonComprehension = PythonComprehension
@@ -233,7 +291,7 @@ data PythonComprehension = PythonComprehension
   , pyCompFilters :: ![Located PythonExpr]
   , pyCompAsync   :: !Bool
   } deriving stock (Eq, Show, Generic)
-    deriving anyclass (Hashable, NFData)
+  deriving anyclass (Hashable, NFData)
 
 -- | Import statements
 data PythonImport
@@ -241,22 +299,38 @@ data PythonImport
   | ImportFrom !ModuleName ![Identifier] ![Identifier]  -- from module import names [as aliases]
   | ImportFromStar !ModuleName                     -- from module import *
   deriving stock (Eq, Show, Generic)
-    deriving anyclass (Hashable, NFData)
+  deriving anyclass (Hashable, NFData)
+
+-- | Pattern matching (Python 3.10+)
+data PythonMatch = PythonMatch
+  { pyMatchExpr  :: !(Located PythonExpr)
+  , pyMatchCases :: ![Located PythonCase]
+  } deriving stock (Eq, Show, Generic)
+  deriving anyclass (Hashable, NFData)
+
+-- | Match case
+data PythonCase = PythonCase
+  { pyCasePattern :: !(Located PythonPattern)
+  , pyCaseGuard   :: !(Maybe (Located PythonExpr))
+  , pyCaseBody    :: ![Located PythonStmt]
+  } deriving stock (Eq, Show, Generic)
+  deriving anyclass (Hashable, NFData)
 
 -- | Exception handling
 data PythonExcept = PythonExcept
-  { pyExceptType :: !(Maybe (Located PythonExpr))
-  , pyExceptName :: !(Maybe Identifier)
-  , pyExceptBody :: ![Located PythonStmt]
+  { pyExceptType  :: !(Maybe (Located PythonExpr))
+  , pyExceptName  :: !(Maybe Identifier)
+  , pyExceptBody  :: ![Located PythonStmt]
+  , pyExceptGroup :: !Bool  -- True for except* (Python 3.11+)
   } deriving stock (Eq, Show, Generic)
-    deriving anyclass (Hashable, NFData)
+  deriving anyclass (Hashable, NFData)
 
 -- | With statement items
 data PythonWithItem = PythonWithItem
   { pyWithContext :: !(Located PythonExpr)
   , pyWithVar     :: !(Maybe (Located PythonPattern))
   } deriving stock (Eq, Show, Generic)
-    deriving anyclass (Hashable, NFData)
+  deriving anyclass (Hashable, NFData)
 
 -- | Python type expressions (for type annotations)
 data PythonTypeExpr
@@ -268,18 +342,18 @@ data PythonTypeExpr
   | TypeOptional !(Located PythonTypeExpr)
   | TypeCallable ![Located PythonTypeExpr] !(Located PythonTypeExpr)
   | TypeLiteral !(Located PythonExpr)
+  | TypeGeneric !Identifier ![Located PythonTypeExpr]  -- For generic type applications
   deriving stock (Eq, Show, Generic)
-    deriving anyclass (Hashable, NFData)
+  deriving anyclass (Hashable, NFData)
 
 -- | Check if a statement is async
 isAsyncStmt :: PythonStmt -> Bool
-isAsyncStmt (PyAsyncFuncDef _) = True
-isAsyncStmt (PyAsyncWith _ _) = True
-isAsyncStmt (PyAsyncFor _ _ _ _) = True
+isAsyncStmt (PyFuncDef def) = pyFuncIsAsync def
+isAsyncStmt (PyWith {pyWithAsync = async}) = async
+isAsyncStmt (PyFor {pyForAsync = async}) = async
 isAsyncStmt _ = False
 
 -- | Check if an expression is async
 isAsyncExpr :: PythonExpr -> Bool
 isAsyncExpr (PyAwait _) = True
-isAsyncExpr (PyAsyncCall _ _) = True
 isAsyncExpr _ = False

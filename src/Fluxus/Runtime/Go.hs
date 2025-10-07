@@ -26,19 +26,15 @@ import Control.Exception (try, SomeException)
 import Control.Concurrent.STM
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
 import Data.Int (Int64)
 import Data.Word (Word64)
 import Data.ByteString (ByteString)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
-import Data.Vector (Vector)
-import qualified Data.Vector as Vector
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Foreign.Ptr (Ptr, nullPtr)
-import Foreign.C.Types
-import Foreign.C.String
+import Data.Vector (Vector)
 
 -- | Go runtime state
 data GoRuntime = GoRuntime
@@ -166,7 +162,7 @@ convertToGo (LInt i) = GVInt i
 convertToGo (LUInt u) = GVUint u
 convertToGo (LFloat f) = GVFloat f
 convertToGo (LString s) = GVString s
-convertToGo (LBytes b) = GVBytes (T.encodeUtf8 b)
+convertToGo (LBytes b) = GVBytes b
 convertToGo (LBool b) = GVBool b
 convertToGo (LChar c) = GVString (T.singleton c)
 convertToGo LNone = GVNil
@@ -177,7 +173,7 @@ convertFromGo (GVInt i) = LInt i
 convertFromGo (GVUint u) = LUInt u
 convertFromGo (GVFloat f) = LFloat f
 convertFromGo (GVString s) = LString s
-convertFromGo (GVBytes b) = LBytes (T.decodeUtf8 b)
+convertFromGo (GVBytes b) = LBytes b
 convertFromGo (GVBool b) = LBool b
 convertFromGo GVNil = LNone
 convertFromGo _ = LNone  -- Fallback for complex types
