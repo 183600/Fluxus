@@ -271,13 +271,18 @@ languageOption =
 
 optimizationOption :: Options.Applicative.Parser OptimizationLevel
 optimizationOption =
-  flag' O0 (short '0' <> help "No optimization (alias -0 / -O)") <|> -- accept -0 as alias
-
-  flag' O0 (short 'O' <> long "O0" <> help "No optimization") <|>
-  flag' O1 (short '1' <> long "O1" <> help "Basic optimization") <|>
-  flag' O2 (short '2' <> long "O2" <> help "Standard optimization") <|>
-  flag' O3 (short '3' <> long "O3" <> help "Aggressive optimization") <|>
-  flag' Os (short 's' <> long "Os" <> help "Size optimization") <|>
+  flag' O0 (long "O0" <> help "No optimization") <|>
+  flag' O1 (long "O1" <> help "Basic optimization") <|>
+  flag' O2 (long "O2" <> help "Standard optimization") <|>
+  flag' O3 (long "O3" <> help "Aggressive optimization") <|>
+  flag' Os (long "Os" <> help "Size optimization") <|>
+  -- Support short forms -O0, -O1, -O2, -O3, -Os
+  option (maybeReader parseOptLevel)
+    ( short 'O'
+    <> metavar "LEVEL"
+    <> value (ccOptimizationLevel defaultConfig)
+    <> help "Optimization level (0, 1, 2, 3, s)"
+    ) <|>
   pure (ccOptimizationLevel defaultConfig)
 
 targetOption :: Options.Applicative.Parser TargetPlatform
@@ -436,7 +441,15 @@ loadConfig args = do
         let prods = ["--production","--prod"]
         in (any (`elem` prods) args, filter (`notElem` prods) args)
   -- Parse command line arguments using optparse-applicative
-  let parseResult = execParserPure defaultPrefs commandLineInterface filteredArgs
+  -- Normalize short numeric optimization aliases (-0,-1,-2,-3,-s) to existing long flags
+  let normalizedArgs = map (\a -> case a of
+                                    "-0" -> "--O0"
+                                    "-1" -> "--O1"
+                                    "-2" -> "--O2"
+                                    "-3" -> "--O3"
+                                    "-s" -> "--Os"
+                                    _    -> a) filteredArgs
+      parseResult = execParserPure defaultPrefs commandLineInterface normalizedArgs
   case parseResult of
     Options.Applicative.Success cliConfig -> do
       -- Load from config file if it exists
