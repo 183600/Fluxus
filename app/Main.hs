@@ -52,7 +52,7 @@ main = do
                 Left err -> do
                   hPutStrLn stderr $ "Invalid configuration: " ++ formatCompilerError err
                   exitFailure
-                Right validConfig -> runCompilerMain (Driver.convertDriverToConfig validConfig) args
+                Right _validConfig -> runCompilerMain config args
 
 -- | Run the main compiler workflow
 runCompilerMain :: Config.CompilerConfig -> [String] -> IO ()
