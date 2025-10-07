@@ -1035,9 +1035,9 @@ parseGoIdentifierExpr :: GoParser GoExpr
 parseGoIdentifierExpr = do
   ident <- parseGoIdentifier
   case ident of
-    Common.Identifier "true" -> return $ GoLiteral $ GoBool True
-    Common.Identifier "false" -> return $ GoLiteral $ GoBool False
-    Common.Identifier "nil" -> return $ GoLiteral GoNil
+    Identifier "true" -> return $ GoLiteral $ GoBool True
+    Identifier "false" -> return $ GoLiteral $ GoBool False
+    Identifier "nil" -> return $ GoLiteral GoNil
     _ -> return $ GoIdent ident
 
 -- | Parse parenthesized expressions
