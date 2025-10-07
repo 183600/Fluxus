@@ -1,0 +1,29 @@
+Build profile: -w ghc-9.6.3 -O1
+In order, the following will be built (use -v for more details):
+ - fluxus-0.1.0.0 (lib) (file src/Fluxus/Parser/Go/Parser.hs changed)
+ - fluxus-0.1.0.0 (test:fluxus-test) (dependency rebuilt)
+ - fluxus-0.1.0.0 (bench:fluxus-bench) (dependency rebuilt)
+ - fluxus-0.1.0.0 (exe:fluxus) (dependency rebuilt)
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+[ 1 of 38] Compiling Fluxus.AST.Common ( src/Fluxus/AST/Common.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Common.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Common.dyn_o ) [Source file changed]
+
+src/Fluxus/AST/Common.hs:213:5: error:
+    Multiple declarations of ‘OpIn’
+    Declared at: src/Fluxus/AST/Common.hs:195:5
+                 src/Fluxus/AST/Common.hs:213:5
+    |
+213 |   | OpIn | OpNotIn                      -- Membership tests (Python) treated as comparisons in parser
+    |     ^^^^
+
+src/Fluxus/AST/Common.hs:213:12: error:
+    Multiple declarations of ‘OpNotIn’
+    Declared at: src/Fluxus/AST/Common.hs:195:12
+                 src/Fluxus/AST/Common.hs:213:12
+    |
+213 |   | OpIn | OpNotIn                      -- Membership tests (Python) treated as comparisons in parser
+    |            ^^^^^^^
+Error: cabal: Failed to build fluxus-0.1.0.0 (which is required by
+test:fluxus-test from fluxus-0.1.0.0, bench:fluxus-bench from fluxus-0.1.0.0
+and others).
+

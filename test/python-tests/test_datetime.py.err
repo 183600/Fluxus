@@ -1,0 +1,29 @@
+Compilation failed: Code generation error at ./test/python-tests/test_datetime.cpp:1:1: C++ compilation failed (exit code 1): ./test/python-tests/test_datetime.cpp:152:29: error: use of undeclared identifier 'timedelta'
+  152 |     auto tomorrow = today + timedelta(1);
+      |                             ^
+./test/python-tests/test_datetime.cpp:153:30: error: use of undeclared identifier 'timedelta'
+  153 |     auto yesterday = today - timedelta(1);
+      |                              ^
+./test/python-tests/test_datetime.cpp:154:30: error: use of undeclared identifier 'timedelta'
+  154 |     auto next_week = today + timedelta(1);
+      |                              ^
+./test/python-tests/test_datetime.cpp:160:18: error: use of undeclared identifier 'date'
+  160 |     auto date1 = date(2023, 1, 1);
+      |                  ^
+./test/python-tests/test_datetime.cpp:161:18: error: use of undeclared identifier 'date'
+  161 |     auto date2 = date(2023, 12, 31);
+      |                  ^
+./test/python-tests/test_datetime.cpp:164:30: error: use of undeclared identifier 'datetime'
+  164 |     auto specific_datetime = datetime(2023, 12, 25, 15, 30, 0);
+      |                              ^
+./test/python-tests/test_datetime.cpp:181:17: error: no matching function for call to 'time'
+  181 |     auto noon = time(12, 0, 0);
+      |                 ^~~~
+/usr/include/time.h:76:15: note: candidate function not viable: requires single argument '__timer', but 3 arguments were provided
+   76 | extern time_t time (time_t *__timer) __THROW;
+      |               ^     ~~~~~~~~~~~~~~~
+./test/python-tests/test_datetime.cpp:169:5: warning: expression result unused [-Wunused-value]
+  169 |     0;
+      |     ^
+1 warning and 7 errors generated.
+

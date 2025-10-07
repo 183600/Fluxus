@@ -1,0 +1,27 @@
+Build profile: -w ghc-9.6.3 -O1
+In order, the following will be built (use -v for more details):
+ - fluxus-0.1.0.0 (lib) (file src/Fluxus/Parser/Go/Parser.hs changed)
+ - fluxus-0.1.0.0 (test:fluxus-test) (dependency rebuilt)
+ - fluxus-0.1.0.0 (bench:fluxus-bench) (dependency rebuilt)
+ - fluxus-0.1.0.0 (exe:fluxus) (dependency rebuilt)
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+[28 of 38] Compiling Fluxus.Parser.Go.Parser ( src/Fluxus/Parser/Go/Parser.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Go/Parser.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Go/Parser.dyn_o ) [Source file changed]
+[29 of 38] Compiling Fluxus.Parser.Python.Lexer ( src/Fluxus/Parser/Python/Lexer.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Python/Lexer.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Python/Lexer.dyn_o ) [Source file changed]
+[30 of 38] Compiling Fluxus.Parser.Python.Parser ( src/Fluxus/Parser/Python/Parser.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Python/Parser.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Python/Parser.dyn_o ) [Source file changed]
+
+src/Fluxus/Parser/Python/Parser.hs:392:22: error: [GHC-83865]
+    • Couldn't match expected type ‘ComparisonOp’
+                  with actual type ‘BinaryOp’
+    • In the second argument of ‘($>)’, namely ‘OpIn’
+      In the expression: keywordP KwIn $> OpIn
+      In the first argument of ‘choice’, namely
+        ‘[operator' Lexer.OpEq $> OpEq, operator' Lexer.OpNe $> OpNe,
+          operator' Lexer.OpLe $> OpLe, operator' Lexer.OpGe $> OpGe, ....]’
+    |
+392 |   , keywordP KwIn $> OpIn  -- Membership test
+    |                      ^^^^
+Error: cabal: Failed to build fluxus-0.1.0.0 (which is required by
+test:fluxus-test from fluxus-0.1.0.0, bench:fluxus-bench from fluxus-0.1.0.0
+and others).
+

@@ -1,0 +1,5 @@
+Compilation failed: Code generation error at ./test_just_x.cpp:1:1: C++ compilation failed (exit code 1): ./test_just_x.cpp:20:5: error: use of undeclared identifier 'x'
+   20 |     x;
+      |     ^
+1 error generated.
+

@@ -1,0 +1,13 @@
+./test/python-tests/test_functions.cpp:57:12: error: use of undeclared identifier 'sum'
+   57 |     return sum(numbers) / len(numbers);
+      |            ^
+./test/python-tests/test_functions.cpp:79:20: note: in instantiation of function template specialization 'fluxus::calculate_average<int>' requested here
+   79 |     auto result4 = calculate_average(0);
+      |                    ^
+./test/python-tests/test_functions.cpp:84:5: warning: 'auto' storage class specifier is not permitted in C++11, and will not be supported in future releases [-Wauto-storage-class]
+   84 |     auto double = 0;
+      |     ^~~~
+./test/python-tests/test_functions.cpp:84:17: error: expected unqualified-id
+   84 |     auto double = 0;
+      |                 ^
+1 warning and 2 errors generated.

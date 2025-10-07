@@ -1,0 +1,62 @@
+test/python-tests/feature_list_comprehension.cpp:34:10: error: declaration of variable 'result' with deduced type 'auto' requires an initializer
+   34 |     auto result;
+      |          ^
+test/python-tests/feature_list_comprehension.cpp:51:20: error: 'auto' not allowed here
+   51 |     auto numbers = auto{0};
+      |                    ^~~~
+test/python-tests/feature_list_comprehension.cpp:52:38: error: 'auto' not allowed here
+   52 |     auto squares = []{ auto result = auto{}; // TODO: Render other statement types return result; }();
+      |                                      ^~~~
+test/python-tests/feature_list_comprehension.cpp:53:36: error: 'auto' not allowed here
+   53 |     auto evens = []{ auto result = auto{}; // TODO: Render other statement types return result; }();
+      |                                    ^~~~
+test/python-tests/feature_list_comprehension.cpp:54:43: error: 'auto' not allowed here
+   54 |     auto doubled_odds = []{ auto result = auto{}; // TODO: Render other statement types return result; }();
+      |                                           ^~~~
+test/python-tests/feature_list_comprehension.cpp:58:19: error: 'auto' not allowed here
+   58 |     auto matrix = auto{0};
+      |                   ^~~~
+test/python-tests/feature_list_comprehension.cpp:59:40: error: 'auto' not allowed here
+   59 |     auto flattened = []{ auto result = auto{}; // TODO: Render other statement types return result; }();
+      |                                        ^~~~
+test/python-tests/feature_list_comprehension.cpp:62:2: error: expected ';' at end of declaration
+   62 | }
+      |  ^
+      |  ;
+test/python-tests/feature_list_comprehension.cpp:63:1: error: expected '}'
+   63 | 
+      | ^
+test/python-tests/feature_list_comprehension.cpp:54:27: note: to match this '{'
+   54 |     auto doubled_odds = []{ auto result = auto{}; // TODO: Render other statement types return result; }();
+      |                           ^
+test/python-tests/feature_list_comprehension.cpp:62:2: error: expected ';' at end of declaration
+   62 | }
+      |  ^
+      |  ;
+test/python-tests/feature_list_comprehension.cpp:63:1: error: expected '}'
+   63 | 
+      | ^
+test/python-tests/feature_list_comprehension.cpp:53:20: note: to match this '{'
+   53 |     auto evens = []{ auto result = auto{}; // TODO: Render other statement types return result; }();
+      |                    ^
+test/python-tests/feature_list_comprehension.cpp:62:2: error: expected ';' at end of declaration
+   62 | }
+      |  ^
+      |  ;
+test/python-tests/feature_list_comprehension.cpp:63:1: error: expected '}'
+   63 | 
+      | ^
+test/python-tests/feature_list_comprehension.cpp:52:22: note: to match this '{'
+   52 |     auto squares = []{ auto result = auto{}; // TODO: Render other statement types return result; }();
+      |                      ^
+test/python-tests/feature_list_comprehension.cpp:62:2: error: expected ';' at end of declaration
+   62 | }
+      |  ^
+      |  ;
+test/python-tests/feature_list_comprehension.cpp:63:1: error: expected '}'
+   63 | 
+      | ^
+test/python-tests/feature_list_comprehension.cpp:50:12: note: to match this '{'
+   50 | int main() {
+      |            ^
+15 errors generated.

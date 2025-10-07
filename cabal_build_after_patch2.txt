@@ -1,0 +1,236 @@
+Build profile: -w ghc-9.6.3 -O1
+In order, the following will be built (use -v for more details):
+ - fluxus-0.1.0.0 (lib) (file src/Fluxus/Analysis/TypeInference.hs changed)
+ - fluxus-0.1.0.0 (test:fluxus-test) (dependency rebuilt)
+ - fluxus-0.1.0.0 (bench:fluxus-bench) (dependency rebuilt)
+ - fluxus-0.1.0.0 (exe:fluxus) (dependency rebuilt)
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+[ 1 of 38] Compiling Fluxus.AST.Common ( src/Fluxus/AST/Common.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Common.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Common.dyn_o ) [Source file changed]
+[ 2 of 38] Compiling Fluxus.AST.Go.Common ( src/Fluxus/AST/Go/Common.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Go/Common.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Go/Common.dyn_o ) [Fluxus.AST.Common changed]
+[ 4 of 38] Compiling Fluxus.AST.Go.Types ( src/Fluxus/AST/Go/Types.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Go/Types.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Go/Types.dyn_o ) [Fluxus.AST.Common changed]
+[ 5 of 38] Compiling Fluxus.AST.Go.Helpers ( src/Fluxus/AST/Go/Helpers.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Go/Helpers.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Go/Helpers.dyn_o ) [Fluxus.AST.Go.Types changed]
+[ 6 of 38] Compiling Fluxus.AST.Go    ( src/Fluxus/AST/Go.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Go.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Go.dyn_o ) [Fluxus.AST.Common changed]
+[ 7 of 38] Compiling Fluxus.AST.Python ( src/Fluxus/AST/Python.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Python.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/AST/Python.dyn_o ) [Fluxus.AST.Common changed]
+[ 9 of 38] Compiling Fluxus.Analysis.ShapeAnalysis ( src/Fluxus/Analysis/ShapeAnalysis.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/ShapeAnalysis.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/ShapeAnalysis.dyn_o ) [Fluxus.AST.Common changed]
+[11 of 38] Compiling Fluxus.Analysis.TypeInference ( src/Fluxus/Analysis/TypeInference.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/TypeInference.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/TypeInference.dyn_o ) [Source file changed]
+
+src/Fluxus/Analysis/TypeInference.hs:361:5: error: [GHC-83865]
+    • Couldn't match expected type ‘BinaryOp’
+                  with actual type ‘ComparisonOp’
+    • In the pattern: OpIn
+      In a case alternative:
+          OpIn
+            -> do case rightType of
+                    TList elemType -> addConstraint leftType elemType
+                    TSet elemType -> addConstraint leftType elemType
+                    TDict keyType _ -> addConstraint leftType keyType
+                    TString -> addConstraint leftType TChar
+                    _ -> return ()
+                  return TBool
+      In a stmt of a 'do' block:
+        case op of
+          OpAdd -> inferArithmeticOp leftType rightType
+          OpSub -> inferArithmeticOp leftType rightType
+          OpMul -> inferArithmeticOp leftType rightType
+          OpDiv
+            -> do addWarning
+                    $ "Division type inference: left="
+                        <> T.pack (show leftType) <> ", right=" <> T.pack (show rightType)
+                  case ... of
+                    (TInt _, TInt _) -> ...
+                    (TFloat _, TInt _) -> ...
+                    (TInt _, TFloat _) -> ...
+                    (TFloat _, TFloat _) -> ...
+                    _ -> ...
+          OpMod -> inferArithmeticOp leftType rightType
+          OpPow -> inferArithmeticOp leftType rightType
+          OpFloorDiv -> inferArithmeticOp leftType rightType
+          OpBitAnd -> inferBitwiseOp leftType rightType
+          OpBitOr -> inferBitwiseOp leftType rightType
+          OpBitXor -> inferBitwiseOp leftType rightType
+          OpShiftL -> inferBitwiseOp leftType rightType
+          OpShiftR -> inferBitwiseOp leftType rightType
+          OpAnd
+            -> do addConstraint leftType TBool
+                  addConstraint rightType TBool
+                  ....
+          OpOr
+            -> do addConstraint leftType TBool
+                  addConstraint rightType TBool
+                  ....
+          OpXor
+            -> do addConstraint leftType TBool
+                  addConstraint rightType TBool
+                  ....
+          OpConcat
+            -> do addConstraint leftType rightType
+                  return leftType
+          OpIn
+            -> do case rightType of
+                    TList elemType -> ...
+                    TSet elemType -> ...
+                    TDict keyType _ -> ...
+                    TString -> ...
+                    _ -> ...
+                  return TBool
+          OpNotIn
+            -> do case rightType of
+                    TList elemType -> ...
+                    TSet elemType -> ...
+                    TDict keyType _ -> ...
+                    TString -> ...
+                    _ -> ...
+                  return TBool
+    |
+361 |     OpIn -> do
+    |     ^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:369:5: error: [GHC-83865]
+    • Couldn't match expected type ‘BinaryOp’
+                  with actual type ‘ComparisonOp’
+    • In the pattern: OpNotIn
+      In a case alternative:
+          OpNotIn
+            -> do case rightType of
+                    TList elemType -> addConstraint leftType elemType
+                    TSet elemType -> addConstraint leftType elemType
+                    TDict keyType _ -> addConstraint leftType keyType
+                    TString -> addConstraint leftType TChar
+                    _ -> return ()
+                  return TBool
+      In a stmt of a 'do' block:
+        case op of
+          OpAdd -> inferArithmeticOp leftType rightType
+          OpSub -> inferArithmeticOp leftType rightType
+          OpMul -> inferArithmeticOp leftType rightType
+          OpDiv
+            -> do addWarning
+                    $ "Division type inference: left="
+                        <> T.pack (show leftType) <> ", right=" <> T.pack (show rightType)
+                  case ... of
+                    (TInt _, TInt _) -> ...
+                    (TFloat _, TInt _) -> ...
+                    (TInt _, TFloat _) -> ...
+                    (TFloat _, TFloat _) -> ...
+                    _ -> ...
+          OpMod -> inferArithmeticOp leftType rightType
+          OpPow -> inferArithmeticOp leftType rightType
+          OpFloorDiv -> inferArithmeticOp leftType rightType
+          OpBitAnd -> inferBitwiseOp leftType rightType
+          OpBitOr -> inferBitwiseOp leftType rightType
+          OpBitXor -> inferBitwiseOp leftType rightType
+          OpShiftL -> inferBitwiseOp leftType rightType
+          OpShiftR -> inferBitwiseOp leftType rightType
+          OpAnd
+            -> do addConstraint leftType TBool
+                  addConstraint rightType TBool
+                  ....
+          OpOr
+            -> do addConstraint leftType TBool
+                  addConstraint rightType TBool
+                  ....
+          OpXor
+            -> do addConstraint leftType TBool
+                  addConstraint rightType TBool
+                  ....
+          OpConcat
+            -> do addConstraint leftType rightType
+                  return leftType
+          OpIn
+            -> do case rightType of
+                    TList elemType -> ...
+                    TSet elemType -> ...
+                    TDict keyType _ -> ...
+                    TString -> ...
+                    _ -> ...
+                  return TBool
+          OpNotIn
+            -> do case rightType of
+                    TList elemType -> ...
+                    TSet elemType -> ...
+                    TDict keyType _ -> ...
+                    TString -> ...
+                    _ -> ...
+                  return TBool
+    |
+369 |     OpNotIn -> do
+    |     ^^^^^^^
+[12 of 38] Compiling Fluxus.CodeGen.CPP ( src/Fluxus/CodeGen/CPP.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/CodeGen/CPP.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/CodeGen/CPP.dyn_o ) [Fluxus.AST.Common changed]
+
+src/Fluxus/CodeGen/CPP.hs:486:3: error: [GHC-83865]
+    • Couldn't match expected type ‘Common.BinaryOp’
+                  with actual type ‘Common.ComparisonOp’
+    • In the pattern: Common.OpIn
+      In a \case alternative: Common.OpIn -> "in"
+      In the expression:
+        \case
+          Common.OpAdd -> "+"
+          Common.OpSub -> "-"
+          Common.OpMul -> "*"
+          Common.OpDiv -> "/"
+          Common.OpMod -> "%"
+          Common.OpPow -> "pow"
+          Common.OpShiftL -> "<<"
+          Common.OpShiftR -> ">>"
+          Common.OpBitOr -> "|"
+          Common.OpBitXor -> "^"
+          Common.OpBitAnd -> "&"
+          Common.OpFloorDiv -> "/"
+          Common.OpAnd -> "&&"
+          Common.OpOr -> "||"
+          Common.OpXor -> "^"
+          Common.OpConcat -> "+"
+          Common.OpIn -> "in"
+          Common.OpNotIn -> "not_in"
+    |
+486 |   Common.OpIn -> "in"  -- Will need special handling
+    |   ^^^^^^^^^^^
+
+src/Fluxus/CodeGen/CPP.hs:487:3: error: [GHC-83865]
+    • Couldn't match expected type ‘Common.BinaryOp’
+                  with actual type ‘Common.ComparisonOp’
+    • In the pattern: Common.OpNotIn
+      In a \case alternative: Common.OpNotIn -> "not_in"
+      In the expression:
+        \case
+          Common.OpAdd -> "+"
+          Common.OpSub -> "-"
+          Common.OpMul -> "*"
+          Common.OpDiv -> "/"
+          Common.OpMod -> "%"
+          Common.OpPow -> "pow"
+          Common.OpShiftL -> "<<"
+          Common.OpShiftR -> ">>"
+          Common.OpBitOr -> "|"
+          Common.OpBitXor -> "^"
+          Common.OpBitAnd -> "&"
+          Common.OpFloorDiv -> "/"
+          Common.OpAnd -> "&&"
+          Common.OpOr -> "||"
+          Common.OpXor -> "^"
+          Common.OpConcat -> "+"
+          Common.OpIn -> "in"
+          Common.OpNotIn -> "not_in"
+    |
+487 |   Common.OpNotIn -> "not_in"  -- Will need special handling
+    |   ^^^^^^^^^^^^^^
+[18 of 38] Compiling Fluxus.Optimization.BasicPasses ( src/Fluxus/Optimization/BasicPasses.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/BasicPasses.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/BasicPasses.dyn_o ) [Fluxus.AST.Common changed]
+[20 of 38] Compiling Fluxus.Optimization.ConstantPropagation ( src/Fluxus/Optimization/ConstantPropagation.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/ConstantPropagation.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/ConstantPropagation.dyn_o ) [Fluxus.AST.Go.Types changed]
+[21 of 38] Compiling Fluxus.Optimization.DeadCodeElimination ( src/Fluxus/Optimization/DeadCodeElimination.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/DeadCodeElimination.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/DeadCodeElimination.dyn_o ) [Fluxus.AST.Go.Types changed]
+[22 of 38] Compiling Fluxus.Optimization.Devirtualization ( src/Fluxus/Optimization/Devirtualization.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Devirtualization.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Devirtualization.dyn_o ) [Fluxus.AST.Common changed]
+[23 of 38] Compiling Fluxus.Optimization.Inlining ( src/Fluxus/Optimization/Inlining.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Inlining.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Inlining.dyn_o ) [Fluxus.AST.Go.Types changed]
+[24 of 38] Compiling Fluxus.Optimization.Monomorphization ( src/Fluxus/Optimization/Monomorphization.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Monomorphization.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Monomorphization.dyn_o ) [Fluxus.AST.Common changed]
+[25 of 38] Compiling Fluxus.Optimization.SizeReduction ( src/Fluxus/Optimization/SizeReduction.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/SizeReduction.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/SizeReduction.dyn_o ) [Fluxus.AST.Go.Types changed]
+[26 of 38] Compiling Fluxus.Optimization.Vectorization ( src/Fluxus/Optimization/Vectorization.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Vectorization.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Optimization/Vectorization.dyn_o ) [Fluxus.AST.Go.Types changed]
+[28 of 38] Compiling Fluxus.Parser.Go.Parser ( src/Fluxus/Parser/Go/Parser.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Go/Parser.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Go/Parser.dyn_o ) [Fluxus.AST.Common changed]
+[29 of 38] Compiling Fluxus.Parser.Python.Lexer ( src/Fluxus/Parser/Python/Lexer.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Python/Lexer.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Python/Lexer.dyn_o ) [Fluxus.AST.Common changed]
+[30 of 38] Compiling Fluxus.Parser.Python.Parser ( src/Fluxus/Parser/Python/Parser.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Python/Parser.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Parser/Python/Parser.dyn_o ) [Source file changed]
+[31 of 38] Compiling Fluxus.CodeGen.Go ( src/Fluxus/CodeGen/Go.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/CodeGen/Go.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/CodeGen/Go.dyn_o ) [Fluxus.AST.Common changed]
+[32 of 38] Compiling Fluxus.Analysis.EscapeAnalysis ( src/Fluxus/Analysis/EscapeAnalysis.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/EscapeAnalysis.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/EscapeAnalysis.dyn_o ) [Fluxus.AST.Common changed]
+[33 of 38] Compiling Fluxus.Runtime.Go ( src/Fluxus/Runtime/Go.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Runtime/Go.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Runtime/Go.dyn_o ) [Fluxus.AST.Common changed]
+[34 of 38] Compiling Fluxus.Runtime.Python ( src/Fluxus/Runtime/Python.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Runtime/Python.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Runtime/Python.dyn_o ) [Fluxus.AST.Common changed]
+Error: cabal: Failed to build fluxus-0.1.0.0 (which is required by
+test:fluxus-test from fluxus-0.1.0.0, bench:fluxus-bench from fluxus-0.1.0.0
+and others).
+

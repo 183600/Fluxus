@@ -6,7 +6,6 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
-
 -- | Common AST types and utilities shared across all source languages
 module Fluxus.AST.Common
   ( -- * Source location information
@@ -37,7 +36,6 @@ module Fluxus.AST.Common
   , MemoryLocation(..)
   , EscapeInfo(..)
   ) where
-
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.ByteString (ByteString)
@@ -46,14 +44,12 @@ import Data.Word (Word64)
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
-
 -- | Source position information (line, column)
 data SourcePos = SourcePos
   { posLine   :: !Int
   , posColumn :: !Int
   } deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (Hashable, NFData)
-
 -- | Source span from start to end position
 data SourceSpan = SourceSpan
   { spanFilename :: !Text
@@ -61,52 +57,43 @@ data SourceSpan = SourceSpan
   , spanEnd      :: !SourcePos
   } deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (Hashable, NFData)
-
 -- | Add source location information to any AST node
 data Located a = Located
   { locSpan  :: !SourceSpan
   , locValue :: !a
   } deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable, Generic)
     deriving anyclass (NFData, Hashable)  -- Fixed: Now derives Hashable correctly
-
 -- | Create a node without location information (for testing/internal use)
 noLoc :: a -> Located a
 noLoc x = Located
   { locSpan = SourceSpan (T.pack "<no-file>") (SourcePos 0 0) (SourcePos 0 0)
   , locValue = x
   }
-
 -- | Extract the value from a Located node
 locatedValue :: Located a -> a
 locatedValue = locValue
-
 -- | Simple identifier
 newtype Identifier = Identifier Text
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype (Hashable, NFData)
-
 -- | Qualified name (e.g., module.submodule.function)
 data QualifiedName = QualifiedName
   { qnModule :: ![ModuleName]
   , qnName   :: !Identifier
   } deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (NFData, Hashable)  -- Fixed: Consistent derivation
-
 -- | Module name component
 newtype ModuleName = ModuleName Text
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype (Hashable, NFData)
-
 -- | Type variables for generic types
 newtype TypeVar = TypeVar Text
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype (Hashable, NFData)
-
 -- | Bit width for numeric types
 newtype BitWidth = BitWidth Int
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype (Hashable, NFData, Num)
-
 -- | Type constraints/bounds
 data TypeConstraint = TypeConstraint
   { tcVar        :: !TypeVar
@@ -114,7 +101,6 @@ data TypeConstraint = TypeConstraint
   , tcTraits     :: ![QualifiedName]  -- Rust-like traits or Go interfaces
   } deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (NFData, Hashable)  -- Fixed: Consistent derivation
-
 -- | Unified type system across all source languages
 data Type
   = -- Primitive types (Fixed: Using BitWidth instead of raw Int)
@@ -128,42 +114,34 @@ data Type
   | TChar
   | TVoid
   | TAny                                -- Dynamic type (Python object, Go interface{})
-  
   -- Composite types
   | TList !Type                         -- Lists/arrays
   | TTuple ![Type]                      -- Tuples
   | TDict !Type !Type                   -- Dictionaries/maps
   | TSet !Type                          -- Sets
   | TOptional !Type                     -- Optional/nullable types
-  
   -- Function types
   | TFunction ![Type] !Type             -- (arg types) -> return type
   | TMethod !Type ![Type] !Type         -- receiver -> (arg types) -> return type
-  
   -- User-defined types
   | TStruct !QualifiedName ![Type]      -- Struct/class with type parameters
   | TEnum !QualifiedName ![Type]        -- Enum with type parameters
   | TInterface !QualifiedName ![Type]   -- Interface/protocol
   | TUnion ![Type]                      -- Union types
-  
   -- Generic types
   | TVar !TypeVar                       -- Type variable
   | TGeneric !QualifiedName ![Type]     -- Generic type application
   | TForall ![TypeVar] ![TypeConstraint] !Type  -- Polymorphic type
-  
   -- Ownership and memory types (for optimization)
   | TOwned !Type                        -- Owned/unique reference (std::unique_ptr)
   | TShared !Type                       -- Shared reference (std::shared_ptr)
   | TBorrowed !Type                     -- Borrowed reference (&T in Rust)
   | TMutable !Type                      -- Mutable reference (&mut T in Rust)
-  
   -- Error/inference types
   | TError !Text                        -- Type error
   | TInfer !Int                         -- Type inference variable
-  
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (NFData, Hashable)
-
 -- | Literal values (Fixed: Using ByteString instead of Text for bytes)
 data Literal
   = LInt !Int64
@@ -176,27 +154,20 @@ data Literal
   | LNone                               -- Python None, Go nil
   deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (Hashable, NFData)
-
 -- | Binary operators
 data BinaryOp
   = -- Arithmetic
     OpAdd | OpSub | OpMul | OpDiv | OpMod | OpPow
   | OpFloorDiv                          -- Python //
-  
   -- Bitwise
   | OpBitAnd | OpBitOr | OpBitXor
   | OpShiftL | OpShiftR
-  
   -- Logical
   | OpAnd | OpOr | OpXor
-  
   -- String/list operations
   | OpConcat                            -- String/list concatenation
-  | OpIn | OpNotIn                      -- Membership testing
-  
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
   deriving anyclass (Hashable, NFData)
-
 -- | Unary operators
 data UnaryOp
   = OpNot
@@ -205,14 +176,13 @@ data UnaryOp
   | OpPositive                          -- Unary +
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
   deriving anyclass (Hashable, NFData)
-
 -- | Comparison operators
 data ComparisonOp
   = OpEq | OpNe | OpLt | OpLe | OpGt | OpGe
   | OpIs | OpIsNot                      -- Python identity comparison
+  | OpIn | OpNotIn                      -- Membership tests (Python) treated as comparisons in parser
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
   deriving anyclass (Hashable, NFData)
-
 -- | Common expression patterns that appear in multiple languages
 data CommonExpr
   = CELiteral !Literal
@@ -226,7 +196,6 @@ data CommonExpr
   | CEAttribute !(Located CommonExpr) !Identifier
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, Hashable)  -- Fixed: Consistent derivation
-
 -- | Ownership information for memory management optimization
 data OwnershipInfo = OwnershipInfo
   { ownsMemory     :: !Bool             -- True if this value owns its memory
@@ -236,7 +205,6 @@ data OwnershipInfo = OwnershipInfo
   , memLocation    :: !MemoryLocation   -- Stack vs heap allocation
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (Hashable, NFData)
-
 -- | Memory allocation location
 data MemoryLocation
   = Stack                               -- Stack allocated
@@ -245,7 +213,6 @@ data MemoryLocation
   | Unknown                             -- Cannot determine at compile time
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
   deriving anyclass (Hashable, NFData)
-
 -- | Escape analysis information
 data EscapeInfo
   = NoEscape                            -- Value doesn't escape current scope

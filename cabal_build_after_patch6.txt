@@ -1,0 +1,38 @@
+Build profile: -w ghc-9.6.3 -O1
+In order, the following will be built (use -v for more details):
+ - fluxus-0.1.0.0 (lib) (file src/Fluxus/CodeGen/CPP.hs changed)
+ - fluxus-0.1.0.0 (test:fluxus-test) (dependency rebuilt)
+ - fluxus-0.1.0.0 (bench:fluxus-bench) (dependency rebuilt)
+ - fluxus-0.1.0.0 (exe:fluxus) (dependency rebuilt)
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+[12 of 38] Compiling Fluxus.CodeGen.CPP ( src/Fluxus/CodeGen/CPP.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/CodeGen/CPP.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/CodeGen/CPP.dyn_o ) [Source file changed]
+[37 of 38] Compiling Fluxus.Compiler.Driver ( src/Fluxus/Compiler/Driver.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Compiler/Driver.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Compiler/Driver.dyn_o ) [Fluxus.AST.Common changed]
+
+src/Fluxus/Compiler/Driver.hs:70:57: error:
+    Module
+    ‘Fluxus.Analysis.TypeInference’
+    does not export
+    ‘inferASTType’
+   |
+70 | import Fluxus.Analysis.TypeInference (runTypeInference, inferASTType, solveConstraints, checkTypes)
+   |                                                         ^^^^^^^^^^^^
+
+src/Fluxus/Compiler/Driver.hs:70:71: error:
+    Module
+    ‘Fluxus.Analysis.TypeInference’
+    does not export
+    ‘solveConstraints’
+   |
+70 | import Fluxus.Analysis.TypeInference (runTypeInference, inferASTType, solveConstraints, checkTypes)
+   |                                                                       ^^^^^^^^^^^^^^^^
+
+src/Fluxus/Compiler/Driver.hs:70:89: error:
+    Module ‘Fluxus.Analysis.TypeInference’ does not export ‘checkTypes’
+   |
+70 | import Fluxus.Analysis.TypeInference (runTypeInference, inferASTType, solveConstraints, checkTypes)
+   |                                                                                         ^^^^^^^^^^
+Error: cabal: Failed to build fluxus-0.1.0.0 (which is required by
+test:fluxus-test from fluxus-0.1.0.0, bench:fluxus-bench from fluxus-0.1.0.0
+and others).
+

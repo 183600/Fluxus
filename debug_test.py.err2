@@ -1,0 +1,4 @@
+./debug_test.cpp:26:1: error: extraneous closing brace ('}')
+   26 | }
+      | ^
+1 error generated.

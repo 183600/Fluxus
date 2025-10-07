@@ -1,0 +1,115 @@
+Build profile: -w ghc-9.6.3 -O1
+In order, the following will be built (use -v for more details):
+ - fluxus-0.1.0.0 (lib) (file src/Fluxus/CodeGen/CPP.hs changed)
+ - fluxus-0.1.0.0 (test:fluxus-test) (dependency rebuilt)
+ - fluxus-0.1.0.0 (bench:fluxus-bench) (dependency rebuilt)
+ - fluxus-0.1.0.0 (exe:fluxus) (dependency rebuilt)
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+[11 of 38] Compiling Fluxus.Analysis.TypeInference ( src/Fluxus/Analysis/TypeInference.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/TypeInference.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/TypeInference.dyn_o ) [Source file changed]
+
+src/Fluxus/Analysis/TypeInference.hs:30:1: warning: [-Wunused-imports]
+    The qualified import of ‘Fluxus.AST.Python’ is redundant
+      except perhaps to import instances from ‘Fluxus.AST.Python’
+    To import instances alone, use: import Fluxus.AST.Python()
+   |
+30 | import qualified Fluxus.AST.Python as Python
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:31:1: warning: [-Wunused-imports]
+    The import of ‘PythonArgument, PythonClassDef, PythonExpr,
+                   PythonFuncDef, PythonImport, PythonLiteral, PythonModule,
+                   PythonParameter, PythonPattern, PythonStmt, PythonAST(pyModule)’
+    from module ‘Fluxus.AST.Python’ is redundant
+   |
+31 | import Fluxus.AST.Python (PythonAST(..), PythonModule(..), pyModule, PythonStmt(..), PythonExpr(..), PythonPattern(..), PythonLiteral(..), PythonFuncDef(..), PythonClassDef(..), PythonParameter(..), PythonImport(..), PythonArgument(..))
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:32:1: warning: [-Wunused-imports]
+    The import of ‘BindKind, BindingLHS, GoBinding, GoDecl, GoExpr,
+                   GoFile, GoForClause, GoFunction, GoImport, GoLiteral, GoPackage,
+                   GoReceiver, GoStmt, GoType, GoTypeDecl, GoAST(goPackage)’
+    from module ‘Fluxus.AST.Go’ is redundant
+   |
+32 | import Fluxus.AST.Go (GoAST(..), GoPackage(..), goPackage, GoStmt(..), GoExpr(..), GoType(..), GoLiteral(..), GoDecl(..), GoTypeDecl(..), GoFunction(..), GoReceiver(..), GoImport(..), GoFile(..), GoForClause(..), GoBinding(..), BindingLHS(..), BindKind(..))
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:36:1: warning: [-Wunused-imports]
+    The import of ‘Control.Monad’ is redundant
+      except perhaps to import instances from ‘Control.Monad’
+    To import instances alone, use: import Control.Monad()
+   |
+36 | import Control.Monad (foldM, forM, forM_, zipWithM_)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:41:1: warning: [-Wunused-imports]
+    The import of ‘Data.Set’ is redundant
+      except perhaps to import instances from ‘Data.Set’
+    To import instances alone, use: import Data.Set()
+   |
+41 | import Data.Set (Set)
+   | ^^^^^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:42:1: warning: [-Wunused-imports]
+    The qualified import of ‘Data.Set’ is redundant
+      except perhaps to import instances from ‘Data.Set’
+    To import instances alone, use: import Data.Set()
+   |
+42 | import qualified Data.Set as Set
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:43:1: warning: [-Wunused-imports]
+    The import of ‘Data.Maybe’ is redundant
+      except perhaps to import instances from ‘Data.Maybe’
+    To import instances alone, use: import Data.Maybe()
+   |
+43 | import Data.Maybe (fromMaybe, mapMaybe)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:79:1: warning: [-Wunused-top-binds]
+    Defined but not used: ‘goLocatedValue’
+   |
+79 | goLocatedValue = Go.locValue
+   | ^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:174:1: warning: [-Wunused-top-binds]
+    Defined but not used: ‘pushScope’
+    |
+174 | pushScope = modify $ \s -> s { scopeStack = HashMap.empty : scopeStack s }
+    | ^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:178:1: warning: [-Wunused-top-binds]
+    Defined but not used: ‘popScope’
+    |
+178 | popScope = do
+    | ^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:186:1: warning: [-Wunused-top-binds]
+    Defined but not used: ‘registerTypeDefinition’
+    |
+186 | registerTypeDefinition name def = 
+    | ^^^^^^^^^^^^^^^^^^^^^^
+[37 of 38] Compiling Fluxus.Compiler.Driver ( src/Fluxus/Compiler/Driver.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Compiler/Driver.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Compiler/Driver.dyn_o ) [Fluxus.AST.Common changed]
+[38 of 38] Compiling Fluxus.Debug.CLI ( src/Fluxus/Debug/CLI.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Debug/CLI.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Debug/CLI.dyn_o ) [Fluxus.Compiler.Driver changed]
+Preprocessing benchmark 'fluxus-bench' for fluxus-0.1.0.0..
+Building benchmark 'fluxus-bench' for fluxus-0.1.0.0..
+Preprocessing executable 'fluxus' for fluxus-0.1.0.0..
+Building executable 'fluxus' for fluxus-0.1.0.0..
+Preprocessing test suite 'fluxus-test' for fluxus-0.1.0.0..
+Building test suite 'fluxus-test' for fluxus-0.1.0.0..
+[1 of 2] Compiling Main             ( app/Main.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/x/fluxus/build/fluxus/fluxus-tmp/Main.o ) [Source file changed]
+[ 1 of 19] Compiling Test.Fluxus.Analysis.EscapeAnalysis ( test/Test/Fluxus/Analysis/EscapeAnalysis.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/t/fluxus-test/build/fluxus-test/fluxus-test-tmp/Test/Fluxus/Analysis/EscapeAnalysis.o ) [Fluxus.AST.Common changed]
+[1 of 2] Compiling Main             ( bench/Bench.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/b/fluxus-bench/build/fluxus-bench/fluxus-bench-tmp/Main.o ) [Fluxus.Parser.Go.Parser changed]
+[ 3 of 19] Compiling Test.Fluxus.Analysis.ShapeAnalysis ( test/Test/Fluxus/Analysis/ShapeAnalysis.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/t/fluxus-test/build/fluxus-test/fluxus-test-tmp/Test/Fluxus/Analysis/ShapeAnalysis.o ) [Fluxus.AST.Common changed]
+[ 5 of 19] Compiling Test.Fluxus.Analysis.TypeInference ( test/Test/Fluxus/Analysis/TypeInference.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/t/fluxus-test/build/fluxus-test/fluxus-test-tmp/Test/Fluxus/Analysis/TypeInference.o ) [Fluxus.AST.Common changed]
+[3 of 3] Linking /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/b/fluxus-bench/build/fluxus-bench/fluxus-bench [Objects changed]
+[3 of 3] Linking /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/x/fluxus/build/fluxus/fluxus [Objects changed]
+[ 6 of 19] Compiling Test.Fluxus.CodeGen.CPP ( test/Test/Fluxus/CodeGen/CPP.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/t/fluxus-test/build/fluxus-test/fluxus-test-tmp/Test/Fluxus/CodeGen/CPP.o ) [Fluxus.AST.Common changed]
+[ 9 of 19] Compiling Test.Fluxus.EndToEnd ( test/Test/Fluxus/EndToEnd.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/t/fluxus-test/build/fluxus-test/fluxus-test-tmp/Test/Fluxus/EndToEnd.o ) [Fluxus.Compiler.Driver changed]
+[10 of 19] Compiling Test.Fluxus.Integration ( test/Test/Fluxus/Integration.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/t/fluxus-test/build/fluxus-test/fluxus-test-tmp/Test/Fluxus/Integration.o ) [Fluxus.Compiler.Driver changed]
+[13 of 19] Compiling Test.Fluxus.Optimization.Inlining ( test/Test/Fluxus/Optimization/Inlining.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/t/fluxus-test/build/fluxus-test/fluxus-test-tmp/Test/Fluxus/Optimization/Inlining.o ) [Fluxus.AST.Common changed]
+[15 of 19] Compiling Test.Fluxus.Parser.Go ( test/Test/Fluxus/Parser/Go.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/t/fluxus-test/build/fluxus-test/fluxus-test-tmp/Test/Fluxus/Parser/Go.o ) [Fluxus.AST.Common changed]
+[16 of 19] Compiling Test.Fluxus.Parser.Python ( test/Test/Fluxus/Parser/Python.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/t/fluxus-test/build/fluxus-test/fluxus-test-tmp/Test/Fluxus/Parser/Python.o ) [Fluxus.AST.Common changed]
+[17 of 19] Compiling Test.Fluxus.Runtime.Go ( test/Test/Fluxus/Runtime/Go.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/t/fluxus-test/build/fluxus-test/fluxus-test-tmp/Test/Fluxus/Runtime/Go.o ) [Fluxus.Runtime.Go changed]
+[19 of 19] Compiling Main             ( test/Spec.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/t/fluxus-test/build/fluxus-test/fluxus-test-tmp/Main.o ) [Test.Fluxus.Analysis.EscapeAnalysis changed]
+[20 of 20] Linking /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/t/fluxus-test/build/fluxus-test/fluxus-test [Objects changed]

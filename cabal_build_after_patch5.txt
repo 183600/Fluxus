@@ -1,0 +1,100 @@
+Build profile: -w ghc-9.6.3 -O1
+In order, the following will be built (use -v for more details):
+ - fluxus-0.1.0.0 (lib) (file src/Fluxus/CodeGen/CPP.hs changed)
+ - fluxus-0.1.0.0 (test:fluxus-test) (dependency rebuilt)
+ - fluxus-0.1.0.0 (bench:fluxus-bench) (dependency rebuilt)
+ - fluxus-0.1.0.0 (exe:fluxus) (dependency rebuilt)
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+[11 of 38] Compiling Fluxus.Analysis.TypeInference ( src/Fluxus/Analysis/TypeInference.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/TypeInference.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/TypeInference.dyn_o ) [Source file changed]
+
+src/Fluxus/Analysis/TypeInference.hs:27:1: warning: [-Wunused-imports]
+    The qualified import of ‘Fluxus.AST.Python’ is redundant
+      except perhaps to import instances from ‘Fluxus.AST.Python’
+    To import instances alone, use: import Fluxus.AST.Python()
+   |
+27 | import qualified Fluxus.AST.Python as Python
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:28:1: warning: [-Wunused-imports]
+    The import of ‘Fluxus.AST.Python’ is redundant
+      except perhaps to import instances from ‘Fluxus.AST.Python’
+    To import instances alone, use: import Fluxus.AST.Python()
+   |
+28 | import Fluxus.AST.Python (PythonAST(..), PythonModule(..), pyModule, PythonStmt(..), PythonExpr(..), PythonPattern(..), PythonLiteral(..), PythonFuncDef(..), PythonClassDef(..), PythonParameter(..), PythonImport(..), PythonArgument(..))
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:29:1: warning: [-Wunused-imports]
+    The import of ‘Fluxus.AST.Go’ is redundant
+      except perhaps to import instances from ‘Fluxus.AST.Go’
+    To import instances alone, use: import Fluxus.AST.Go()
+   |
+29 | import Fluxus.AST.Go (GoAST(..), GoPackage(..), goPackage, GoStmt(..), GoExpr(..), GoType(..), GoLiteral(..), GoDecl(..), GoTypeDecl(..), GoFunction(..), GoReceiver(..), GoImport(..), GoFile(..), GoForClause(..), GoBinding(..), BindingLHS(..), BindKind(..))
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:33:1: warning: [-Wunused-imports]
+    The import of ‘Control.Monad’ is redundant
+      except perhaps to import instances from ‘Control.Monad’
+    To import instances alone, use: import Control.Monad()
+   |
+33 | import Control.Monad (foldM, forM, forM_, zipWithM_)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:38:1: warning: [-Wunused-imports]
+    The import of ‘Data.Set’ is redundant
+      except perhaps to import instances from ‘Data.Set’
+    To import instances alone, use: import Data.Set()
+   |
+38 | import Data.Set (Set)
+   | ^^^^^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:39:1: warning: [-Wunused-imports]
+    The qualified import of ‘Data.Set’ is redundant
+      except perhaps to import instances from ‘Data.Set’
+    To import instances alone, use: import Data.Set()
+   |
+39 | import qualified Data.Set as Set
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:40:1: warning: [-Wunused-imports]
+    The import of ‘Data.Maybe’ is redundant
+      except perhaps to import instances from ‘Data.Maybe’
+    To import instances alone, use: import Data.Maybe()
+   |
+40 | import Data.Maybe (fromMaybe, mapMaybe)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:76:1: warning: [-Wunused-top-binds]
+    Defined but not used: ‘goLocatedValue’
+   |
+76 | goLocatedValue = Go.locValue
+   | ^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:171:1: warning: [-Wunused-top-binds]
+    Defined but not used: ‘pushScope’
+    |
+171 | pushScope = modify $ \s -> s { scopeStack = HashMap.empty : scopeStack s }
+    | ^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:175:1: warning: [-Wunused-top-binds]
+    Defined but not used: ‘popScope’
+    |
+175 | popScope = do
+    | ^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:183:1: warning: [-Wunused-top-binds]
+    Defined but not used: ‘registerTypeDefinition’
+    |
+183 | registerTypeDefinition name def = 
+    | ^^^^^^^^^^^^^^^^^^^^^^
+[12 of 38] Compiling Fluxus.CodeGen.CPP ( src/Fluxus/CodeGen/CPP.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/CodeGen/CPP.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/CodeGen/CPP.dyn_o ) [Source file changed]
+
+src/Fluxus/CodeGen/CPP.hs:427:3: error: [GHC-58481]
+    parse error (possibly incorrect indentation or mismatched brackets)
+    |
+427 |   Common.OpIn -> "in"  -- membership (placeholder)
+    |   ^
+Error: cabal: Failed to build fluxus-0.1.0.0 (which is required by
+test:fluxus-test from fluxus-0.1.0.0, bench:fluxus-bench from fluxus-0.1.0.0
+and others).
+

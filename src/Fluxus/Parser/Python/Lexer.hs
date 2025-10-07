@@ -294,8 +294,15 @@ identifier = do
   let ident = T.pack (first : rest)
   -- Check if the identifier is a keyword, and if so, fail to allow keyword parsing to handle it
   if isKeyword ident
-    then fail $ "identifier '" ++ T.unpack ident ++ "' cannot be a keyword"
+    then return $ TokenKeyword (textToKeyword ident)
     else return $ TokenIdent ident
+
+-- | Convert text (assumed keyword) back to Keyword (partial but safe here because guarded by isKeyword)
+textToKeyword :: Text -> Keyword
+textToKeyword t = case [k | k <- [minBound .. maxBound], keywordToText k == t] of
+  (k:_) -> k
+  [] -> error "Unknown keyword text"
+
 
 -- | Parse operators
 operator :: PythonLexer PythonToken

@@ -1,0 +1,46 @@
+test/python-tests/feature_list_comprehension.cpp:34:10: error: declaration of variable 'result' with deduced type 'auto' requires an initializer
+   34 |     auto result;
+      |          ^
+test/python-tests/feature_list_comprehension.cpp:51:20: error: 'auto' not allowed here
+   51 |     auto numbers = auto{0};
+      |                    ^~~~
+test/python-tests/feature_list_comprehension.cpp:52:48: error: expected variable name or 'this' in lambda capture list
+   52 |     auto squares = __list_comp_build(numbers, [auto x]{ return x * x; });
+      |                                                ^
+test/python-tests/feature_list_comprehension.cpp:52:72: error: expected unqualified-id
+   52 |     auto squares = __list_comp_build(numbers, [auto x]{ return x * x; });
+      |                                                                        ^
+test/python-tests/feature_list_comprehension.cpp:55:10: error: no type named 'cout' in namespace 'std'
+   55 |     std::cout << "" << "\n";
+      |     ~~~~~^
+test/python-tests/feature_list_comprehension.cpp:55:15: error: expected unqualified-id
+   55 |     std::cout << "" << "\n";
+      |               ^
+test/python-tests/feature_list_comprehension.cpp:56:10: error: no type named 'cout' in namespace 'std'
+   56 |     std::cout << "" << "\n";
+      |     ~~~~~^
+test/python-tests/feature_list_comprehension.cpp:56:15: error: expected unqualified-id
+   56 |     std::cout << "" << "\n";
+      |               ^
+test/python-tests/feature_list_comprehension.cpp:57:10: error: no type named 'cout' in namespace 'std'
+   57 |     std::cout << "" << "\n";
+      |     ~~~~~^
+test/python-tests/feature_list_comprehension.cpp:57:15: error: expected unqualified-id
+   57 |     std::cout << "" << "\n";
+      |               ^
+test/python-tests/feature_list_comprehension.cpp:58:19: error: 'auto' not allowed here
+   58 |     auto matrix = auto{0};
+      |                   ^~~~
+test/python-tests/feature_list_comprehension.cpp:60:10: error: no type named 'cout' in namespace 'std'
+   60 |     std::cout << "" << "\n";
+      |     ~~~~~^
+test/python-tests/feature_list_comprehension.cpp:60:15: error: expected unqualified-id
+   60 |     std::cout << "" << "\n";
+      |               ^
+test/python-tests/feature_list_comprehension.cpp:61:5: error: expected unqualified-id
+   61 |     return 0;
+      |     ^
+test/python-tests/feature_list_comprehension.cpp:62:1: error: extraneous closing brace ('}')
+   62 | }
+      | ^
+15 errors generated.

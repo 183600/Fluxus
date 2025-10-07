@@ -1,0 +1,35 @@
+Compilation failed: Code generation error at ./test_strings.cpp:1:1: C++ compilation failed (exit code 1): ./test_strings.cpp:28:45: error: no matching function for call to 'to_string'
+   28 |     auto message = std::string("Hello, ") + std::to_string(name) + "!";
+      |                                             ^~~~~~~~~~~~~~
+./test_strings.cpp:33:19: note: in instantiation of function template specialization 'fluxus::greet<const char *>' requested here
+   33 |     auto result = greet("Fluxus");
+      |                   ^
+/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../include/c++/15.2.1/bits/basic_string.h:4530:3: note: candidate function not viable: no known conversion from 'const char *' to 'int' for 1st argument; dereference the argument with *
+ 4530 |   to_string(int __val)
+      |   ^         ~~~~~~~~~
+/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../include/c++/15.2.1/bits/basic_string.h:4549:3: note: candidate function not viable: no known conversion from 'const char *' to 'unsigned int' for 1st argument; dereference the argument with *
+ 4549 |   to_string(unsigned __val)
+      |   ^         ~~~~~~~~~~~~~~
+/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../include/c++/15.2.1/bits/basic_string.h:4565:3: note: candidate function not viable: no known conversion from 'const char *' to 'long' for 1st argument; dereference the argument with *
+ 4565 |   to_string(long __val)
+      |   ^         ~~~~~~~~~~
+/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../include/c++/15.2.1/bits/basic_string.h:4584:3: note: candidate function not viable: no known conversion from 'const char *' to 'unsigned long' for 1st argument; dereference the argument with *
+ 4584 |   to_string(unsigned long __val)
+      |   ^         ~~~~~~~~~~~~~~~~~~~
+/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../include/c++/15.2.1/bits/basic_string.h:4600:3: note: candidate function not viable: no known conversion from 'const char *' to 'long long' for 1st argument; dereference the argument with *
+ 4600 |   to_string(long long __val)
+      |   ^         ~~~~~~~~~~~~~~~
+/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../include/c++/15.2.1/bits/basic_string.h:4617:3: note: candidate function not viable: no known conversion from 'const char *' to 'unsigned long long' for 1st argument; dereference the argument with *
+ 4617 |   to_string(unsigned long long __val)
+      |   ^         ~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../include/c++/15.2.1/bits/basic_string.h:4693:3: note: candidate function not viable: no known conversion from 'const char *' to 'float' for 1st argument; dereference the argument with *
+ 4693 |   to_string(float __val)
+      |   ^         ~~~~~~~~~~~
+/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../include/c++/15.2.1/bits/basic_string.h:4703:3: note: candidate function not viable: no known conversion from 'const char *' to 'double' for 1st argument; dereference the argument with *
+ 4703 |   to_string(double __val)
+      |   ^         ~~~~~~~~~~~~
+/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../include/c++/15.2.1/bits/basic_string.h:4713:3: note: candidate function not viable: no known conversion from 'const char *' to 'long double' for 1st argument; dereference the argument with *
+ 4713 |   to_string(long double __val)
+      |   ^         ~~~~~~~~~~~~~~~~~
+1 error generated.
+

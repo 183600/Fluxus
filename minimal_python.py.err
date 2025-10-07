@@ -1,0 +1,15 @@
+Compilation failed: Code generation error at ./minimal_python.cpp:1:1: C++ compilation failed (exit code 1): ./minimal_python.cpp:35:19: error: use of undeclared identifier 'add'; did you mean 'fadd'?
+   35 |     auto result = add(x, 10);
+      |                   ^~~
+      |                   fadd
+/usr/include/bits/mathcalls-narrow.h:24:20: note: 'fadd' declared here
+   24 | __MATHCALL_NARROW (__MATHCALL_NAME (add), __MATHCALL_REDIR_NAME (add), 2);
+      |                    ^
+/usr/include/math.h:534:32: note: expanded from macro '__MATHCALL_NAME'
+  534 | # define __MATHCALL_NAME(name) f ## name
+      |                                ^
+<scratch space>:227:1: note: expanded from here
+  227 | fadd
+      | ^
+1 error generated.
+

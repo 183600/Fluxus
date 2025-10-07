@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -169,6 +171,18 @@ data CppGenConfig = CppGenConfig
   , cgcHeaderGuard :: Text
   } deriving (Show, Eq)
 
+-- | Inject small runtime helpers (very minimal) for list comprehension
+runtimeHelpers :: [CppDecl]
+runtimeHelpers = 
+  [ CppCommentDecl "Helper: __list_comp_build(iterable, lambda)"
+  , CppFunction "__list_comp_build" CppAuto [CppParam "iterable" CppAuto Nothing, CppParam "fn" CppAuto Nothing]
+      [ CppDecl (CppVariable "result" (CppVector CppAuto) Nothing)
+      , CppForRange "__elem" (CppVar "iterable")
+          [ CppExprStmt (CppCall (CppVar "result.push_back") [CppCall (CppVar "fn") [CppVar "__elem"]]) ]
+      , CppReturn (Just (CppVar "result"))
+      ]
+  ]
+
 -- | Generate C++ code from AST (without main function)
 generateCpp :: CppGenConfig -> Either PythonAST GoAST -> (CppUnit, [Text])
 generateCpp config ast = 
@@ -185,7 +199,7 @@ generateCppMain config ast =
   let (CppUnit includes namespaces decls, warnings) = generateCpp config ast
       mainFunc = generateMainFunction config ast
       allDecls = decls ++ [mainFunc]
-  in (CppUnit includes namespaces allDecls, warnings)
+  in (CppUnit includes namespaces (runtimeHelpers ++ allDecls), warnings)
 
 -- | Generate standard includes
 standardIncludes :: CppGenConfig -> [Text]
@@ -197,6 +211,7 @@ standardIncludes _config =
   , "<functional>"
   , "<cmath>"  -- for std::pow
   , "<sstream>"  -- for future string stream composition
+  , "<algorithm>"
   ]
 
 -- | Generate main function
@@ -243,11 +258,14 @@ convertPythonStmtToStmtWithTracking (Common.Located _ stmt) declaredVars = case 
   PyExprStmt expr -> ([wrapPrint (convertPythonExpr expr)], declaredVars)
   PyAssign (t:_) value -> case t of
     Common.Located _ (PatVar (Identifier name)) -> 
-      if name `elem` declaredVars
-      then -- Variable already declared, generate assignment
-           ([CppExprStmt (CppBinary "=" (CppVar name) (convertPythonExpr value))], declaredVars)
-      else -- First declaration, generate variable declaration
-           ([CppDecl (CppVariable name CppAuto (Just (convertPythonExpr value)))], name : declaredVars)
+      let rhsExpr = convertPythonExpr value
+          (ty, initExpr) = case Common.locValue value of
+            PyList _ -> (CppVector CppInt, Just (convertPythonExpr value))
+            PyListComp {} -> (CppVector CppInt, Just (CppCall rhsExpr []))
+            _ -> (CppAuto, Just rhsExpr)
+      in if name `elem` declaredVars
+         then ([CppExprStmt (CppBinary "=" (CppVar name) rhsExpr)], declaredVars)
+         else ([CppDecl (CppVariable name ty initExpr)], name : declaredVars)
     _ -> ([], declaredVars)
   PyAssign [] _ -> ([], declaredVars)
   PyWhile condition body _elseClause -> 
@@ -378,11 +396,25 @@ convertPythonStmtToStmt :: Common.Located PythonStmt -> [CppStmt]
 convertPythonStmtToStmt (Common.Located _ stmt) = case stmt of
   PyReturn (Just expr) -> [CppReturn (Just (convertPythonExpr expr))]
   PyReturn Nothing -> [CppReturn Nothing]
-  PyExprStmt expr -> [wrapPrint (convertPythonExpr expr)]
+  PyExprStmt expr ->
+    case Common.locValue expr of
+      PyCall (Common.Located _ (PyVar (Identifier "print"))) args ->
+        let printed = case args of
+              [Common.Located _ (ArgPositional a)] -> convertPythonExpr a
+              _ -> CppLiteral (CppStringLit "")
+        in [wrapPrint (CppBinary "<<" (CppVar "std::cout") printed)]
+      _ -> [wrapPrint (convertPythonExpr expr)]
   PyAssign (t:_) value -> case t of
     Common.Located _ (PatVar (Identifier name)) -> 
-      -- Generate variable declaration with initialization for main function
-      [CppDecl (CppVariable name CppAuto (Just (convertPythonExpr value)))]
+      let initExpr = case Common.locValue value of
+            PyList elems -> CppInitList (CppVector CppInt) (map convertPythonExpr elems)
+            PyListComp{} -> CppCall (convertPythonExpr value) []
+            _ -> convertPythonExpr value
+          (ty, finalInit) = case Common.locValue value of
+            PyList _ -> (CppVector CppInt, Just initExpr)
+            PyListComp{} -> (CppVector CppInt, Just initExpr)
+            _ -> (CppAuto, Just initExpr)
+      in [CppDecl (CppVariable name ty finalInit)]
     _ -> []
   PyAssign [] _ -> []
   PyWhile condition body _elseClause -> [CppWhile (convertPythonExpr condition) (concatMap convertPythonStmtToStmt body)]
@@ -399,6 +431,21 @@ wrapPrint e = CppExprStmt e
 convertPythonExpr :: Common.Located PythonExpr -> CppExpr
 convertPythonExpr (Common.Located _ expr) = case expr of
   PyLiteral lit -> CppLiteral (convertPythonLiteral lit)
+  PyVar (Identifier name) -> CppVar name
+  PyList elements -> CppInitList (CppVector CppInt) (map convertPythonExpr elements)
+  PyListComp bodyExpr comps ->
+    let convertedBody = convertPythonExpr bodyExpr
+        buildLoops [] = [CppExprStmt (CppCall (CppVar "result.push_back") [convertedBody])]
+        buildLoops (c:cs) = case c of
+          PythonComprehension { pyCompTarget = Common.Located _ (PatVar (Identifier name)), pyCompIter = iterExpr, pyCompFilters = filters } ->
+            let iterE = convertPythonExpr iterExpr
+                inner = buildLoops cs
+                innerFiltered = foldr (\flt acc -> [CppIf (convertPythonExpr flt) acc []]) inner filters
+            in [CppForRange name iterE innerFiltered]
+          _ -> [CppExprStmt (CppLiteral (CppIntLit 0))]
+        stmts = [CppDecl (CppVariable "result" (CppVector CppInt) (Just (CppInitList (CppVector CppInt) [])))]
+                ++ buildLoops comps ++ [CppReturn (Just (CppVar "result"))]
+    in CppLambda [] stmts (Just (CppVector CppInt))
   PyVar (Identifier name) -> CppVar name
   PyBinaryOp op left right -> 
     let cppOp = convertBinaryOp op
@@ -424,6 +471,8 @@ convertPythonExpr (Common.Located _ expr) = case expr of
   PyComparison [op] [left, right] ->
     -- Handle simple binary comparisons
     let cppOp = convertComparisonOp op
+
+
         leftExpr = convertPythonExpr left
         rightExpr = convertPythonExpr right
     in CppBinary cppOp leftExpr rightExpr
@@ -483,8 +532,8 @@ convertBinaryOp = \case
   Common.OpOr -> "||"
   Common.OpXor -> "^"
   Common.OpConcat -> "+"
-  Common.OpIn -> "in"  -- Will need special handling
-  Common.OpNotIn -> "not_in"  -- Will need special handling
+
+
 
 -- | Convert comparison operator to C++ operator
 convertComparisonOp :: Common.ComparisonOp -> Text
@@ -496,6 +545,8 @@ convertComparisonOp = \case
   Common.OpGt -> ">"
   Common.OpGe -> ">="
   Common.OpIs -> "=="  -- Approximate with ==
+  Common.OpIn -> "in"  -- membership (placeholder)
+  Common.OpNotIn -> "not_in"  -- membership negation (placeholder)
   Common.OpIsNot -> "!="  -- Approximate with !=
 
 -- | Convert Python argument to C++ expression

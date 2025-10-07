@@ -1,0 +1,4 @@
+./test_just_list.cpp:21:5: warning: expression result unused [-Wunused-value]
+   21 |     0;
+      |     ^
+1 warning generated.

@@ -1,0 +1,4 @@
+./test_just_number.cpp:22:5: warning: expression result unused [-Wunused-value]
+   22 |     1;
+      |     ^
+1 warning generated.

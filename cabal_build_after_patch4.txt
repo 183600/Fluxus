@@ -1,0 +1,93 @@
+Build profile: -w ghc-9.6.3 -O1
+In order, the following will be built (use -v for more details):
+ - fluxus-0.1.0.0 (lib) (file src/Fluxus/CodeGen/CPP.hs changed)
+ - fluxus-0.1.0.0 (test:fluxus-test) (dependency rebuilt)
+ - fluxus-0.1.0.0 (bench:fluxus-bench) (dependency rebuilt)
+ - fluxus-0.1.0.0 (exe:fluxus) (dependency rebuilt)
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+[11 of 38] Compiling Fluxus.Analysis.TypeInference ( src/Fluxus/Analysis/TypeInference.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/TypeInference.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/TypeInference.dyn_o ) [Source file changed]
+
+src/Fluxus/Analysis/TypeInference.hs:18:5: error: [GHC-76037]
+    Not in scope: ‘inferStatement’
+   |
+18 |   , inferStatement
+   |     ^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:19:5: error: [GHC-76037]
+    Not in scope: ‘inferDeclaration’
+   |
+19 |   , inferDeclaration
+   |     ^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:20:5: error: [GHC-76037]
+    Not in scope: ‘inferProgram’
+   |
+20 |   , inferProgram
+   |     ^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:21:5: error: [GHC-76037]
+    Not in scope: ‘unifyTypes’
+   |
+21 |   , unifyTypes
+   |     ^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:22:5: error: [GHC-76037]
+    Not in scope: ‘instantiate’
+   |
+22 |   , instantiate
+   |     ^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:23:5: error: [GHC-76037]
+    Not in scope: ‘generalize’
+   |
+23 |   , generalize
+   |     ^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:26:5: error: [GHC-76037]
+    Not in scope: ‘solveConstraints’
+   |
+26 |   , solveConstraints
+   |     ^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:29:5: error: [GHC-76037]
+    Not in scope: ‘withNewScope’
+   |
+29 |   , withNewScope
+   |     ^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:30:5: error: [GHC-76037]
+    Not in scope: ‘inferFunctionType’
+   |
+30 |   , inferFunctionType
+   |     ^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:31:5: error: [GHC-76037]
+    Not in scope: ‘inferClassType’
+   |
+31 |   , inferClassType
+   |     ^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:32:5: error: [GHC-76037]
+    Not in scope: ‘checkTypes’
+   |
+32 |   , checkTypes
+   |     ^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:34:5: error: [GHC-76037]
+    Not in scope: ‘inferASTType’
+    Suggested fix: Perhaps use ‘inferType’ (line 204)
+   |
+34 |   , inferASTType
+   |     ^^^^^^^^^^^^
+[12 of 38] Compiling Fluxus.CodeGen.CPP ( src/Fluxus/CodeGen/CPP.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/CodeGen/CPP.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/CodeGen/CPP.dyn_o ) [Source file changed]
+
+src/Fluxus/CodeGen/CPP.hs:427:3: error: [GHC-58481]
+    parse error (possibly incorrect indentation or mismatched brackets)
+    |
+427 |   Common.OpIn -> "in"  -- membership (placeholder)
+    |   ^
+Error: cabal: Failed to build fluxus-0.1.0.0 (which is required by
+test:fluxus-test from fluxus-0.1.0.0, bench:fluxus-bench from fluxus-0.1.0.0
+and others).
+

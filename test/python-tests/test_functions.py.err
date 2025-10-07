@@ -1,0 +1,48 @@
+Compilation failed: Code generation error at ./test/python-tests/test_functions.cpp:1:1: C++ compilation failed (exit code 1): ./test/python-tests/test_functions.cpp:44:17: warning: unused parameter 'name' [-Wunused-parameter]
+   44 | auto greet(auto name) {
+      |                 ^
+./test/python-tests/test_functions.cpp:75:20: error: use of undeclared identifier 'greet'; did you mean 'fluxus::greet'?
+   75 |     auto result1 = greet("World");
+      |                    ^~~~~
+      |                    fluxus::greet
+./test/python-tests/test_functions.cpp:44:6: note: 'fluxus::greet' declared here
+   44 | auto greet(auto name) {
+      |      ^
+./test/python-tests/test_functions.cpp:76:20: error: use of undeclared identifier 'add_numbers'; did you mean 'fluxus::add_numbers'?
+   76 |     auto result2 = add_numbers(5, 3);
+      |                    ^~~~~~~~~~~
+      |                    fluxus::add_numbers
+./test/python-tests/test_functions.cpp:48:6: note: 'fluxus::add_numbers' declared here
+   48 | auto add_numbers(auto a, auto b) {
+      |      ^
+./test/python-tests/test_functions.cpp:77:20: error: use of undeclared identifier 'multiply_numbers'; did you mean 'fluxus::multiply_numbers'?
+   77 |     auto result3 = multiply_numbers(4, 7);
+      |                    ^~~~~~~~~~~~~~~~
+      |                    fluxus::multiply_numbers
+./test/python-tests/test_functions.cpp:52:6: note: 'fluxus::multiply_numbers' declared here
+   52 | auto multiply_numbers(auto a, auto b) {
+      |      ^
+./test/python-tests/test_functions.cpp:78:20: error: use of undeclared identifier 'calculate_average'; did you mean 'fluxus::calculate_average'?
+   78 |     auto result4 = calculate_average(0);
+      |                    ^~~~~~~~~~~~~~~~~
+      |                    fluxus::calculate_average
+./test/python-tests/test_functions.cpp:56:6: note: 'fluxus::calculate_average' declared here
+   56 | auto calculate_average(auto numbers) {
+      |      ^
+./test/python-tests/test_functions.cpp:57:12: error: no matching function for call to 'sum'
+   57 |     return sum(numbers) / len(numbers);
+      |            ^~~
+./test/python-tests/test_functions.cpp:78:20: note: in instantiation of function template specialization 'fluxus::calculate_average<int>' requested here
+   78 |     auto result4 = calculate_average(0);
+      |                    ^
+./test/python-tests/test_functions.cpp:57:27: error: no matching function for call to 'len'
+   57 |     return sum(numbers) / len(numbers);
+      |                           ^~~
+./test/python-tests/test_functions.cpp:83:5: warning: 'auto' storage class specifier is not permitted in C++11, and will not be supported in future releases [-Wauto-storage-class]
+   83 |     auto double = 0;
+      |     ^~~~
+./test/python-tests/test_functions.cpp:83:17: error: expected unqualified-id
+   83 |     auto double = 0;
+      |                 ^
+2 warnings and 7 errors generated.
+

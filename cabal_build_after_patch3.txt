@@ -1,0 +1,176 @@
+Build profile: -w ghc-9.6.3 -O1
+In order, the following will be built (use -v for more details):
+ - fluxus-0.1.0.0 (lib) (file src/Fluxus/Analysis/TypeInference.hs changed)
+ - fluxus-0.1.0.0 (test:fluxus-test) (dependency rebuilt)
+ - fluxus-0.1.0.0 (bench:fluxus-bench) (dependency rebuilt)
+ - fluxus-0.1.0.0 (exe:fluxus) (dependency rebuilt)
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+[11 of 38] Compiling Fluxus.Analysis.TypeInference ( src/Fluxus/Analysis/TypeInference.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/TypeInference.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/Analysis/TypeInference.dyn_o ) [Source file changed]
+
+src/Fluxus/Analysis/TypeInference.hs:159:20: error: [GHC-88464]
+    Variable not in scope:
+      applySubstitution :: Substitution -> Type -> t
+    |
+159 |       let result = applySubstitution subst t
+    |                    ^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:224:3: error: [GHC-88464]
+    Variable not in scope:
+      inferUnaryOp
+        :: UnaryOp -> Type -> StateT TypeInferenceState (Except Text) Type
+    Suggested fix: Perhaps use ‘inferBinaryOp’ (line 301)
+    |
+224 |   inferUnaryOp op operandType
+    |   ^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:304:14: error: [GHC-88464]
+    Variable not in scope:
+      inferArithmeticOp
+        :: Type -> Type -> StateT TypeInferenceState (Except Text) Type
+    |
+304 |     OpAdd -> inferArithmeticOp leftType rightType
+    |              ^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:305:14: error: [GHC-88464]
+    Variable not in scope:
+      inferArithmeticOp
+        :: Type -> Type -> StateT TypeInferenceState (Except Text) Type
+    |
+305 |     OpSub -> inferArithmeticOp leftType rightType
+    |              ^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:306:14: error: [GHC-88464]
+    Variable not in scope:
+      inferArithmeticOp
+        :: Type -> Type -> StateT TypeInferenceState (Except Text) Type
+    |
+306 |     OpMul -> inferArithmeticOp leftType rightType
+    |              ^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:338:14: error: [GHC-88464]
+    Variable not in scope:
+      inferArithmeticOp
+        :: Type -> Type -> StateT TypeInferenceState (Except Text) Type
+    |
+338 |     OpMod -> inferArithmeticOp leftType rightType
+    |              ^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:339:14: error: [GHC-88464]
+    Variable not in scope:
+      inferArithmeticOp
+        :: Type -> Type -> StateT TypeInferenceState (Except Text) Type
+    |
+339 |     OpPow -> inferArithmeticOp leftType rightType
+    |              ^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:340:19: error: [GHC-88464]
+    Variable not in scope:
+      inferArithmeticOp
+        :: Type -> Type -> StateT TypeInferenceState (Except Text) Type
+    |
+340 |     OpFloorDiv -> inferArithmeticOp leftType rightType
+    |                   ^^^^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:341:17: error: [GHC-88464]
+    Variable not in scope:
+      inferBitwiseOp
+        :: Type -> Type -> StateT TypeInferenceState (Except Text) Type
+    |
+341 |     OpBitAnd -> inferBitwiseOp leftType rightType
+    |                 ^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:342:16: error: [GHC-88464]
+    Variable not in scope:
+      inferBitwiseOp
+        :: Type -> Type -> StateT TypeInferenceState (Except Text) Type
+    |
+342 |     OpBitOr -> inferBitwiseOp leftType rightType
+    |                ^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:343:17: error: [GHC-88464]
+    Variable not in scope:
+      inferBitwiseOp
+        :: Type -> Type -> StateT TypeInferenceState (Except Text) Type
+    |
+343 |     OpBitXor -> inferBitwiseOp leftType rightType
+    |                 ^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:344:17: error: [GHC-88464]
+    Variable not in scope:
+      inferBitwiseOp
+        :: Type -> Type -> StateT TypeInferenceState (Except Text) Type
+    |
+344 |     OpShiftL -> inferBitwiseOp leftType rightType
+    |                 ^^^^^^^^^^^^^^
+
+src/Fluxus/Analysis/TypeInference.hs:345:17: error: [GHC-88464]
+    Variable not in scope:
+      inferBitwiseOp
+        :: Type -> Type -> StateT TypeInferenceState (Except Text) Type
+    |
+345 |     OpShiftR -> inferBitwiseOp leftType rightType
+    |                 ^^^^^^^^^^^^^^
+[12 of 38] Compiling Fluxus.CodeGen.CPP ( src/Fluxus/CodeGen/CPP.hs, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/CodeGen/CPP.o, /home/qwe12345678/hyperstatic2/dist-newstyle/build/x86_64-linux/ghc-9.6.3/fluxus-0.1.0.0/build/Fluxus/CodeGen/CPP.dyn_o ) [Fluxus.AST.Common changed]
+
+src/Fluxus/CodeGen/CPP.hs:486:3: error: [GHC-83865]
+    • Couldn't match expected type ‘Common.BinaryOp’
+                  with actual type ‘Common.ComparisonOp’
+    • In the pattern: Common.OpIn
+      In a \case alternative: Common.OpIn -> "in"
+      In the expression:
+        \case
+          Common.OpAdd -> "+"
+          Common.OpSub -> "-"
+          Common.OpMul -> "*"
+          Common.OpDiv -> "/"
+          Common.OpMod -> "%"
+          Common.OpPow -> "pow"
+          Common.OpShiftL -> "<<"
+          Common.OpShiftR -> ">>"
+          Common.OpBitOr -> "|"
+          Common.OpBitXor -> "^"
+          Common.OpBitAnd -> "&"
+          Common.OpFloorDiv -> "/"
+          Common.OpAnd -> "&&"
+          Common.OpOr -> "||"
+          Common.OpXor -> "^"
+          Common.OpConcat -> "+"
+          Common.OpIn -> "in"
+          Common.OpNotIn -> "not_in"
+    |
+486 |   Common.OpIn -> "in"  -- Will need special handling
+    |   ^^^^^^^^^^^
+
+src/Fluxus/CodeGen/CPP.hs:487:3: error: [GHC-83865]
+    • Couldn't match expected type ‘Common.BinaryOp’
+                  with actual type ‘Common.ComparisonOp’
+    • In the pattern: Common.OpNotIn
+      In a \case alternative: Common.OpNotIn -> "not_in"
+      In the expression:
+        \case
+          Common.OpAdd -> "+"
+          Common.OpSub -> "-"
+          Common.OpMul -> "*"
+          Common.OpDiv -> "/"
+          Common.OpMod -> "%"
+          Common.OpPow -> "pow"
+          Common.OpShiftL -> "<<"
+          Common.OpShiftR -> ">>"
+          Common.OpBitOr -> "|"
+          Common.OpBitXor -> "^"
+          Common.OpBitAnd -> "&"
+          Common.OpFloorDiv -> "/"
+          Common.OpAnd -> "&&"
+          Common.OpOr -> "||"
+          Common.OpXor -> "^"
+          Common.OpConcat -> "+"
+          Common.OpIn -> "in"
+          Common.OpNotIn -> "not_in"
+    |
+487 |   Common.OpNotIn -> "not_in"  -- Will need special handling
+    |   ^^^^^^^^^^^^^^
+Error: cabal: Failed to build fluxus-0.1.0.0 (which is required by
+test:fluxus-test from fluxus-0.1.0.0, bench:fluxus-bench from fluxus-0.1.0.0
+and others).
+

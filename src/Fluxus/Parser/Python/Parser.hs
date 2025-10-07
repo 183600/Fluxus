@@ -529,35 +529,28 @@ parseListLiteral = do
           void $ delimiterP DelimRightBracket
           return $ PyList elements
 
--- Try to parse list comprehension [expr for target in iter if filters]
+-- Try to parse list comprehension [expr for target in iter if filters ...]
+-- Extended: support multiple chained 'for' clauses with optional 'if' filters after each.
 tryParseListComprehension :: PythonParser (Maybe PythonExpr)
 tryParseListComprehension = do
   input <- getInput
   case input of
-    (Located _ (TokenKeyword KwFor) : _) -> return Nothing  -- Starts with 'for', not valid
+    (Located _ (TokenKeyword KwFor) : _) -> return Nothing
     _ -> do
-      -- Try to parse: expr for target in iter [if filter]...
       result <- optional $ try $ do
-        expr <- parseExpression  -- The main expression
-        
-        -- Look for 'for' keyword to indicate comprehension
+        expr <- parseExpression
         inputAfterExpr <- getInput
         case inputAfterExpr of
           (Located _ (TokenKeyword KwFor) : _) -> do
-            -- This is a list comprehension
-            comprehensions <- parseComprehensions
+            comps <- some parseSingleComprehension  -- parse 1..n for-clauses
             void $ delimiterP DelimRightBracket
-            return $ PyListComp expr comprehensions
+            return $ PyListComp expr comps
           _ -> fail "Not a list comprehension"
-      
       return result
 
--- Parse comprehension clauses: for target in iter [if filter]...
+-- Parse a single comprehension clause: for target in iter (if ...)*
 parseComprehensions :: PythonParser [PythonComprehension]
-parseComprehensions = do
-  comp <- parseSingleComprehension
-  -- For now, only support single comprehension
-  return [comp]
+parseComprehensions = some parseSingleComprehension
 
 parseSingleComprehension :: PythonParser PythonComprehension
 parseSingleComprehension = do
