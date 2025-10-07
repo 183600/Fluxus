@@ -388,8 +388,21 @@ parseCompOp = choice
   , operator' Lexer.OpGe $> OpGe
   , operator' Lexer.OpLt $> OpLt
   , operator' Lexer.OpGt $> OpGt
-  , keywordP KwIs $> OpIs
-  , keywordP KwIn $> OpIn  -- Membership test
+  , try $ do  -- Handle 'is' and 'is not'
+      keywordP KwIs
+      mNot <- optional (keywordP KwNot)
+      case mNot of
+        Just _  -> return OpIsNot
+        Nothing -> return OpIs
+  , try $ do  -- Handle 'in' and 'not in'
+      mNot <- optional (keywordP KwNot)
+      case mNot of
+        Just _ -> do
+          keywordP KwIn
+          return OpNotIn
+        Nothing -> do
+          keywordP KwIn
+          return OpIn  -- Membership test
   ]
 
 parseArithExpr :: PythonParser (Located PythonExpr)
