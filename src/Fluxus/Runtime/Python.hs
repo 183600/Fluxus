@@ -251,17 +251,13 @@ convertFromPython _ = LNone  -- Fallback for complex types
 -- | Run arbitrary Python code
 runPythonCode :: PythonRuntime -> Text -> IO (Either Text RuntimeValue)
 runPythonCode _ code = do
-  result <- try $ do
-    -- Convert Text to CString and run
-    withCString (T.unpack code) $ \cstr -> do
-      resultCode <- pyRun_SimpleString cstr
-      if resultCode == 0
-        then return RVNone  -- Success
-        else return $ RVError "Python execution failed"
-  
-  case result of
+  execResult <- try $ withCString (T.unpack code) $ \cstr -> pyRun_SimpleString cstr
+  case execResult of
     Left ex -> return $ Left $ T.pack $ show (ex :: SomeException)
-    Right val -> return $ Right val
+    Right rc ->
+      if rc == 0
+        then return (Right RVNone)
+        else return (Left "Python execution failed")
 
 -- | Create a runtime bridge for optimized interop
 createRuntimeBridge :: PythonRuntime -> [Text] -> IO RuntimeBridge
