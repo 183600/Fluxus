@@ -408,8 +408,6 @@ stringLiteral = choice
             ]
           return c
     
-    -- Parse characters in f-string, handling escaped characters properly\n    parseFStringChar = choice\n      [ try $ do\n          _ <- char '\\\\'\n          c <- anySingle\n          return ['\\\\', c]\n      , do\n          c <- anySingle\n          return [c]\n      ]
-    
     -- Extract expressions from f-string content like "Hello, {name}!" -> ["name"]
     extractFStringExpressions :: Text -> [Text]
     extractFStringExpressions text = extractBraces text []

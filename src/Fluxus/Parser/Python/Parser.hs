@@ -389,7 +389,7 @@ parseCompOp = choice
   , operator' Lexer.OpLt $> OpLt
   , operator' Lexer.OpGt $> OpGt
   , keywordP KwIs $> OpIs
-  , keywordP KwIn $> OpEq  -- Using OpEq as placeholder for now
+  , keywordP KwIn $> OpIn  -- Membership test
   ]
 
 parseArithExpr :: PythonParser (Located PythonExpr)
