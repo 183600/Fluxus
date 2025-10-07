@@ -489,12 +489,9 @@ performanceSpec = describe "Performance Tests" $ do
           -- Keep suppressed by default to avoid massive stack test logs
           debugEnv <- lookupEnv "FLUXUS_E2E_DEBUG"
           let debugEnabled = maybe False (== "1") debugEnv
-          when (debugEnabled && False) $ do
-            putStrLn $ "[DEBUG] C++ file exists: " ++ show cppExists
-            when cppExists $ do
-              cppContent <- readFile cppFile
-              putStrLn $ "[DEBUG] C++ file content length: " ++ show (length cppContent)
-              putStrLn $ "[DEBUG] Full C++ file content:\n" ++ take 2000 cppContent ++ if length cppContent > 2000 then "\n[TRUNCATED]" else ""
+          when debugEnabled $ do
+            -- Intentionally suppress printing C++ file contents to keep stack test output small
+            putStrLn $ "[DEBUG] C++ file exists (contents suppressed): " ++ show cppExists
           
           -- Compile and run the generated C++
           let exeFile = tmpDir </> "memory"
