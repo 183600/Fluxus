@@ -67,6 +67,7 @@ import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Data.List (foldl')
+import Data.Graph (SCC(..), stronglyConnComp)
 
 -- | Node identifier
 type NodeId = Int
@@ -163,57 +164,35 @@ edgeExists from to graph =
 
 -- | Topological sort using Kahn's algorithm
 topologicalSort :: Graph a -> Maybe [NodeId]
-topologicalSort graph = go (Set.fromList $ map nodeId $ nodes graph) [] []
-  where
-    inDegree nid = length $ predecessors nid graph
-    
-    go remaining result queue
-      | Set.null remaining && null queue = Just (reverse result)
-      | null queue = Nothing  -- Cycle detected
-      | otherwise = 
-          let (current, restQueue) = case queue of
-                [] -> 
-                  let noIncoming = Set.filter (\n -> inDegree n == 0) remaining
-                  in if Set.null noIncoming 
-                     then (Set.findMin remaining, [])  -- Force progress, might indicate cycle
-                     else (Set.findMin noIncoming, Set.toList noIncoming)
-                (x:xs) -> (x, xs)
-              newRemaining = Set.delete current remaining
-              newSuccessors = filter (`Set.member` newRemaining) (successors current graph)
-              newQueue = restQueue ++ newSuccessors
-          in go newRemaining (current : result) newQueue
+topologicalSort graph =
+  let allNodes = map nodeId (nodes graph)
+      initialIn = Map.fromList [(n, 0 :: Int) | n <- allNodes]
+      inDeg = foldl' (\m (Edge _ to _) -> Map.adjust (+1) to m) initialIn (edges graph)
+      queue0 = Set.fromList [n | (n, d) <- Map.toList inDeg, d == 0]
+      total = length allNodes
+      go q indeg acc
+        | Set.null q = if length acc == total then Just acc else Nothing
+        | otherwise =
+            let (n, q') = Set.deleteFindMin q
+                succs = successors n graph
+                (indeg', q'') = foldl' (\(m, qacc) s ->
+                                        let d = (Map.findWithDefault 0 s m) - 1
+                                            m' = Map.insert s d m
+                                            qacc' = if d == 0 then Set.insert s qacc else qacc
+                                        in (m', qacc'))
+                                      (indeg, q') succs
+            in go q'' indeg' (acc ++ [n])
+  in go queue0 inDeg []
 
 -- | Find strongly connected components using Tarjan's algorithm
 stronglyConnectedComponents :: Graph a -> [[NodeId]]
-stronglyConnectedComponents graph = 
-  let allNodes = map nodeId $ nodes graph
-  in tarjan allNodes (Map.empty :: Map.Map NodeId Int) (Map.empty :: Map.Map NodeId Int) ([] :: [NodeId]) (0 :: Int) ([] :: [[NodeId]])
-  where
-    tarjan :: [NodeId] -> Map.Map NodeId Int -> Map.Map NodeId Int -> [NodeId] -> Int -> [[NodeId]] -> [[NodeId]]
-    tarjan [] _ _ _ _ result = result
-    tarjan (v:vs) indices lowlinks stack index result
-      | Map.member v indices = tarjan vs indices lowlinks stack index result
-      | otherwise = 
-          let (newIndices, newLowlinks, newStack, newIndex, newResult) = 
-                strongConnect v indices lowlinks stack index result
-          in tarjan vs newIndices newLowlinks newStack newIndex newResult
-    
-    strongConnect v indices lowlinks stack index result =
-      let indices' = Map.insert v index indices
-          lowlinks' = Map.insert v index lowlinks
-          stack' = v : stack
-          index' = index + 1
-      in foldl' (processSuccessor v) (indices', lowlinks', stack', index', result) (successors v graph)
-    
-    processSuccessor v (indices, lowlinks, stack, index, result) w
-      | not (Map.member w indices) = 
-          let (indices', lowlinks', stack', index', result') = strongConnect w indices lowlinks stack index result
-              lowlinks'' = Map.adjust (min (lowlinks' Map.! w)) v lowlinks'
-          in (indices', lowlinks'', stack', index', result')
-      | w `elem` stack = 
-          let lowlinks' = Map.adjust (min (indices Map.! w)) v lowlinks
-          in (indices, lowlinks', stack, index, result)
-      | otherwise = (indices, lowlinks, stack, index, result)
+stronglyConnectedComponents graph =
+  let nodesList = map nodeId (nodes graph)
+      toAdj n = (n, n, successors n graph)
+      sccs = stronglyConnComp (map toAdj nodesList)
+      toList (AcyclicSCC v) = [v]
+      toList (CyclicSCC vs) = vs
+  in map toList sccs
 
 -- | Compute dominators using iterative algorithm
 dominators :: NodeId -> Graph a -> Map NodeId (Set NodeId)

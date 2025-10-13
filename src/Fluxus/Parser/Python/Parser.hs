@@ -537,10 +537,7 @@ tryParseListComprehension = do
 
 -- Parse comprehension clauses: for target in iter [if filter]...
 parseComprehensions :: PythonParser [PythonComprehension]
-parseComprehensions = do
-  comp <- parseSingleComprehension
-  -- For now, only support single comprehension
-  return [comp]
+parseComprehensions = some parseSingleComprehension
 
 parseSingleComprehension :: PythonParser PythonComprehension
 parseSingleComprehension = do
@@ -614,12 +611,22 @@ parseDictLiteral = do
       input <- getInput
       case input of
         (Located _ (TokenDelimiter DelimColon) : _) -> do
-          -- This is a dict
+          -- This is a dict or dict comprehension
           void $ delimiterP DelimColon
           value <- parseExpression
-          pairs <- parseDictPairsRest [(firstExpr, value)]
-          void $ delimiterP DelimRightBrace
-          return $ PyDict pairs
+          -- Check if this is a dict comprehension
+          input' <- getInput
+          case input' of
+            (Located _ (TokenKeyword Lexer.KwFor) : _) -> do
+              -- This is a dict comprehension
+              comprehensions <- parseComprehensions
+              void $ delimiterP DelimRightBrace
+              return $ PyDictComp firstExpr value comprehensions
+            _ -> do
+              -- Regular dict literal
+              pairs <- parseDictPairsRest [(firstExpr, value)]
+              void $ delimiterP DelimRightBrace
+              return $ PyDict pairs
         _ -> do
           -- This might be a set, but since we're in dict parsing, fail
           fail "Expected dict literal"
@@ -665,8 +672,13 @@ parseSetLiteral = do
         (Located _ (TokenDelimiter DelimColon) : _) -> do
           -- This is a dict, but since we're in set parsing, fail
           fail "Expected set literal"
+        (Located _ (TokenKeyword Lexer.KwFor) : _) -> do
+          -- This is a set comprehension
+          comprehensions <- parseComprehensions
+          void $ delimiterP DelimRightBrace
+          return $ PySetComp firstExpr comprehensions
         _ -> do
-          -- This is a set
+          -- This is a regular set
           elements <- parseSetElementsRest [firstExpr]
           void $ delimiterP DelimRightBrace
           return $ PySet elements
@@ -773,7 +785,7 @@ parseArguments = do
   where
     parseArgument = located $ choice
       [ try parseKeywordArgument
-      , ArgPositional <$> parseOrExpr
+      , ArgPositional <$> parseArgumentExpr
       ]
     
     parseKeywordArgument = do
@@ -781,6 +793,19 @@ parseArguments = do
       void $ operator' Lexer.OpAssign
       value <- parseExpression
       return $ ArgKeyword name value
+    
+    -- Parse argument expression, which could be a generator expression or a normal expression
+    parseArgumentExpr = do
+      expr <- parseOrExpr
+      -- Look ahead to see if this is a generator expression
+      input <- getInput
+      case input of
+        (Located _ (TokenKeyword Lexer.KwFor) : _) -> do
+          -- This is a generator expression
+          -- Don't consume the 'for' keyword here, let parseComprehensions handle it
+          comprehensions <- parseComprehensions
+          return $ located' $ PyGenComp expr comprehensions
+        _ -> return expr
 
 -- | Parse a block of statements
 parseBlock :: PythonParser [Located PythonStmt]

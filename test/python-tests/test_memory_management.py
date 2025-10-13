@@ -367,7 +367,8 @@ def test_memory_optimization_patterns():
             self.factory_func = factory_func
             self.max_size = max_size
             self._pool = []
-            self._active = weakref.WeakSet()
+            # 用于跟踪活动对象的 id（支持不可弱引用且不可哈希的对象，如 dict）
+            self._active_ids = set()
         
         def get(self):
             """从池中获取对象"""
@@ -376,14 +377,14 @@ def test_memory_optimization_patterns():
             else:
                 obj = self.factory_func()
             
-            self._active.add(obj)
+            self._active_ids.add(id(obj))
             return obj
         
         def put(self, obj):
             """将对象返回池中"""
             if len(self._pool) < self.max_size:
                 self._pool.append(obj)
-            self._active.discard(obj)
+            self._active_ids.discard(id(obj))
         
         @property
         def pool_size(self):
@@ -391,7 +392,7 @@ def test_memory_optimization_patterns():
         
         @property
         def active_count(self):
-            return len(self._active)
+            return len(self._active_ids)
     
     # 使用对象池
     def create_expensive_object():

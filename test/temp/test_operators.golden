@@ -1,0 +1,33 @@
+=== Bitwise Operators ===
+a & b = 12
+a | b = 61
+a ^ b = 49
+~a = -61
+a << 2 = 240
+a >> 2 = 15
+
+=== Identity Operators ===
+x is y: True
+x is z: False
+x is not z: True
+x == z: True
+val1 is None: True
+val1 is not None: False
+
+=== Ternary Operator ===
+Status: adult
+Number is: positive
+Max value: 20
+
+=== Walrus Operator ===
+n is 10 which is greater than 5
+Doubled values > 4: [6, 8, 10]
+
+=== Comparison Chaining ===
+1 < x < 10: True
+1 < x < 4: False
+x > 0 and x < 10: True
+a < b < c: True
+a < b and b < c: True
+
+=== All tests completed ===

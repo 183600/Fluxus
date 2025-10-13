@@ -1,0 +1,30 @@
+Testing simple decorator:
+Before function call
+Hello, World!
+After function call
+
+Testing decorator with arguments:
+Calling add_numbers with args: (5, 3), kwargs: {}
+add_numbers returned: 8
+
+Testing repeat decorator:
+
+Testing timer decorator:
+slow_function executed in 0.1001 seconds
+
+Testing cache decorator:
+Computed and cached result for (1,)
+Computed and cached result for (0,)
+Computed and cached result for (2,)
+Returning cached result for (1,)
+Computed and cached result for (3,)
+Returning cached result for (2,)
+Computed and cached result for (4,)
+Returning cached result for (3,)
+Computed and cached result for (5,)
+Returning cached result for (5,)
+Returning cached result for (5,)
+Returning cached result for (4,)
+Computed and cached result for (6,)
+
+All decorator tests passed!

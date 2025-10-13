@@ -1,0 +1,75 @@
+Python Testing Frameworks Demonstration
+==================================================
+=== Demonstrating unittest basics ===
+Setting up test class
+Setting up test: test_addition
+Tearing down test: test_addition
+Setting up test: test_division
+Tearing down test: test_division
+Setting up test: test_division_by_zero
+Tearing down test: test_division_by_zero
+Setting up test: test_multiplication
+Tearing down test: test_multiplication
+Setting up test: test_string_assertions
+Tearing down test: test_string_assertions
+Tearing down test class
+
+=== Demonstrating mocking techniques ===
+
+=== Demonstrating parameterized testing ===
+
+=== Demonstrating test fixtures ===
+
+=== Demonstrating performance testing ===
+
+=== Demonstrating test organization ===
+
+Running TestMathOperations:
+Tests run: 2
+Failures: 0
+Errors: 0
+
+Running TestStringOperations:
+Tests run: 2
+Failures: 0
+Errors: 0
+
+=== Demonstrating pytest-style testing concepts ===
+
+PyTest style examples (conceptual):
+
+# test_calculator.py
+import pytest
+from calculator import Calculator
+
+@pytest.fixture
+def calculator():
+    return Calculator()
+
+@pytest.mark.parametrize("a,b,expected", [
+    (2, 3, 5),
+    (10, 5, 15),
+    (-1, 1, 0),
+    (0, 0, 0),
+])
+def test_add(calculator, a, b, expected):
+    assert calculator.add(a, b) == expected
+
+@pytest.mark.slow
+def test_performance():
+    # 性能测试
+    result = sum(range(1000000))
+    assert result == 499999500000
+
+# 运行测试
+# pytest -v                    # 详细输出
+# pytest -k "test_add"         # 运行特定测试
+# pytest -m "not slow"         # 运行非慢速测试
+# pytest --cov=myproject       # 代码覆盖率
+
+
+=== Testing demonstration completed ===
+Basic tests passed: True
+Mock tests passed: True
+
+Running full test suite...

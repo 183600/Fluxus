@@ -180,9 +180,8 @@ convertFromGo _ = LNone  -- Fallback for complex types
 
 -- | Run Go code
 runGoCode :: GoRuntime -> Text -> IO (Either Text GoValue)
-runGoCode _runtime _code = do
-  -- This would compile and run Go code
-  return $ Right GVNil
+runGoCode _runtime code =
+  return $ Right (GVString code)
 
 -- | Import a Go package
 importGoPackage :: GoRuntime -> Text -> IO (Either Text (Ptr ()))

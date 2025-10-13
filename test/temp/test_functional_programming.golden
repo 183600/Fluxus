@@ -1,0 +1,41 @@
+=== Map Function ===
+Original numbers: [1, 2, 3, 4, 5]
+Squares: [1, 4, 9, 16, 25]
+Doubles: [2, 4, 6, 8, 10]
+Sum of lists: [5, 7, 9]
+
+=== Filter Function ===
+Original numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+Even numbers: [2, 4, 6, 8, 10]
+Odd numbers: [1, 3, 5, 7, 9]
+Greater than 5: [6, 7, 8, 9, 10]
+
+=== Reduce Function ===
+Original numbers: [1, 2, 3, 4, 5]
+Sum of all: 15
+Product: 120
+Maximum value: 5
+Sum with initial value 10: 25
+
+=== Partial Function Application ===
+Double 5: 10
+Triple 5: 15
+2^3: 8
+2^4: 16
+
+=== Function Composition ===
+Add then multiply (5): 12
+Multiply then add (5): 11
+
+=== Higher-order Functions ===
+Apply add: 8
+Apply subtract: 2
+Apply multiply: 15
+
+=== Currying ===
+Add 5 to 3: 8
+Add 10 to 3: 13
+
+=== Immutability ===
+Original list: [1, 2, 3]
+Modified list: [2, 4, 6]

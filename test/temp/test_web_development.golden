@@ -1,0 +1,90 @@
+Python Web Development Testing
+==================================================
+=== Testing Simple HTTP Server ===
+Fetching: http://localhost:8080/tmpcq9x8290.html
+Response status: 200
+Content length: 251 bytes
+First 200 characters of content:
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Test Page</title>
+    </head>
+    <body>
+        <h1>Hello from Python HTTP Server!</h1>
+        <p>This is a test page served by Python's bui
+
+=== Testing REST API Server ===
+
+--- Testing GET /api/users ---
+Found 3 users:
+  ID: 1, Name: Alice Updated, Age: 31
+  ID: 3, Name: Charlie, Age: 35
+  ID: 4, Name: Eve, Age: 28
+
+--- Testing GET /api/users/1 ---
+User 1: {'id': 1, 'name': 'Alice Updated', 'age': 31}
+
+--- Testing POST /api/users ---
+Created new user: {'id': 4, 'name': 'Eve', 'age': 28}
+
+--- Testing PUT /api/users/1 ---
+Updated user: {'id': 1, 'name': 'Alice Updated', 'age': 31}
+
+--- Testing DELETE /api/users/2 ---
+DELETE request failed: HTTP Error 404: User not found
+
+--- Final user list ---
+Final users (3 total):
+  ID: 1, Name: Alice Updated, Age: 31
+  ID: 3, Name: Charlie, Age: 35
+  ID: 4, Name: Eve, Age: 28
+
+=== Testing urllib Operations ===
+
+--- Testing GET https://httpbin.org/get ---
+Status: 200
+Content-Type: unknown
+Content length: 278 bytes
+JSON response preview:
+{
+  "args": {},
+  "headers": {
+    "Accept-Encoding": "identity",
+    "Host": "httpbin.org",
+    "User-Agent": "Python-urllib/3.13",
+    "X-Amzn-Trace-Id": "Root=1-68ea93b4-4fcae6ba2362a05206a96dfc"
+  },
+  "origin": "114.248.127.192",
+  "url": "https://httpbin.org/get"
+}
+
+--- Testing GET https://jsonplaceholder.typicode.com/posts/1 ---
+Status: 200
+Content-Type: unknown
+Content length: 292 bytes
+JSON response preview:
+{
+  "userId": 1,
+  "id": 1,
+  "title": "sunt aut facere repellat provident occaecati excepturi optio reprehenderit",
+  "body": "quia et suscipit\nsuscipit recusandae consequuntur expedita et cum\nreprehenderit molestiae ut ut quas totam\nnostrum rerum est autem sunt rem eveniet architecto"
+}
+
+=== Testing URL Manipulation ===
+Original URL: https://example.com:8080/path/to/resource?param1=value1&param2=value2#fragment
+Scheme: https
+Netloc: example.com:8080
+Path: /path/to/resource
+Params: 
+Query: param1=value1&param2=value2
+Fragment: fragment
+Parsed query parameters: {'param1': ['value1'], 'param2': ['value2']}
+
+Constructed URL: https://api.example.com/users/123?format=json&fields=name%2Cemail&limit=10
+
+=== All web development tests completed ===
+
+Note: HTTP servers were started in daemon threads.
+Real-world applications would use proper web frameworks like Flask, Django, or FastAPI.

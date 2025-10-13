@@ -1,0 +1,59 @@
+=== Default Arguments ===
+Hello, Alice!
+Hi, Bob!
+Hey, Charlie!
+power(3) = 9
+power(3, 3) = 27
+
+=== Keyword Arguments ===
+Alice is 25 years old and lives in NYC
+Bob is 30 years old and lives in LA
+Charlie is 35 years old and lives in SF
+
+=== Variable Positional Arguments (*args) ===
+sum_all(1, 2, 3) = 6
+sum_all(1, 2, 3, 4, 5) = 15
+sum_all() = 0
+print_args('a', 'b', 'c'):
+  Arg 0: a
+  Arg 1: b
+  Arg 2: c
+
+=== Variable Keyword Arguments (**kwargs) ===
+print_info(name='Alice', age=25, city='NYC'):
+  name: Alice
+  age: 25
+  city: NYC
+Profile: {'name': 'Bob', 'age': 30, 'occupation': 'Engineer'}
+
+=== Combining Argument Types ===
+complex_function(1, 2, 3, 4, c=5, x=6, y=7):
+  a=1, b=2
+  args=(3, 4)
+  c=5
+  kwargs={'x': 6, 'y': 7}
+  Result: 28
+
+=== Keyword-Only Arguments ===
+keyword_only(1, 2, c=3, d=4) = 10
+
+=== Position-Only Arguments ===
+position_only(1, 2, 3, 4) = 10
+position_only(1, 2, c=3, d=4) = 10
+
+=== Position-Only and Keyword-Only ===
+mixed_args(1, 2, 3, 4, e=5, f=6) = 21
+
+=== Unpacking Arguments ===
+add_three(*[1, 2, 3]) = 6
+greet_person(**person) = Alice, 25, NYC
+
+=== Default Mutable Arguments ===
+list1: [1]
+list2: [2]
+
+=== Multiple Return Values ===
+Coordinates: x=10, y=20, z=30
+17 ÷ 5 = 3 remainder 2
+
+=== All function argument tests completed ===

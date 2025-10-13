@@ -1,0 +1,149 @@
+=== Testing CSV Operations ===
+CSV file created: /tmp/tmp2eszxp_b.csv
+
+--- Reading CSV file ---
+Row 0: ['Name', 'Age', 'City', 'Salary']
+Row 1: ['Alice', '30', 'New York', '75000']
+Row 2: ['Bob', '25', 'San Francisco', '80000']
+Row 3: ['Charlie', '35', 'Chicago', '90000']
+Row 4: ['Diana', '28', 'Boston', '85000']
+
+--- Reading CSV with DictReader ---
+Person: Alice, Age: 30, City: New York, Salary: $75000
+Person: Bob, Age: 25, City: San Francisco, Salary: $80000
+Person: Charlie, Age: 35, City: Chicago, Salary: $90000
+Person: Diana, Age: 28, City: Boston, Salary: $85000
+
+--- Appending to CSV file ---
+After appending:
+New row: ['Eve', '32', 'Seattle', '95000']
+
+=== Testing CSV Advanced Features ===
+CSV with custom delimiter created: /tmp/tmpnch1yjxs.csv
+CSV file content:
+Product;Description;Price
+Laptop;"High-performance ""gaming"" laptop";1299.99
+Mouse;Wireless, ergonomic design;29.99
+Keyboard;Mechanical, RGB backlit;89.99
+
+Parsed row: ['Product', 'Description', 'Price']
+Parsed row: ['Laptop', 'High-performance "gaming" laptop', '1299.99']
+Parsed row: ['Mouse', 'Wireless, ergonomic design', '29.99']
+Parsed row: ['Keyboard', 'Mechanical, RGB backlit', '89.99']
+
+=== Testing XML Operations ===
+XML file created: /tmp/tmpqm0ozgwa.xml
+
+--- Reading XML file ---
+Root element: bookstore
+Books in store:
+  Category: fiction
+  Title: The Great Gatsby (en)
+  Author: F. Scott Fitzgerald
+  Year: 1925
+  Price: $12.99
+
+  Category: science
+  Title: A Brief History of Time (en)
+  Author: Stephen Hawking
+  Year: 1988
+  Price: $15.99
+
+--- Modifying XML ---
+XML file updated with new book
+Updated XML content:
+<?xml version='1.0' encoding='utf-8'?>
+<bookstore><book category="fiction"><title lang="en">The Great Gatsby</title><author>F. Scott Fitzgerald</author><year>1925</year><price>12.99</price></book><book category="science"><title lang="en">A Brief History of Time</title><author>Stephen Hawking</author><year>1988</year><price>15.99</price></book><book category="technology"><title lang="en">Clean Code</title><author>Robert C. Martin</author><year>2008</year><price>34.99</price></book></bookstore>
+
+=== Testing XML Search and Modify ===
+Original books:
+  Harry Potter: $15.99
+  Lord of the Rings: $12.99
+  Cosmos: $18.99
+Updated price for Harry Potter
+
+Books by authors with 'J.' in name:
+  Harry Potter by J.K. Rowling
+  Lord of the Rings by J.R.R. Tolkien
+Removed Cosmos book
+
+Final XML:
+<?xml version='1.0' encoding='utf-8'?>
+<library>
+        <book id="1" genre="fiction" discount="true">
+            <title>Harry Potter</title>
+            <author>J.K. Rowling</author>
+            <year>1997</year>
+            <price>12.99</price>
+        </book>
+        <book id="2" genre="fiction">
+            <title>Lord of the Rings</title>
+            <author>J.R.R. Tolkien</author>
+            <year>1954</year>
+            <price>12.99</price>
+        </book>
+        <book id="4" genre="technology"><title>The Pragmatic Programmer</title><author>Andrew Hunt, David Thomas</author><year>1999</year><price>42.99</price></book></library>
+
+=== Testing YAML-like Operations (using JSON) ===
+Configuration file created: /tmp/tmpf2uwsrjr.json
+Loaded configuration:
+{
+  "server": {
+    "host": "localhost",
+    "port": 8080,
+    "debug": true
+  },
+  "database": {
+    "type": "postgresql",
+    "host": "db.example.com",
+    "port": 5432,
+    "credentials": {
+      "username": "admin",
+      "password": "secret123"
+    }
+  },
+  "features": {
+    "logging": {
+      "level": "info",
+      "file": "/var/log/app.log"
+    },
+    "caching": {
+      "enabled": true,
+      "ttl": 3600
+    }
+  }
+}
+
+Updated configuration:
+{
+  "server": {
+    "host": "localhost",
+    "port": 9090,
+    "debug": true
+  },
+  "database": {
+    "type": "postgresql",
+    "host": "db.example.com",
+    "port": 5432,
+    "credentials": {
+      "username": "admin",
+      "password": "secret123"
+    }
+  },
+  "features": {
+    "logging": {
+      "level": "info",
+      "file": "/var/log/app.log"
+    },
+    "caching": {
+      "enabled": true,
+      "ttl": 3600
+    },
+    "new_feature": {
+      "enabled": true,
+      "priority": "high"
+    }
+  }
+}
+
+=== All CSV/XML/JSON tests completed ===

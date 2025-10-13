@@ -268,16 +268,14 @@ locatedPythonToken = do
 
 -- | Parse keywords
 keyword :: PythonLexer PythonToken
-keyword = do
-  kw <- choice (map tryKeyword allKeywords)
-  lift $ notFollowedBy alphaNumChar
-  return $ TokenKeyword kw
+keyword = choice (map tryKeyword allKeywords)
   where
     allKeywords = [minBound .. maxBound]
-    tryKeyword kw = do
+    tryKeyword kw = lift $ try $ do
       let kwText = keywordToText kw
-      _ <- lift $ try $ string kwText
-      return kw
+      _ <- string kwText
+      notFollowedBy alphaNumChar
+      return $ TokenKeyword kw
 
 -- | Parse identifiers
 identifier :: PythonLexer PythonToken

@@ -1,0 +1,55 @@
+=== Metaclass Test ===
+Value: 42
+Meta attribute: Created by AdvancedClass
+Class info: Class AdvancedClass with meta_attribute: Created by AdvancedClass
+
+=== Descriptors Test ===
+Setting name to Alice
+Setting age to 25
+Setting email to alice@example.com
+Person(name=Alice, age=25, email=alice@example.com)
+Setting name to Bob
+Updated name: Bob
+Deleted age
+After deletion - age: 0
+
+=== Properties Test ===
+Celsius: 25
+Fahrenheit: 77.0
+New Celsius: 30
+New Fahrenheit: 86.0
+
+=== Singleton Test ===
+s1 is s2: True
+s2 data: ['item1']
+
+=== Multiple Inheritance Test ===
+Method A: Method A from BaseA
+Method B: Method B from BaseB
+Method C: Method C from DerivedMultiple
+Common method: Common method from DerivedMultiple
+MRO: (<class '__main__.DerivedMultiple'>, <class '__main__.BaseA'>, <class '__main__.BaseB'>, <class 'object'>)
+
+=== Abstract Classes Test ===
+Circle area: 78.54
+Circle perimeter: 31.42
+
+=== Dunder Methods Test ===
+String representation: DunderMethodsDemo(value=hello)
+Repr: DunderMethodsDemo(hello)
+Length: 5
+First character: h
+Addition result: DunderMethodsDemo(value=helloworld)
+obj1 == obj2: False
+obj1 < obj2: True
+Callable result: hellohellohello
+Entering context
+Inside context: DunderMethodsDemo(value=hello)
+Exiting context
+
+=== Class Methods and Static Methods Test ===
+Created from string: 42
+Static method result: 30
+Instance method: 42
+
+=== All advanced OOP tests passed! ===

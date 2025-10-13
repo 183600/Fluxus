@@ -69,6 +69,7 @@ data CompilerConfig = CompilerConfig
   , ccOptimizationLevel :: OptimizationLevel
   , ccTargetPlatform :: TargetPlatform
   , ccOutputPath :: Maybe FilePath
+  , ccGoldenFile :: Maybe FilePath
   , ccEnableInterop :: Bool
   , ccEnableDebugInfo :: Bool
   , ccEnableProfiler :: Bool
@@ -102,6 +103,7 @@ defaultConfig = CompilerConfig
   , ccOptimizationLevel = O2
   , ccTargetPlatform = detectPlatform
   , ccOutputPath = Nothing
+  , ccGoldenFile = Nothing
   , ccEnableInterop = True
   , ccEnableDebugInfo = False
   , ccEnableProfiler = False
@@ -245,6 +247,7 @@ configParser = CompilerConfig
   <*> optimizationOption
   <*> targetOption
   <*> outputOption
+  <*> goldenOption
   <*> interopOption
   <*> debugOption
   <*> profilerOption
@@ -271,11 +274,18 @@ languageOption =
 
 optimizationOption :: Options.Applicative.Parser OptimizationLevel
 optimizationOption =
-  flag' O0 (short 'O' <> short '0' <> long "O0" <> help "No optimization") <|>
-  flag' O1 (short 'O' <> short '1' <> long "O1" <> help "Basic optimization") <|>
-  flag' O2 (short 'O' <> short '2' <> long "O2" <> help "Standard optimization") <|>
-  flag' O3 (short 'O' <> short '3' <> long "O3" <> help "Aggressive optimization") <|>
-  flag' Os (short 'O' <> short 's' <> long "Os" <> help "Size optimization") <|>
+  -- Support GCC/Clang style: -O0, -O1, -O2, -O3, -Os (also works with spaced form: -O 2)
+  option (maybeReader parseOptLevel)
+    ( short 'O'
+   <> metavar "LEVEL"
+   <> help "Optimization level (0,1,2,3 or s for size; accepts -O2, -O3, -Os)"
+    ) <|>
+  -- Also accept individual short flags like -0, -1, -2, -3, -s and long forms --O0..--Os
+  flag' O0 (short '0' <> long "O0" <> help "No optimization") <|>
+  flag' O1 (short '1' <> long "O1" <> help "Basic optimization") <|>
+  flag' O2 (short '2' <> long "O2" <> help "Standard optimization") <|>
+  flag' O3 (short '3' <> long "O3" <> help "Aggressive optimization") <|>
+  flag' Os (short 's' <> long "Os" <> help "Size optimization") <|>
   pure (ccOptimizationLevel defaultConfig)
 
 targetOption :: Options.Applicative.Parser TargetPlatform
@@ -292,6 +302,13 @@ outputOption = optional $ strOption
   <> long "output"
   <> metavar "FILE"
   <> help "Output file path"
+  )
+
+goldenOption :: Options.Applicative.Parser (Maybe FilePath)
+goldenOption = optional $ strOption
+  ( long "golden"
+  <> metavar "FILE"
+  <> help "Path to golden output file for test mode"
   )
 
 interopOption :: Options.Applicative.Parser Bool
@@ -477,6 +494,7 @@ mergeConfigs strategy base override = CompilerConfig
   , ccOptimizationLevel = ccOptimizationLevel override
   , ccTargetPlatform = ccTargetPlatform override
   , ccOutputPath = ccOutputPath override <|> ccOutputPath base
+  , ccGoldenFile = ccGoldenFile override <|> ccGoldenFile base
   , ccEnableInterop = ccEnableInterop override
   , ccEnableDebugInfo = ccEnableDebugInfo override
   , ccEnableProfiler = ccEnableProfiler override
@@ -639,6 +657,7 @@ instance ToJSON CompilerConfig where
     , "optimization_level" .= ccOptimizationLevel
     , "target_platform" .= ccTargetPlatform
     , "output_path" .= ccOutputPath
+    , "golden_file" .= ccGoldenFile
     , "enable_interop" .= ccEnableInterop
     , "enable_debug_info" .= ccEnableDebugInfo
     , "enable_profiler" .= ccEnableProfiler
@@ -664,6 +683,7 @@ instance FromJSON CompilerConfig where
     ccOptimizationLevel <- o .:? "optimization_level" .!= O2
     ccTargetPlatform <- o .:? "target_platform" .!= detectPlatform
     ccOutputPath <- o .:? "output_path"
+    ccGoldenFile <- o .:? "golden_file"
     ccEnableInterop <- o .:? "enable_interop" .!= True
     ccEnableDebugInfo <- o .:? "enable_debug_info" .!= False
     ccEnableProfiler <- o .:? "enable_profiler" .!= False
@@ -699,6 +719,7 @@ configToArgs config = concat
   , if ccKeepIntermediates config then ["--keep-intermediates"] else []
   , replicate (ccVerboseLevel config) "-v"
   , maybe [] (\path -> ["-o", path]) (ccOutputPath config)
+  , maybe [] (\path -> ["--golden", path]) (ccGoldenFile config)
   , maybe [] (\dir -> ["--work-dir", dir]) (ccWorkDirectory config)
   , ["--cpp-std", T.unpack $ ccCppStandard config]
   , ["--cpp-compiler", T.unpack $ ccCppCompiler config]
@@ -720,6 +741,7 @@ printConfig config = do
   putStrLn $ "  Optimization Level : " ++ showOptLevel (ccOptimizationLevel config)
   putStrLn $ "  Target Platform    : " ++ showTargetPlatform (ccTargetPlatform config)
   putStrLn $ "  Output Path        : " ++ fromMaybe "<auto>" (ccOutputPath config)
+  putStrLn $ "  Golden File        : " ++ fromMaybe "<none>" (ccGoldenFile config)
   putStrLn $ "  Interop Enabled    : " ++ show (ccEnableInterop config)
   putStrLn $ "  Debug Info         : " ++ show (ccEnableDebugInfo config)
   putStrLn $ "  Profiler           : " ++ show (ccEnableProfiler config)

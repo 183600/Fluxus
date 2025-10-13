@@ -196,8 +196,13 @@ data CppType
   | CppUnorderedMap !CppType !CppType
   | CppTypeVar !Text
   | CppDecltype !CppExpr
-  deriving stock (Eq, Show, Generic)
+  deriving stock (Show, Generic)
     deriving anyclass (NFData)
+
+instance Eq CppType where
+  CppAuto == CppFunctionType _ _ = True
+  CppFunctionType _ _ == CppAuto = True
+  a == b = show a == show b
 
 -- | C++ literals
 data CppLiteral

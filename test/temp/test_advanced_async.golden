@@ -1,0 +1,114 @@
+=== Basic Async Test ===
+Coroutine started
+Coroutine completed
+Result: coroutine result
+
+=== Multiple Coroutines Test ===
+Starting multiple coroutines
+Operation 0 started
+Operation 1 started
+Operation 2 started
+Operation 0 completed
+Operation 1 completed
+Operation 2 completed
+All results: ['result_0', 'result_1', 'result_2']
+Results: ['result_0', 'result_1', 'result_2']
+
+=== Execution Patterns Test ===
+=== Sequential Execution ===
+Operation 1 started
+Operation 1 completed
+Operation 2 started
+Operation 2 completed
+Operation 3 started
+Operation 3 completed
+Sequential time: 3.00s
+
+=== Parallel Execution ===
+Operation 1 started
+Operation 2 started
+Operation 3 started
+Operation 1 completed
+Operation 2 completed
+Operation 3 completed
+Parallel time: 1.50s
+
+=== Advanced Features Test ===
+Timeout occurred as expected
+Entering async context
+Inside async context
+Manager: <__main__.async_context_manager.<locals>.AsyncContextManager object at 0x7f0192c81940>
+Exiting async context
+=== Async Iterator ===
+Async iteration: 1
+Async iteration: 2
+Async iteration: 3
+=== Async Generator ===
+Generated: 1
+Generated: 2
+Generated: 3
+Generated from comprehension: 10
+Generated from comprehension: 11
+Generated from comprehension: 12
+
+=== Exception Handling Test ===
+Caught expected error: Intentional error
+Operation 1 started
+Operation 2 started
+Gather caught error: Intentional error
+Operation 1 started
+Operation 2 started
+Operation 1 completed
+Operation 1 completed
+Operation 2 completed
+Operation 2 completed
+Results with exceptions: ['result_1', ValueError('Intentional error'), 'result_2']
+
+=== Pattern Tests ===
+Producing item 0
+Consuming item item_0
+Producing item 1
+Consuming item item_1
+Producing item 2
+Producing item 3
+Consuming item item_2
+Producing item 4
+Consuming item item_3
+Consuming item item_4
+Task 0 acquired lock
+Task 0 released lock
+Task 1 acquired lock
+Task 1 released lock
+Task 2 acquired lock
+Task 2 released lock
+Task 0 started
+Task 1 started
+Task 0 completed
+Task 1 completed
+Task 2 started
+Task 3 started
+Task 2 completed
+Task 3 completed
+Task 4 started
+Task 4 completed
+Waiting for event...
+Setting event
+Event occurred!
+Producer added data
+Consumer got data: data
+
+=== Integration Test ===
+Blocking operation result: Blocked for 1 seconds
+
+=== Cancellation Test ===
+Long running task started
+Task progress: 0/10
+Task progress: 1/10
+Cancelling task...
+Task was cancelled
+Task cancelled successfully
+Shielded operation started
+Shielded operation completed
+Shielded result: shielded result
+
+=== All advanced async tests passed! ===

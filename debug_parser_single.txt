@@ -1,0 +1,1 @@
+run_go_parser.hs: /home/qwe12345678/hyperstatic2/.stack-work/install/x86_64-linux/2a42907f94f022bb546dec6cd9ecfcdcae21b985a1b0099a2bd97a2a1d45b651/9.8.4/lib/x86_64-linux-ghc-9.8.4/libHSfluxus-0.1.0.0-5dyai1hF0U05eXDuDg92qZ-ghc9.8.4.so: undefined symbol: Py_Finalize

@@ -1,0 +1,50 @@
+=== Basic Unpacking ===
+a=1, b=2
+x=1, y=2, z=3
+a=a, b=b, c=c
+
+=== Nested Unpacking ===
+a=1, b=2, c=3, d=4
+x=1, y=2, z=3, w=4, v=5
+
+=== Extended Unpacking ===
+first=1, rest=[2, 3, 4, 5]
+first=1, middle=[2, 3, 4], last=5
+a=1, b=2, rest=[3, 4, 5]
+head=[1, 2, 3, 4], tail=5
+first=1, middle=[2, 3, 4], second_last=5, last=6
+
+=== Unpacking Strings ===
+first=h, middle=['e', 'l', 'l'], last=o
+
+=== Unpacking in Function Calls ===
+add_three(*[1,2,3]) = 6
+greet(**person) = Hello Alice, you are 25 years old
+
+=== Multiple Unpacking ===
+Combined list: [1, 2, 3, 4, 5, 6]
+Combined dict: {'a': 1, 'b': 2, 'c': 3, 'd': 4}
+
+=== Unpacking in Comprehensions ===
+Sums: [3, 7, 11]
+
+=== Unpacking with enumerate ===
+Index 0: hello
+Index 1: world
+Index 2: python
+
+=== Unpacking with zip ===
+Alice is 25
+Bob is 30
+Charlie is 35
+
+=== Unpacking in For Loops ===
+Number: 1, Character: a
+Number: 2, Character: b
+Number: 3, Character: c
+
+=== Ignoring Values ===
+a=1, c=3 (ignored middle value)
+first=1, last=5 (ignored middle values)
+
+=== All unpacking tests completed ===

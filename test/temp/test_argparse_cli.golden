@@ -1,0 +1,123 @@
+Python argparse Module Demonstration
+==================================================
+=== Testing Basic argparse Functionality ===
+Parsed arguments:
+  filename: input.txt
+  output: output.txt
+  verbose: True
+  number: 20
+  mode: fast
+
+=== Testing Advanced Argument Types ===
+Parsed advanced arguments:
+  threads: 8
+  date: 2024-01-15 00:00:00
+  date type: <class 'datetime.datetime'>
+  ratio: 0.7
+  tags: ['python', 'argparse', 'cli']
+  numbers: [10, 20, 30, 40]
+  values: [1.1, 2.2, 3.3]
+
+=== Testing Subcommands ===
+
+Testing command: init my_project --template advanced
+  Command: init
+  Project name: my_project
+  Template: advanced
+  Force: False
+
+Testing command: add file1.py file2.py --recursive --exclude *.pyc
+  Command: add
+  Files: ['file1.py', 'file2.py']
+  Recursive: True
+  Exclude: ['*.pyc']
+
+Testing command: status --verbose
+  Command: status
+  Verbose: True
+  Short: False
+
+=== Testing Mutually Exclusive Groups ===
+
+Testing valid args: ['--dev']
+  Environment: dev=True, staging=False, prod=False
+  Format: json=False, yaml=False, xml=False
+
+Testing valid args: ['--staging', '--json']
+  Environment: dev=False, staging=True, prod=False
+  Format: json=True, yaml=False, xml=False
+
+Testing valid args: ['--prod', '--yaml', '--verbose']
+  Environment: dev=False, staging=False, prod=True
+  Format: json=False, yaml=True, xml=False
+
+=== Testing Custom Actions ===
+Custom definitions: {'key1': 'value1', 'key2': 'value2'}
+Appended items: ['item1', 'item2']
+Count value: 3
+Constant value: 42
+
+=== Testing Argument Validation ===
+Testing missing required argument:
+✓ Correctly failed due to missing required argument
+
+Testing valid arguments:
+✓ Successfully parsed: required=value, config=config.json
+
+=== Testing Help Generation ===
+Generated help message:
+------------------------------------------------------------
+usage: my-tool [-h] [-v] [--config FILE] [--timeout TIMEOUT] input
+
+A comprehensive CLI tool for testing argparse
+
+positional arguments:
+  input              Input file to process
+
+options:
+  -h, --help         show this help message and exit
+  -v, --verbose      Increase verbosity (use multiple times for more verbose)
+  --config FILE      Configuration file path
+  --timeout TIMEOUT  Timeout in seconds (default: 30.0)
+
+For more details, see the documentation at https://example.com/docs
+------------------------------------------------------------
+
+=== Real-World CLI Example ===
+
+Testing scenario: data.txt --stats --format csv --verbose
+Processing file: data.txt
+Mode: stats
+Output format: csv
+Verbose level: 1
+
+Testing scenario: input.json --convert --target-format xml --pretty
+Processing file: input.json
+Mode: convert
+Output format: json
+Verbose level: 0
+Target format: xml
+
+Testing scenario: config.yaml --validate --encoding utf-8 -vv
+Processing file: config.yaml
+Mode: validate
+Output format: json
+Verbose level: 2
+
+=== Summary ===
+argparse features demonstrated:
+- Basic argument parsing (positional and optional)
+- Advanced argument types and validation
+- Subcommands for complex CLI applications
+- Mutually exclusive argument groups
+- Custom actions for specialized processing
+- Argument validation and error handling
+- Help message generation and formatting
+- Real-world CLI application patterns
+
+Key best practices:
+- Use meaningful argument names and help text
+- Provide sensible defaults
+- Validate input data types and ranges
+- Use subcommands for complex applications
+- Handle errors gracefully

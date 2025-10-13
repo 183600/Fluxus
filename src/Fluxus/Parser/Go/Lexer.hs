@@ -187,9 +187,10 @@ goIdentifier = do
   first <- letterChar <|> char '_'
   rest <- many (alphaNumChar <|> char '_')
   let ident = T.pack (first : rest)
-  if isGoKeyword ident
-    then fail "identifier cannot be a keyword"
-    else return $ GoTokenIdent ident
+  -- Do not reject identifiers that happen to match keyword text here;
+  -- keywords are recognized by goKeyword before this parser.
+  -- This makes the lexer more permissive in tricky contexts like i.(type).
+  return $ GoTokenIdent ident
 
 -- | Parse Go operators
 goOperator :: GoLexer GoToken

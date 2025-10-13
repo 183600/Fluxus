@@ -1,0 +1,11 @@
+Student scores: {'Alice': 98, 'Bob': 87, 'Charlie': 92, 'David': 88}
+Alice's score: 98
+Keys: ['Alice', 'Bob', 'Charlie', 'David']
+Values: [98, 87, 92, 88]
+Items: [('Alice', 98), ('Bob', 87), ('Charlie', 92), ('David', 88)]
+Bob in dictionary: True
+Eve in dictionary: False
+Removed Charlie's score: 92
+Updated dictionary: {'Alice': 98, 'Bob': 87, 'David': 88}
+Squares dictionary: {1: 1, 2: 4, 3: 9, 4: 16, 5: 25}
+Alice's city: New York

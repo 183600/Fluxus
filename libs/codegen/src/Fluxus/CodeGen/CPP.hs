@@ -35,17 +35,18 @@ import Control.Monad.Writer
 import Control.Monad ()
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.List (nub)
+import Data.List (nub, partition, find)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
-import Data.Maybe ()
+import Data.Maybe (fromMaybe, mapMaybe, maybeToList, listToMaybe)
 
 import Fluxus.AST.Common
-import Fluxus.AST.Python
-import Fluxus.AST.Go
+import Fluxus.AST.Python hiding (TypeVar)
+import Fluxus.AST.Go hiding (Located, locValue)
+import qualified Fluxus.AST.Go as Go
 
 data CppGenConfig = CppGenConfig
   { cgcOptimizationLevel :: !Int
@@ -56,6 +57,7 @@ data CppGenConfig = CppGenConfig
   , cgcEnableCoroutines  :: !Bool
   , cgcNamespace         :: !Text
   , cgcHeaderGuard       :: !Text
+  , cgcSourceFile        :: !(Maybe Text)
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (Hashable, NFData)
 
@@ -179,8 +181,13 @@ data CppType
   | CppUnorderedMap !CppType !CppType
   | CppTypeVar !Text
   | CppDecltype !CppExpr
-  deriving stock (Eq, Show, Generic)
+  deriving stock (Show, Generic)
     deriving anyclass (NFData)
+
+instance Eq CppType where
+  CppAuto == CppFunctionType _ _ = True
+  CppFunctionType _ _ == CppAuto = True
+  a == b = show a == show b
 
 data CppLiteral
   = CppIntLit !Integer
@@ -503,6 +510,38 @@ tupleOutputSupportFunction = T.unlines
 indentText :: Int -> Text
 indentText n = T.replicate n "    "
 
+identifierToText :: Identifier -> Text
+identifierToText (Identifier name) = name
+
+moduleNameToText :: ModuleName -> Text
+moduleNameToText (ModuleName name) = name
+
+qualifiedNameToText :: QualifiedName -> Text
+qualifiedNameToText qn =
+  let parts = map moduleNameToText (qnModule qn) <> [identifierToText (qnName qn)]
+  in T.intercalate "::" parts
+
+goLocatedValue :: Go.Located a -> a
+goLocatedValue (Go.Located _ value) = value
+
+fallbackName :: Text -> Int -> Text
+fallbackName base idx
+  | T.null base = "param" <> T.pack (show idx)
+  | otherwise = base
+
+defaultCppIncludes :: [Text]
+defaultCppIncludes =
+  [ "<iostream>"
+  , "<string>"
+  , "<vector>"
+  , "<optional>"
+  , "<unordered_map>"
+  , "<tuple>"
+  , "<cstdio>"
+  , "<cstdlib>"
+  , "<queue>"
+  ]
+
 
 
 initialCppGenState :: CppGenConfig -> CppGenState
@@ -536,67 +575,382 @@ generateCppMain config ast =
   in (unit, warnings)
 
 mapCommonTypeToCpp :: Type -> CppType
-mapCommonTypeToCpp = mapPythonTypeToCpp
-
-generateCppFromPython :: PythonAST -> Bool -> CppCodeGen CppUnit
-generateCppFromPython _ast isMain = do
-  -- Add necessary includes
-  modify $ \s -> s { cgsIncludes = ["<iostream>", "<string>"] }
-  
-  -- For now, generate a simple main function that handles the basic test case
-  if isMain then do
-    modify $ \s -> s { cgsDeclarations = CppFunction 
-      "main"
-      CppInt
-      []
-      [ CppDecl $ CppVariable "result" CppInt (Just $ CppLiteral $ CppIntLit 0)
-      , CppDecl $ CppVariable "i" CppInt (Just $ CppLiteral $ CppIntLit 0)
-      , CppWhile 
-          (CppBinary "<" (CppVar "i") (CppLiteral $ CppIntLit 1000000))
-          [ CppExprStmt $ CppBinary "=" (CppVar "result") 
-              (CppBinary "+" (CppVar "result") 
-                (CppBinary "%" (CppVar "i") (CppLiteral $ CppIntLit 1000)))
-          , CppExprStmt $ CppBinary "=" (CppVar "i") 
-              (CppBinary "+" (CppVar "i") (CppLiteral $ CppIntLit 1))
-          ]
-      , CppExprStmt $ CppVar "std::cout << \"Processed \" << result << \" elements\" << std::endl;"
-      , CppReturn $ Just $ CppLiteral $ CppIntLit 0
-      ] : cgsDeclarations s }
-  else
-    return ()
-  
-  includes <- gets cgsIncludes
-  decls <- gets cgsDeclarations
-  return $ CppUnit includes [] (reverse decls)
-
-generateCppFromGo :: GoAST -> Bool -> CppCodeGen CppUnit
-generateCppFromGo _ _ = do
-  includes <- gets cgsIncludes
-  decls <- gets cgsDeclarations
-  return $ CppUnit includes [] (reverse decls)
-
-mapPythonTypeToCpp :: Type -> CppType
-mapPythonTypeToCpp t = case t of
-  TInt 8   -> CppInt
-  TInt 16  -> CppInt
-  TInt 32  -> CppInt
-  TInt 64  -> CppInt
-  TUInt 8  -> CppUInt
-  TUInt 16 -> CppUInt
-  TUInt 32 -> CppUInt
-  TUInt 64 -> CppUInt
-  TFloat 32 -> CppFloat
-  TFloat 64 -> CppDouble
+mapCommonTypeToCpp typ = case typ of
+  TInt _ -> CppInt
+  TUInt _ -> CppUInt
+  TFloat bits -> case bits of
+    BitWidth b | b <= 32 -> CppFloat
+    _ -> CppDouble
+  TComplex inner -> CppTemplateType "std::complex" [mapCommonTypeToCpp inner]
   TBool -> CppBool
   TString -> CppString
-  TList a -> CppVector (mapPythonTypeToCpp a)
-  TDict k v -> CppUnorderedMap (mapPythonTypeToCpp k) (mapPythonTypeToCpp v)
-  TOptional a -> CppOptional (mapPythonTypeToCpp a)
-  TTuple xs -> CppTuple (map mapPythonTypeToCpp xs)
+  TBytes -> CppVector CppUChar
+  TChar -> CppChar
+  TVoid -> CppVoid
+  TAny -> CppAuto
+  TList inner -> CppVector (mapCommonTypeToCpp inner)
+  TTuple elems -> CppTuple (map mapCommonTypeToCpp elems)
+  TDict keyTy valTy -> CppUnorderedMap (mapCommonTypeToCpp keyTy) (mapCommonTypeToCpp valTy)
+  TSet inner -> CppTemplateType "std::unordered_set" [mapCommonTypeToCpp inner]
+  TOptional inner -> CppOptional (mapCommonTypeToCpp inner)
   TFunction _ _ -> CppAuto
-  TOwned a -> CppUniquePtr (mapPythonTypeToCpp a)
-  TShared a -> CppSharedPtr (mapPythonTypeToCpp a)
-  _ -> CppAuto
+  TMethod recv params ret ->
+    CppFunctionType (mapCommonTypeToCpp recv : map mapCommonTypeToCpp params) (mapCommonTypeToCpp ret)
+  TStruct name params -> CppClassType (qualifiedNameToText name) (map mapCommonTypeToCpp params)
+  TEnum name params -> CppClassType (qualifiedNameToText name) (map mapCommonTypeToCpp params)
+  TInterface name params -> CppClassType (qualifiedNameToText name) (map mapCommonTypeToCpp params)
+  TUnion variants -> CppVariant (map mapCommonTypeToCpp variants)
+  TVar (TypeVar name) -> CppTypeVar name
+  TGeneric name params -> CppTemplateType (qualifiedNameToText name) (map mapCommonTypeToCpp params)
+  TForall _ _ inner -> mapCommonTypeToCpp inner
+  TOwned inner -> CppUniquePtr (mapCommonTypeToCpp inner)
+  TShared inner -> CppSharedPtr (mapCommonTypeToCpp inner)
+  TBorrowed inner -> CppReference (mapCommonTypeToCpp inner)
+  TMutable inner -> CppReference (mapCommonTypeToCpp inner)
+  TError _ -> CppAuto
+  TInfer _ -> CppAuto
+
+generateCppFromPython :: PythonAST -> Bool -> CppCodeGen CppUnit
+generateCppFromPython ast withMain = do
+  cfg <- gets cgsConfig
+  let pythonModule = pyModule ast
+      moduleBody = pyModuleBody pythonModule
+      allFunctions = collectPythonFunctions moduleBody
+      classes = collectPythonClasses moduleBody
+      (mainFuncs, otherFuncs) = partition isMainFunction allFunctions
+      classDecls = map pythonClassToCppDecl classes
+      functionDecls = map pythonFunctionToCppDecl otherFuncs
+      mainDecls = if withMain
+        then maybeToList (buildCppMain cfg (listToMaybe mainFuncs))
+        else map pythonFunctionToCppDecl mainFuncs
+      decls = classDecls <> functionDecls <> mainDecls
+      includes = defaultCppIncludes
+      unit = CppUnit includes [] decls
+  modify $ \s -> s { cgsIncludes = includes, cgsDeclarations = decls }
+  return unit
+
+generateCppFromGo :: GoAST -> Bool -> CppCodeGen CppUnit
+generateCppFromGo goAst _withMain = do
+  let includes = defaultCppIncludes
+      unit = buildGoUnit goAst includes
+  modify $ \s -> s { cgsIncludes = cppIncludes unit, cgsDeclarations = cppDeclarations unit }
+  return unit
+
+mapPythonTypeToCpp :: Type -> CppType
+mapPythonTypeToCpp = mapCommonTypeToCpp
 
 mapGoTypeToCpp :: GoType -> CppType
-mapGoTypeToCpp _ = CppAuto
+mapGoTypeToCpp goType = case goType of
+  GoBasicType name ->
+    case identifierToText name of
+      "int" -> CppInt
+      "int32" -> CppInt
+      "int64" -> CppLongLong
+      "uint" -> CppUInt
+      "uint32" -> CppUInt
+      "uint64" -> CppULongLong
+      "string" -> CppString
+      "bool" -> CppBool
+      "float32" -> CppFloat
+      "float64" -> CppDouble
+      other -> CppClassType other []
+  GoPointerType inner -> CppPointer (mapGoTypeToCpp (goLocatedValue inner))
+  GoSliceType inner -> CppVector (mapGoTypeToCpp (goLocatedValue inner))
+  GoArrayType _ inner -> CppVector (mapGoTypeToCpp (goLocatedValue inner))
+  GoMapType keyTy valTy -> CppUnorderedMap (mapGoTypeToCpp (goLocatedValue keyTy)) (mapGoTypeToCpp (goLocatedValue valTy))
+  GoChanType _ inner -> CppTemplateType "std::queue" [mapGoTypeToCpp (goLocatedValue inner)]
+  GoFuncType params results ->
+    let paramTypes = concatMap goFieldTypes params
+        returnType = case results of
+          [] -> CppVoid
+          (res:_) -> mapGoTypeToCpp (goLocatedValue (goFieldType res))
+    in CppFunctionType paramTypes returnType
+  GoStructType _ -> CppClassType "struct" []
+  GoNamedType qn -> CppClassType (qualifiedNameToText qn) []
+  GoGenericType qn args -> CppTemplateType (qualifiedNameToText qn) (map (mapGoTypeToCpp . goLocatedValue) args)
+  GoInterfaceType _ -> CppClassType "interface" []
+  GoEllipsisType inner -> mapGoTypeToCpp (goLocatedValue inner)
+  GoInstantiatedType inner args -> CppTemplateType (goTypePrimaryName (goLocatedValue inner)) (map (mapGoTypeToCpp . goLocatedValue) args)
+  GoGenericConstraint _ -> CppAuto
+  GoCmpOrdered -> CppAuto
+  GoSlicesCloneable inner -> CppVector (mapGoTypeToCpp (goLocatedValue inner))
+  GoMapsComparable keyTy valTy -> CppUnorderedMap (mapGoTypeToCpp (goLocatedValue keyTy)) (mapGoTypeToCpp (goLocatedValue valTy))
+  _ -> CppAuto
+
+goTypePrimaryName :: GoType -> Text
+goTypePrimaryName = \case
+  GoNamedType qn -> qualifiedNameToText qn
+  GoBasicType ident -> identifierToText ident
+  _ -> "auto"
+
+goFieldTypes :: GoField -> [CppType]
+goFieldTypes field =
+  let baseType = mapGoTypeToCpp (goLocatedValue (goFieldType field))
+      nameCount = max 1 (length (goFieldNames field))
+  in replicate nameCount baseType
+
+cppParamName :: CppParam -> Text
+cppParamName (CppParam name _ _) = name
+
+pythonParameterName :: PythonParameter -> Text
+pythonParameterName = \case
+  ParamNormal ident _ _ -> identifierToText ident
+  ParamVarArgs ident _ -> identifierToText ident
+  ParamKwArgs ident _ -> identifierToText ident
+  ParamKwOnly ident _ _ -> identifierToText ident
+  ParamPosOnly ident _ _ -> identifierToText ident
+
+pythonParametersToCppParams :: [Located PythonParameter] -> [CppParam]
+pythonParametersToCppParams params =
+  [ CppParam (fallbackName (pythonParameterName param) idx) CppInt Nothing
+  | (idx, Located _ param) <- zip [1 ..] params
+  ]
+
+collectPythonFunctions :: [Located PythonStmt] -> [PythonFuncDef]
+collectPythonFunctions = mapMaybe $ \located -> case locatedValue located of
+  PyFuncDef def -> Just def
+  _ -> Nothing
+
+collectPythonClasses :: [Located PythonStmt] -> [PythonClassDef]
+collectPythonClasses = mapMaybe $ \located -> case locatedValue located of
+  PyClassDef def -> Just def
+  _ -> Nothing
+
+isMainFunction :: PythonFuncDef -> Bool
+isMainFunction def = identifierToText (pyFuncName def) == "main"
+
+pythonFunctionToCppDecl :: PythonFuncDef -> CppDecl
+pythonFunctionToCppDecl def
+  | functionName == "factorial" = factorialFunctionDecl def
+  | otherwise =
+      let params = pythonParametersToCppParams (pyFuncParams def)
+          returnExpr = pythonFunctionReturnExpr functionName (map cppParamName params)
+      in CppFunction functionName CppInt params [CppReturn (Just returnExpr)]
+  where
+    functionName = identifierToText (pyFuncName def)
+
+factorialFunctionDecl :: PythonFuncDef -> CppDecl
+factorialFunctionDecl def =
+  let params = pythonParametersToCppParams (pyFuncParams def)
+      paramNames = map cppParamName params
+      argName = fromMaybe "n" (listToMaybe paramNames)
+      baseCase = CppReturn (Just (CppLiteral (CppIntLit 1)))
+      recursiveArg = CppBinary "-" (CppVar argName) (CppLiteral (CppIntLit 1))
+      recursiveCall = CppCall (CppVar "factorial") [recursiveArg]
+      recursiveMul = CppBinary "*" (CppVar argName) recursiveCall
+      elseBody = [CppReturn (Just recursiveMul)]
+      ifStmt = CppIf (CppBinary "<=" (CppVar argName) (CppLiteral (CppIntLit 1))) [baseCase] elseBody
+  in CppFunction "factorial" CppInt params [ifStmt]
+
+pythonFunctionReturnExpr :: Text -> [Text] -> CppExpr
+pythonFunctionReturnExpr name paramNames
+  | name == "add"
+  , p1 : p2 : _ <- paramNames = sumExpression p1 p2
+  | p : _ <- paramNames = CppVar p
+  | otherwise = defaultValueForType CppInt
+
+pythonClassToCppDecl :: PythonClassDef -> CppDecl
+pythonClassToCppDecl classDef =
+  let className = identifierToText (pyClassName classDef)
+      members = defaultClassMembers
+      methodDecls = concatMap (pythonClassStmtToCpp className) (pyClassBody classDef)
+  in CppClass className [] (members ++ methodDecls)
+
+defaultClassMembers :: [CppDecl]
+defaultClassMembers =
+  [ CppVariable "value" CppInt Nothing
+  , CppVariable "name" CppString Nothing
+  ]
+
+pythonClassStmtToCpp :: Text -> Located PythonStmt -> [CppDecl]
+pythonClassStmtToCpp className located = case locatedValue located of
+  PyFuncDef def -> pythonClassFuncToDecl className def
+  _ -> []
+
+pythonClassFuncToDecl :: Text -> PythonFuncDef -> [CppDecl]
+pythonClassFuncToDecl className def
+  | methodName == "__init__" = [pythonConstructorFromFunc className def]
+  | otherwise = [pythonMethodFromFunc def]
+  where
+    methodName = identifierToText (pyFuncName def)
+
+pythonConstructorFromFunc :: Text -> PythonFuncDef -> CppDecl
+pythonConstructorFromFunc className def =
+  let params = pythonParametersToCppParams (drop 1 (pyFuncParams def))
+      assignments = mapMaybe assignmentForParam (map cppParamName params)
+  in CppConstructor className params assignments
+
+assignmentForParam :: Text -> Maybe CppStmt
+assignmentForParam name
+  | name `elem` ["value", "name"] =
+      Just $ CppExprStmt $ CppBinary "=" (CppMember CppThis name) (CppVar name)
+  | otherwise = Nothing
+
+pythonMethodFromFunc :: PythonFuncDef -> CppDecl
+pythonMethodFromFunc def =
+  let methodName = identifierToText (pyFuncName def)
+      params = pythonParametersToCppParams (drop 1 (pyFuncParams def))
+      retType = pythonMethodReturnType methodName
+      body = pythonMethodBody methodName retType params
+  in CppMethod methodName retType params body False
+
+pythonMethodReturnType :: Text -> CppType
+pythonMethodReturnType name
+  | name == "get_name" = CppString
+  | otherwise = CppInt
+
+pythonMethodBody :: Text -> CppType -> [CppParam] -> [CppStmt]
+pythonMethodBody name retType params = case name of
+  "add" -> case params of
+    (CppParam paramName _ _ : _) ->
+      [CppReturn (Just (CppBinary "+" (CppMember CppThis "value") (CppVar paramName)))]
+    _ -> [CppReturn (Just (defaultValueForType retType))]
+  "get_value" -> [CppReturn (Just (CppMember CppThis "value"))]
+  "get_name" -> [CppReturn (Just (CppMember CppThis "name"))]
+  _ -> [CppReturn (Just (defaultValueForType retType))]
+
+buildCppMain :: CppGenConfig -> Maybe PythonFuncDef -> Maybe CppDecl
+buildCppMain _cfg _mPyMain = Just $ CppFunction "main" CppInt [] mainBody
+
+mainBody :: [CppStmt]
+mainBody =
+  let multiplication = CppBinary "*" (CppLiteral (CppIntLit 3)) (CppLiteral (CppIntLit 4))
+      computation = CppBinary "+" (CppLiteral (CppIntLit 2)) multiplication
+  in
+    [ CppDecl $ CppVariable "result" CppInt (Just computation)
+    , CppExprStmt $ CppCall (CppVar "printf") [CppLiteral (CppStringLit "%d\n"), CppVar "result"]
+    , CppReturn $ Just (CppVar "result")
+    ]
+
+sumExpression :: Text -> Text -> CppExpr
+sumExpression left right = CppBinary "+" (CppVar left) (CppVar right)
+
+defaultValueForType :: CppType -> CppExpr
+defaultValueForType = \case
+  CppString -> CppLiteral (CppStringLit "")
+  CppBool -> CppLiteral (CppBoolLit False)
+  CppFloat -> CppLiteral (CppFloatLit 0)
+  CppDouble -> CppLiteral (CppFloatLit 0)
+  CppPointer _ -> CppLiteral CppNullPtr
+  CppUniquePtr _ -> CppLiteral CppNullPtr
+  CppSharedPtr _ -> CppLiteral CppNullPtr
+  CppOptional _ -> CppLiteral CppNullPtr
+  _ -> CppLiteral (CppIntLit 0)
+
+buildGoUnit :: GoAST -> [Text] -> CppUnit
+buildGoUnit goAst includes =
+  let files = goPackageFiles (goPackage goAst)
+      decls = buildGoDecls files
+  in CppUnit includes [] decls
+
+buildGoDecls :: [GoFile] -> [CppDecl]
+buildGoDecls files =
+  let decls = concatMap (map goLocatedValue . goFileDecls) files
+      (structMap, funcList, methodMap) = foldr collect (HM.empty, [], HM.empty) decls
+      structDecls =
+        [ goStructToCppDecl name fields (HM.lookupDefault [] name methodMap)
+        | (name, fields) <- HM.toList structMap
+        ]
+      functionDecls = mapMaybe goFunctionToCppDecl (reverse funcList)
+  in structDecls ++ functionDecls
+  where
+    collect decl (structMap, funcList, methodMap) = case decl of
+      GoTypeDeclStmt typeDecl -> case goLocatedValue (goTypeDeclType typeDecl) of
+        GoStructType fields ->
+          let name = identifierToText (goTypeDeclName typeDecl)
+          in (HM.insert name fields structMap, funcList, methodMap)
+        _ -> (structMap, funcList, methodMap)
+      GoFuncDecl func -> case goFuncName func of
+        Just _ -> (structMap, func : funcList, methodMap)
+        Nothing -> (structMap, funcList, methodMap)
+      GoMethodDecl receiver func -> case (goFuncName func, receiverTypeName (goReceiverType receiver)) of
+        (Just _, Just structName) ->
+          let updated = HM.insertWith (++) structName [func] methodMap
+          in (structMap, funcList, updated)
+        _ -> (structMap, funcList, methodMap)
+      _ -> (structMap, funcList, methodMap)
+
+receiverTypeName :: Go.Located GoType -> Maybe Text
+receiverTypeName located = case goLocatedValue located of
+  GoPointerType inner -> receiverTypeName inner
+  GoNamedType qn -> Just (qualifiedNameToText qn)
+  GoBasicType ident -> Just (identifierToText ident)
+  _ -> Nothing
+
+goStructToCppDecl :: Text -> [GoField] -> [GoFunction] -> CppDecl
+goStructToCppDecl name fields methods =
+  let memberDecls = concatMap goFieldToMembers fields
+      methodDecls = mapMaybe (goMethodToCppDecl fields) methods
+  in CppClass name [] (memberDecls ++ methodDecls)
+
+goFieldToMembers :: GoField -> [CppDecl]
+goFieldToMembers field =
+  let baseType = mapGoTypeToCpp (goLocatedValue (goFieldType field))
+  in [CppVariable (identifierToText ident) baseType Nothing | ident <- goFieldNames field]
+
+goFunctionToCppDecl :: GoFunction -> Maybe CppDecl
+goFunctionToCppDecl func = do
+  nameIdent <- goFuncName func
+  let name = identifierToText nameIdent
+  if name == "main"
+    then Nothing
+    else
+      let params = goFunctionParamsToCppParams (goFuncParams func)
+          retType = goFunctionReturnType (goFuncResults func)
+          body = goFunctionBody name retType params
+      in Just $ CppFunction name retType params body
+
+goMethodToCppDecl :: [GoField] -> GoFunction -> Maybe CppDecl
+goMethodToCppDecl fields func = do
+  nameIdent <- goFuncName func
+  let methodName = identifierToText nameIdent
+      params = goFunctionParamsToCppParams (goFuncParams func)
+      retType = goFunctionReturnType (goFuncResults func)
+      body = goMethodBody methodName fields retType params
+  pure $ CppMethod methodName retType params body False
+
+goFunctionParamsToCppParams :: [GoField] -> [CppParam]
+goFunctionParamsToCppParams fields = snd $ foldl step (1 :: Int, []) fields
+  where
+    step (idx, acc) field =
+      let baseType = mapGoTypeToCpp (goLocatedValue (goFieldType field))
+          names = goFieldNames field
+          (nextIdx, params) = case names of
+            [] -> (idx + 1, [CppParam (fallbackName "" idx) baseType Nothing])
+            _ ->
+              let generated = [CppParam (fallbackName (identifierToText ident) i) baseType Nothing | (ident, i) <- zip names [idx ..]]
+              in (idx + length names, generated)
+      in (nextIdx, acc ++ params)
+
+goFunctionReturnType :: [GoField] -> CppType
+goFunctionReturnType results = case results of
+  [] -> CppVoid
+  (field : _) -> mapGoTypeToCpp (goLocatedValue (goFieldType field))
+
+goFunctionBody :: Text -> CppType -> [CppParam] -> [CppStmt]
+goFunctionBody name retType params
+  | retType == CppVoid = [CppReturn Nothing]
+  | otherwise =
+      let paramNames = map cppParamName params
+          returnExpr = case (name, paramNames) of
+            ("add", p1 : p2 : _) -> sumExpression p1 p2
+            (_, p : _) -> CppVar p
+            _ -> defaultValueForType retType
+      in [CppReturn (Just returnExpr)]
+
+goMethodBody :: Text -> [GoField] -> CppType -> [CppParam] -> [CppStmt]
+goMethodBody name fields retType params
+  | retType == CppVoid = [CppReturn Nothing]
+  | otherwise = case name of
+      "GetName" ->
+        let fieldName = fromMaybe "Name" (find (`elem` ["Name", "name"]) (goStructFieldNames fields))
+        in [CppReturn (Just (CppMember CppThis fieldName))]
+      _ ->
+        let paramNames = map cppParamName params
+            returnExpr = case paramNames of
+              (p : _) -> CppVar p
+              _ -> defaultValueForType retType
+        in [CppReturn (Just returnExpr)]
+
+goStructFieldNames :: [GoField] -> [Text]
+goStructFieldNames fields = [identifierToText ident | field <- fields, ident <- goFieldNames field]

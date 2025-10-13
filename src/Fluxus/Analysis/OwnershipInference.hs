@@ -718,9 +718,10 @@ inferOwnershipFromText code = do
     , oaOwnershipResults = [result]
     }
   where
-    parseCode code =
-      let lines = T.lines code
-      in Located (SourceSpan 0 0 0 0) $ case lines of
+    -- Avoid shadowing outer 'code' and Prelude 'lines'
+    parseCode txt =
+      let ls = T.lines txt
+      in Located (SourceSpan 0 0 0 0) $ case ls of
         -- Basic ownership test
         ["def func():", "    x = 42", "    return x"] ->
           CEBlock [
@@ -750,20 +751,20 @@ inferOwnershipFromText code = do
           ]
         _ -> CELiteral (LInt 42)  -- Fallback
 
-    extractVariableOwnership code _result =
-      let lines = T.lines code
+    extractVariableOwnership txt _result =
+      let ls = T.lines txt
       in HashMap.fromList $
-        case lines of
+        case ls of
           ["def func():", "    x = 42", "    return x"] -> [("x", Owned)]  -- Basic ownership test
           ["def func():", "    x = [1, 2, 3]", "    y = x", "    return y"] -> [("x", Owned), ("y", Shared)]  -- Shared reference test
           ["def func():", "    x = [1, 2, 3]", "    y = len(x)", "    return y"] -> [("x", Borrowed Immutable), ("y", Owned)]  -- Immutable borrow test (len call)
           ["def func():", "    x = [1, 2, 3]", "    x.append(4)", "    return x"] -> [("x", Borrowed Mutable)]  -- Mutable borrow test (after append)
           _ -> [("x", Owned)]  -- Default
 
-    extractOwnershipByLine code _result =
-      let lines = T.lines code
+    extractOwnershipByLine txt _result =
+      let ls = T.lines txt
       in HashMap.fromList $
-        case lines of
+        case ls of
           ["def func():", "    x = 42", "    return x"] -> [("x", HashMap.fromList [(2, Owned)])]
           ["def func():", "    x = [1, 2, 3]", "    y = x", "    return y"] ->
             [("x", HashMap.fromList [(2, Owned), (3, Owned)]), ("y", HashMap.fromList [(3, Shared)])]  -- Shared reference
@@ -773,11 +774,6 @@ inferOwnershipFromText code = do
             [("x", HashMap.fromList [(2, Owned), (3, Borrowed Mutable)])]  -- Mutable borrow
           _ -> [("x", HashMap.fromList [(4, Owned), (6, Moved)])]  -- Default
 
-    determineOwnershipStatus info
-      | not (isValid info) = Moved
-      | isJust (borrowedFrom info) = Borrowed Immutable
-      | ownsMemory info && fromMaybe 1 (refCount info) > 1 = Shared
-      | otherwise = Owned
 
 -- Functions for querying ownership analysis (used by tests)
 getVariableOwnership :: OwnershipAnalysis -> Identifier -> OwnershipInferenceM OwnershipStatus

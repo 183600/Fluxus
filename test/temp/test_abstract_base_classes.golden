@@ -1,0 +1,62 @@
+Python Abstract Base Classes (ABC) Demonstration
+============================================================
+=== Testing Basic Abstract Base Classes ===
+Shape: This is a Circle
+Area: 78.54
+Perimeter: 31.42
+
+Shape: This is a Rectangle
+Area: 24.00
+Perimeter: 20.00
+
+=== Testing Abstract Base Classes with Properties ===
+Vehicle type: Car
+Brand: Toyota, Model: Camry
+Start engine: Toyota Camry car engine started
+Current speed: 50 km/h
+Accelerated to: 100 km/h
+Stop engine: Toyota Camry engine stopped
+Speed after stopping: 0 km/h
+--------------------------------------------------
+Vehicle type: Motorcycle
+Brand: Harley-Davidson, Model: Street 750
+Start engine: Harley-Davidson Street 750 motorcycle engine started
+Current speed: 50 km/h
+Accelerated to: 100 km/h
+Stop engine: Harley-Davidson Street 750 engine stopped
+Speed after stopping: 0 km/h
+--------------------------------------------------
+=== Testing Abstract Method Enforcement ===
+✓ Correctly prevented abstract class instantiation: Can't instantiate abstract class Shape without an implementation for abstract methods 'area', 'perimeter'
+✓ Correctly prevented incomplete implementation: Can't instantiate abstract class IncompleteShape without an implementation for abstract method 'perimeter'
+
+=== Testing Virtual Subclass Registration ===
+Is Circle2 a subclass of Drawable? True
+Is circle an instance of Drawable? True
+Drawing: Drawing circle with radius 5
+
+=== Testing Abstract Properties ===
+Read-only value: read-only-value
+Read-write value (initial): initial-value
+Read-write value (updated): new-value
+✓ Correctly prevented setting read-only property: property 'read_only_value' of 'ConcreteDemo' object has no setter
+
+=== Type Checking and Validation ===
+Circle is subclass of Shape: True
+Rectangle is subclass of Shape: True
+Circle instance is Shape: True
+Rectangle instance is Shape: True
+
+=== ABC Module Features ===
+Shape abstract methods: frozenset({'perimeter', 'area'})
+Vehicle abstract methods: frozenset({'vehicle_type', 'speed', 'start_engine'})
+Shape is ABC: True
+Circle is ABC: True
+
+=== ABC demonstration completed ===
+Key concepts covered:
+- Abstract methods (@abstractmethod)
+- Abstract properties (@property + @abstractmethod)
+- Abstract base class instantiation prevention
+- Virtual subclass registration
+- Type checking with abstract base classes

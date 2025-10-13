@@ -1,0 +1,128 @@
+=== Advanced Python Asyncio and Concurrency Patterns ===
+=== Testing Advanced Async Generators ===
+
+--- Fibonacci Async Generator ---
+Fibonacci: 0
+Fibonacci: 1
+Fibonacci: 1
+Fibonacci: 2
+Fibonacci: 3
+Fibonacci: 5
+Fibonacci: 8
+Fibonacci: 13
+Fibonacci: 21
+Fibonacci: 34
+
+--- Streaming Data Async Generator ---
+Sensor data: {'timestamp': 1760203626.4754546, 'value': 33, 'sensor_id': 'sensor_0', 'status': 'ok'}
+Sensor data: {'timestamp': 1760203626.675821, 'value': 18, 'sensor_id': 'sensor_1', 'status': 'ok'}
+Sensor data: {'timestamp': 1760203626.8762062, 'value': 18, 'sensor_id': 'sensor_2', 'status': 'ok'}
+Sensor data: {'timestamp': 1760203627.0766115, 'value': 85, 'sensor_id': 'sensor_0', 'status': 'ok'}
+Sensor data: {'timestamp': 1760203627.2770963, 'value': 54, 'sensor_id': 'sensor_1', 'status': 'ok'}
+Sensor data: {'timestamp': 1760203627.4774754, 'value': 100, 'sensor_id': 'sensor_2', 'status': 'ok'}
+Sensor data: {'timestamp': 1760203627.6779292, 'value': 26, 'sensor_id': 'sensor_0', 'status': 'ok'}
+Sensor data: {'timestamp': 1760203627.8782516, 'value': 90, 'sensor_id': 'sensor_1', 'status': 'ok'}
+Sensor data: {'timestamp': 1760203628.07862, 'value': 54, 'sensor_id': 'sensor_2', 'status': 'ok'}
+Sensor data: {'timestamp': 1760203628.2789817, 'value': 93, 'sensor_id': 'sensor_0', 'status': 'ok'}
+
+=== Testing Advanced Async Context Managers ===
+
+--- Async Database Connection ---
+Opening async database connection: postgresql://localhost:5432/mydb
+Query results: [{'id': 1, 'name': 'Alice', 'email': 'alice@example.com'}, {'id': 2, 'name': 'Bob', 'email': 'bob@example.com'}]
+Closing async database connection
+
+--- Async File Manager ---
+Opening async file: test.txt
+File line: Line 1: Hello, World!
+File line: Line 2: Async file reading
+File line: Line 3: With context managers
+Closing async file: test.txt
+
+--- Async Resource Pool ---
+Initialized resource pool with 3 resources
+Acquired resource: resource_0
+Acquired resource: resource_1
+Pool stats: {'total_resources': 3, 'available_resources': 1, 'in_use_resources': 2}
+Released resource: resource_0
+Released resource: resource_1
+Final pool stats: {'total_resources': 3, 'available_resources': 3, 'in_use_resources': 0}
+Resource pool cleaned up
+
+=== Testing Async Synchronization ===
+Reader 0 reading data: []
+Reader 1 reading data: []
+Reader 2 reading data: []
+Reader 3 reading data: []
+Reader 4 reading data: []
+Reader 0 finished reading
+Reader 1 finished reading
+Reader 2 finished reading
+Reader 3 finished reading
+Reader 4 finished reading
+Writer 0 writing data: data_0
+Writer 0 finished writing
+Writer 2 writing data: data_2
+Writer 2 finished writing
+Writer 4 writing data: data_4
+Writer 4 finished writing
+Final shared data: ['data_0', 'data_2', 'data_4']
+
+=== Testing Async Worker Pool ===
+Started worker pool with 3 workers
+Task 1 started (duration: 0.5s)
+Task 2 started (duration: 1.0s)
+Task 3 started (duration: 0.3s)
+Task 3 completed
+Worker 2 completed task: Task 3 result
+Task 4 started (duration: 0.8s)
+Task 1 completed
+Worker 0 completed task: Task 1 result
+Task 5 started (duration: 0.2s)
+Task 5 completed
+Worker 0 completed task: Task 5 result
+Task 2 completed
+Worker 1 completed task: Task 2 result
+Task 4 completed
+Worker 2 completed task: Task 4 result
+Worker pool stopped
+Worker pool results: ['Task 3 result', 'Task 1 result', 'Task 5 result', 'Task 2 result', 'Task 4 result']
+
+=== Testing Async Event Bus ===
+Subscribed to event type: user_created
+Subscribed to event type: email_sent
+Subscribed to event type: user_created
+User created handler received: {'user_id': 123, 'name': 'Alice'}
+Notification handler received: {'user_id': 123, 'name': 'Alice'}
+Email sent handler received: {'email_id': 456, 'recipient': 'alice@example.com'}
+User created handler received: {'user_id': 789, 'name': 'Bob'}
+Notification handler received: {'user_id': 789, 'name': 'Bob'}
+Event acknowledged by 2 handlers
+
+=== Testing Async Task Manager ===
+Task 1 started (duration: 0.5s)
+Task 2 started (duration: 1.0s)
+Task 1 completed
+Task 2 completed
+
+Task Status:
+Task Task-18: {'name': 'sample_task_1', 'created_at': 1760203632.0559268, 'status': 'completed', 'metadata': {}, 'completed_at': 1760203632.556827, 'duration': 0.5009002685546875}
+Task Task-19: {'name': 'sample_task_2', 'created_at': 1760203632.0559351, 'status': 'completed', 'metadata': {'priority': 'high'}, 'completed_at': 1760203633.0574589, 'duration': 1.001523733139038}
+Task Task-20: {'name': 'failing_task', 'created_at': 1760203632.0559402, 'status': 'failed', 'metadata': {}, 'error': 'Simulated task failure', 'completed_at': 1760203632.156241, 'duration': 0.10030078887939453}
+Running tasks: []
+
+=== Testing Advanced Async Networking ===
+URL: https://httpbin.org/delay/1
+Result: Error: name 'async_timeout' is not defined
+
+URL: https://httpbin.org/status/200
+Result: Error: name 'async_timeout' is not defined
+
+URL: https://httpbin.org/json
+Result: Error: name 'async_timeout' is not defined
+
+URL: https://httpbin.org/delay/2
+Result: Error: name 'async_timeout' is not defined
+
+
+=== All asyncio tests completed successfully! ===

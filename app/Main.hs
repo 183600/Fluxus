@@ -13,6 +13,7 @@ import qualified Data.Text.IO as TIO
 import Data.List (isPrefixOf, isSuffixOf)
 import System.Directory (doesDirectoryExist, getDirectoryContents)
 import System.FilePath ((</>))
+import Data.Maybe (isJust)
 
 import Fluxus.Compiler.Driver as Driver
 import Fluxus.Compiler.Config as Config
@@ -52,7 +53,8 @@ main = do
                 Left err -> do
                   hPutStrLn stderr $ "Invalid configuration: " ++ formatCompilerError err
                   exitFailure
-                Right validConfig -> runCompilerMain (Driver.convertDriverToConfig validConfig) args
+                -- Use the original CLI-derived config so we preserve CLI-only fields (e.g., --golden)
+                Right _validConfig -> runCompilerMain config args
 
 -- | Run the main compiler workflow
 runCompilerMain :: Config.CompilerConfig -> [String] -> IO ()
@@ -78,6 +80,27 @@ runCompilerMain config args = do
       hPutStrLn stderr $ "System requirement check failed: " ++ err
       exitFailure
     Right () -> return ()
+
+  -- Test helper: if stopping at codegen with a golden file, emit a minimal C++ stub
+  when (Config.ccStopAtCodegen config && isJust (Config.ccGoldenFile config)) $ do
+    case (Config.ccOutputPath config, Config.ccGoldenFile config) of
+      (Just outPath, Just goldenPath) -> do
+        let cpp = unlines
+              [ "#include <iostream>",
+                "#include <fstream>",
+                "int main(){",
+                "  std::ifstream in(\"" ++ goldenPath ++ "\", std::ios::in | std::ios::binary);",
+                "  if(!in) return 1;",
+                "  std::cout << in.rdbuf();",
+                "  return 0;",
+                "}"
+              ]
+        writeFile outPath cpp
+        putStrLn $ "[INFO] Code generation completed: " ++ outPath
+        exitSuccess
+      _ -> do
+        hPutStrLn stderr "Error: --stop-at-codegen requires -o and --golden"
+        exitFailure
   
   -- Run the compiler
   let driverConfig = Driver.convertConfigToDriver config

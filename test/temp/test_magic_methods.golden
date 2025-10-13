@@ -1,0 +1,53 @@
+=== __str__ and __repr__ ===
+str(p): Point(3, 4)
+repr(p): Point(x=3, y=4)
+
+=== Comparison Magic Methods ===
+alice == charlie: True
+alice != bob: True
+alice < bob: True
+bob > alice: True
+alice <= charlie: True
+
+=== Arithmetic Magic Methods ===
+v1 + v2 = Vector(4, 6)
+v2 - v1 = Vector(2, 2)
+v1 * 3 = Vector(3, 6)
+v2 / 2 = Vector(1.5, 2.0)
+
+=== Container Magic Methods ===
+len(my_list): 5
+my_list[2]: 3
+3 in my_list: True
+10 in my_list: False
+After setting my_list[1] = 20: 20
+
+=== __call__ Magic Method ===
+times_three(5) = 15
+
+=== Context Manager Magic Methods ===
+  Opening test.txt
+  Inside context
+  Closing test.txt
+
+=== Iterator Magic Methods ===
+Counter from 0 to 5:
+  0
+  1
+  2
+  3
+  4
+
+=== __hash__ Magic Method ===
+Using hashable point as dict key: Point 1
+
+=== __bool__ Magic Method ===
+bool(empty): False
+bool(not_empty): True
+
+=== __format__ Magic Method ===
+Default: 42
+Hex: 0x2a
+Binary: 0b101010
+
+=== All magic method tests completed ===

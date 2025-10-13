@@ -1,0 +1,32 @@
+Current datetime: 2025-10-12 01:27:31.397717
+Current date: 2025-10-12
+Current time: 01:27:31.397717
+Formatted datetime: 2025-10-12 01:27:31
+Parsed datetime: 2023-12-25 15:30:00
+
+Date arithmetic:
+Today: 2025-10-12
+Tomorrow: 2025-10-13
+Yesterday: 2025-10-11
+Next week: 2025-10-19
+
+Days between 2023-01-01 and 2023-12-31: 364
+Specific datetime: 2023-12-25 15:30:00
+Unix timestamp: 1760203651.4084969
+
+Sleeping for 0.5 seconds...
+Done sleeping!
+
+Date components:
+Year: 2025
+Month: 10
+Day: 12
+Hour: 1
+Minute: 27
+Second: 31
+Today is Sunday
+
+Time operations:
+Noon time: 12:00:00
+Time hour: 12
+Time minute: 0

@@ -17,6 +17,12 @@ extra-source-files:
   - CHANGELOG.md
   - README.md
 
+flags:
+  coverage:
+    description: Enable code coverage reporting
+    manual: true
+    default: false
+
 dependencies:
   - base >= 4.17 && < 5
 
@@ -68,6 +74,7 @@ library:
     - Fluxus.Runtime.Python
     - Fluxus.Runtime.Go
     - Fluxus.Compiler.Driver
+    - Fluxus.Compiler.SimpleCodeGen
     - Fluxus.Compiler.Config
     - Fluxus.Utils.Pretty
     - Fluxus.Utils.Graph
@@ -134,24 +141,43 @@ tests:
     main: Spec.hs
     source-dirs: test
     other-modules:
+      # Analysis Tests
       - Test.Fluxus.Analysis.EscapeAnalysis
       - Test.Fluxus.Analysis.OwnershipInference
       - Test.Fluxus.Analysis.ShapeAnalysis
       - Test.Fluxus.Analysis.SmartFallback
+      - Test.Fluxus.Analysis.TypeInference
+      # Parser Tests
+      - Test.Fluxus.Parser.Python
+      - Test.Fluxus.Parser.Go
+      - Test.Fluxus.Parser.GoSyntax
+      # Code Generation Tests
+      - Test.Fluxus.CodeGen.CPP
       - Test.Fluxus.CodeGen.Go
-      - Test.Fluxus.EndToEnd
-      - Test.Fluxus.Integration
+      # Optimization Tests
       - Test.Fluxus.Optimization
       - Test.Fluxus.Optimization.ConstantFolding
       - Test.Fluxus.Optimization.DeadCodeElimination
       - Test.Fluxus.Optimization.Inlining
-      - Test.Fluxus.Parser.Python
-      - Test.Fluxus.Parser.Go
-      - Test.Fluxus.Analysis.TypeInference
-      - Test.Fluxus.CodeGen.CPP
-      - Test.Fluxus.ConvertCommand
+      # Runtime Tests
       - Test.Fluxus.Runtime.Go
       - Test.Fluxus.Runtime.Python
+      # Integration & E2E Tests
+      - Test.Fluxus.EndToEnd
+      - Test.Fluxus.Integration
+      - Test.Fluxus.PythonGolden
+      # Compiler Tests (commented out - need API fixes)
+      # - Test.Fluxus.Compiler.Config
+      # - Test.Fluxus.Compiler.Driver
+      # Utility Tests
+      - Test.Fluxus.Utils.Pretty
+      - Test.Fluxus.Utils.Graph
+      # Debug Tests (commented out - need API fixes)
+      # - Test.Fluxus.Debug
+      # Performance Tests (commented out - optional, takes long)
+      # - Test.Fluxus.Performance
+      # Command Tests
+      - Test.Fluxus.ConvertCommand
     dependencies:
       - fluxus
       - hspec >= 2.10
@@ -166,10 +192,18 @@ tests:
       - time >= 1.12
       - unordered-containers >= 0.2.19
       - temporary >= 1.3
+      - prettyprinter >= 1.7
+      - prettyprinter-ansi-terminal >= 1.1
     ghc-options:
       - -threaded
       - -rtsopts
       - -with-rtsopts=-N
+    when:
+      - condition: flag(coverage)
+        ghc-options:
+          - -fhpc
+          - -hpcdir
+          - .hpc
 
 benchmarks:
   fluxus-bench:

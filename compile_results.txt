@@ -1,0 +1,20 @@
+快速测试部分Python文件...
+✓
+✓
+✓
+✓
+✓
+SKIP: test_classes.py (不存在)
+✓
+✓
+✓
+✓
+✓
+✗
+Compilation failed: Code generation error at test/python-tests/test_classes.cpp:1:1: C++ compilation failed (exit code 1): test/python-tests/test_classes.cpp:114:76: error: expected expression
+  114 |     std::cout << to_str("Student's average grade: ") << (std::vector<int>{&}(){ std::ostringstream os; os.setf(std::ios::fixed); os<<std::setprecision(2); os<<student1.get_average_grade(); return os.str(); }()) << std::endl;
+      |                                                                            ^
+1 error generated.
+
+
+结果: 成功=10, 失败=1, 超时=0

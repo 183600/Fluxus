@@ -1,0 +1,136 @@
+=== JSON Serialization ===
+JSON serialization:
+{
+  "name": "Alice",
+  "age": 30,
+  "city": "New York",
+  "hobbies": [
+    "reading",
+    "swimming",
+    "coding"
+  ],
+  "is_student": false,
+  "address": {
+    "street": "123 Main St",
+    "city": "New York",
+    "zip": "10001"
+  }
+}
+
+Parsed data:
+Name: Alice
+Age: 30
+Hobbies: ['reading', 'swimming', 'coding']
+
+=== JSON File Operations ===
+Data written to test_data.json
+
+Loaded data:
+Number of users: 3
+Theme: dark
+
+=== JSON Custom Objects ===
+
+Custom objects to JSON:
+[
+  {
+    "name": "Alice",
+    "age": 30,
+    "city": "New York"
+  },
+  {
+    "name": "Bob",
+    "age": 25,
+    "city": "Los Angeles"
+  },
+  {
+    "name": "Charlie",
+    "age": 35,
+    "city": "Chicago"
+  }
+]
+
+Parsed people:
+Alice, 30, New York
+Bob, 25, Los Angeles
+Charlie, 35, Chicago
+
+=== JSON Validation ===
+
+JSON validation:
+Valid JSON parsed: {'name': 'Alice', 'age': 30}
+Invalid JSON failed: Expecting property name enclosed in double quotes: line 1 column 29 (char 28)
+
+=== JSON Pretty Printing ===
+
+JSON pretty printing:
+Compact:
+{"students":[{"name":"Alice","grades":[90,85,95]},{"name":"Bob","grades":[80,75,85]},{"name":"Charlie","grades":[95,90,88]}],"class_info":{"subject":"Mathematics","teacher":"Mr. Smith","room":"101"}}
+
+Pretty:
+{
+  "students": [
+    {
+      "name": "Alice",
+      "grades": [
+        90,
+        85,
+        95
+      ]
+    },
+    {
+      "name": "Bob",
+      "grades": [
+        80,
+        75,
+        85
+      ]
+    },
+    {
+      "name": "Charlie",
+      "grades": [
+        95,
+        90,
+        88
+      ]
+    }
+  ],
+  "class_info": {
+    "subject": "Mathematics",
+    "teacher": "Mr. Smith",
+    "room": "101"
+  }
+}
+
+=== JSON Data Types ===
+
+JSON data types:
+{
+  "string": "Hello World",
+  "number": 42,
+  "float": 3.14,
+  "boolean": true,
+  "null": null,
+  "array": [
+    1,
+    2,
+    3,
+    "four",
+    true
+  ],
+  "nested": {
+    "level1": {
+      "level2": {
+        "deep": "value"
+      }
+    }
+  }
+}
+
+Parsed types:
+String: <class 'str'>
+Number: <class 'int'>
+Float: <class 'float'>
+Boolean: <class 'bool'>
+Null: <class 'NoneType'>
+Array: <class 'list'>

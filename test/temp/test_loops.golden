@@ -1,0 +1,51 @@
+For loop:
+Number: 1
+Number: 2
+Number: 3
+Number: 4
+Number: 5
+Number: 6
+Number: 7
+Number: 8
+Number: 9
+Number: 10
+
+While loop:
+Count: 1
+Count: 2
+Count: 3
+Count: 4
+Count: 5
+
+Range-based for loop:
+Range value: 0
+Range value: 1
+Range value: 2
+Range value: 3
+Range value: 4
+
+Loop with break and continue:
+Odd number: 1
+Odd number: 3
+Odd number: 5
+
+Nested loops:
+i=0, j=0
+i=0, j=1
+i=0, j=2
+i=1, j=0
+i=1, j=1
+i=1, j=2
+i=2, j=0
+i=2, j=1
+i=2, j=2
+
+For loop with enumerate:
+Index 0: apple
+Index 1: banana
+Index 2: cherry
+
+For loop with zip:
+Alice is 25 years old
+Bob is 30 years old
+Charlie is 35 years old

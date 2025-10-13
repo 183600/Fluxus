@@ -1,0 +1,62 @@
+=== Basic Patterns ===
+Text: Hello World 123 Python 456
+Digits found: ['123', '456']
+Words found: ['Hello', 'World', '123', 'Python', '456']
+Capital letters: ['H', 'W', 'P']
+
+=== Groups ===
+Text: John: 30 years old, Jane: 25 years old, Bob: 35 years old
+Name-Age pairs: [('John', '30'), ('Jane', '25'), ('Bob', '35')]
+Match: John is 30 years old
+Match: Jane is 25 years old
+Match: Bob is 35 years old
+
+=== Email Validation ===
+Email validation:
+user@example.com: Valid
+john.doe@company.co.uk: Valid
+invalid-email: Invalid
+another@domain: Invalid
+valid.email123@sub.domain.com: Valid
+@invalid.com: Invalid
+missing@dotcom: Invalid
+
+=== Phone Number Extraction ===
+Phone number extraction:
+Pattern '\d{3}-\d{3}-\d{4}': ['123-456-7890', '800-555-1234']
+Pattern '\(\d{3}\) \d{3}-\d{4}': ['(555) 123-4567']
+Pattern '\+\d{1,3}-\d{3}-\d{3}-\d{4}': ['+1-800-555-1234']
+
+=== Substitution ===
+Original: The quick brown fox jumps over the lazy dog.
+After substitution: The quick brown cat jumps over the lazy dog.
+
+Messy: 'This   has    multiple    spaces'
+Cleaned: 'This has multiple spaces'
+
+With punctuation: 'Hello, world! How are you?'
+Without punctuation: 'Hello world How are you'
+
+=== Splitting ===
+Text: apple,banana;cherry orange|grape
+Split fruits: ['apple', 'banana', 'cherry', 'orange', 'grape']
+
+Sentences: ['First sentence', ' Second sentence', ' Third sentence', '']
+
+=== Word Boundaries ===
+Text: Python is a pythonic language. PYTHON programming is fun!
+Exact 'Python' matches: ['Python']
+Case insensitive 'python' matches: ['Python', 'PYTHON']
+
+=== Lookahead and Lookbehind ===
+Text: apple pie, banana split, cherry tart, apple juice
+Words followed by 'pie': ['apple']
+Words preceded by 'apple': ['pie', 'juice']
+
+=== URL Extraction ===
+URL extraction:
+Found URLs: ['https://www.example.com', 'http://sub.domain.com/path', 'www.another-site.com']
+
+=== HTML Tag Extraction ===
+HTML tag extraction:
+Found tags: ['div class="container"', 'h1', '/h1', 'p', '/p', 'a href="https://example.com"', '/a', '/div']

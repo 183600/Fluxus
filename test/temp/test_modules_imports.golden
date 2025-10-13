@@ -1,0 +1,30 @@
+Math module tests:
+Pi: 3.141592653589793
+Square root of 16: 4.0
+Power of 2^3: 8.0
+Factorial of 5: 120
+
+Random module tests:
+Random number between 1-100: 73
+Random choice from list: cherry
+Random floats: [0.8464670204598589, 0.12523692080420568, 0.6309950607224991]
+
+Datetime module tests:
+Current date and time: 2025-10-12 01:27:38.134852
+Current date: 2025-10-12
+Current time: 01:27:38.134852
+Formatted date: 2025-10-12 01:27:38
+
+JSON module tests:
+Data as JSON: {"name": "Alice", "age": 30, "hobbies": ["reading", "swimming", "coding"], "active": true}
+Parsed name: Alice
+Parsed hobbies: ['reading', 'swimming', 'coding']
+
+Using specific imports:
+Square root of 25: 5.0
+Pi value: 3.141592653589793
+Random choice: red
+
+Module constant: I am a constant
+Module function: Function from test module
+Module class: Hello from Test!

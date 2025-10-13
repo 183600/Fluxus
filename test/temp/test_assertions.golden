@@ -1,0 +1,63 @@
+=== Basic Assert ===
+Assert x == 5 passed
+Assert x > 0 passed
+
+=== Assert with Message ===
+Age assertion passed
+
+=== Complex Expression Assert ===
+Length assertion passed
+Sum assertion passed
+
+=== Type Checking Assert ===
+Type assertion passed
+Number type assertion passed
+
+=== Assert in Functions ===
+divide(10, 2) = 5.0
+Caught expected assertion: Divisor cannot be zero
+
+=== Boolean Expression Assert ===
+Validation assertion passed
+Empty check assertion passed
+
+=== Multiple Assertions ===
+All person validations passed
+
+=== Assert with Membership ===
+Color membership assertion passed
+
+=== Assert with Range ===
+Temperature range assertion passed
+
+=== Assert with List Operations ===
+All positive assertion passed
+All even assertion passed
+
+=== Assert with any ===
+Any even assertion passed
+
+=== Assert with String Operations ===
+String start assertion passed
+String contains assertion passed
+
+=== Assert with Dictionary ===
+Dictionary key assertions passed
+Dictionary value assertion passed
+
+=== Assert with Custom Conditions ===
+Prime assertion for 7 passed
+
+=== Assert with Class Attributes ===
+Rectangle area: 50
+Class assertion tests passed
+
+=== Assert with Comparison Chains ===
+Comparison chain assertion passed
+All values in range assertion passed
+
+=== Testing Assertion Failure Handling ===
+Caught assertion error: This assertion should fail
+Result: Handled
+
+=== All assertion tests completed ===

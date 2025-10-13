@@ -160,6 +160,8 @@ def test_mutually_exclusive_groups():
     print("\n=== Testing Mutually Exclusive Groups ===")
     
     parser = argparse.ArgumentParser(description='Deployment tool')
+    # 支持全局 verbose 参数
+    parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose output')
     
     # 创建互斥组
     group = parser.add_mutually_exclusive_group(required=True)
@@ -202,7 +204,8 @@ def test_custom_actions():
         """自定义动作：存储名称-值对"""
         
         def __call__(self, parser, namespace, values, option_string=None):
-            if not hasattr(namespace, self.dest):
+            # 当目标属性存在但为 None 时，初始化为字典
+            if getattr(namespace, self.dest, None) is None:
                 setattr(namespace, self.dest, {})
             
             name, value = values.split('=')

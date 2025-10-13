@@ -1,0 +1,44 @@
+=== Factorial Tests ===
+Factorial(0) = 1
+Factorial(1) = 1
+Factorial(2) = 2
+Factorial(3) = 6
+Factorial(4) = 24
+Factorial(5) = 120
+
+=== Fibonacci Tests ===
+Fibonacci(0) = 0
+Fibonacci(1) = 1
+Fibonacci(2) = 1
+Fibonacci(3) = 2
+Fibonacci(4) = 3
+Fibonacci(5) = 5
+Fibonacci(6) = 8
+Fibonacci(7) = 13
+Fibonacci(8) = 21
+Fibonacci(9) = 34
+
+=== Power Tests ===
+2^3 = 8
+3^4 = 81
+2^-2 = 0.25
+
+=== Binary Search Tests ===
+Found 7 at index 3
+2 not found in array
+Found 13 at index 6
+8 not found in array
+
+=== GCD Tests ===
+GCD(48, 18) = 6
+GCD(56, 98) = 14
+GCD(17, 5) = 1
+
+=== Tower of Hanoi (3 disks) ===
+Move disk 1 from A to C
+Move disk 2 from A to B
+Move disk 1 from C to B
+Move disk 3 from A to C
+Move disk 1 from B to A
+Move disk 2 from B to C
+Move disk 1 from A to C
