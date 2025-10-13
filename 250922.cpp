@@ -86,8 +86,6 @@ int basic_types() {
     auto scientific = 1.23e-4;
     auto single_quote = 'Hello';
     auto double_quote = "World";
-    auto triple_quote = """多行;
-    字符串""";
     auto raw_string = r"原始字符串\n";
     auto f_string = to_str("插值字符串: ") + to_str(int_num) + to_str(", ") + to_str(float_num);
     auto bool_true = true;
@@ -230,6 +228,13 @@ std::string functions_demo() {
 
 
 int classes_demo() {
+    class Animal { public: Animal() = default; };
+    class Dog { public: Dog() = default; };
+    class Flyable { public: Flyable() = default; };
+    class Bird { public: Bird() = default; };
+    class Counter { public: Counter() = default; };
+    class MathUtils { public: MathUtils() = default; };
+    class Circle { public: Circle() = default; };
     auto animal = Animal("Generic Animal");
     auto dog = Dog("Rex", "German Shepherd");
     auto bird = Bird("Tweety", 10);
@@ -276,6 +281,7 @@ else { result = ((1.0*(10))/(0)); }
     {
         auto cleanup = "清理完成";
     }
+    class CustomError { public: CustomError() = default; };
     {
         /* raise */
     }
@@ -322,6 +328,7 @@ int file_operations() {
     {
         auto lines = f.readlines();
     }
+    class FileContext { public: FileContext() = default; };
     {
         std::cout << "在上下文中" << std::endl;
     }
@@ -411,6 +418,7 @@ std::string decorators_demo() {
         std::cout << to_str("Hello, ") << to_str(name) << to_str("!") << std::endl;
         return to_str("Greeted ") + to_str(name);
     };
+    class CountCalls { public: CountCalls() = default; };
     @CountCalls;
     std::function<int()> multiply = [&]() {
         return a * b;
@@ -430,6 +438,7 @@ std::string decorators_demo() {
 
 
 int context_managers() {
+    class Timer { public: Timer() = default; };
     {
         time.sleep(0.1);
     }
@@ -454,17 +463,17 @@ int concurrency_async() {
     thread.start();
     thread.join();
     async def say_after(delay, what_to_say):;
-        await asyncio.sleep(delay);
+        await asyncio::sleep(delay);
         std::cout << what_to_say << std::endl;
     }
     async def main():;
-        auto task1 = asyncio.create_task(say_after(0.1, "Hello"));
-        auto task2 = asyncio.create_task(say_after(0.1, "World"));
+        auto task1 = asyncio::create_task(say_after(0.1, "Hello"));
+        auto task2 = asyncio::create_task(say_after(0.1, "World"));
         await task1;
         await task2;
     }
     {
-        asyncio.run(main());
+        asyncio::run([&](){ return main(); });
     }
     if (__fluxus_exc) { auto e = 0;
         /* pass */
@@ -669,6 +678,7 @@ std::string type_annotations() {
         return 0;
     };
     auto T = TypeVar('T');
+    class Box { public: Box() = default; };
     auto result1 = add_numbers(5, 3);
     auto result2 = process_list(std::vector<std::string>{"apple", "banana", "cherry"});
     auto result3 = get_value("apple", {"apple": 5, "banana": 3});

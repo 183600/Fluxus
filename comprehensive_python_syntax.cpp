@@ -306,13 +306,11 @@ class MetaClassExample : public metaclass=MyMeta {
 
 
 std::string basic_function(int_ x, str = "default" y) {
-    /* docstring */
     return to_str(y) + to_str(": ") + to_str(x);
 }
 
 
 void function_with_args(std::initializer_list<int> args, std::initializer_list<int> *kwargs) {
-    /* docstring */
     std::cout << to_str("args: ") << to_str(args) << std::endl;
     std::cout << to_str("kwargs: ") << to_str(kwargs) << std::endl;
 }
@@ -322,7 +320,6 @@ auto function_with_args(Ts... xs){ return function_with_args(std::initializer_li
 
 
 void generator_function(int_ n) {
-    /* docstring */
     for (int i = 0; i < n; ++i) {
         /* yield */
     }
@@ -331,7 +328,6 @@ void generator_function(int_ n) {
 
 void demonstrate_exceptions() {
     bool __fluxus_exc=false;
-    /* docstring */
     {
         auto result = 0;
 if ((0) == 0) { __fluxus_exc = true; result = 0; }
@@ -354,7 +350,6 @@ else { result = ((1.0*(10))/(0)); }
 
 
 void use_context_manager() {
-    /* docstring */
     {
         std::cout << "Inside context" << std::endl;
     }
@@ -362,7 +357,6 @@ void use_context_manager() {
 
 
 std::function<int()> simple_decorator(std::function<int()> func) {
-    /* docstring */
     std::function<int()> wrapper = [&]() {
         std::cout << to_str("Calling ") << to_str(func) << std::endl;
         auto result = func(*args, **kwargs);
@@ -374,7 +368,6 @@ std::function<int()> simple_decorator(std::function<int()> func) {
 
 
 void decorated_function__impl() {
-    /* docstring */
     std::cout << "Decorated function executed" << std::endl;
 }
 
@@ -387,7 +380,6 @@ void decorated_function() {
 
 
 void worker_function(str name, float_ delay) {
-    /* docstring */
     std::cout << to_str("Worker ") << to_str(name) << to_str(" started") << std::endl;
     time.sleep(delay);
     std::cout << to_str("Worker ") << to_str(name) << to_str(" finished") << std::endl;
@@ -395,7 +387,6 @@ void worker_function(str name, float_ delay) {
 
 
 void demonstrate_threading() {
-    /* docstring */
     auto threads = std::vector<int>{};
     for (int i = 0; i < 3; ++i) {
         auto thread = threading.Thread(target=worker_function, args=(f"Thread-{i}", 0.1));
@@ -409,7 +400,6 @@ void demonstrate_threading() {
 
 
 void file_operations() {
-    /* docstring */
     {
         f.write("Hello, file!\n");
         f.write("Second line\n");
@@ -423,7 +413,6 @@ void file_operations() {
 
 
 void json_operations() {
-    /* docstring */
     auto data = {;
         "name": "John",;
         "age": 30,;
@@ -438,7 +427,6 @@ void json_operations() {
 
 
 void regex_operations() {
-    /* docstring */
     auto pattern = @std::vector<decltype(A-Za-z0-9.-)>{A-Za-z0-9.-}+\.std::vector<decltype(A-Z|a-z)>{A-Z|a-z}{2,}\b";
     auto text = "Contact us at support@example.com or sales@company.org";
     auto matches = re.findall(pattern, text);
@@ -447,7 +435,6 @@ void regex_operations() {
 
 
 void functional_programming() {
-    /* docstring */
     auto numbers = std::vector<decltype(1)>{1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
     auto squared = list(map(lambda x: x**2, numbers));
     std::cout << to_str("Squared numbers: ") << to_str(squared) << std::endl;
@@ -459,7 +446,6 @@ void functional_programming() {
 
 
 std::function<int()> demonstrate_scope() {
-    /* docstring */
     auto global_var = "I'm global";
     std::function<int()> outer_function = [&]() {
         auto outer_var = "I'm outer";
@@ -478,7 +464,6 @@ std::function<int()> demonstrate_scope() {
 
 
 void walrus_operator_example() {
-    /* docstring */
     auto numbers = std::vector<decltype(1)>{1, 2, 3, 4, 5};
     auto n = len(numbers);
     if (n > 3) {
@@ -491,7 +476,6 @@ void walrus_operator_example() {
 
 
 std::string pattern_matching_example(int value) {
-    /* docstring */
     match value:;
         case 1:;
             return "One";
@@ -516,7 +500,6 @@ std::string pattern_matching_example(int value) {
 
 
 int main() {
-    /* docstring */
     std::cout << "=== Comprehensive Python Syntax Demo ===" << std::endl;
     std::cout << to_str("Basic variables: ") << to_str(integer_var) << to_str(", ") << to_str(float_var) << to_str(", ") << to_str(string_var) << std::endl;
     std::cout << to_str("Collections: ") << to_str(list_var) << to_str(", ") << to_str(dict_var) << std::endl;
@@ -562,7 +545,7 @@ int main() {
             std::cout << to_str("Async generator item: ") << to_str(item) << std::endl;
         }
     }
-    asyncio.run(run_async());
+    asyncio::run([&](){ return run_async(); });
     std::cout << "=== Demo completed ===" << std::endl;
     return 0;
 }

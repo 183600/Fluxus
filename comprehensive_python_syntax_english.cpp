@@ -340,7 +340,6 @@ class FunctionalUtils {
     public:
         FunctionalUtils() = default;
         std::function<int()> compose(std::initializer_list<int> functions) {
-    /* docstring */
     std::function<int()> composed = [&]() {
         auto result = x;
         for (auto func : reversed(functions)) {
@@ -353,7 +352,6 @@ class FunctionalUtils {
 
 
         std::function<int()> curry(std::function<int()> func) {
-    /* docstring */
     @functools.wraps(func);
     std::function<int()> curried = [&]() {
         if (len(args) + len(kwargs) >= func.__code__.co_argcount) {
@@ -366,7 +364,6 @@ class FunctionalUtils {
 
 
         std::function<int()> memoize(std::function<int()> func) {
-    /* docstring */
     auto cache = {};
     @functools.wraps(func);
     std::function<int()> memoized = [&]() {
@@ -598,7 +595,6 @@ class CircleShape {
 
 
 std::function<int()> timer_decorator(Callable func) {
-    /* docstring */
     @functools.wraps(func);
     std::function<int()> wrapper = [&]() {
         auto start_time = time.time();
@@ -612,7 +608,6 @@ std::function<int()> timer_decorator(Callable func) {
 
 
 std::function<int()> cache_decorator(Callable func) {
-    /* docstring */
     auto cache = {};
     @functools.wraps(func);
     std::function<int()> wrapper = [&]() {
@@ -627,7 +622,6 @@ std::function<int()> cache_decorator(Callable func) {
 
 
 void fibonacci_generator(int_ n) {
-    /* docstring */
     auto a, b = 0, 1;
     for (int _ = 0; _ < n; ++_) {
         /* yield */
@@ -637,7 +631,6 @@ void fibonacci_generator(int_ n) {
 
 
 int advanced_string_processing() {
-    /* docstring */
     auto text = "The quick brown fox jumps over the lazy dog";
     auto pattern = r"\b\w{5}\b";
     auto matches = re.findall(pattern, text);
@@ -655,7 +648,6 @@ int advanced_string_processing() {
 
 int divide_with_exception_handling(float_ a, float_ b) {
     bool __fluxus_exc=false;
-    /* docstring */
     {
         auto result = 0;
 if ((b) == 0) { __fluxus_exc = true; result = 0; }
@@ -681,7 +673,6 @@ else { result = ((1.0*(a))/(b)); }
 
 
 int comprehensions_demo() {
-    /* docstring */
     auto squares = 0;
     auto square_dict = std::unordered_map<std::string, int>{{"x", 0}};
     auto unique_squares = 0;
@@ -702,7 +693,6 @@ int draw_shape(Drawable shape) {
 
 
 std::string match_demo(Any value) {
-    /* docstring */
     match value:;
         case to_int((n) if n > 0:);
             return to_str("Positive integer: ") + to_str(n);
@@ -727,7 +717,6 @@ std::string match_demo(Any value) {
 
 
 int walrus_demo() {
-    /* docstring */
     auto n = 10;
     if (n > 5) {
         std::cout << to_str(n) << to_str(" is greater than 5") << std::endl;
@@ -745,7 +734,6 @@ int walrus_demo() {
 
 
 int thread_demo() {
-    /* docstring */
     std::function<int()> worker = [&]() {
         for (int i = 0; i < 3; ++i) {
             time.sleep(0.1);
@@ -767,7 +755,6 @@ int thread_demo() {
 
 
 std::string memory_management_demo() {
-    /* docstring */
     auto objects = 0;
     del objects;
     auto collected = gc.collect();
@@ -776,7 +763,6 @@ std::string memory_management_demo() {
 
 
 int main() {
-    /* docstring */
     std::cout << "=== Comprehensive Python Syntax Demo ===\n" << std::endl;
     std::cout << "1. Basic data types and enums:" << std::endl;
     auto color = Color.RED;
@@ -825,7 +811,7 @@ int main() {
     std::cout << to_str("Pattern matching: ") << to_str(match_demo('hello')) << std::endl;
     auto thread_results = thread_demo();
     std::cout << to_str("Thread results: ") << to_str(thread_results) << std::endl;
-    auto async_results = asyncio.run(async_demo());
+    auto async_results = asyncio::run(async_demo());
     std::cout << to_str("Async results: ") << to_str(async_results) << std::endl;
     auto walrus_result = walrus_demo();
     std::cout << to_str("Walrus result: ") << to_str(walrus_result) << std::endl;

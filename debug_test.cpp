@@ -81,11 +81,6 @@ template<typename K, typename V> static inline auto py_items(const std::unordere
 int main() {
     {
     }
-    auto i = 0;
-    while (i < 1000000) {
-    }
-    std::cout << to_str("Processed ") << to_str(result) << to_str(" elements") << std::endl;
-    /* docstring */
     return 0;
 }
 

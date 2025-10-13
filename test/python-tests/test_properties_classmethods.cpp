@@ -519,7 +519,10 @@ void test_property_edge_cases() {
 void test_inheritance_with_properties() {
     /* docstring */
     std::cout << "\n=== Testing Inheritance with Properties ===" << std::endl;
-    auto shapes = std::vector<decltype(Square(4))>{Square(4), Triangle(6, 3)};
+    class ShapeWithArea { public: ShapeWithArea() = default; };
+    class Square { public: Square() = default; };
+    class Triangle { public: Triangle() = default; };
+    auto shapes = std::vector<std::string>{to_str(Square(4)), to_str(Triangle(6, 3))};
     for (auto shape : shapes) {
         std::cout << to_str(shape.name) << to_str(" area: ") << to_str(shape.area) << std::endl;
     }

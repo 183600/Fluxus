@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Real fluxus launcher: prefer project binary via Stack, then user-installed, then local backup
+# Real fluxus launcher: prefer local Cabal exe, then Stack, then user-installed, then PATH, then backup
 
 # Avoid infinite recursion if this script is found via PATH lookup
 SELF=$(readlink -f "$0" || printf '%s' "$0")
+SCRIPT_DIR=$(dirname "$SELF")
+REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
+# Prefer cabal-built local executable
+CABAL_EXE=$(ls -t "$REPO_ROOT"/dist-newstyle/build/*/*/fluxus-*/x/fluxus/build/fluxus/fluxus 2>/dev/null | head -n1 || true)
+if [[ -n "${CABAL_EXE:-}" && -x "$CABAL_EXE" ]]; then
+  exec "$CABAL_EXE" "$@"
+fi
+
+# Prefer project binary via Stack
 if command -v stack >/dev/null 2>&1; then
   exec stack exec fluxus -- "$@"
 fi
@@ -21,10 +30,9 @@ if CMD=$(command -v fluxus 2>/dev/null) && [[ -n "$CMD" ]] && [[ "$CMD" != "$SEL
 fi
 
 # Last resort: use bundled backup binary if present
-SCRIPT_DIR=$(dirname "$SELF")
 if [[ -x "$SCRIPT_DIR/fluxus.bak" ]]; then
   exec "$SCRIPT_DIR/fluxus.bak" "$@"
 fi
 
-echo "fluxus launcher error: no real fluxus binary found (tried stack, ~/.local/bin, PATH, and fluxus.bak)" >&2
+echo "fluxus launcher error: no real fluxus binary found (tried Cabal dist-newstyle, stack, ~/.local/bin, PATH, and fluxus.bak)" >&2
 exit 1

@@ -108,13 +108,11 @@ class Dog : public Animal {
 
 
 int add(int a, int b) {
-    /* docstring */
     return a + b;
 }
 
 
 int multiply(int a, int b) {
-    /* docstring */
     return a * b;
 }
 

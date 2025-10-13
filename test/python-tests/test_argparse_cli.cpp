@@ -255,6 +255,7 @@ void test_custom_actions() {
     bool __fluxus_exc=false;
     /* docstring */
     std::cout << "\n=== Testing Custom Actions ===" << std::endl;
+    class StoreNameValue { public: StoreNameValue() = default; };
     auto parser = argparse.ArgumentParser(description='Custom actions demo');
     parser.add_argument('--define', '-D', action(StoreNameValue, dest='definitions',);
                     auto help = 'Define a name-value pair (format: name=value)');
@@ -370,6 +371,7 @@ void test_help_generation() {
 void demonstrate_real_world_cli() {
     /* docstring */
     std::cout << "\n=== Real-World CLI Example ===" << std::endl;
+    class FileProcessor { public: FileProcessor() = default; };
 }
 
 

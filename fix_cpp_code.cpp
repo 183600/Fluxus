@@ -79,7 +79,6 @@ template<typename K, typename V> static inline auto py_items(const std::unordere
 
 
 std::string fix_cpp_code(std::string cpp_file_path) {
-    /* docstring */
     if (not os.path.exists(cpp_file_path)) {
         std::cout << to_str("错误：文件 ") << to_str(cpp_file_path) << to_str(" 不存在") << std::endl;
         return false;
@@ -106,7 +105,7 @@ std::string fix_cpp_code(std::string cpp_file_path) {
     auto fixed_content = re.sub(pattern, replace_expr_comments, content);
     if ('#include <iostream>' not in fixed_content) {
         auto fixed_content = fixed_content.replace('#include <string>', '#include <string>\n#include <iostream>');
-        std::cout << "添加缺失的 #include <iostream>" << std::endl;
+        std::cout << "添加缺失的 << std::endl;
     }
     std::function<int()> remove_invalid_temp_declarations = [&]() {
         auto lines = content.split('\n');
@@ -175,7 +174,6 @@ std::string fix_cpp_code(std::string cpp_file_path) {
 
 
 bool compile_and_test(std::string cpp_file_path) {
-    /* docstring */
     auto exe_path = cpp_file_path.replace('.cpp', '_compiled');
     auto compile_cmd = to_str("g++ -o ") + to_str(exe_path) + to_str(" ") + to_str(cpp_file_path);
     std::cout << to_str("\\n=== 编译C++代码 ===") << std::endl;
@@ -199,7 +197,6 @@ bool compile_and_test(std::string cpp_file_path) {
 
 
 int main() {
-    /* docstring */
     if (len(sys::argv) != 2) {
         std::cout << "用法: python3 fix_cpp_code.py <cpp文件路径>" << std::endl;
         /* return (1; */

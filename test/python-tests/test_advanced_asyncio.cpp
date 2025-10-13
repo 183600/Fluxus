@@ -110,9 +110,9 @@ class AsyncResourcePool {
     public:
         AsyncResourcePool(int max_resources: int = 5) {
             this->max_resources = max_resources;
-            this->available_resources = asyncio.Queue(maxsize=max_resources);
+            this->available_resources = asyncio::Queue(maxsize=max_resources);
             this->all_resources = std::vector<int>{};
-            this->lock = asyncio.Lock();
+            this->lock = asyncio::Lock();
         }
         void placeholder();
     public:
@@ -127,8 +127,8 @@ class AsyncReadWriteLock {
     public:
         AsyncReadWriteLock() {
             this->_readers = 0;
-            this->_readers_lock = asyncio.Lock();
-            this->_resource_lock = asyncio.Lock();
+            this->_readers_lock = asyncio::Lock();
+            this->_resource_lock = asyncio::Lock();
         }
         void placeholder();
     public:
@@ -143,7 +143,7 @@ class AsyncWorkerPool {
         AsyncWorkerPool(int num_workers: int = 4) {
             this->num_workers = num_workers;
             this->workers = std::vector<int>{};
-            this->task_queue = asyncio.Queue();
+            this->task_queue = asyncio::Queue();
             this->results = std::vector<int>{};
             this->shutdown = false;
         }
@@ -166,7 +166,7 @@ class AsyncEventBus {
     public:
         AsyncEventBus() {
             this->subscribers = {};
-            this->lock = asyncio.Lock();
+            this->lock = asyncio::Lock();
         }
         void placeholder();
     public:
@@ -180,7 +180,7 @@ class AsyncTaskManager {
         AsyncTaskManager() {
             this->tasks = {};
             this->task_metadata = {};
-            this->lock = asyncio.Lock();
+            this->lock = asyncio::Lock();
         }
         void _task_done_callback(asyncio.Task task) {
     /* docstring */
@@ -244,7 +244,7 @@ int main() {
     Advanced Python Asyncio and Concurrency Patterns;
     Including async generators, context managers, queues, locks, and advanced patterns;
     /* docstring */
-    asyncio.run(main());
+    asyncio::run([&](){ return main(); });
     return 0;
 }
 

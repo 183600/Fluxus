@@ -164,6 +164,7 @@ void test_polymorphism() {
 
 
 void test_encapsulation() {
+    class BankAccount { public: BankAccount() = default; };
     auto account = BankAccount(100);
     assert account.get_balance()(= 100);
     assert account.deposit(50)(= true);

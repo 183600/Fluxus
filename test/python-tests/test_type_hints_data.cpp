@@ -299,7 +299,7 @@ class DataProcessor {
         0;
     }
     if (this->config.get("uppercase_strings", false)) {
-        processors.push_back(lambda x: std::vector<decltype(to_str(item).upper() if true)>{to_str(item).upper() if true};
+        processors.push_back(lambda x: std::vector<std::string>{to_str(to_str(item).upper() if true)};
     }
     auto result = data;
     for (auto processor : processors) {
@@ -425,6 +425,7 @@ void test_enums() {
 
 int test_protocols() {
     std::cout << "\n=== Protocols Test ===" << std::endl;
+    class Circle { public: Circle() = default; };
     std::function<int()> process_shape = [&]() {
         return shape.area();
     };
@@ -454,7 +455,7 @@ void test_typeddict() {
 
 void test_abstract_classes() {
     std::cout << "\n=== Abstract Classes Test ===" << std::endl;
-    auto animals: List[Animal] = std::vector<decltype(Dog())>{Dog(), Cat()};
+    auto animals: List[Animal] = std::vector<std::string>{to_str(Dog()), to_str(Cat())};
     for (auto animal : animals) {
         std::cout << to_str("Sound: ") << to_str(animal.make_sound()) << std::endl;
         std::cout << to_str("Movement: ") << to_str(animal.move()) << std::endl;

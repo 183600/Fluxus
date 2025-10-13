@@ -132,6 +132,7 @@ std::string fetch_data_from_api(int url, int timeout) {
 int demonstrate_unittest_basics() {
     /* docstring */
     std::cout << "=== Demonstrating unittest basics ===" << std::endl;
+    class TestBasicMath { public: TestBasicMath() = default; };
     auto suite = unittest.TestLoader().loadTestsFromTestCase(TestBasicMath);
     auto runner = unittest.TextTestRunner(verbosity=2);
     auto result = runner.run(suite);
@@ -142,6 +143,7 @@ int demonstrate_unittest_basics() {
 int demonstrate_mocking() {
     /* docstring */
     std::cout << "\n=== Demonstrating mocking techniques ===" << std::endl;
+    class TestWithMocking { public: TestWithMocking() = default; };
     auto suite = unittest.TestLoader().loadTestsFromTestCase(TestWithMocking);
     auto runner = unittest.TextTestRunner(verbosity=2);
     auto result = runner.run(suite);
@@ -152,24 +154,29 @@ int demonstrate_mocking() {
 void demonstrate_parameterized_testing() {
     /* docstring */
     std::cout << "\n=== Demonstrating parameterized testing ===" << std::endl;
+    class TestParameterized { public: TestParameterized() = default; };
 }
 
 
 void demonstrate_fixtures() {
     /* docstring */
     std::cout << "\n=== Demonstrating test fixtures ===" << std::endl;
+    class TestWithFixtures { public: TestWithFixtures() = default; };
 }
 
 
 void demonstrate_performance_testing() {
     /* docstring */
     std::cout << "\n=== Demonstrating performance testing ===" << std::endl;
+    class TestPerformance { public: TestPerformance() = default; };
 }
 
 
 void demonstrate_test_organization() {
     /* docstring */
     std::cout << "\n=== Demonstrating test organization ===" << std::endl;
+    class TestMathOperations { public: TestMathOperations() = default; };
+    class TestStringOperations { public: TestStringOperations() = default; };
     auto test_classes = std::vector<decltype(TestMathOperations)>{TestMathOperations, TestStringOperations};
     for (auto test_class : test_classes) {
         std::cout << to_str("\\nRunning ") << to_str(test_class) << to_str(":") << std::endl;

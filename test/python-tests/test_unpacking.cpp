@@ -97,7 +97,7 @@ int main() {
     auto a, b, c = "abc";
     std::cout << to_str("a=") << to_str(a) << to_str(", b=") << to_str(b) << to_str(", c=") << to_str(c) << std::endl;
     std::cout << "\n=== Nested Unpacking ===" << std::endl;
-    auto (a, b), (c, d) = std::vector<decltype((1, 2))>{(1, 2), (3, 4)};
+    auto (a, b), (c, d) = std::vector<std::string>{to_str((1, 2)), to_str((3, 4))};
     std::cout << to_str("a=") << to_str(a) << to_str(", b=") << to_str(b) << to_str(", c=") << to_str(c) << to_str(", d=") << to_str(d) << std::endl;
     auto nested_list = std::vector{std::vector<decltype(1)>{1, 2}, std::vector<decltype(3)>{3, {4, 5}}};
     auto [x, y], [z, [w, v]] = nested_list;
@@ -133,7 +133,7 @@ int main() {
     auto combined_dict = {**dict1, **dict2};
     std::cout << to_str("Combined dict: ") << to_str(combined_dict) << std::endl;
     std::cout << "\n=== Unpacking in Comprehensions ===" << std::endl;
-    auto pairs = std::vector<decltype((1, 2))>{(1, 2), (3, 4), (5, 6)};
+    auto pairs = std::vector<std::string>{to_str((1, 2)), to_str((3, 4)), to_str((5, 6))};
     auto sums = 0;
     std::cout << to_str("Sums: ") << to_str(sums) << std::endl;
     std::cout << "\n=== Unpacking with enumerate ===" << std::endl;

@@ -218,7 +218,7 @@ parsePythonModule content =
 -- Extract and render a best-effort main() from top-level statements
 renderTopLevelMain :: Text -> [Text]
 renderTopLevelMain content =
-  let lines' = map toLine $ T.lines content
+  let lines' = stripTripleQuotedSegments $ map toLine $ T.lines content
       stmts = collectTopLevelStatements lines'
   in if null stmts
        then []
@@ -530,7 +530,9 @@ formatParams isMethod fname params bodyLines =
 
 buildBody :: Bool -> PyFunction -> (Text, [Text])
 buildBody isMethod func =
-  let rawLines = suppressNestedClassBlocks $ map (prepareLine isMethod) (pfBody func)
+  let rawLines0 = suppressNestedClassBlocks $ map (prepareLine isMethod) (pfBody func)
+      rawLines1 = stripTripleQuotedSegments rawLines0
+      rawLines = mergeMultiLineBraces rawLines1
       nestedNames = collectNestedDefNames rawLines
       returnsNested = any (returnsOneOf nestedNames) rawLines
       hasReturn = any (\l -> "return " `T.isPrefixOf` plText l) rawLines
@@ -655,6 +657,23 @@ data StatementClass
   | ElseBlock
   | Simple Text
 
+-- Remove triple-quoted string blocks (used as multiline comments)
+stripTripleQuotedSegments :: [PyLine] -> [PyLine]
+stripTripleQuotedSegments = go False
+  where
+    hasTriple t = ("\"\"\"" `T.isInfixOf` t) || ("'''" `T.isInfixOf` t)
+    go _ [] = []
+    go in3q (l:ls)
+      | not in3q && hasTriple (plText l) =
+          let t = plText l
+              -- If starts and ends on same line, drop the whole line for safety
+              count q = T.count q t
+              singleLine = (count "\"\"\"" >= 2) || (count "'''" >= 2)
+          in if singleLine then go False ls else go True ls
+      | in3q && hasTriple (plText l) = go False ls
+      | in3q = go True ls
+      | otherwise = l : go False ls
+
 data TranslationState = TranslationState !Int ![Text] ![Text] ![Int]  -- level, acc, closers, try-stack (indent levels)
 
 translateStatements :: [PyLine] -> [Text]
@@ -669,6 +688,17 @@ translateStatements stmts = finalize $ foldl step (TranslationState 0 [] [] []) 
       | let t1 = trimLine txt, "import " `T.isPrefixOf` t1 = TranslationState current acc closers tryStack
       | let t2 = trimLine txt, "from " `T.isPrefixOf` t2 = TranslationState current acc closers tryStack
       | otherwise =
+-- Merge stray '{' or '}' tokens created by dict/list rendering on separate lines
+mergeMultiLineBraces :: [PyLine] -> [PyLine]
+mergeMultiLineBraces [] = []
+mergeMultiLineBraces (a:b:rest)
+  | T.strip (plText a) == "return {" && T.strip (plText b) == ";" =
+      PyLine (plIndent a) "return {};" : mergeMultiLineBraces rest
+  | T.strip (plText a) == "{" && T.strip (plText b) == "}" =
+      PyLine (plIndent a) "{}" : mergeMultiLineBraces rest
+  | otherwise = a : mergeMultiLineBraces (b:rest)
+mergeMultiLineBraces (x:xs) = x : mergeMultiLineBraces xs
+
           let target = indent `div` 4
               (closedAcc, closers') = closeLevels current target acc closers
               tryStack' = filter (<= target) tryStack
@@ -708,6 +738,17 @@ closeLevels current target acc closers
       (c:cs) -> closeLevels (current - 1) target (acc <> [indentLine (current - 1) c]) cs
       [] -> closeLevels (current - 1) target (acc <> [indentLine (current - 1) "}"]) []
 
+-- Merge stray '{' or '}' tokens created by dict/list rendering on separate lines
+mergeMultiLineBraces :: [PyLine] -> [PyLine]
+mergeMultiLineBraces [] = []
+mergeMultiLineBraces (a:b:rest)
+  | T.strip (plText a) == "return {" && T.strip (plText b) == ";" =
+      PyLine (plIndent a) "return {};" : mergeMultiLineBraces rest
+  | T.strip (plText a) == "{" && T.strip (plText b) == "}" =
+      PyLine (plIndent a) "{}" : mergeMultiLineBraces rest
+  | otherwise = a : mergeMultiLineBraces (b:rest)
+mergeMultiLineBraces (x:xs) = x : mergeMultiLineBraces xs
+
 classifyLine :: Text -> StatementClass
 classifyLine txt
   | "if " `T.isPrefixOf` txt && T.isSuffixOf ":" txt =
@@ -732,7 +773,11 @@ classifyLine txt
   | "def " `T.isPrefixOf` txt && T.isSuffixOf ":" txt =
       let after = T.drop 4 txt
           name = T.takeWhile (/= '(') after
-      in BlockStartRaw ("std::function<int()> " <> name <> " = [&]() {") "};"
+          paramsText = T.takeWhile (/= ')') $ T.drop 1 $ T.dropWhile (/= '(') after
+          rawParams = map trimLine $ T.splitOn "," paramsText
+          cppParams = T.intercalate ", " ["auto " <> sanitizeCppKeyword p | p <- rawParams, not (T.null p), p /= "self"]
+          sig = if T.null cppParams then "auto " <> name <> " = [&]() {" else "auto " <> name <> " = [&](" <> cppParams <> ") {"
+      in BlockStartRaw sig "};"
   | otherwise = Simple txt
 
 stripColon :: Text -> Text
@@ -766,8 +811,8 @@ translateSimple inTry txt
       in if T.all isSpace inner
            then "std::cout << std::endl;"
            else
-          -- Split on commas but only at top level (not inside brackets or quotes)
-             let parts = smartSplitPrintArgs inner
+             let cleaned = T.unlines $ map (T.takeWhile (/= '#')) $ T.lines inner
+                 parts = smartSplitPrintArgs cleaned
                  convertedParts = map (convertPrintArgWithContext True) parts
                  joined = T.intercalate " << \" \" << " convertedParts
              in "std::cout << " <> joined <> " << std::endl;"
@@ -827,7 +872,10 @@ translateSimple inTry txt
                             attr = T.drop 1 rest
                         in if attr == "read_only_value" then (if inTry then "__fluxus_exc = true;" else "/* read-only property set ignored */") else obj <> "." <> attr <> "(" <> expr <> ");"
                    else "auto " <> var <> " = " <> expr <> ";"
-      _ -> convertExpression False (trimLine txt) <> ";"
+      _ -> let t = trimLine txt
+            in if T.all (\c -> c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) t
+                 then "/* expr */ (void)" <> t <> ";"
+                 else convertExpression False t <> ";"
 
 -- Ensure floating division for a / b
 ensureFloatDivision :: Text -> Text -> Text

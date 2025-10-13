@@ -479,6 +479,7 @@ void test_dunder_methods() {
 
 void test_class_methods() {
     std::cout << "\n=== Class Methods and Static Methods Test ===" << std::endl;
+    class Example { public: Example() = default; };
     auto obj = Example.from_string("42");
     std::cout << to_str("Created from string: ") << to_str(obj.value) << std::endl;
     auto result = Example.utility_function(10, 20);

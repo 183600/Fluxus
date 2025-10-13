@@ -188,6 +188,7 @@ void test_slots_inheritance() {
 void test_weak_references() {
     /* docstring */
     std::cout << "\n=== Testing Weak References ===" << std::endl;
+    class DataObject { public: DataObject() = default; };
     auto obj1 = DataObject(100);
     auto obj2 = DataObject(200);
     auto weak_ref1 = weakref.ref(obj1);
@@ -230,6 +231,7 @@ void test_garbage_collection() {
     std::cout << to_str("GC is enabled: ") << to_str(gc.isenabled()) << std::endl;
     std::cout << to_str("GC thresholds: ") << to_str(gc.get_threshold()) << std::endl;
     std::cout << to_str("Current GC count: ") << to_str(gc.get_count()) << std::endl;
+    class Node { public: Node() = default; };
     auto node1 = Node(1);
     auto node2 = Node(2);
     auto node3 = Node(3);
@@ -272,6 +274,7 @@ void test_memory_profiling() {
 void test_object_lifecycle() {
     /* docstring */
     std::cout << "\n=== Testing Object Lifecycle ===" << std::endl;
+    class ManagedObject { public: ManagedObject() = default; };
     auto obj1 = ManagedObject("first");
     auto obj2 = ManagedObject("second");
     auto obj3 = ManagedObject("third");
@@ -292,6 +295,8 @@ void test_object_lifecycle() {
 std::string test_memory_optimization_patterns() {
     /* docstring */
     std::cout << "\n=== Testing Memory Optimization Patterns ===" << std::endl;
+    class RegularPoint { public: RegularPoint() = default; };
+    class SlottedPoint { public: SlottedPoint() = default; };
     auto num_points = 100000;
     auto regular_points = 0;
     auto slotted_points = 0;
@@ -300,6 +305,7 @@ std::string test_memory_optimization_patterns() {
     std::cout << to_str("Average size per RegularPoint: ") << to_str(regular_size) << to_str(" bytes") << std::endl;
     std::cout << to_str("Average size per SlottedPoint: ") << to_str(slotted_size) << to_str(" bytes") << std::endl;
     std::cout << to_str("Memory savings with slots: ") << ([&](){ std::ostringstream os; os.setf(std::ios::fixed); os<<std::setprecision(1); os<<((regular_size - slotted_size) / regular_size * 100); return os.str(); }()) << to_str("%") << std::endl;
+    class ObjectPool { public: ObjectPool() = default; };
     std::function<int()> create_expensive_object = [&]() {
         return std::unordered_map<std::string, int>{{"data", list(range(1000))}, {"timestamp", time.time()}};
     };

@@ -327,6 +327,7 @@ std::string test_monad_patterns() {
     bool __fluxus_exc=false;
     /* docstring */
     std::cout << "\n=== Monad-like Patterns ===" << std::endl;
+    class Maybe { public: Maybe() = default; };
     std::function<int()> safe_divide = [&]() {
         if (y == 0) {
             return 0;
@@ -341,6 +342,7 @@ std::string test_monad_patterns() {
     };
     auto result = Maybe(16).bind(safe_sqrt).bind(lambda x: safe_divide(x, 2));
     std::cout << to_str("Safe computation result: ") << to_str(result) << std::endl;
+    class Result { public: Result() = default; };
     std::function<int()> divide_result = [&]() {
         {
             if ((y)) == 0) { __fluxus_exc = true; return 0; }

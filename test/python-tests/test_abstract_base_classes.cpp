@@ -418,7 +418,7 @@ void test_abstract_properties() {
     demo.read_write_value("new-value");
     std::cout << to_str("Read-write value (updated): ") << to_str(demo.read_write_value()) << std::endl;
     {
-        demo.read_only_value("new-value");
+        __fluxus_exc = true;
         std::cout << "ERROR: Should not be able to set read-only property" << std::endl;
     }
     if (__fluxus_exc) { auto e = 0;

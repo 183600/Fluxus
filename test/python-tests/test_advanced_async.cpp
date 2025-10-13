@@ -79,7 +79,7 @@ template<typename K, typename V> static inline auto py_items(const std::unordere
 
 
 int main() {
-    asyncio::run(main());
+    asyncio::run([&](){ return main(); });
     return 0;
 }
 

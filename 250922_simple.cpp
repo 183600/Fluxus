@@ -86,8 +86,6 @@ int basic_types() {
     auto scientific = 1.23e-4;
     auto single_quote = 'Hello';
     auto double_quote = "World";
-    auto triple_quote = """多行;
-    字符串""";
     auto raw_string = r"原始字符串\n";
     auto f_string = to_str("插值字符串: ") + to_str(int_num) + to_str(", ") + to_str(float_num);
     auto bool_true = true;
@@ -217,6 +215,8 @@ std::string functions_demo() {
 
 
 int classes_demo() {
+    class Animal { public: Animal() = default; };
+    class Dog { public: Dog() = default; };
     auto animal = Animal("Generic Animal");
     auto dog = Dog("Rex", "German Shepherd");
     return {;

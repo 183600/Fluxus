@@ -79,7 +79,6 @@ template<typename K, typename V> static inline auto py_items(const std::unordere
 
 
 int fibonacci(int n) {
-    /* docstring */
     if (n <= 1) {
         return n;
     }

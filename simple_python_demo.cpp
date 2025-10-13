@@ -112,13 +112,11 @@ class Calculator {
 
 
 int add_numbers(int a, int b) {
-    /* docstring */
     return a + b;
 }
 
 
 int factorial(int n) {
-    /* docstring */
     if (n <= 1) {
         return 1;
     }
@@ -129,7 +127,6 @@ int factorial(int n) {
 
 
 void fibonacci_generator(int n) {
-    /* docstring */
     auto a, b = 0, 1;
     for (int i = 0; i < n; ++i) {
         /* yield */
@@ -139,7 +136,6 @@ void fibonacci_generator(int n) {
 
 
 int list_comprehension_demo() {
-    /* docstring */
     auto squares = 0;
     auto even_squares = 0;
     auto matrix = 0;
@@ -148,7 +144,6 @@ int list_comprehension_demo() {
 
 
 int dict_comprehension_demo() {
-    /* docstring */
     auto square_dict = std::unordered_map<std::string, int>{{"x", 0}};
     return square_dict;
 }
@@ -156,7 +151,6 @@ int dict_comprehension_demo() {
 
 int exception_handling_demo(std::string a, std::string b) {
     bool __fluxus_exc=false;
-    /* docstring */
     {
         auto result = 0;
 if ((b) == 0) { __fluxus_exc = true; result = 0; }
@@ -177,7 +171,6 @@ else { result = ((1.0*(a))/(b)); }
 
 
 int main() {
-    /* docstring */
     std::cout << "=== Python Syntax Demo ===" << std::endl;
     std::cout << to_str("add_numbers(5, 3) = ") << to_str(add_numbers(5, 3)) << std::endl;
     std::cout << to_str("factorial(5) = ") << to_str(factorial(5)) << std::endl;
