@@ -658,6 +658,7 @@ generateGoStmt (Located _ stmt) = case stmt of
         return $ CppReturn (Just cppExpr)
       _ -> do
         -- Multiple return values - use std::tuple
+        addInclude "<tuple>"
         cppExprs <- mapM generateGoExpr exprs
         let tupleExpr = CppCall (CppVar "std::make_tuple") cppExprs
         return $ CppReturn (Just tupleExpr)
@@ -689,21 +690,20 @@ generateGoStmt (Located _ stmt) = case stmt of
     cppStmts <- mapM generateGoStmt stmts
     return $ CppBlock cppStmts
   GoGo expr -> do
-    -- Handle goroutines: convert to std::thread with proper lambda handling
+    -- Handle goroutines: convert to detached std::thread invocations
     addInclude "<thread>"
     addInclude "<functional>"
     cppExpr <- generateGoExpr expr
-    
-    case cppExpr of
-      CppCall func args -> do
-        -- Handle function calls in goroutines
-        let threadArgs = case func of
-              CppVar funcName -> 
-                [CppCall (CppVar "std::thread") ([func] ++ args)]
-              _ -> [CppCall (CppVar "std::thread") [cppExpr]]
-        return $ CppExprStmt (head threadArgs)
-      _ ->
-        return $ CppExprStmt $ CppCall (CppVar "std::thread") [cppExpr]
+    tempName <- generateTempVar
+    let threadVar = tempName <> "_thread"
+        threadType = CppClassType "std::thread" []
+        threadInit = case cppExpr of
+          CppCall func args -> CppCall (CppVar "std::thread") (func : args)
+          _ -> CppCall (CppVar "std::thread")
+                 [CppLambda [] [CppExprStmt cppExpr]]
+        declStmt = CppDecl (CppVariable threadVar threadType (Just threadInit))
+        detachStmt = CppExprStmt (CppCall (CppMember (CppVar threadVar) "detach") [])
+    return $ CppBlock [declStmt, detachStmt]
   GoSend channel value -> do
     -- Handle channel send: channel <- value
     cppChannel <- generateGoExpr channel
@@ -753,21 +753,14 @@ generateGoExpr (Located _ expr) = case expr of
     -- Special handling for fmt.Printf and similar functions
     case cppFunc of
       CppMember (CppVar "fmt") "Printf" -> do
-        addInclude "<iostream>"
-        addInclude "<iomanip>"
-        -- Convert Go format string to C++ style
-        case cppArgs of
-          (CppLiteral (CppStringLit formatStr) : restArgs) -> do
-            let cppFormatStr = convertGoFormatToCpp formatStr restArgs
-            return $ CppCall (CppVar "std::cout") [CppLiteral (CppStringLit cppFormatStr)]
-          _ -> return $ CppCall cppFunc cppArgs
+        addInclude "<cstdio>"
+        return $ CppCall (CppVar "std::printf") cppArgs
       CppMember (CppVar "fmt") "Println" -> do
         addInclude "<iostream>"
-        case cppArgs of
-          [] -> return $ CppCall (CppVar "std::cout") [CppLiteral (CppStringLit "")]
-          [arg] -> return $ CppBinary "<<" (CppVar "std::cout") 
-                     (CppBinary "<<" arg (CppVar "std::endl"))
-          _ -> return $ CppCall cppFunc cppArgs
+        return $ buildPrintlnExpr cppArgs
+      CppMember (CppVar "fmt") "Print" -> do
+        addInclude "<iostream>"
+        return $ buildPrintExpr cppArgs
       _ -> return $ CppCall cppFunc cppArgs
   GoSelector obj (Identifier member) -> do
     cppObj <- generateGoExpr obj
@@ -782,7 +775,7 @@ generateGoExpr (Located _ expr) = case expr of
 
 -- | Convert Go format string to C++ output
 convertGoFormatToCpp :: Text -> [CppExpr] -> Text
-convertGoFormatToCpp formatStr args = 
+convertGoFormatToCpp formatStr args =
   -- Simplified: just replace %d with the actual values
   -- In a real implementation, this would be much more sophisticated
   let result = T.replace "%d" "\" << " formatStr
@@ -790,9 +783,32 @@ convertGoFormatToCpp formatStr args =
       result3 = T.replace "\\n" "\" << std::endl" result2
   in "\"" <> result3
 
+-- | Helper utilities for fmt-style printing
+buildPrintExpr :: [CppExpr] -> CppExpr
+buildPrintExpr args =
+  let components = if null args
+                   then [CppLiteral (CppStringLit "")]
+                   else spaceSeparate args
+  in streamChain (CppVar "std::cout") components
+
+buildPrintlnExpr :: [CppExpr] -> CppExpr
+buildPrintlnExpr args =
+  let components =
+        if null args
+        then [CppVar "std::endl"]
+        else spaceSeparate args ++ [CppVar "std::endl"]
+  in streamChain (CppVar "std::cout") components
+
+streamChain :: CppExpr -> [CppExpr] -> CppExpr
+streamChain = foldl (\acc expr -> CppBinary "<<" acc expr)
+
+spaceSeparate :: [CppExpr] -> [CppExpr]
+spaceSeparate [] = []
+spaceSeparate (x:xs) = x : concatMap (\arg -> [CppLiteral (CppStringLit " "), arg]) xs
+
 -- | Type mapping functions
 mapPythonTypeToCpp :: Type -> CppType
-mapPythonTypeToCpp = \case
+
   TInt _ -> CppInt
   TFloat _ -> CppDouble
   TBool -> CppBool
@@ -996,6 +1012,7 @@ mapGoResults :: [GoField] -> CppCodeGen CppType
 mapGoResults [] = return CppVoid
 mapGoResults [field] = generateGoType (goFieldType field)
 mapGoResults fields = do
+  addInclude "<tuple>"
   types <- mapM (generateGoType . goFieldType) fields
   return $ CppTuple types
 
