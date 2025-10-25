@@ -31,12 +31,12 @@ strict_mode: false
 include_paths:
   - "/usr/include"
   - "/usr/local/include"
-  # - "/opt/homebrew/include"  # macOS Homebrew (commented out for Linux compatibility)
+  - "/opt/homebrew/include"  # macOS Homebrew
 
 library_paths:
   - "/usr/lib"
   - "/usr/local/lib"
-  # - "/opt/homebrew/lib"      # macOS Homebrew (commented out for Linux compatibility)
+  - "/opt/homebrew/lib"      # macOS Homebrew
 
 # Libraries to link
 linked_libraries:

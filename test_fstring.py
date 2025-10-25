@@ -1,4 +1,4 @@
-# Test f-string processing
-result = 42
-print(f"Result: {result}")
-print(f"Result: {str(result)}")
+def test():
+    i = 5
+    result = 8
+    print(f"fib({i}) = {result}")

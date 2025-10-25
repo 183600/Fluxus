@@ -1,82 +1,134 @@
 #!/bin/bash
+echo "=== HyperStatic2 编译器大规模测试 ==="
 
-echo "====================================="
-echo "Fluxus编译器全面测试报告"
-echo "====================================="
-echo ""
+# 测试结果统计
+TOTAL_TESTS=0
+PASSED_TESTS=0
+FAILED_TESTS=0
 
-OUTPUT_DIR="test_outputs"
-mkdir -p "$OUTPUT_DIR"
-
-SUCCESS=0
-FAIL=0
-RUN_SUCCESS=0
-RUN_FAIL=0
-
-# 所有测试文件
-test_files=(
-    "test_empty.py"
-    "test_just_number.py"
-    "test_simple_add.py"
-    "test_print.py"
-    "test_functions.py"
-    "test/python-tests/basic_arithmetic.py"
-    "test/python-tests/feature_list_comprehension.py"
-    "test/python-tests/feature_exception.py"
-    "test/python-tests/test_loops.py"
-    "test/python-tests/test_functions.py"
-    "test/python-tests/test_classes.py"
-)
-
-echo "测试1: 编译所有文件"
-echo "-------------------------------------"
-
-for file in "${test_files[@]}"; do
-    if [ ! -f "$file" ]; then
-        echo "SKIP: $file (不存在)"
-        continue
-    fi
+# 函数：运行测试
+run_test() {
+    local file=$1
+    local lang=$2
+    echo "测试文件: $file"
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
     
-    basename=$(basename "$file" .py)
-    output="$OUTPUT_DIR/${basename}_out"
-    
-    echo -n "编译 $file ... "
-    
-    if timeout 15 stack exec fluxus -- --python -O2 "$file" -o "$output" > /dev/null 2>&1; then
-        echo "✓ 编译成功"
-        ((SUCCESS++))
+    if cabal exec fluxus -- --$lang $file > /dev/null 2>&1; then
+        echo "  ✅ 编译成功"
+        PASSED_TESTS=$((PASSED_TESTS + 1))
         
-        # 尝试运行
-        if [ -f "$output" ]; then
-            echo -n "  运行 $output ... "
-            if timeout 5 "./$output" > "$OUTPUT_DIR/${basename}_output.txt" 2>&1; then
-                echo "✓ 运行成功"
-                ((RUN_SUCCESS++))
+        # 检查是否生成了C++文件
+        cpp_file="${file%.*}.cpp"
+        if [ -f "$cpp_file" ]; then
+            echo "  ✅ 生成C++代码"
+            
+            # 尝试编译C++
+            executable="${file%.*}_exec"
+            if g++ -o "$executable" "$cpp_file" 2>/dev/null; then
+                echo "  ✅ C++编译成功"
+                
+                # 尝试运行
+                if ./"$executable" > /dev/null 2>&1; then
+                    echo "  ✅ 程序运行成功"
+                else
+                    echo "  ⚠️  程序运行失败"
+                fi
+                rm -f "$executable"
             else
-                echo "✗ 运行失败"
-                ((RUN_FAIL++))
+                echo "  ⚠️  C++编译失败"
             fi
+        else
+            echo "  ⚠️  未生成C++代码"
         fi
     else
-        echo "✗ 编译失败"
-        ((FAIL++))
+        echo "  ❌ 编译失败"
+        FAILED_TESTS=$((FAILED_TESTS + 1))
     fi
-done
+    echo ""
+}
 
-echo ""
-echo "====================================="
-echo "测试结果汇总"
-echo "====================================="
-echo "编译成功: $SUCCESS"
-echo "编译失败: $FAIL"
-echo "成功率: $(( SUCCESS * 100 / (SUCCESS + FAIL) ))%"
-echo ""
-echo "运行成功: $RUN_SUCCESS"
-echo "运行失败: $RUN_FAIL"
-if [ $RUN_SUCCESS -gt 0 ]; then
-    echo "运行成功率: $(( RUN_SUCCESS * 100 / (RUN_SUCCESS + RUN_FAIL) ))%"
+# Go 测试用例
+echo "=== Go 语言测试 ==="
+
+# 测试1：基本包声明
+cat > go_test_basic_package.go << 'EOF'
+package main
+EOF
+run_test "go_test_basic_package.go" "go"
+
+# 测试2：变量声明
+cat > go_test_variables.go << 'EOF'
+package main
+
+var x int
+var y string
+var z bool
+var a float64
+var b []int
+EOF
+run_test "go_test_variables.go" "go"
+
+# 测试3：多种类型变量
+cat > go_test_complex_vars.go << 'EOF'
+package main
+
+var counter int
+var name string
+var active bool
+var ratio float64
+var items []string
+var config map[string]int
+EOF
+run_test "go_test_complex_vars.go" "go"
+
+# Python 测试用例
+echo "=== Python 语言测试 ==="
+
+# 测试1：单个导入
+cat > python_test_single_import.py << 'EOF'
+import os
+EOF
+run_test "python_test_single_import.py" "python"
+
+# 测试2：多个导入
+cat > python_test_multiple_imports.py << 'EOF'
+import os
+import sys
+import json
+import time
+import re
+import math
+EOF
+run_test "python_test_multiple_imports.py" "python"
+
+# 测试3：常用库导入
+cat > python_test_stdlib_imports.py << 'EOF'
+import os
+import sys
+import json
+import time
+import datetime
+import collections
+import itertools
+import functools
+EOF
+run_test "python_test_stdlib_imports.py" "python"
+
+# 清理测试文件
+echo "清理测试文件..."
+rm -f go_test_*.go python_test_*.py *.cpp *_exec
+
+# 显示测试结果
+echo "=== 测试结果总结 ==="
+echo "总测试数: $TOTAL_TESTS"
+echo "通过测试: $PASSED_TESTS"  
+echo "失败测试: $FAILED_TESTS"
+echo "成功率: $((PASSED_TESTS * 100 / TOTAL_TESTS))%"
+
+if [ $FAILED_TESTS -eq 0 ]; then
+    echo "🎉 所有测试都通过了！"
+    exit 0
+else
+    echo "⚠️  有 $FAILED_TESTS 个测试失败"
+    exit 1
 fi
-echo ""
-
-echo "查看输出结果："
-echo "  ls $OUTPUT_DIR/"

@@ -67,7 +67,6 @@ import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Data.List (foldl')
-import Data.Graph (SCC(..), stronglyConnComp)
 
 -- | Node identifier
 type NodeId = Int
@@ -101,15 +100,15 @@ emptyGraph = Graph Map.empty Set.empty 0
 
 -- | Add a node to the graph
 addNode :: a -> Graph a -> (NodeId, Graph a)
-addNode nd graph = 
-  let nid = graphNextId graph
-      node = Node nid nd
-      newNodes = Map.insert nid node (graphNodes graph)
+addNode nodeData graph = 
+  let nodeId = graphNextId graph
+      node = Node nodeId nodeData
+      newNodes = Map.insert nodeId node (graphNodes graph)
       newGraph = graph 
         { graphNodes = newNodes
-        , graphNextId = nid + 1
+        , graphNextId = nodeId + 1
         }
-  in (nid, newGraph)
+  in (nodeId, newGraph)
 
 -- | Add an edge to the graph
 addEdge :: NodeId -> NodeId -> Maybe Text -> Graph a -> Graph a
@@ -120,9 +119,9 @@ addEdge from to label graph =
 
 -- | Remove a node from the graph
 removeNode :: NodeId -> Graph a -> Graph a
-removeNode nid graph =
-  let newNodes = Map.delete nid (graphNodes graph)
-      newEdges = Set.filter (\e -> edgeFrom e /= nid && edgeTo e /= nid) (graphEdges graph)
+removeNode nodeId graph =
+  let newNodes = Map.delete nodeId (graphNodes graph)
+      newEdges = Set.filter (\e -> edgeFrom e /= nodeId && edgeTo e /= nodeId) (graphEdges graph)
   in graph { graphNodes = newNodes, graphEdges = newEdges }
 
 -- | Remove an edge from the graph
@@ -141,21 +140,21 @@ edges = Set.toList . graphEdges
 
 -- | Get successors of a node
 successors :: NodeId -> Graph a -> [NodeId]
-successors nid graph = 
-  [edgeTo e | e <- Set.toList (graphEdges graph), edgeFrom e == nid]
+successors nodeId graph = 
+  [edgeTo e | e <- Set.toList (graphEdges graph), edgeFrom e == nodeId]
 
 -- | Get predecessors of a node
 predecessors :: NodeId -> Graph a -> [NodeId]
-predecessors nid graph = 
-  [edgeFrom e | e <- Set.toList (graphEdges graph), edgeTo e == nid]
+predecessors nodeId graph = 
+  [edgeFrom e | e <- Set.toList (graphEdges graph), edgeTo e == nodeId]
 
 -- | Get neighbors (successors and predecessors) of a node
 neighbors :: NodeId -> Graph a -> [NodeId]
-neighbors nid graph = successors nid graph ++ predecessors nid graph
+neighbors nodeId graph = successors nodeId graph ++ predecessors nodeId graph
 
 -- | Check if a node exists in the graph
 nodeExists :: NodeId -> Graph a -> Bool
-nodeExists nid graph = Map.member nid (graphNodes graph)
+nodeExists nodeId graph = Map.member nodeId (graphNodes graph)
 
 -- | Check if an edge exists in the graph
 edgeExists :: NodeId -> NodeId -> Graph a -> Bool
@@ -164,35 +163,56 @@ edgeExists from to graph =
 
 -- | Topological sort using Kahn's algorithm
 topologicalSort :: Graph a -> Maybe [NodeId]
-topologicalSort graph =
-  let allNodes = map nodeId (nodes graph)
-      initialIn = Map.fromList [(n, 0 :: Int) | n <- allNodes]
-      inDeg = foldl' (\m (Edge _ to _) -> Map.adjust (+1) to m) initialIn (edges graph)
-      queue0 = Set.fromList [n | (n, d) <- Map.toList inDeg, d == 0]
-      total = length allNodes
-      go q indeg acc
-        | Set.null q = if length acc == total then Just acc else Nothing
-        | otherwise =
-            let (n, q') = Set.deleteFindMin q
-                succs = successors n graph
-                (indeg', q'') = foldl' (\(m, qacc) s ->
-                                        let d = (Map.findWithDefault 0 s m) - 1
-                                            m' = Map.insert s d m
-                                            qacc' = if d == 0 then Set.insert s qacc else qacc
-                                        in (m', qacc'))
-                                      (indeg, q') succs
-            in go q'' indeg' (acc ++ [n])
-  in go queue0 inDeg []
+topologicalSort graph = go (Set.fromList $ map nodeId $ nodes graph) [] []
+  where
+    inDegree nodeId = length $ predecessors nodeId graph
+    
+    go remaining result queue
+      | Set.null remaining && null queue = Just (reverse result)
+      | null queue = Nothing  -- Cycle detected
+      | otherwise = 
+          let (current, restQueue) = case queue of
+                [] -> 
+                  let noIncoming = Set.filter (\n -> inDegree n == 0) remaining
+                  in if Set.null noIncoming 
+                     then (Set.findMin remaining, [])  -- Force progress, might indicate cycle
+                     else (Set.findMin noIncoming, Set.toList noIncoming)
+                (x:xs) -> (x, xs)
+              newRemaining = Set.delete current remaining
+              newSuccessors = filter (`Set.member` newRemaining) (successors current graph)
+              newQueue = restQueue ++ newSuccessors
+          in go newRemaining (current : result) newQueue
 
 -- | Find strongly connected components using Tarjan's algorithm
 stronglyConnectedComponents :: Graph a -> [[NodeId]]
-stronglyConnectedComponents graph =
-  let nodesList = map nodeId (nodes graph)
-      toAdj n = (n, n, successors n graph)
-      sccs = stronglyConnComp (map toAdj nodesList)
-      toList (AcyclicSCC v) = [v]
-      toList (CyclicSCC vs) = vs
-  in map toList sccs
+stronglyConnectedComponents graph = 
+  let allNodes = map nodeId $ nodes graph
+  in tarjan allNodes Map.empty Map.empty [] 0 []
+  where
+    tarjan [] _ _ _ _ result = result
+    tarjan (v:vs) indices lowlinks stack index result
+      | Map.member v indices = tarjan vs indices lowlinks stack index result
+      | otherwise = 
+          let (newIndices, newLowlinks, newStack, newIndex, newResult) = 
+                strongConnect v indices lowlinks stack index result
+          in tarjan vs newIndices newLowlinks newStack newIndex newResult
+    
+    strongConnect v indices lowlinks stack index result =
+      let indices' = Map.insert v index indices
+          lowlinks' = Map.insert v index lowlinks
+          stack' = v : stack
+          index' = index + 1
+      in foldl' (processSuccessor v) (indices', lowlinks', stack', index', result) (successors v graph)
+    
+    processSuccessor v (indices, lowlinks, stack, index, result) w
+      | not (Map.member w indices) = 
+          let (indices', lowlinks', stack', index', result') = strongConnect w indices lowlinks stack index result
+              lowlinks'' = Map.adjust (min (lowlinks' Map.! w)) v lowlinks'
+          in (indices', lowlinks'', stack', index', result')
+      | w `elem` stack = 
+          let lowlinks' = Map.adjust (min (indices Map.! w)) v lowlinks
+          in (indices, lowlinks', stack, index, result)
+      | otherwise = (indices, lowlinks, stack, index, result)
 
 -- | Compute dominators using iterative algorithm
 dominators :: NodeId -> Graph a -> Map NodeId (Set NodeId)
@@ -207,14 +227,14 @@ dominators entry graph =
       let newDom = Map.mapWithKey (updateDom dom) dom
       in if newDom == dom then dom else fixpoint newDom
     
-    updateDom dom nid currentDom
-      | nid == entry = Set.singleton entry
+    updateDom dom nodeId currentDom
+      | nodeId == entry = Set.singleton entry
       | otherwise = 
-          let preds = predecessors nid graph
+          let preds = predecessors nodeId graph
               predDoms = [dom Map.! p | p <- preds, Map.member p dom]
           in if null predDoms 
              then currentDom
-             else Set.insert nid (foldl1 Set.intersection predDoms)
+             else Set.insert nodeId (foldl1 Set.intersection predDoms)
 
 -- | Compute post-dominators
 postDominators :: NodeId -> Graph a -> Map NodeId (Set NodeId)
@@ -257,7 +277,7 @@ findPath start end graph = dfs Set.empty start
 shortestPath :: NodeId -> NodeId -> Graph a -> Maybe [NodeId]
 shortestPath start end graph = bfs (Map.singleton start [start]) [start]
   where
-    bfs _ [] = Nothing
+    bfs paths [] = Nothing
     bfs paths (current:queue)
       | current == end = Map.lookup end paths
       | otherwise = 
@@ -335,14 +355,14 @@ forwardDataFlow problem graph =
       let updated = Map.mapWithKey (updateNode current) current
       in if updated == current then current else fixpointIteration updated
     
-    updateNode current nid _ = 
-      let preds = predecessors nid graph
+    updateNode current nodeId _ = 
+      let preds = predecessors nodeId graph
           predValues = [current Map.! p | p <- preds, Map.member p current]
           meetValue = if null predValues then dfpInitial problem else dfpMeet problem predValues
-          ndata = case Map.lookup nid (graphNodes graph) of
+          nodeData = case Map.lookup nodeId (graphNodes graph) of
             Nothing -> CFGBasicBlock "unknown" []
             Just node -> Fluxus.Utils.Graph.nodeData node
-      in dfpTransfer problem ndata meetValue
+      in dfpTransfer problem nodeData meetValue
 
 -- | Backward data flow analysis
 backwardDataFlow :: Eq a => DataFlowProblem a -> ControlFlowGraph -> Map NodeId a
@@ -365,34 +385,32 @@ buildDominatorTree entry graph =
       (_, emptyDomTree) = addNode entry emptyGraph
   in foldl' addDomEdge emptyDomTree (Map.toList immDoms)
   where
-    findImmediateDominator allDoms nid nodeDoms
-      | nid == entry = Nothing
+    findImmediateDominator allDoms nodeId nodeDoms
+      | nodeId == entry = Nothing
       | otherwise = 
-          let properDoms = Set.delete nid nodeDoms
+          let properDoms = Set.delete nodeId nodeDoms
               candidates = Set.toList properDoms
           in case candidates of
                [] -> Nothing
-               _  -> case filter (\d -> all (\other -> Set.member d (allDoms Map.! other)) candidates) candidates of
-                      (d:_) -> Just d
-                      []    -> Nothing
+               _ -> Just $ head $ filter (\d -> all (\other -> Set.member d (allDoms Map.! other)) candidates) candidates
     
-    addDomEdge tree (nid, mImmDom) = 
+    addDomEdge tree (nodeId, mImmDom) = 
       case mImmDom of
-        Nothing    -> tree
-        Just immDom -> addEdge immDom nid Nothing tree
+        Nothing -> tree
+        Just immDom -> addEdge immDom nodeId Nothing tree
 
 -- | Find immediate dominator
 immediateDominator :: NodeId -> DominatorTree -> Maybe NodeId
-immediateDominator nid domTree = 
-  let preds = predecessors nid domTree
+immediateDominator nodeId domTree = 
+  let preds = predecessors nodeId domTree
   in case preds of
        [immDom] -> Just immDom
        _ -> Nothing
 
 -- | Compute dominator frontier
 dominatorFrontier :: NodeId -> Graph a -> DominatorTree -> Set NodeId
-dominatorFrontier nid graph domTree = 
-  let dominated = reachableFrom nid domTree
+dominatorFrontier nodeId graph domTree = 
+  let dominated = reachableFrom nodeId domTree
   in Set.fromList [n | d <- Set.toList dominated, n <- successors d graph, not (Set.member n dominated)]
 
 -- | Generate DOT representation of graph

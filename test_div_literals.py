@@ -1,1 +1,0 @@
-z = float(10) / float(20)  # Ensure float division with explicit types

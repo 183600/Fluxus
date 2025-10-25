@@ -1,6 +1,0 @@
-constraints: 
-  any.base >= 4.17 && < 5
-
-program-options
-  cabal-install
-    test: --test-show-details=direct --jobs --enable-tests --disable-benchmarks

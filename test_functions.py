@@ -1,15 +1,9 @@
-def fibonacci(n):
-    """Compute the nth Fibonacci number"""
-    if n <= 1:
-        return n
-    else:
-        return fibonacci(n - 1) + fibonacci(n - 2)
+def greet(name):
+    return f"Hello, {name}!"
 
-def main():
-    # Test fibonacci function
-    for i in range(10):
-        result = fibonacci(i)
-        print(f"fib({i}) = {result}")
+def add(a, b):
+    return a + b
 
-if __name__ == "__main__":
-    main()
+print(greet("World"))
+result = add(10, 20)
+print(f"10 + 20 = {result}")

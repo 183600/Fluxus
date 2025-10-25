@@ -1,0 +1,256 @@
+[
+  {
+    "name": "Built-ins",
+    "success": true,
+    "data": {
+      "append": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "cap": 5,
+      "channel_values": [
+        1,
+        2
+      ],
+      "copy": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "len": 5,
+      "map_len": 2,
+      "map_values": {
+        "key1": 10,
+        "key2": 20
+      }
+    }
+  },
+  {
+    "name": "String Operations",
+    "success": true,
+    "data": {
+      "contains": true,
+      "has_prefix": true,
+      "has_suffix": true,
+      "join": "a-b-c",
+      "lower": "hello, world!",
+      "repeat": "GoGoGo",
+      "replace": "Hello, Go!",
+      "split": [
+        "Hello",
+        " World!"
+      ],
+      "trim": "spaces",
+      "upper": "HELLO, WORLD!"
+    }
+  },
+  {
+    "name": "Fmt Package",
+    "success": true,
+    "data": {
+      "sprint": "Hello World",
+      "sprintf": "Hello, Go! You are 15 years old.",
+      "sprintln": "Line with newline"
+    }
+  },
+  {
+    "name": "Math Package",
+    "success": true,
+    "data": {
+      "abs": 5.5,
+      "ceil": 5,
+      "cos": 1,
+      "e": 2.718281828459045,
+      "floor": 4,
+      "log": 1,
+      "max": 20,
+      "min": 10,
+      "mod": 1,
+      "pi": 3.141592653589793,
+      "pow": 8,
+      "round": 5,
+      "sin": 1,
+      "sqrt": 4,
+      "trunc": 4
+    }
+  },
+  {
+    "name": "Time Package",
+    "success": true,
+    "data": {
+      "add_duration": "2024-12-26",
+      "format": "2024-12-25 15:30:45",
+      "now_day": 17,
+      "now_month": 7,
+      "now_year": 2025,
+      "parse_test": true,
+      "since_specific": true,
+      "unix": 1735140645,
+      "weekday": "Wednesday"
+    }
+  },
+  {
+    "name": "Rand Package",
+    "success": true,
+    "data": {
+      "float64": 0.9985974966159766,
+      "intn": 30,
+      "perm": [
+        3,
+        0,
+        1,
+        4,
+        2
+      ],
+      "seed_test": 154,
+      "shuffled": [
+        "apple",
+        "cherry",
+        "date",
+        "banana"
+      ]
+    }
+  },
+  {
+    "name": "Sort Package",
+    "success": true,
+    "data": {
+      "custom_sort": [
+        {
+          "Name": "Bob",
+          "Age": 25
+        },
+        {
+          "Name": "Alice",
+          "Age": 30
+        },
+        {
+          "Name": "Charlie",
+          "Age": 35
+        }
+      ],
+      "is_sorted": true,
+      "search_result": 5,
+      "sorted_ints": [
+        1,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        9
+      ],
+      "sorted_strings": [
+        "apple",
+        "banana",
+        "cherry",
+        "date"
+      ]
+    }
+  },
+  {
+    "name": "Strconv Package",
+    "success": true,
+    "data": {
+      "atoi": 42,
+      "format_bool": "true",
+      "format_int_base16": "2a",
+      "format_int_base2": "101010",
+      "itoa": "42",
+      "parse_bool": true,
+      "parse_float": 3.14,
+      "parse_int_base2": 42
+    }
+  },
+  {
+    "name": "OS Package",
+    "success": true,
+    "data": {
+      "args_len": 1,
+      "env_home": "/home/qwe12345678",
+      "env_path_exists": true,
+      "getwd": "/home/qwe12345678/hyperstatic2",
+      "hostname": "qwe12345678-81yj",
+      "temp_dir": "/tmp"
+    }
+  },
+  {
+    "name": "Filepath Package",
+    "success": true,
+    "data": {
+      "abs_test": true,
+      "base": "file.txt",
+      "clean": "home/user/file.txt",
+      "dir": "/home/user/documents",
+      "ext": ".txt",
+      "join": "home/user/file.txt",
+      "match": true,
+      "split_dir": "/home/user/documents/",
+      "split_file": "file.txt"
+    }
+  },
+  {
+    "name": "Regexp Package",
+    "success": true,
+    "data": {
+      "first_word": "The",
+      "found_years": [
+        "2024",
+        "2025"
+      ],
+      "last_word": "better!",
+      "match_found": true,
+      "replaced_text": "The year YEAR was great, but YEAR will be better!",
+      "word_count": 10
+    }
+  },
+  {
+    "name": "JSON Package",
+    "success": true,
+    "data": {
+      "decoded_age": 30,
+      "decoded_name": "Alice",
+      "hobby_count": 3,
+      "json_string": "{\"name\":\"Alice\",\"age\":30,\"hobbies\":[\"reading\",\"programming\",\"hiking\"]}",
+      "round_trip_ok": true
+    }
+  },
+  {
+    "name": "File Operations",
+    "success": true,
+    "data": {
+      "content_match": true,
+      "file_size": 19,
+      "read_content": "Hello, Go file I/O!",
+      "write_success": true
+    }
+  },
+  {
+    "name": "Complex Operations",
+    "success": true,
+    "data": {
+      "avg_price": 212.19,
+      "categories_found": 3,
+      "expensive_items": 2,
+      "json_report": "{\"average_price\":212.19,\"categories\":3,\"cheapest_product\":\"Coffee\",\"expensive_count\":2,\"most_expensive\":\"Laptop\",\"total_products\":5}",
+      "products_sorted": true
+    }
+  },
+  {
+    "name": "Error Handling",
+    "success": true,
+    "data": {
+      "file_error_handled": true,
+      "json_error_handled": true,
+      "regex_error_handled": true,
+      "strconv_error_handled": true
+    }
+  }
+]

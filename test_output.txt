@@ -1,2 +1,86 @@
-Hello from Fluxus!
-This is a test file.
+fluxus> configure (lib + exe + test)
+Configuring fluxus-0.1.0.0...
+fluxus> build (lib + exe + test) with ghc-9.8.4
+Preprocessing library for fluxus-0.1.0.0..
+Building library for fluxus-0.1.0.0..
+[ 1 of 23] Compiling Fluxus.AST.Common
+[ 2 of 23] Compiling Fluxus.AST.Go
+[ 3 of 23] Compiling Fluxus.AST.Python
+[ 4 of 23] Compiling Fluxus.Analysis.EscapeAnalysis
+[ 5 of 23] Compiling Fluxus.Analysis.OwnershipInference
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/OwnershipInference.hs:317:3: warning: [GHC-62161] [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In a case alternative:
+        Patterns of type ‘(MemoryLocation, EscapeInfo, Bool)’ not matched:
+            (Stack, EscapeToHeap, _)
+            (Stack, EscapeToGlobal, _)
+            (Stack, EscapeUnknown, _)
+            (Stack, NoEscape, False)
+            ...
+    |
+317 |   case (memLocation ownership, escapes ownership, ownsMemory ownership) of
+    |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/OwnershipInference.hs:322:19: warning: [GHC-62161] [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In a case alternative:
+        Patterns of type ‘Maybe Int’ not matched:
+            Just p where p is not one of {1}
+    |
+322 |       refCount <- case refCount ownership of
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^...
+[ 6 of 23] Compiling Fluxus.Analysis.ShapeAnalysis
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/ShapeAnalysis.hs:449:1: warning: [GHC-62161] [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In an equation for ‘inferLiteralShape’:
+        Patterns of type ‘Literal’ not matched: LUInt _
+    |
+449 | inferLiteralShape (LInt _) = inferShape (TInt 32)
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+[ 7 of 23] Compiling Fluxus.Analysis.TypeInference
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:403:49: warning: [GHC-62161] [-Wincomplete-uni-patterns]
+    Pattern match(es) are non-exhaustive
+    In a lambda abstraction:
+        Patterns of type ‘Type’ not matched:
+            TInt _
+            TUInt _
+            TFloat _
+            TBool
+            ...
+    |
+403 |   let varMap = HashMap.fromList (zip vars (map (\(TVar v) -> v) freshVars))
+    |                                                 ^^^^^^^^^^^^^^
+[ 8 of 23] Compiling Fluxus.CodeGen.Go
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:171:20: warning: [GHC-62161] [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In a case alternative:
+        Patterns of type ‘PythonLiteral’ not matched:
+            PyComplex _ _
+            PyFString _ _
+            PyBytes _
+            PyEllipsis
+    |
+171 |   PyLiteral lit -> case lit of
+    |                    ^^^^^^^^^^^...
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:200:25: warning: [GHC-62161] [-Wincomplete-uni-patterns]
+    Pattern match(es) are non-exhaustive
+    In a lambda abstraction:
+        Patterns of type ‘Located PythonArgument’ not matched:
+            Located _ (ArgKeyword _ _)
+            Located _ (ArgStarred _)
+            Located _ (ArgKwStarred _)
+    |
+200 |         argExprs = map (\(Located _ (ArgPositional arg)) -> generateExpression config (locatedValue arg)) args
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[ 9 of 23] Compiling Fluxus.Internal.Types
+[10 of 23] Compiling Fluxus.Internal.Monad
+[11 of 23] Compiling Fluxus.Optimization.Devirtualization
+[12 of 23] Compiling Fluxus.Optimization.Monomorphization
+[13 of 23] Compiling Fluxus.Parser.Go.Lexer
+[14 of 23] Compiling Fluxus.Parser.Go.Parser
+[15 of 23] Compiling Fluxus.Parser.Python.Lexer

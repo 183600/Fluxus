@@ -1,4 +1,0 @@
-Squares: 0
-Evens: 0
-Doubled odds: 0
-Flattened matrix: 0

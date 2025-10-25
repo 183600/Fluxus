@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "ask": [
+      "Read(!/home/qwe12345678/hyperstatic2/**)",
+      "Edit(!/home/qwe12345678/hyperstatic2/**)"
+    ],
+    "allow": [
+      "Read(/home/qwe12345678/hyperstatic2/**)",
+      "Edit(/home/qwe12345678/hyperstatic2/**)"
+    ]
+  },
+  "memoryImport": {},
+  "monitoring": {}
+}

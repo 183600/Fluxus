@@ -1,12 +1,14 @@
-def greet(name):
-    message = "Hello, " + name + "!"
-    return message
+name = "Fluxus"
+version = "1.0"
 
-def main():
-    result = greet("Fluxus")
-    print(result)
-    print("String with escape: \\n\\t\"quote\"")
-    print("Another test")
-    
-if __name__ == "__main__":
-    main()
+# String concatenation
+full_name = name + " " + version
+print(full_name)
+
+# String methods
+print(f"Upper: {name.upper()}")
+print(f"Lower: {name.lower()}")
+print(f"Length: {len(name)}")
+
+# String formatting
+print(f"Welcome to {name} v{version}")

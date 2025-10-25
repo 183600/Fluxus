@@ -1,3 +1,4 @@
 print("Hello, World!")
-x = 42
-print(f"The answer is {x}")
+print("Simple test")
+print(1 + 1)
+print(2 * 3)

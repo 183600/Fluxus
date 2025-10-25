@@ -181,7 +181,7 @@ typeToString _ = "any"
 
 -- | Transform expression to use specialized functions
 transformExpression :: CommonExpr -> MonomorphizationM CommonExpr
-transformExpression (CECall func args) = do
+transformExpression expr@(CECall func args) = do
   case locatedValue func of
     CEVar (Identifier funcName) -> do
       -- Look up specialized version
@@ -260,8 +260,8 @@ specializeFunction funcName types = do
 
 -- | Infer type of expression (simplified)
 inferExpressionType :: Located CommonExpr -> MonomorphizationM Type
-inferExpressionType (Located _ (CELiteral (LInt _))) = return TAny
-inferExpressionType (Located _ (CELiteral (LFloat _))) = return $ TFloat (BitWidth 64)
+inferExpressionType (Located _ (CELiteral (LInt _))) = return $ TInt 32
+inferExpressionType (Located _ (CELiteral (LFloat _))) = return $ TFloat 64
 inferExpressionType (Located _ (CELiteral (LString _))) = return TString
 inferExpressionType (Located _ (CELiteral (LBool _))) = return TBool
 inferExpressionType _ = return TAny  -- Fallback

@@ -1,4 +1,0 @@
-For loop:
-
-While loop:
-timeout: 被监视的命令已核心转储

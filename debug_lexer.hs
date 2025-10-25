@@ -1,12 +1,8 @@
-import qualified Data.Text as T
-import Fluxus.Parser.Python.Lexer as Lexer
+import Fluxus.Parser.Python.Lexer
+import Data.Text as T
 
-main :: IO ()
 main = do
-  let code = T.pack "x = [1]"
-  putStrLn $ "Input: " ++ T.unpack code
-  case Lexer.runPythonLexer "test.py" code of
-    Left err -> putStrLn $ "Lexing failed: " ++ show err
-    Right tokens -> do
-      putStrLn $ "Tokens: " ++ show tokens
-      putStrLn $ "Number of tokens: " ++ show (length tokens)
+  let input = "x()"
+  case lexPython "debug" input of
+    Left err -> putStrLn $ "Lexer error: " ++ show err
+    Right tokens -> mapM_ print tokens

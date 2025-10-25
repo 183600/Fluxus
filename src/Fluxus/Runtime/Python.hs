@@ -27,10 +27,12 @@ module Fluxus.Runtime.Python
   ) where
 
 import Fluxus.AST.Common
+-- import Control.Monad.IO.Class  -- unused
 import Control.Exception (bracket, try, SomeException)
 import Control.Concurrent.STM
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import Data.Int (Int64)
 import Data.Word (Word64)
 import Data.ByteString (ByteString)
@@ -139,7 +141,7 @@ initPythonRuntime mode = do
   moduleCache <- newTVarIO HashMap.empty
   objectCache <- newTVarIO HashMap.empty
   errorState <- newTVarIO Nothing
-  refCountVar <- newTVarIO 1
+  refCount <- newTVarIO 1
   
   -- For now, use null pointers (in real implementation, would get actual Python objects)
   let runtime = PythonRuntime
@@ -149,7 +151,7 @@ initPythonRuntime mode = do
         , pyrObjectCache = objectCache
         , pyrInteropMode = mode
         , pyrErrorState = errorState
-        , pyrRefCount = refCountVar
+        , pyrRefCount = refCount
         }
   
   return $ Right runtime
@@ -158,14 +160,14 @@ initPythonRuntime mode = do
 shutdownPythonRuntime :: PythonRuntime -> IO ()
 shutdownPythonRuntime runtime = do
   -- Decrement reference count
-  refCountVal <- atomically $ do
+  refCount <- atomically $ do
     count <- readTVar (pyrRefCount runtime)
     let newCount = count - 1
     writeTVar (pyrRefCount runtime) newCount
     return newCount
   
   -- Only finalize if this was the last reference
-  when (refCountVal <= 0) $ do
+  when (refCount <= 0) $ do
     -- Clear caches
     atomically $ do
       writeTVar (pyrModuleCache runtime) HashMap.empty
@@ -215,7 +217,7 @@ importPythonModule runtime moduleName = do
 
 -- | Create a Python object from Fluxus values
 createPythonObject :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text PythonObject)
-createPythonObject _ className _ = do
+createPythonObject runtime className args = do
   -- This would call the Python class constructor
   let obj = PythonObject
         { poPtr = nullPtr  -- Would be actual PyObject pointer
@@ -232,7 +234,7 @@ convertToPython (LInt i) = RVInt i
 convertToPython (LUInt u) = RVUInt u
 convertToPython (LFloat f) = RVFloat f
 convertToPython (LString s) = RVString s
-convertToPython (LBytes b) = RVBytes b
+convertToPython (LBytes b) = RVBytes (T.encodeUtf8 b)
 convertToPython (LBool b) = RVBool b
 convertToPython (LChar c) = RVString (T.singleton c)
 convertToPython LNone = RVNone
@@ -243,14 +245,14 @@ convertFromPython (RVInt i) = LInt i
 convertFromPython (RVUInt u) = LUInt u
 convertFromPython (RVFloat f) = LFloat f
 convertFromPython (RVString s) = LString s
-convertFromPython (RVBytes b) = LBytes b
+convertFromPython (RVBytes b) = LBytes (T.decodeUtf8 b)
 convertFromPython (RVBool b) = LBool b
 convertFromPython RVNone = LNone
 convertFromPython _ = LNone  -- Fallback for complex types
 
 -- | Run arbitrary Python code
 runPythonCode :: PythonRuntime -> Text -> IO (Either Text RuntimeValue)
-runPythonCode _ code = do
+runPythonCode runtime code = do
   result <- try $ do
     -- Convert Text to CString and run
     withCString (T.unpack code) $ \cstr -> do
@@ -326,7 +328,7 @@ callFallbackFunction runtime funcName args = do
 -- | Create type mapping from Fluxus types to Python types
 createTypeMapping :: HashMap Type Text
 createTypeMapping = HashMap.fromList
-  [ (TAny, "int")
+  [ (TInt 32, "int")
   , (TInt 64, "int")
   , (TFloat 64, "float")
   , (TBool, "bool")

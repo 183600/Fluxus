@@ -1,1221 +1,1388 @@
-OneTuple                     > using precompiled package
-StateVar                     > using precompiled package
-assoc                        > using precompiled package
-auto-update                  > using precompiled package
-base-orphans                 > using precompiled package
-call-stack                   > using precompiled package
-character-ps                 > using precompiled package
-colour                       > using precompiled package
-dlist                        > using precompiled package
-contravariant                > using precompiled package
-easy-file                    > using precompiled package
-fgl                          > using precompiled package
-generically                  > using precompiled package
-indexed-traversable          > using precompiled package
-integer-logarithms           > using precompiled package
-ansi-terminal-types          > using precompiled package
-libyaml-clib                 > using precompiled package
-monad-loops                  > using precompiled package
-network                      > using precompiled package
-old-locale                   > using precompiled package
-os-string                    > using precompiled package
-parallel                     > using precompiled package
-parser-combinators           > using precompiled package
-ansi-terminal                > using precompiled package
-prettyprinter                > using precompiled package
-primitive                    > using precompiled package
-reflection                   > using precompiled package
-old-time                     > using precompiled package
-hashable                     > using precompiled package
-semigroups                   > using precompiled package
-split                        > using precompiled package
-splitmix                     > using precompiled package
-prettyprinter-ansi-terminal  > using precompiled package
-integer-conversion           > using precompiled package
-stm-chans                    > using precompiled package
-tagged                       > using precompiled package
-async                        > using precompiled package
-case-insensitive             > using precompiled package
-data-fix                     > using precompiled package
-random                       > using precompiled package
-scientific                   > using precompiled package
-text-short                   > using precompiled package
-th-abstraction               > using precompiled package
-distributive                 > using precompiled package
-th-compat                    > using precompiled package
-these                        > using precompiled package
-time-compat                  > using precompiled package
-QuickCheck                   > using precompiled package
-attoparsec                   > using precompiled package
-megaparsec                   > using precompiled package
-temporary                    > using precompiled package
-transformers-compat          > using precompiled package
-network-uri                  > using precompiled package
-strict                       > using precompiled package
-text-iso8601                 > using precompiled package
-unix-compat                  > using precompiled package
-unix-time                    > using precompiled package
-unliftio-core                > using precompiled package
-unordered-containers         > using precompiled package
-comonad                      > using precompiled package
-optparse-applicative         > using precompiled package
-transformers-base            > using precompiled package
-uuid-types                   > using precompiled package
-vector-stream                > using precompiled package
-fast-logger                  > using precompiled package
-resourcet                    > using precompiled package
-typed-process                > using precompiled package
-bifunctors                   > using precompiled package
-tasty                        > using precompiled package
-monad-control                > using precompiled package
-void                         > using precompiled package
-zlib                         > using precompiled package
-profunctors                  > using precompiled package
-semigroupoids                > using precompiled package
-vector                       > using precompiled package
-lifted-base                  > using precompiled package
-streaming-commons            > using precompiled package
-invariant                    > using precompiled package
-free                         > using precompiled package
-bitvec                       > using precompiled package
-indexed-traversable-instances> using precompiled package
-adjunctions                  > using precompiled package
-vector-algorithms            > configure
-vector-algorithms            > Configuring vector-algorithms-0.9.1.0...
-semialign                    > using precompiled package
-witherable                   > using precompiled package
-kan-extensions               > using precompiled package
-vector-algorithms            > build with ghc-9.8.4
-vector-algorithms            > Preprocessing library for vector-algorithms-0.9.1.0..
-vector-algorithms            > Building library for vector-algorithms-0.9.1.0..
-lens                         > using precompiled package
-vector-algorithms            > [ 1 of 11] Compiling Data.Vector.Algorithms.Common
-aeson                        > configure
-aeson                        > Configuring aeson-2.2.3.0...
-vector-algorithms            > [ 2 of 11] Compiling Data.Vector.Algorithms.Optimal
-vector-algorithms            > [ 3 of 11] Compiling Data.Vector.Algorithms.Insertion
-aeson                        > build with ghc-9.8.4
-aeson                        > Preprocessing library for aeson-2.2.3.0..
-aeson                        > Building library for aeson-2.2.3.0..
-vector-algorithms            > [ 4 of 11] Compiling Data.Vector.Algorithms.Merge
-aeson                        > [ 1 of 32] Compiling Data.Aeson.Internal.ByteString
-aeson                        > [ 2 of 32] Compiling Data.Aeson.Internal.Functions
-aeson                        > [ 3 of 32] Compiling Data.Aeson.Internal.Prelude
-aeson                        > [ 4 of 32] Compiling Data.Aeson.Internal.Scientific
-vector-algorithms            > [ 5 of 11] Compiling Data.Vector.Algorithms.AmericanFlag
-aeson                        > [ 5 of 32] Compiling Data.Aeson.Internal.TH
-aeson                        > [ 6 of 32] Compiling Data.Aeson.Internal.Text
-aeson                        > [ 7 of 32] Compiling Data.Aeson.Internal.Unescape
-aeson                        > [ 8 of 32] Compiling Data.Aeson.Internal.UnescapeFromText
-aeson                        > [ 9 of 32] Compiling Data.Aeson.Key
-aeson                        > [10 of 32] Compiling Data.Aeson.Decoding.Tokens
-vector-algorithms            > [ 6 of 11] Compiling Data.Vector.Algorithms.Heap
-aeson                        > [11 of 32] Compiling Data.Aeson.Decoding.Internal
-aeson                        > [12 of 32] Compiling Data.Aeson.Decoding.Text
-aeson                        > [13 of 32] Compiling Data.Aeson.Decoding.ByteString.Lazy
-aeson                        > [14 of 32] Compiling Data.Aeson.Decoding.ByteString
-aeson                        > [15 of 32] Compiling Data.Aeson.KeyMap
-aeson                        > [16 of 32] Compiling Data.Aeson.Types.Generic
-aeson                        > [17 of 32] Compiling Data.Aeson.Types.Internal
-vector-algorithms            > [ 7 of 11] Compiling Data.Vector.Algorithms.Intro
-aeson                        > [18 of 32] Compiling Data.Aeson.Parser.Time
-aeson                        > [19 of 32] Compiling Data.Aeson.Encoding.Builder
-aeson                        > [20 of 32] Compiling Data.Aeson.Encoding.Internal
-aeson                        > [21 of 32] Compiling Data.Aeson.Encoding
-aeson                        > [22 of 32] Compiling Data.Aeson.Decoding.Conversion
-aeson                        > [23 of 32] Compiling Data.Aeson.Types.FromJSON
-vector-algorithms            > [ 8 of 11] Compiling Data.Vector.Algorithms.Radix
-vector-algorithms            > [ 9 of 11] Compiling Data.Vector.Algorithms.Search
-vector-algorithms            > [10 of 11] Compiling Data.Vector.Algorithms
-vector-algorithms            > [11 of 11] Compiling Data.Vector.Algorithms.Tim
-aeson                        > [24 of 32] Compiling Data.Aeson.Types.ToJSON
-aeson                        > 
-aeson                        > /tmp/stack-2077230c52bd1bf7/aeson-2.2.3.0/src/Data/Aeson/Types/ToJSON.hs:1615:23: warning: [GHC-68441] [-Wdeprecations]
-aeson                        >     In the use of data constructor ‘Solo’
-aeson                        >     (imported from Data.Tuple.Solo, but defined in GHC.Tuple):
-aeson                        >     Deprecated: "The Solo constructor has been renamed to MkSolo to avoid punning."
-aeson                        >      |
-aeson                        > 1615 |     liftToJSON _ t _ (Solo a) = t a
-aeson                        >      |                       ^^^^
-aeson                        > 
-aeson                        > /tmp/stack-2077230c52bd1bf7/aeson-2.2.3.0/src/Data/Aeson/Types/ToJSON.hs:1618:27: warning: [GHC-68441] [-Wdeprecations]
-aeson                        >     In the use of data constructor ‘Solo’
-aeson                        >     (imported from Data.Tuple.Solo, but defined in GHC.Tuple):
-aeson                        >     Deprecated: "The Solo constructor has been renamed to MkSolo to avoid punning."
-aeson                        >      |
-aeson                        > 1618 |     liftToEncoding _ t _ (Solo a) = t a
-aeson                        >      |                           ^^^^
-vector-algorithms            > copy/register
-vector-algorithms            > Installing library in /home/qwe12345678/.stack/snapshots/x86_64-linux/16f99e1813dd1d007abb55c4da82bfbbf4dee0ed7756bb753fbf8128ecaf2fec/9.8.4/lib/x86_64-linux-ghc-9.8.4/vector-algorithms-0.9.1.0-IxjfOQM4uwG6mv0qbJZ5sz
-vector-algorithms            > Registering library for vector-algorithms-0.9.1.0..
-mono-traversable             > configure
-mono-traversable             > Configuring mono-traversable-1.0.21.0...
-mono-traversable             > build with ghc-9.8.4
-mono-traversable             > Preprocessing library for mono-traversable-1.0.21.0..
-mono-traversable             > Building library for mono-traversable-1.0.21.0..
-mono-traversable             > [1 of 6] Compiling Data.MonoTraversable
-mono-traversable             > 
-mono-traversable             > /tmp/stack-2077230c52bd1bf7/mono-traversable-1.0.21.0/src/Data/MonoTraversable.hs:1354:5: warning: [GHC-62161] [-Wincomplete-uni-patterns]
-mono-traversable             >     Pattern match(es) are non-exhaustive
-mono-traversable             >     In a pattern binding:
-mono-traversable             >         Patterns of type ‘ViewL a’ not matched: EmptyL
-mono-traversable             >      |
-mono-traversable             > 1354 |     oextract ~(x :< _) = x
-mono-traversable             >      |     ^^^^^^^^^^^^^^^^^^^^^^
-mono-traversable             > 
-mono-traversable             > /tmp/stack-2077230c52bd1bf7/mono-traversable-1.0.21.0/src/Data/MonoTraversable.hs:1356:5: warning: [GHC-62161] [-Wincomplete-uni-patterns]
-mono-traversable             >     Pattern match(es) are non-exhaustive
-mono-traversable             >     In a pattern binding:
-mono-traversable             >         Patterns of type ‘ViewL a’ not matched: EmptyL
-mono-traversable             >      |
-mono-traversable             > 1356 |     oextend f w@(~(_ :< xxs)) =
-mono-traversable             >      |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-mono-traversable             > 
-mono-traversable             > /tmp/stack-2077230c52bd1bf7/mono-traversable-1.0.21.0/src/Data/MonoTraversable.hs:1364:5: warning: [GHC-62161] [-Wincomplete-uni-patterns]
-mono-traversable             >     Pattern match(es) are non-exhaustive
-mono-traversable             >     In a pattern binding:
-mono-traversable             >         Patterns of type ‘ViewR a’ not matched: EmptyR
-mono-traversable             >      |
-mono-traversable             > 1364 |     oextract ~(_ :> x) = x
-mono-traversable             >      |     ^^^^^^^^^^^^^^^^^^^^^^
-mono-traversable             > 
-mono-traversable             > /tmp/stack-2077230c52bd1bf7/mono-traversable-1.0.21.0/src/Data/MonoTraversable.hs:1366:5: warning: [GHC-62161] [-Wincomplete-uni-patterns]
-mono-traversable             >     Pattern match(es) are non-exhaustive
-mono-traversable             >     In a pattern binding:
-mono-traversable             >         Patterns of type ‘ViewR a’ not matched: EmptyR
-mono-traversable             >      |
-mono-traversable             > 1366 |     oextend f w@(~(xxs :> _)) =
-mono-traversable             >      |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-mono-traversable             > [2 of 6] Compiling Data.Containers
-mono-traversable             > [3 of 6] Compiling Data.MonoTraversable.Unprefixed
-mono-traversable             > [4 of 6] Compiling Data.Sequences
-aeson                        > [25 of 32] Compiling Data.Aeson.Types.Class
-aeson                        > [26 of 32] Compiling Data.Aeson.Types
-aeson                        > [27 of 32] Compiling Data.Aeson.Text
-aeson                        > [28 of 32] Compiling Data.Aeson.Decoding
-aeson                        > [29 of 32] Compiling Data.Aeson
-aeson                        > [30 of 32] Compiling Data.Aeson.RFC8785
-aeson                        > [31 of 32] Compiling Data.Aeson.QQ.Simple
-aeson                        > [32 of 32] Compiling Data.Aeson.TH
-aeson                        > 
-aeson                        > /tmp/stack-2077230c52bd1bf7/aeson-2.2.3.0/src/Data/Aeson/TH.hs:948:7: warning: [GHC-62161] [-Wincomplete-uni-patterns]
-aeson                        >     Pattern match(es) are non-exhaustive
-aeson                        >     In a pattern binding: Patterns of type ‘[Q Exp]’ not matched: []
-aeson                        >     |
-aeson                        > 948 |       x:xs = [ lookupField argTy
-aeson                        >     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^...
-aeson                        > 
-aeson                        > /tmp/stack-2077230c52bd1bf7/aeson-2.2.3.0/src/Data/Aeson/TH.hs:1064:14: warning: [GHC-62161] [-Wincomplete-uni-patterns]
-aeson                        >     Pattern match(es) are non-exhaustive
-aeson                        >     In a pattern binding: Patterns of type ‘[Q Exp]’ not matched: []
-aeson                        >      |
-aeson                        > 1064 |          let x:xs = [ dispatchParseJSON jc conName tvMap argTy
-aeson                        >      |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-aeson                        > copy/register
-aeson                        > Installing library in /home/qwe12345678/.stack/snapshots/x86_64-linux/16f99e1813dd1d007abb55c4da82bfbbf4dee0ed7756bb753fbf8128ecaf2fec/9.8.4/lib/x86_64-linux-ghc-9.8.4/aeson-2.2.3.0-5LfwCVYCBeV82pXzL1wD02
-aeson                        > Registering library for aeson-2.2.3.0..
-mono-traversable             > [5 of 6] Compiling Data.NonNull
-mono-traversable             > [6 of 6] Compiling Paths_mono_traversable
-mono-traversable             > copy/register
-mono-traversable             > Installing library in /home/qwe12345678/.stack/snapshots/x86_64-linux/16f99e1813dd1d007abb55c4da82bfbbf4dee0ed7756bb753fbf8128ecaf2fec/9.8.4/lib/x86_64-linux-ghc-9.8.4/mono-traversable-1.0.21.0-HfOlzHijmMn1UnQ6D04DbJ
-mono-traversable             > Registering library for mono-traversable-1.0.21.0..
-conduit                      > configure
-conduit                      > Configuring conduit-1.3.6.1...
-conduit                      > build with ghc-9.8.4
-conduit                      > Preprocessing library for conduit-1.3.6.1..
-conduit                      > Building library for conduit-1.3.6.1..
-conduit                      > [ 1 of 14] Compiling Data.Conduit.Internal.Pipe
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Pipe.hs:48:1: warning: [GHC-66111] [-Wunused-imports]
-conduit                      >     The import of ‘Control.Applicative’ is redundant
-conduit                      >       except perhaps to import instances from ‘Control.Applicative’
-conduit                      >     To import instances alone, use: import Control.Applicative()
-conduit                      >    |
-conduit                      > 48 | import Control.Applicative (Applicative (..))
-conduit                      >    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Pipe.hs:56:51: warning: [GHC-38856] [-Wunused-imports]
-conduit                      >     The import of ‘MonadUnliftIO’
-conduit                      >     from module ‘Control.Monad.IO.Unlift’ is redundant
-conduit                      >    |
-conduit                      > 56 | import Control.Monad.IO.Unlift (MonadIO (liftIO), MonadUnliftIO, withRunInIO)
-conduit                      >    |                                                   ^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Pipe.hs:59:1: warning: [GHC-66111] [-Wunused-imports]
-conduit                      >     The import of ‘Data.Monoid’ is redundant
-conduit                      >       except perhaps to import instances from ‘Data.Monoid’
-conduit                      >     To import instances alone, use: import Data.Monoid()
-conduit                      >    |
-conduit                      > 59 | import Data.Monoid (Monoid (mappend, mempty))
-conduit                      >    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Pipe.hs:60:1: warning: [GHC-66111] [-Wunused-imports]
-conduit                      >     The import of ‘Data.Semigroup’ is redundant
-conduit                      >       except perhaps to import instances from ‘Data.Semigroup’
-conduit                      >     To import instances alone, use: import Data.Semigroup()
-conduit                      >    |
-conduit                      > 60 | import Data.Semigroup (Semigroup ((<>)))
-conduit                      >    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Pipe.hs:217:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: CI.await >>= maybe" may never fire
-conduit                      >       because ‘maybe’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘maybe’
-conduit                      >     |
-conduit                      > 217 | {-# RULES "conduit: CI.await >>= maybe" forall x y. await >>= maybe x y = NeedInput y (const x) #-}
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Pipe.hs:226:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: awaitE >>= either" may never fire
-conduit                      >       because ‘either’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘either’
-conduit                      >     |
-conduit                      > 226 | {-# RULES "conduit: awaitE >>= either" forall x y. awaitE >>= either x y = NeedInput y x #-}
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > [ 2 of 14] Compiling Data.Conduit.Internal.Conduit
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Conduit.hs:93:1: warning: [GHC-66111] [-Wunused-imports]
-conduit                      >     The import of ‘Control.Applicative’ is redundant
-conduit                      >       except perhaps to import instances from ‘Control.Applicative’
-conduit                      >     To import instances alone, use: import Control.Applicative()
-conduit                      >    |
-conduit                      > 93 | import Control.Applicative (Applicative (..))
-conduit                      >    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Conduit.hs:104:51: warning: [GHC-38856] [-Wunused-imports]
-conduit                      >     The import of ‘MonadUnliftIO’
-conduit                      >     from module ‘Control.Monad.IO.Unlift’ is redundant
-conduit                      >     |
-conduit                      > 104 | import Control.Monad.IO.Unlift (MonadIO (liftIO), MonadUnliftIO, withRunInIO)
-conduit                      >     |                                                   ^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Conduit.hs:108:1: warning: [GHC-66111] [-Wunused-imports]
-conduit                      >     The import of ‘Data.Monoid’ is redundant
-conduit                      >       except perhaps to import instances from ‘Data.Monoid’
-conduit                      >     To import instances alone, use: import Data.Monoid()
-conduit                      >     |
-conduit                      > 108 | import Data.Monoid (Monoid (mappend, mempty))
-conduit                      >     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Conduit.hs:109:1: warning: [GHC-66111] [-Wunused-imports]
-conduit                      >     The import of ‘Data.Semigroup’ is redundant
-conduit                      >       except perhaps to import instances from ‘Data.Semigroup’
-conduit                      >     To import instances alone, use: import Data.Semigroup()
-conduit                      >     |
-conduit                      > 109 | import Data.Semigroup (Semigroup ((<>)))
-conduit                      >     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Conduit.hs:114:1: warning: [GHC-66111] [-Wunused-imports]
-conduit                      >     The import of ‘Data.Traversable’ is redundant
-conduit                      >       except perhaps to import instances from ‘Data.Traversable’
-conduit                      >     To import instances alone, use: import Data.Traversable()
-conduit                      >     |
-conduit                      > 114 | import Data.Traversable (Traversable (..))
-conduit                      >     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Conduit.hs:739:20: warning: [GHC-63397] [-Wname-shadowing]
-conduit                      >     This binding for ‘p’ shadows the existing binding
-conduit                      >       bound at src/Data/Conduit/Internal/Conduit.hs:736:25
-conduit                      >     |
-conduit                      > 739 |     go (HaveOutput p o) = pure $ Just (o, SealedConduitT p)
-conduit                      >     |                    ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Conduit.hs:743:18: warning: [GHC-63397] [-Wname-shadowing]
-conduit                      >     This binding for ‘p’ shadows the existing binding
-conduit                      >       bound at src/Data/Conduit/Internal/Conduit.hs:736:25
-conduit                      >     |
-conduit                      > 743 |     go (Leftover p ()) = go p
-conduit                      >     |                  ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Conduit.hs:756:20: warning: [GHC-63397] [-Wname-shadowing]
-conduit                      >     This binding for ‘p’ shadows the existing binding
-conduit                      >       bound at src/Data/Conduit/Internal/Conduit.hs:753:31
-conduit                      >     |
-conduit                      > 756 |     go (HaveOutput p o) = pure $ Right (o, SealedConduitT p)
-conduit                      >     |                    ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Conduit.hs:760:18: warning: [GHC-63397] [-Wname-shadowing]
-conduit                      >     This binding for ‘p’ shadows the existing binding
-conduit                      >       bound at src/Data/Conduit/Internal/Conduit.hs:753:31
-conduit                      >     |
-conduit                      > 760 |     go (Leftover p ()) = go p
-conduit                      >     |                  ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Conduit.hs:881:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: await >>= maybe" may never fire
-conduit                      >       because ‘maybe’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘maybe’
-conduit                      >     |
-conduit                      > 881 | {-# RULES "conduit: await >>= maybe" forall x y. await >>= maybe x y = await' x y #-}
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > [ 3 of 14] Compiling Data.Conduit.Internal.Fusion
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:71:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: fuseStream (.|)" may never fire
-conduit                      >       because ‘.|’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘.|’
-conduit                      >    |
-conduit                      > 71 | {-# RULES "conduit: fuseStream (.|)" forall left right.
-conduit                      >    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:74:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: fuseStream (fuse)" may never fire
-conduit                      >       because ‘fuse’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘fuse’
-conduit                      >    |
-conduit                      > 74 | {-# RULES "conduit: fuseStream (fuse)" forall left right.
-conduit                      >    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:78:23: warning: [GHC-68441] [-Wdeprecations]
-conduit                      >     In the use of ‘=$=’ (imported from Data.Conduit.Internal.Conduit):
-conduit                      >     Deprecated: "Use .|"
-conduit                      >    |
-conduit                      > 78 |         unstream left =$= unstream right = unstream (fuseStream left right)
-conduit                      >    |                       ^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:102:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: runStream (pure)" may never fire
-conduit                      >       because ‘runConduitPure’ might inline first
-conduit                      >     Suggested fix:
-conduit                      >       Add an INLINE[n] or NOINLINE[n] pragma for ‘runConduitPure’
-conduit                      >     |
-conduit                      > 102 | {-# RULES "conduit: runStream (pure)" forall stream.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:105:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: runStream (ResourceT)" may never fire
-conduit                      >       because ‘runConduitRes’ might inline first
-conduit                      >     Suggested fix:
-conduit                      >       Add an INLINE[n] or NOINLINE[n] pragma for ‘runConduitRes’
-conduit                      >     |
-conduit                      > 105 | {-# RULES "conduit: runStream (ResourceT)" forall stream.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:129:23: warning: [GHC-68441] [-Wdeprecations]
-conduit                      >     In the use of ‘$$’ (imported from Data.Conduit.Internal.Conduit):
-conduit                      >     Deprecated: "Use runConduit and .|"
-conduit                      >     |
-conduit                      > 129 |         unstream left $$ unstream right = connectStream left right
-conduit                      >     |                       ^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:154:23: warning: [GHC-68441] [-Wdeprecations]
-conduit                      >     In the use of ‘$$’ (imported from Data.Conduit.Internal.Conduit):
-conduit                      >     Deprecated: "Use runConduit and .|"
-conduit                      >     |
-conduit                      > 154 |         unstream left $$ right = connectStream1 left right
-conduit                      >     |                       ^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:157:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream1 (runConduit/.|)" may never fire
-conduit                      >       because ‘.|’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘.|’
-conduit                      >     |
-conduit                      > 157 | {-# RULES "conduit: connectStream1 (runConduit/.|)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:161:35: warning: [GHC-68441] [-Wdeprecations]
-conduit                      >     In the use of ‘=$=’ (imported from Data.Conduit.Internal.Conduit):
-conduit                      >     Deprecated: "Use .|"
-conduit                      >     |
-conduit                      > 161 |         runConduit (unstream left =$= right) = connectStream1 left right
-conduit                      >     |                                   ^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:163:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream1 (runConduit/fuse)" may never fire
-conduit                      >       because ‘fuse’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘fuse’
-conduit                      >     |
-conduit                      > 163 | {-# RULES "conduit: connectStream1 (runConduit/fuse)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:167:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream1 (runConduitPure/.|)" may never fire
-conduit                      >       because ‘.|’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘.|’
-conduit                      >     |
-conduit                      > 167 | {-# RULES "conduit: connectStream1 (runConduitPure/.|)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:167:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream1 (runConduitPure/.|)" may never fire
-conduit                      >       because ‘runConduitPure’ might inline first
-conduit                      >     Suggested fix:
-conduit                      >       Add an INLINE[n] or NOINLINE[n] pragma for ‘runConduitPure’
-conduit                      >     |
-conduit                      > 167 | {-# RULES "conduit: connectStream1 (runConduitPure/.|)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:170:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream1 (runConduitPure/=$=)" may never fire
-conduit                      >       because ‘runConduitPure’ might inline first
-conduit                      >     Suggested fix:
-conduit                      >       Add an INLINE[n] or NOINLINE[n] pragma for ‘runConduitPure’
-conduit                      >     |
-conduit                      > 170 | {-# RULES "conduit: connectStream1 (runConduitPure/=$=)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:171:39: warning: [GHC-68441] [-Wdeprecations]
-conduit                      >     In the use of ‘=$=’ (imported from Data.Conduit.Internal.Conduit):
-conduit                      >     Deprecated: "Use .|"
-conduit                      >     |
-conduit                      > 171 |         runConduitPure (unstream left =$= right) = runIdentity (connectStream1 left right)
-conduit                      >     |                                       ^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:173:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream1 (runConduitPure/fuse)" may never fire
-conduit                      >       because ‘fuse’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘fuse’
-conduit                      >     |
-conduit                      > 173 | {-# RULES "conduit: connectStream1 (runConduitPure/fuse)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:173:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream1 (runConduitPure/fuse)" may never fire
-conduit                      >       because ‘runConduitPure’ might inline first
-conduit                      >     Suggested fix:
-conduit                      >       Add an INLINE[n] or NOINLINE[n] pragma for ‘runConduitPure’
-conduit                      >     |
-conduit                      > 173 | {-# RULES "conduit: connectStream1 (runConduitPure/fuse)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:177:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream1 (runConduitRes/.|)" may never fire
-conduit                      >       because ‘.|’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘.|’
-conduit                      >     |
-conduit                      > 177 | {-# RULES "conduit: connectStream1 (runConduitRes/.|)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:177:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream1 (runConduitRes/.|)" may never fire
-conduit                      >       because ‘runConduitRes’ might inline first
-conduit                      >     Suggested fix:
-conduit                      >       Add an INLINE[n] or NOINLINE[n] pragma for ‘runConduitRes’
-conduit                      >     |
-conduit                      > 177 | {-# RULES "conduit: connectStream1 (runConduitRes/.|)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:180:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream1 (runConduitRes/=$=)" may never fire
-conduit                      >       because ‘runConduitRes’ might inline first
-conduit                      >     Suggested fix:
-conduit                      >       Add an INLINE[n] or NOINLINE[n] pragma for ‘runConduitRes’
-conduit                      >     |
-conduit                      > 180 | {-# RULES "conduit: connectStream1 (runConduitRes/=$=)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:181:38: warning: [GHC-68441] [-Wdeprecations]
-conduit                      >     In the use of ‘=$=’ (imported from Data.Conduit.Internal.Conduit):
-conduit                      >     Deprecated: "Use .|"
-conduit                      >     |
-conduit                      > 181 |         runConduitRes (unstream left =$= right) = runResourceT (connectStream1 left right)
-conduit                      >     |                                      ^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:183:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream1 (runConduitRes/fuse)" may never fire
-conduit                      >       because ‘fuse’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘fuse’
-conduit                      >     |
-conduit                      > 183 | {-# RULES "conduit: connectStream1 (runConduitRes/fuse)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:183:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream1 (runConduitRes/fuse)" may never fire
-conduit                      >       because ‘runConduitRes’ might inline first
-conduit                      >     Suggested fix:
-conduit                      >       Add an INLINE[n] or NOINLINE[n] pragma for ‘runConduitRes’
-conduit                      >     |
-conduit                      > 183 | {-# RULES "conduit: connectStream1 (runConduitRes/fuse)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:214:14: warning: [GHC-68441] [-Wdeprecations]
-conduit                      >     In the use of ‘$$’ (imported from Data.Conduit.Internal.Conduit):
-conduit                      >     Deprecated: "Use runConduit and .|"
-conduit                      >     |
-conduit                      > 214 |         left $$ unstream right = connectStream2 left right
-conduit                      >     |              ^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:217:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream2 (runConduit/.|)" may never fire
-conduit                      >       because ‘.|’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘.|’
-conduit                      >     |
-conduit                      > 217 | {-# RULES "conduit: connectStream2 (runConduit/.|)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:220:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream2 (runConduit/fuse)" may never fire
-conduit                      >       because ‘fuse’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘fuse’
-conduit                      >     |
-conduit                      > 220 | {-# RULES "conduit: connectStream2 (runConduit/fuse)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:224:26: warning: [GHC-68441] [-Wdeprecations]
-conduit                      >     In the use of ‘=$=’ (imported from Data.Conduit.Internal.Conduit):
-conduit                      >     Deprecated: "Use .|"
-conduit                      >     |
-conduit                      > 224 |         runConduit (left =$= unstream right) = connectStream2 left right
-conduit                      >     |                          ^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:227:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream2 (runConduitPure/.|)" may never fire
-conduit                      >       because ‘.|’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘.|’
-conduit                      >     |
-conduit                      > 227 | {-# RULES "conduit: connectStream2 (runConduitPure/.|)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:227:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream2 (runConduitPure/.|)" may never fire
-conduit                      >       because ‘runConduitPure’ might inline first
-conduit                      >     Suggested fix:
-conduit                      >       Add an INLINE[n] or NOINLINE[n] pragma for ‘runConduitPure’
-conduit                      >     |
-conduit                      > 227 | {-# RULES "conduit: connectStream2 (runConduitPure/.|)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:230:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream2 (runConduitPure/fuse)" may never fire
-conduit                      >       because ‘fuse’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘fuse’
-conduit                      >     |
-conduit                      > 230 | {-# RULES "conduit: connectStream2 (runConduitPure/fuse)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:230:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream2 (runConduitPure/fuse)" may never fire
-conduit                      >       because ‘runConduitPure’ might inline first
-conduit                      >     Suggested fix:
-conduit                      >       Add an INLINE[n] or NOINLINE[n] pragma for ‘runConduitPure’
-conduit                      >     |
-conduit                      > 230 | {-# RULES "conduit: connectStream2 (runConduitPure/fuse)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:233:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream2 (runConduitPure/=$=)" may never fire
-conduit                      >       because ‘runConduitPure’ might inline first
-conduit                      >     Suggested fix:
-conduit                      >       Add an INLINE[n] or NOINLINE[n] pragma for ‘runConduitPure’
-conduit                      >     |
-conduit                      > 233 | {-# RULES "conduit: connectStream2 (runConduitPure/=$=)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:234:30: warning: [GHC-68441] [-Wdeprecations]
-conduit                      >     In the use of ‘=$=’ (imported from Data.Conduit.Internal.Conduit):
-conduit                      >     Deprecated: "Use .|"
-conduit                      >     |
-conduit                      > 234 |         runConduitPure (left =$= unstream right) = runIdentity (connectStream2 left right)
-conduit                      >     |                              ^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:237:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream2 (runConduitRes/.|)" may never fire
-conduit                      >       because ‘.|’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘.|’
-conduit                      >     |
-conduit                      > 237 | {-# RULES "conduit: connectStream2 (runConduitRes/.|)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:237:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream2 (runConduitRes/.|)" may never fire
-conduit                      >       because ‘runConduitRes’ might inline first
-conduit                      >     Suggested fix:
-conduit                      >       Add an INLINE[n] or NOINLINE[n] pragma for ‘runConduitRes’
-conduit                      >     |
-conduit                      > 237 | {-# RULES "conduit: connectStream2 (runConduitRes/.|)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:240:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream2 (runConduitRes/fuse)" may never fire
-conduit                      >       because ‘fuse’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘fuse’
-conduit                      >     |
-conduit                      > 240 | {-# RULES "conduit: connectStream2 (runConduitRes/fuse)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:240:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream2 (runConduitRes/fuse)" may never fire
-conduit                      >       because ‘runConduitRes’ might inline first
-conduit                      >     Suggested fix:
-conduit                      >       Add an INLINE[n] or NOINLINE[n] pragma for ‘runConduitRes’
-conduit                      >     |
-conduit                      > 240 | {-# RULES "conduit: connectStream2 (runConduitRes/fuse)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:243:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connectStream2 (runConduitRes/=$=)" may never fire
-conduit                      >       because ‘runConduitRes’ might inline first
-conduit                      >     Suggested fix:
-conduit                      >       Add an INLINE[n] or NOINLINE[n] pragma for ‘runConduitRes’
-conduit                      >     |
-conduit                      > 243 | {-# RULES "conduit: connectStream2 (runConduitRes/=$=)" forall left right.
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Internal/Fusion.hs:244:29: warning: [GHC-68441] [-Wdeprecations]
-conduit                      >     In the use of ‘=$=’ (imported from Data.Conduit.Internal.Conduit):
-conduit                      >     Deprecated: "Use .|"
-conduit                      >     |
-conduit                      > 244 |         runConduitRes (left =$= unstream right) = runResourceT (connectStream2 left right)
-conduit                      >     |                             ^^^
-conduit                      > [ 4 of 14] Compiling Data.Conduit.Internal.List.Stream
-conduit                      > [ 5 of 14] Compiling Data.Conduit.Combinators.Stream
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators/Stream.hs:362:61: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >     |
-conduit                      > 362 | slidingWindowS :: (Monad m, Seq.IsSequence seq, Element seq ~ a) => Int -> StreamConduit a m seq
-conduit                      >     |                                                             ^
-conduit                      > [ 6 of 14] Compiling Data.Conduit
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit.hs:105:1: warning: [GHC-66111] [-Wunused-imports]
-conduit                      >     The import of ‘Data.Functor.Identity’ is redundant
-conduit                      >       except perhaps to import instances from ‘Data.Functor.Identity’
-conduit                      >     To import instances alone, use: import Data.Functor.Identity()
-conduit                      >     |
-conduit                      > 105 | import Data.Functor.Identity (Identity, runIdentity)
-conduit                      >     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit.hs:106:1: warning: [GHC-66111] [-Wunused-imports]
-conduit                      >     The import of ‘Control.Monad.Trans.Resource’ is redundant
-conduit                      >       except perhaps to import instances from ‘Control.Monad.Trans.Resource’
-conduit                      >     To import instances alone, use: import Control.Monad.Trans.Resource()
-conduit                      >     |
-conduit                      > 106 | import Control.Monad.Trans.Resource (ResourceT, runResourceT)
-conduit                      >     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit.hs:107:1: warning: [GHC-66111] [-Wunused-imports]
-conduit                      >     The import of ‘Control.Monad.IO.Unlift’ is redundant
-conduit                      >       except perhaps to import instances from ‘Control.Monad.IO.Unlift’
-conduit                      >     To import instances alone, use: import Control.Monad.IO.Unlift()
-conduit                      >     |
-conduit                      > 107 | import Control.Monad.IO.Unlift (MonadUnliftIO)
-conduit                      >     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > [ 7 of 14] Compiling Data.Conduit.Internal
-conduit                      > [ 8 of 14] Compiling Data.Conduit.Lift
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Lift.hs:67:1: warning: [GHC-66111] [-Wunused-imports]
-conduit                      >     The import of ‘Data.Monoid’ is redundant
-conduit                      >       except perhaps to import instances from ‘Data.Monoid’
-conduit                      >     To import instances alone, use: import Data.Monoid()
-conduit                      >    |
-conduit                      > 67 | import Data.Monoid (Monoid(..))
-conduit                      >    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > [ 9 of 14] Compiling Data.Conduit.List
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/List.hs:336:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: $$ fold" may never fire
-conduit                      >       because ‘.|’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘.|’
-conduit                      >     |
-conduit                      > 336 | {-# RULES "conduit: $$ fold" forall src f b. runConduit (src .| fold f b) = connectFold src f b #-}
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/List.hs:352:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: $$ foldM" may never fire
-conduit                      >       because ‘.|’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘.|’
-conduit                      >     |
-conduit                      > 352 | {-# RULES "conduit: $$ foldM" forall src f b. runConduit (src .| foldM f b) = connectFoldM src f b #-}
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/List.hs:395:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connect to mapM_" may never fire
-conduit                      >       because ‘.|’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘.|’
-conduit                      >     |
-conduit                      > 395 | {-# RULES "conduit: connect to mapM_" [2] forall f src. runConduit (src .| mapM_ f) = srcMapM_ src f #-}
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/List.hs:836:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: source/filter fusion .|" may never fire
-conduit                      >       because ‘.|’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘.|’
-conduit                      >     |
-conduit                      > 836 | {-# RULES "conduit: source/filter fusion .|" forall f src. src .| filter f = filterFuseRight src f #-}
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/List.hs:860:11: warning: [GHC-95396] [-Winline-rule-shadowing]
-conduit                      >     Rule "conduit: connect to sinkNull" may never fire
-conduit                      >       because ‘.|’ might inline first
-conduit                      >     Suggested fix: Add an INLINE[n] or NOINLINE[n] pragma for ‘.|’
-conduit                      >     |
-conduit                      > 860 | {-# RULES "conduit: connect to sinkNull" forall src. runConduit (src .| sinkNull) = srcSinkNull src #-}
-conduit                      >     |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit                      > [10 of 14] Compiling Data.Streaming.FileRead
-conduit                      > [11 of 14] Compiling Data.Streaming.Filesystem
-conduit                      > [12 of 14] Compiling Data.Conduit.Combinators
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators.hs:901:43: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >     |
-conduit                      > 901 | foldl1E :: (Monad m, MonoFoldable mono, a ~ Element mono)
-conduit                      >     |                                           ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators.hs:907:40: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >     |
-conduit                      > 907 | foldMaybeNull :: (MonoFoldable mono, e ~ Element mono)
-conduit                      >     |                                        ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators.hs:992:51: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >     |
-conduit                      > 992 | andE :: (Monad m, MonoFoldable mono, Element mono ~ Bool)
-conduit                      >     |                                                   ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators.hs:1013:50: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 1013 | orE :: (Monad m, MonoFoldable mono, Element mono ~ Bool)
-conduit                      >      |                                                  ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators.hs:1801:76: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 1801 | slidingWindow, slidingWindowC :: (Monad m, Seq.IsSequence seq, Element seq ~ a) => Int -> ConduitT a seq m ()
-conduit                      >      |                                                                            ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators.hs:2036:51: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 2036 | line :: (Monad m, Seq.IsSequence seq, Element seq ~ Char)
-conduit                      >      |                                                   ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators.hs:2045:56: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 2045 | lineAscii :: (Monad m, Seq.IsSequence seq, Element seq ~ Word8)
-conduit                      >      |                                                        ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators.hs:2082:54: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 2082 | unlines :: (Monad m, Seq.IsSequence seq, Element seq ~ Char) => ConduitT seq seq m ()
-conduit                      >      |                                                      ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators.hs:2090:59: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 2090 | unlinesAscii :: (Monad m, Seq.IsSequence seq, Element seq ~ Word8) => ConduitT seq seq m ()
-conduit                      >      |                                                           ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators.hs:2126:61: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 2126 | linesUnbounded :: (Monad m, Seq.IsSequence seq, Element seq ~ Char)
-conduit                      >      |                                                             ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators.hs:2135:66: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 2135 | linesUnboundedAscii :: (Monad m, Seq.IsSequence seq, Element seq ~ Word8)
-conduit                      >      |                                                                  ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators.hs:2437:71: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 2437 | vectorBuilder :: (PrimMonad m, PrimMonad n, V.Vector v e, PrimState m ~ PrimState n)
-conduit                      >      |                                                                       ^
-conduit                      > [13 of 14] Compiling Data.Conduit.Combinators.Unqualified
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators/Unqualified.hs:461:52: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >     |
-conduit                      > 461 | andCE :: (Monad m, MonoFoldable mono, Element mono ~ Bool)
-conduit                      >     |                                                    ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators/Unqualified.hs:480:51: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >     |
-conduit                      > 480 | orCE :: (Monad m, MonoFoldable mono, Element mono ~ Bool)
-conduit                      >     |                                                   ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators/Unqualified.hs:993:61: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >     |
-conduit                      > 993 | slidingWindowC :: (Monad m, Seq.IsSequence seq, Element seq ~ a) => Int -> ConduitT a seq m ()
-conduit                      >     |                                                             ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators/Unqualified.hs:1135:52: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 1135 | lineC :: (Monad m, Seq.IsSequence seq, Element seq ~ Char)
-conduit                      >      |                                                    ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators/Unqualified.hs:1144:57: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 1144 | lineAsciiC :: (Monad m, Seq.IsSequence seq, Element seq ~ Word8)
-conduit                      >      |                                                         ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators/Unqualified.hs:1153:55: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 1153 | unlinesC :: (Monad m, Seq.IsSequence seq, Element seq ~ Char) => ConduitT seq seq m ()
-conduit                      >      |                                                       ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators/Unqualified.hs:1160:60: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 1160 | unlinesAsciiC :: (Monad m, Seq.IsSequence seq, Element seq ~ Word8) => ConduitT seq seq m ()
-conduit                      >      |                                                            ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators/Unqualified.hs:1170:62: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 1170 | linesUnboundedC :: (Monad m, Seq.IsSequence seq, Element seq ~ Char)
-conduit                      >      |                                                              ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators/Unqualified.hs:1178:67: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 1178 | linesUnboundedAsciiC :: (Monad m, Seq.IsSequence seq, Element seq ~ Word8)
-conduit                      >      |                                                                   ^
-conduit                      > 
-conduit                      > /tmp/stack-2077230c52bd1bf7/conduit-1.3.6.1/src/Data/Conduit/Combinators/Unqualified.hs:1201:72: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit                      >     The use of ‘~’ without TypeOperators
-conduit                      >     will become an error in a future GHC release.
-conduit                      >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit                      >      |
-conduit                      > 1201 | vectorBuilderC :: (PrimMonad m, V.Vector v e, PrimMonad n, PrimState m ~ PrimState n)
-conduit                      >      |                                                                        ^
-conduit                      > [14 of 14] Compiling Conduit
-conduit                      > copy/register
-conduit                      > Installing library in /home/qwe12345678/.stack/snapshots/x86_64-linux/16f99e1813dd1d007abb55c4da82bfbbf4dee0ed7756bb753fbf8128ecaf2fec/9.8.4/lib/x86_64-linux-ghc-9.8.4/conduit-1.3.6.1-JxRhOHY8ayHYTvEm3dVI8
-conduit                      > Registering library for conduit-1.3.6.1..
-libyaml                      > using precompiled package
-conduit-extra                > configure
-conduit-extra                > Configuring conduit-extra-1.3.8...
-yaml                         > configure
-yaml                         > Configuring yaml-0.11.11.2...
-conduit-extra                > build with ghc-9.8.4
-conduit-extra                > Preprocessing library for conduit-extra-1.3.8..
-conduit-extra                > Building library for conduit-extra-1.3.8..
-yaml                         > build with ghc-9.8.4
-yaml                         > Preprocessing library for yaml-0.11.11.2..
-yaml                         > Building library for yaml-0.11.11.2..
-conduit-extra                > [ 1 of 13] Compiling Data.Conduit.Attoparsec
-yaml                         > [ 1 of 10] Compiling Data.Yaml.Internal
-conduit-extra                > [ 2 of 13] Compiling Data.Conduit.Binary
-conduit-extra                > [ 3 of 13] Compiling Data.Conduit.ByteString.Builder
-conduit-extra                > [ 4 of 13] Compiling Data.Conduit.Filesystem
-conduit-extra                > [ 5 of 13] Compiling Data.Conduit.Foldl
-conduit-extra                > [ 6 of 13] Compiling Data.Conduit.Lazy
-conduit-extra                > [ 7 of 13] Compiling Data.Conduit.Network
-conduit-extra                > [ 8 of 13] Compiling Data.Conduit.Network.UDP
-conduit-extra                > [ 9 of 13] Compiling Data.Conduit.Network.Unix
-conduit-extra                > [10 of 13] Compiling Data.Conduit.Process
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:48:13: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 48 | instance (r ~ (), MonadIO m, i ~ ByteString) => InputSource (ConduitM i o m r) where
-conduit-extra                >    |             ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:48:32: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 48 | instance (r ~ (), MonadIO m, i ~ ByteString) => InputSource (ConduitM i o m r) where
-conduit-extra                >    |                                ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:49:20: warning: [GHC-62161] [-Wincomplete-uni-patterns]
-conduit-extra                >     Pattern match(es) are non-exhaustive
-conduit-extra                >     In a lambda abstraction:
-conduit-extra                >         Patterns of type ‘Maybe GHC.IO.Handle.Types.Handle’ not matched:
-conduit-extra                >             Nothing
-conduit-extra                >    |
-conduit-extra                > 49 |     isStdStream = (\(Just h) -> hSetBuffering h NoBuffering $> sinkHandle h, Just CreatePipe)
-conduit-extra                >    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:50:13: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 50 | instance (r ~ (), r' ~ (), MonadIO m, MonadIO n, i ~ ByteString) => InputSource (ConduitM i o m r, n r') where
-conduit-extra                >    |             ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:50:22: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 50 | instance (r ~ (), r' ~ (), MonadIO m, MonadIO n, i ~ ByteString) => InputSource (ConduitM i o m r, n r') where
-conduit-extra                >    |                      ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:50:52: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 50 | instance (r ~ (), r' ~ (), MonadIO m, MonadIO n, i ~ ByteString) => InputSource (ConduitM i o m r, n r') where
-conduit-extra                >    |                                                    ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:51:20: warning: [GHC-62161] [-Wincomplete-uni-patterns]
-conduit-extra                >     Pattern match(es) are non-exhaustive
-conduit-extra                >     In a lambda abstraction:
-conduit-extra                >         Patterns of type ‘Maybe GHC.IO.Handle.Types.Handle’ not matched:
-conduit-extra                >             Nothing
-conduit-extra                >    |
-conduit-extra                > 51 |     isStdStream = (\(Just h) -> hSetBuffering h NoBuffering $> (sinkHandle h, liftIO $ hClose h), Just CreatePipe)
-conduit-extra                >    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:66:24: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 66 | instance (MonadIO m, r ~ ()) => InputSource (BuilderInput o m r) where
-conduit-extra                >    |                        ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:67:18: warning: [GHC-62161] [-Wincomplete-uni-patterns]
-conduit-extra                >     Pattern match(es) are non-exhaustive
-conduit-extra                >     In a lambda abstraction:
-conduit-extra                >         Patterns of type ‘Maybe GHC.IO.Handle.Types.Handle’ not matched:
-conduit-extra                >             Nothing
-conduit-extra                >    |
-conduit-extra                > 67 |   isStdStream = (\(Just h) -> return $ BuilderInput $ sinkHandleBuilder h, Just CreatePipe)
-conduit-extra                >    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:68:35: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 68 | instance (MonadIO m, MonadIO n, r ~ (), r' ~ ()) => InputSource (BuilderInput o m r, n r') where
-conduit-extra                >    |                                   ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:68:44: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 68 | instance (MonadIO m, MonadIO n, r ~ (), r' ~ ()) => InputSource (BuilderInput o m r, n r') where
-conduit-extra                >    |                                            ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:69:18: warning: [GHC-62161] [-Wincomplete-uni-patterns]
-conduit-extra                >     Pattern match(es) are non-exhaustive
-conduit-extra                >     In a lambda abstraction:
-conduit-extra                >         Patterns of type ‘Maybe GHC.IO.Handle.Types.Handle’ not matched:
-conduit-extra                >             Nothing
-conduit-extra                >    |
-conduit-extra                > 69 |   isStdStream = (\(Just h) -> return (BuilderInput $ sinkHandleBuilder h, liftIO $ hClose h), Just CreatePipe)
-conduit-extra                >    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:70:24: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 70 | instance (MonadIO m, r ~ ()) => InputSource (FlushInput o m r) where
-conduit-extra                >    |                        ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:71:18: warning: [GHC-62161] [-Wincomplete-uni-patterns]
-conduit-extra                >     Pattern match(es) are non-exhaustive
-conduit-extra                >     In a lambda abstraction:
-conduit-extra                >         Patterns of type ‘Maybe GHC.IO.Handle.Types.Handle’ not matched:
-conduit-extra                >             Nothing
-conduit-extra                >    |
-conduit-extra                > 71 |   isStdStream = (\(Just h) -> return $ FlushInput $ sinkHandleFlush h, Just CreatePipe)
-conduit-extra                >    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:72:35: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 72 | instance (MonadIO m, MonadIO n, r ~ (), r' ~ ()) => InputSource (FlushInput o m r, n r') where
-conduit-extra                >    |                                   ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:72:44: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 72 | instance (MonadIO m, MonadIO n, r ~ (), r' ~ ()) => InputSource (FlushInput o m r, n r') where
-conduit-extra                >    |                                            ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:73:18: warning: [GHC-62161] [-Wincomplete-uni-patterns]
-conduit-extra                >     Pattern match(es) are non-exhaustive
-conduit-extra                >     In a lambda abstraction:
-conduit-extra                >         Patterns of type ‘Maybe GHC.IO.Handle.Types.Handle’ not matched:
-conduit-extra                >             Nothing
-conduit-extra                >    |
-conduit-extra                > 73 |   isStdStream = (\(Just h) -> return (FlushInput $ sinkHandleFlush h, liftIO $ hClose h), Just CreatePipe)
-conduit-extra                >    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:75:13: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 75 | instance (r ~ (), MonadIO m, o ~ ByteString) => OutputSink (ConduitM i o m r) where
-conduit-extra                >    |             ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:75:32: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 75 | instance (r ~ (), MonadIO m, o ~ ByteString) => OutputSink (ConduitM i o m r) where
-conduit-extra                >    |                                ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:76:20: warning: [GHC-62161] [-Wincomplete-uni-patterns]
-conduit-extra                >     Pattern match(es) are non-exhaustive
-conduit-extra                >     In a lambda abstraction:
-conduit-extra                >         Patterns of type ‘Maybe GHC.IO.Handle.Types.Handle’ not matched:
-conduit-extra                >             Nothing
-conduit-extra                >    |
-conduit-extra                > 76 |     osStdStream = (\(Just h) -> hSetBuffering h NoBuffering $> sourceHandle h, Just CreatePipe)
-conduit-extra                >    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:77:13: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 77 | instance (r ~ (), r' ~ (), MonadIO m, MonadIO n, o ~ ByteString) => OutputSink (ConduitM i o m r, n r') where
-conduit-extra                >    |             ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:77:22: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 77 | instance (r ~ (), r' ~ (), MonadIO m, MonadIO n, o ~ ByteString) => OutputSink (ConduitM i o m r, n r') where
-conduit-extra                >    |                      ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:77:52: warning: [GHC-58520] [-Wtype-equality-requires-operators]
-conduit-extra                >     The use of ‘~’ without TypeOperators
-conduit-extra                >     will become an error in a future GHC release.
-conduit-extra                >     Suggested fix: Perhaps you intended to use TypeOperators
-conduit-extra                >    |
-conduit-extra                > 77 | instance (r ~ (), r' ~ (), MonadIO m, MonadIO n, o ~ ByteString) => OutputSink (ConduitM i o m r, n r') where
-conduit-extra                >    |                                                    ^
-conduit-extra                > 
-conduit-extra                > /tmp/stack-2077230c52bd1bf7/conduit-extra-1.3.8/Data/Conduit/Process.hs:78:20: warning: [GHC-62161] [-Wincomplete-uni-patterns]
-conduit-extra                >     Pattern match(es) are non-exhaustive
-conduit-extra                >     In a lambda abstraction:
-conduit-extra                >         Patterns of type ‘Maybe GHC.IO.Handle.Types.Handle’ not matched:
-conduit-extra                >             Nothing
-conduit-extra                >    |
-conduit-extra                > 78 |     osStdStream = (\(Just h) -> hSetBuffering h NoBuffering $> (sourceHandle h, liftIO $ hClose h), Just CreatePipe)
-conduit-extra                >    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-yaml                         > [ 2 of 10] Compiling Data.Yaml.Include
-yaml                         > [ 3 of 10] Compiling Data.Yaml.Builder
-conduit-extra                > [11 of 13] Compiling Data.Conduit.Process.Typed
-conduit-extra                > [12 of 13] Compiling Data.Conduit.Text
-yaml                         > [ 4 of 10] Compiling Data.Yaml
-yaml                         > [ 5 of 10] Compiling Data.Yaml.Config
-yaml                         > [ 6 of 10] Compiling Data.Yaml.Aeson
-yaml                         > [ 7 of 10] Compiling Data.Yaml.Parser
-conduit-extra                > [13 of 13] Compiling Data.Conduit.Zlib
-conduit-extra                > copy/register
-conduit-extra                > Installing library in /home/qwe12345678/.stack/snapshots/x86_64-linux/16f99e1813dd1d007abb55c4da82bfbbf4dee0ed7756bb753fbf8128ecaf2fec/9.8.4/lib/x86_64-linux-ghc-9.8.4/conduit-extra-1.3.8-1HgPFUCbxVV1Y7QKAwbXdb
-yaml                         > [ 8 of 10] Compiling Data.Yaml.Pretty
-yaml                         > [ 9 of 10] Compiling Data.Yaml.TH
-yaml                         > [10 of 10] Compiling Paths_yaml
-conduit-extra                > Registering library for conduit-extra-1.3.8..
-monad-logger                 > using precompiled package
-yaml                         > copy/register
-yaml                         > Installing library in /home/qwe12345678/.stack/snapshots/x86_64-linux/16f99e1813dd1d007abb55c4da82bfbbf4dee0ed7756bb753fbf8128ecaf2fec/9.8.4/lib/x86_64-linux-ghc-9.8.4/yaml-0.11.11.2-BRRNihkVBeg7Zo5z1vHKEn
-yaml                         > Registering library for yaml-0.11.11.2..
-fluxus                       > configure (lib + exe)
+fluxus> configure (lib + exe)
 Configuring fluxus-0.1.0.0...
-fluxus                       > build (lib + exe) with ghc-9.8.4
+fluxus> build (lib + exe) with ghc-9.8.4
 Preprocessing library for fluxus-0.1.0.0..
 Building library for fluxus-0.1.0.0..
-[ 1 of 38] Compiling Fluxus.AST.Common [Flags changed]
-[ 2 of 38] Compiling Fluxus.AST.Go.Common [Flags changed]
-[ 3 of 38] Compiling Fluxus.AST.Go.Expressions [Flags changed]
-[ 4 of 38] Compiling Fluxus.AST.Go.Types [Flags changed]
-[ 5 of 38] Compiling Fluxus.AST.Go.Helpers [Flags changed]
-[ 6 of 38] Compiling Fluxus.AST.Go [Flags changed]
-[ 7 of 38] Compiling Fluxus.AST.Python [Flags changed]
-[ 8 of 38] Compiling Fluxus.Analysis.OwnershipInference [Flags changed]
-[ 9 of 38] Compiling Fluxus.Analysis.ShapeAnalysis [Flags changed]
-[10 of 38] Compiling Fluxus.Analysis.SmartFallback [Flags changed]
-[11 of 38] Compiling Fluxus.Analysis.TypeInference [Flags changed]
-[12 of 38] Compiling Fluxus.CodeGen.CPP [Flags changed]
-[13 of 38] Compiling Fluxus.Compiler.Config [Flags changed]
-[14 of 38] Compiling Fluxus.Compiler.SimpleCodeGen [Source file changed]
+[ 1 of 23] Compiling Fluxus.AST.Common
 
-/home/qwe12345678/github/Fluxus/src/Fluxus/Compiler/SimpleCodeGen.hs:668:3: error: [GHC-58481]
-    parse error on input ‘=’
+/home/qwe12345678/hyperstatic2/src/Fluxus/AST/Common.hs:44:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Data.Scientific’ is redundant
+      except perhaps to import instances from ‘Data.Scientific’
+    To import instances alone, use: import Data.Scientific()
+   |
+44 | import Data.Scientific (Scientific)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/AST/Common.hs:45:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Data.HashMap.Strict’ is redundant
+      except perhaps to import instances from ‘Data.HashMap.Strict’
+    To import instances alone, use: import Data.HashMap.Strict()
+   |
+45 | import Data.HashMap.Strict (HashMap)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[ 2 of 23] Compiling Fluxus.AST.Go
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/AST/Go.hs:38:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Data.HashMap.Strict’ is redundant
+      except perhaps to import instances from ‘Data.HashMap.Strict’
+    To import instances alone, use: import Data.HashMap.Strict()
+   |
+38 | import Data.HashMap.Strict (HashMap)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[ 3 of 23] Compiling Fluxus.AST.Python
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/AST/Python.hs:36:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Data.HashMap.Strict’ is redundant
+      except perhaps to import instances from ‘Data.HashMap.Strict’
+    To import instances alone, use: import Data.HashMap.Strict()
+   |
+36 | import Data.HashMap.Strict (HashMap)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[ 4 of 23] Compiling Fluxus.Analysis.EscapeAnalysis
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/EscapeAnalysis.hs:110:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘addEscapeDependency’
     |
-668 |   = BlockStart Text Text           -- prefix and condition, uses default closer "}"
-    |   ^
-[15 of 38] Compiling Fluxus.Debug.Logger [Flags changed]
-[16 of 38] Compiling Fluxus.Internal.Monad [Flags changed]
-[17 of 38] Compiling Fluxus.Internal.Types [Flags changed]
-[18 of 38] Compiling Fluxus.Optimization.BasicPasses [Flags changed]
-[19 of 38] Compiling Fluxus.Optimization.ConstantFolding [Flags changed]
-[20 of 38] Compiling Fluxus.Optimization.ConstantPropagation [Flags changed]
-[21 of 38] Compiling Fluxus.Optimization.DeadCodeElimination [Flags changed]
-[22 of 38] Compiling Fluxus.Optimization.Devirtualization [Flags changed]
-[23 of 38] Compiling Fluxus.Optimization.Inlining [Flags changed]
-[24 of 38] Compiling Fluxus.Optimization.Monomorphization [Flags changed]
-[25 of 38] Compiling Fluxus.Optimization.SizeReduction [Flags changed]
-[26 of 38] Compiling Fluxus.Optimization.Vectorization [Flags changed]
-[27 of 38] Compiling Fluxus.Parser.Go.Lexer [Flags changed]
-[28 of 38] Compiling Fluxus.Parser.Go.Parser [Flags changed]
-[29 of 38] Compiling Fluxus.Parser.Python.Lexer [Flags changed]
-[30 of 38] Compiling Fluxus.Parser.Python.Parser [Flags changed]
-[31 of 38] Compiling Fluxus.CodeGen.Go [Flags changed]
-[32 of 38] Compiling Fluxus.Analysis.EscapeAnalysis [Flags changed]
-[33 of 38] Compiling Fluxus.Runtime.Go [Flags changed]
-[34 of 38] Compiling Fluxus.Runtime.Python [Flags changed]
-[35 of 38] Compiling Fluxus.Utils.Graph [Flags changed]
-[36 of 38] Compiling Fluxus.Utils.Pretty [Flags changed]
-Completed 95 action(s).
+110 | addEscapeDependency from to = do
+    | ^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/EscapeAnalysis.hs:122:31: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘escapes’ shadows the existing binding
+      imported from ‘Fluxus.AST.Common’ at src/Fluxus/Analysis/EscapeAnalysis.hs:22:1-24
+      (and originally defined at src/Fluxus/AST/Common.hs:239:5-11)
+    |
+122 |     propagateEscapeInfo graph escapes = 
+    |                               ^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/EscapeAnalysis.hs:127:27: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘escapes’ shadows the existing binding
+      imported from ‘Fluxus.AST.Common’ at src/Fluxus/Analysis/EscapeAnalysis.hs:22:1-24
+      (and originally defined at src/Fluxus/AST/Common.hs:239:5-11)
+    |
+127 |     propagateForVar graph escapes var currentEscape =
+    |                           ^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/EscapeAnalysis.hs:149:31: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘op’
+    |
+149 | analyzeExpression (CEBinaryOp op left right) = do
+    |                               ^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/EscapeAnalysis.hs:163:3: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘funcEscape’
+    |
+163 |   funcEscape <- analyzeExpression (locatedValue func)
+    |   ^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/EscapeAnalysis.hs:164:3: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘argEscapes’
+    |
+164 |   argEscapes <- mapM (analyzeExpression . locatedValue) args
+    |   ^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/EscapeAnalysis.hs:254:22: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘expr’
+    |
+254 | suggestOptimizations expr escapeInfo memLoc = do
+    |                      ^^^^
+[ 5 of 23] Compiling Fluxus.Analysis.OwnershipInference
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/OwnershipInference.hs:30:1: warning: [GHC-66111] [-Wunused-imports]
+    The qualified import of ‘Data.Text’ is redundant
+      except perhaps to import instances from ‘Data.Text’
+    To import instances alone, use: import Data.Text()
+   |
+30 | import qualified Data.Text as T
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/OwnershipInference.hs:136:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘addOwnershipDependency’
+    |
+136 | addOwnershipDependency from to = do
+    | ^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/OwnershipInference.hs:141:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘addLifetimeConstraint’
+    |
+141 | addLifetimeConstraint outlives depends = do
+    | ^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/OwnershipInference.hs:229:3: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘funcOwnership’
+    |
+229 |   funcOwnership <- analyzeExpression (locatedValue func)
+    |   ^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/OwnershipInference.hs:230:3: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘argOwnerships’
+    |
+230 |   argOwnerships <- mapM (analyzeExpression . locatedValue) args
+    |   ^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/OwnershipInference.hs:317:3: warning: [GHC-62161] [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In a case alternative:
+        Patterns of type ‘(MemoryLocation, EscapeInfo, Bool)’ not matched:
+            (Stack, EscapeToHeap, _)
+            (Stack, EscapeToGlobal, _)
+            (Stack, EscapeUnknown, _)
+            (Stack, NoEscape, False)
+            ...
+    |
+317 |   case (memLocation ownership, escapes ownership, ownsMemory ownership) of
+    |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/OwnershipInference.hs:322:7: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘refCount’ shadows the existing binding
+      imported from ‘Fluxus.AST.Common’ at src/Fluxus/Analysis/OwnershipInference.hs:24:1-24
+      (and originally defined at src/Fluxus/AST/Common.hs:238:5-12)
+    |
+322 |       refCount <- case refCount ownership of
+    |       ^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/OwnershipInference.hs:322:19: warning: [GHC-62161] [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In a case alternative:
+        Patterns of type ‘Maybe Int’ not matched:
+            Just p where p is not one of {1}
+    |
+322 |       refCount <- case refCount ownership of
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^...
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/OwnershipInference.hs:333:22: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘ownership’
+    |
+333 | generateCppType expr ownership strategy = do
+    |                      ^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/OwnershipInference.hs:354:27: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘expr’
+    |
+354 | generateOptimizationHints expr ownership strategy = do
+    |                           ^^^^
+[ 6 of 23] Compiling Fluxus.Analysis.ShapeAnalysis
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/ShapeAnalysis.hs:183:3: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘funcShape’
+    |
+183 |   funcShape <- analyzeShape (locatedValue func)
+    |   ^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/ShapeAnalysis.hs:184:3: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘argShapes’
+    |
+184 |   argShapes <- mapM (analyzeShape . locatedValue) args
+    |   ^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/ShapeAnalysis.hs:258:19: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘keyType’
+    |
+258 | inferShape (TDict keyType valueType) = ShapeInfo
+    |                   ^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/ShapeAnalysis.hs:273:27: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘name’
+    |
+273 | analyzeStructure (TStruct name fieldTypes) = do
+    |                           ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/ShapeAnalysis.hs:273:32: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘fieldTypes’
+    |
+273 | analyzeStructure (TStruct name fieldTypes) = do
+    |                                ^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/ShapeAnalysis.hs:449:1: warning: [GHC-62161] [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In an equation for ‘inferLiteralShape’:
+        Patterns of type ‘Literal’ not matched: LUInt _
+    |
+449 | inferLiteralShape (LInt _) = inferShape (TInt 32)
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/ShapeAnalysis.hs:470:23: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘left’
+    |
+470 | combineBinaryShapes _ left right = return unknownShape
+    |                       ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/ShapeAnalysis.hs:470:28: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘right’
+    |
+470 | combineBinaryShapes _ left right = return unknownShape
+    |                            ^^^^^
+[ 7 of 23] Compiling Fluxus.Analysis.TypeInference
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:96:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘pushScope’
+   |
+96 | pushScope = do
+   | ^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:102:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘popScope’
+    |
+102 | popScope = do
+    | ^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:112:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘constraints’ shadows the existing binding
+      defined at src/Fluxus/Analysis/TypeInference.hs:45:5
+    |
+112 |   constraints <- gets constraints
+    |   ^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:113:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘substitutions’ shadows the existing binding
+      defined at src/Fluxus/Analysis/TypeInference.hs:46:5
+    |
+113 |   substitutions <- gets substitutions
+    |   ^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:127:25: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘op’
+    |
+127 | inferExpr (CEComparison op left right) = do
+    |                         ^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:135:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘resultType’ shadows the existing binding
+      defined at src/Fluxus/Analysis/TypeInference.hs:52:5
+    |
+135 |   resultType <- freshTypeVar
+    |   ^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:174:28: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘attr’
+    |
+174 | inferExpr (CEAttribute obj attr) = do
+    |                            ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:175:3: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘objType’
+    |
+175 |   objType <- inferExpr (locatedValue obj)
+    |   ^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:301:11: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘constraints’ shadows the existing binding
+      defined at src/Fluxus/Analysis/TypeInference.hs:45:5
+    |
+301 |     Right constraints -> return (Just constraints)
+    |           ^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:315:11: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘constraints’ shadows the existing binding
+      defined at src/Fluxus/Analysis/TypeInference.hs:45:5
+    |
+315 |       let constraints = concat [cs | Right cs <- results]
+    |           ^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:379:22: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘constraints’ shadows the existing binding
+      defined at src/Fluxus/Analysis/TypeInference.hs:45:5
+    |
+379 |     go (TForall vars constraints t) = TForall vars constraints (go t)
+    |                      ^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:389:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘constraints’ shadows the existing binding
+      defined at src/Fluxus/Analysis/TypeInference.hs:45:5
+    |
+389 |   constraints <- gets constraints
+    |   ^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:401:27: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘constraints’
+    |
+401 | instantiate (TForall vars constraints t) = do
+    |                           ^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:401:27: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘constraints’ shadows the existing binding
+      defined at src/Fluxus/Analysis/TypeInference.hs:45:5
+    |
+401 | instantiate (TForall vars constraints t) = do
+    |                           ^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:403:49: warning: [GHC-62161] [-Wincomplete-uni-patterns]
+    Pattern match(es) are non-exhaustive
+    In a lambda abstraction:
+        Patterns of type ‘Type’ not matched:
+            TInt _
+            TUInt _
+            TFloat _
+            TBool
+            ...
+    |
+403 |   let varMap = HashMap.fromList (zip vars (map (\(TVar v) -> v) freshVars))
+    |                                                 ^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:419:27: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘t’ shadows the existing binding
+      bound at src/Fluxus/Analysis/TypeInference.hs:411:16
+    |
+419 |     freeVarsInType (TList t) = freeVarsInType t
+    |                           ^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:422:26: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘t’ shadows the existing binding
+      bound at src/Fluxus/Analysis/TypeInference.hs:411:16
+    |
+422 |     freeVarsInType (TSet t) = freeVarsInType t
+    |                          ^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:423:31: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘t’ shadows the existing binding
+      bound at src/Fluxus/Analysis/TypeInference.hs:411:16
+    |
+423 |     freeVarsInType (TOptional t) = freeVarsInType t
+    |                               ^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:431:36: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘t’ shadows the existing binding
+      bound at src/Fluxus/Analysis/TypeInference.hs:411:16
+    |
+431 |     freeVarsInType (TForall vars _ t) = freeVarsInType t `Set.difference` Set.fromList vars
+    |                                    ^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:432:28: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘t’ shadows the existing binding
+      bound at src/Fluxus/Analysis/TypeInference.hs:411:16
+    |
+432 |     freeVarsInType (TOwned t) = freeVarsInType t
+    |                            ^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:433:29: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘t’ shadows the existing binding
+      bound at src/Fluxus/Analysis/TypeInference.hs:411:16
+    |
+433 |     freeVarsInType (TShared t) = freeVarsInType t
+    |                             ^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:434:31: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘t’ shadows the existing binding
+      bound at src/Fluxus/Analysis/TypeInference.hs:411:16
+    |
+434 |     freeVarsInType (TBorrowed t) = freeVarsInType t
+    |                               ^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Analysis/TypeInference.hs:435:30: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘t’ shadows the existing binding
+      bound at src/Fluxus/Analysis/TypeInference.hs:411:16
+    |
+435 |     freeVarsInType (TMutable t) = freeVarsInType t
+    |                              ^
+[ 8 of 23] Compiling Fluxus.CodeGen.Go
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:17:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Control.Monad.State’ is redundant
+      except perhaps to import instances from ‘Control.Monad.State’
+    To import instances alone, use: import Control.Monad.State()
+   |
+17 | import Control.Monad.State
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:18:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Control.Monad.Writer’ is redundant
+      except perhaps to import instances from ‘Control.Monad.Writer’
+    To import instances alone, use: import Control.Monad.Writer()
+   |
+18 | import Control.Monad.Writer
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:56:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘generateModuleHeader’
+   |
+56 | generateModuleHeader config =
+   | ^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:75:17: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘module_’
+   |
+75 | generateImports module_ config =
+   |                 ^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:113:41: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘stmt’ shadows the existing binding
+      bound at src/Fluxus/CodeGen/Go.hs:98:26
+    |
+113 |         goThen = concatMap (\(Located _ stmt) -> generateStatement config stmt) thenBody
+    |                                         ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:116:50: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘stmt’ shadows the existing binding
+      bound at src/Fluxus/CodeGen/Go.hs:98:26
+    |
+116 |                   body -> concatMap (\(Located _ stmt) -> generateStatement config stmt) body
+    |                                                  ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:122:77: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘elseBody’
+    |
+122 |   PyFor (Located _ (PatVar (Identifier varName))) (Located _ iterExpr) body elseBody ->
+    |                                                                             ^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:124:41: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘stmt’ shadows the existing binding
+      bound at src/Fluxus/CodeGen/Go.hs:98:26
+    |
+124 |         goBody = concatMap (\(Located _ stmt) -> generateStatement config stmt) body
+    |                                         ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:158:19: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘config’
+    |
+158 | generateParameter config (Located _ param) = case param of
+    |                   ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:171:20: warning: [GHC-62161] [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In a case alternative:
+        Patterns of type ‘PythonLiteral’ not matched:
+            PyComplex _ _
+            PyFString _ _
+            PyBytes _
+            PyEllipsis
+    |
+171 |   PyLiteral lit -> case lit of
+    |                    ^^^^^^^^^^^...
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:200:25: warning: [GHC-62161] [-Wincomplete-uni-patterns]
+    Pattern match(es) are non-exhaustive
+    In a lambda abstraction:
+        Patterns of type ‘Located PythonArgument’ not matched:
+            Located _ (ArgKeyword _ _)
+            Located _ (ArgStarred _)
+            Located _ (ArgKwStarred _)
+    |
+200 |         argExprs = map (\(Located _ (ArgPositional arg)) -> generateExpression config (locatedValue arg)) args
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:212:26: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘expr’ shadows the existing binding
+      bound at src/Fluxus/CodeGen/Go.hs:168:27
+    |
+212 |   PySubscript (Located _ expr) (Located _ (SliceIndex index)) ->
+    |                          ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/Go.hs:218:38: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘elem’ shadows the existing binding
+      imported from ‘Prelude’ at src/Fluxus/CodeGen/Go.hs:8:8-24
+      (and originally defined in ‘Data.Foldable’)
+    |
+218 |     let elemExprs = map (\(Located _ elem) -> generateExpression config elem) elements
+    |                                      ^^^^
+[ 9 of 23] Compiling Fluxus.Internal.Types
+[10 of 23] Compiling Fluxus.Internal.Monad
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Internal/Monad.hs:21:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Control.Monad.IO.Class’ is redundant
+      except perhaps to import instances from ‘Control.Monad.IO.Class’
+    To import instances alone, use: import Control.Monad.IO.Class()
+   |
+21 | import Control.Monad.IO.Class
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[11 of 23] Compiling Fluxus.Optimization.Devirtualization
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Optimization/Devirtualization.hs:162:18: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘expr’
+    |
+162 | optimizeDispatch expr@(CECall func args) = do
+    |                  ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Optimization/Devirtualization.hs:267:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘recordOptimization’
+    |
+267 | recordOptimization opt = do
+    | ^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Optimization/Devirtualization.hs:272:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘addTypeConstraint’
+    |
+272 | addTypeConstraint var constraintType = do
+    | ^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Optimization/Devirtualization.hs:277:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘getPossibleTypes’
+    |
+277 | getPossibleTypes var = do
+    | ^^^^^^^^^^^^^^^^
+[12 of 23] Compiling Fluxus.Optimization.Monomorphization
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Optimization/Monomorphization.hs:184:21: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘expr’
+    |
+184 | transformExpression expr@(CECall func args) = do
+    |                     ^^^^
+[13 of 23] Compiling Fluxus.Parser.Go.Lexer
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Lexer.hs:36:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Data.Char’ is redundant
+      except perhaps to import instances from ‘Data.Char’
+    To import instances alone, use: import Data.Char()
+   |
+36 | import Data.Char (isAlphaNum, isAlpha, isDigit)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Lexer.hs:40:1: warning: [GHC-66111] [-Wunused-imports]
+    The qualified import of ‘Text.Megaparsec.Char.Lexer’ is redundant
+      except perhaps to import instances from ‘Text.Megaparsec.Char.Lexer’
+    To import instances alone, use: import Text.Megaparsec.Char.Lexer()
+   |
+40 | import qualified Text.Megaparsec.Char.Lexer as L
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Lexer.hs:42:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Text.Megaparsec.Char’ is redundant
+      except perhaps to import instances from ‘Text.Megaparsec.Char’
+    To import instances alone, use: import Text.Megaparsec.Char()
+   |
+42 | import Text.Megaparsec.Char (string)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Lexer.hs:43:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Control.Applicative’ is redundant
+      except perhaps to import instances from ‘Control.Applicative’
+    To import instances alone, use: import Control.Applicative()
+   |
+43 | import Control.Applicative ((<*), (*>))
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Lexer.hs:149:7: warning: [GHC-81995] [-Wunused-do-bind]
+    A do-notation statement discarded a result of type
+      ‘[MP.Token Text]’
+    Suggested fix:
+      Suppress this warning by saying
+        ‘_ <- many (satisfy (\ c -> c == ' ' || c == '\t'))’
+    |
+149 |       many (satisfy (\c -> c == ' ' || c == '\t'))
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Lexer.hs:149:7: warning: [GHC-81995] [-Wunused-do-bind]
+    A do-notation statement discarded a result of type
+      ‘[MP.Token Text]’
+    Suggested fix:
+      Suppress this warning by saying
+        ‘_ <- many (satisfy (\ c -> c == ' ' || c == '\t'))’
+    |
+149 |       many (satisfy (\c -> c == ' ' || c == '\t'))
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Lexer.hs:153:11: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘span’ shadows the existing binding
+      imported from ‘Prelude’ at src/Fluxus/Parser/Go/Lexer.hs:8:8-29
+      (and originally defined in ‘GHC.List’)
+    |
+153 |       let span = SourceSpan "<input>" (convertPos start) (convertPos end)
+    |           ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Lexer.hs:332:9: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘exp’ shadows the existing binding
+      imported from ‘Prelude’ at src/Fluxus/Parser/Go/Lexer.hs:8:8-29
+      (and originally defined in ‘GHC.Float’)
+    |
+332 |         exp <- MP.some digitChar
+    |         ^^^
+[14 of 23] Compiling Fluxus.Parser.Go.Parser
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:43:29: warning: [GHC-38856] [-Wunused-imports]
+    The import of ‘when’ from module ‘Control.Monad’ is redundant
+   |
+43 | import Control.Monad (void, when)
+   |                             ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:44:1: warning: [GHC-38856] [-Wunused-imports]
+    The import of ‘<$, <|>, optional, some’
+    from module ‘Control.Applicative’ is redundant
+   |
+44 | import Control.Applicative ((<|>), some, optional, many, (<$))
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:46:1: warning: [GHC-66111] [-Wunused-imports]
+    The qualified import of ‘Control.Applicative’ is redundant
+      except perhaps to import instances from ‘Control.Applicative’
+    To import instances alone, use: import Control.Applicative()
+   |
+46 | import qualified Control.Applicative as A
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:52:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Text.Megaparsec.Char’ is redundant
+      except perhaps to import instances from ‘Text.Megaparsec.Char’
+    To import instances alone, use: import Text.Megaparsec.Char()
+   |
+52 | import Text.Megaparsec.Char
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:53:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Data.List.NonEmpty’ is redundant
+      except perhaps to import instances from ‘Data.List.NonEmpty’
+    To import instances alone, use: import Data.List.NonEmpty()
+   |
+53 | import Data.List.NonEmpty (NonEmpty)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:54:1: warning: [GHC-66111] [-Wunused-imports]
+    The qualified import of ‘Data.List.NonEmpty’ is redundant
+      except perhaps to import instances from ‘Data.List.NonEmpty’
+    To import instances alone, use: import Data.List.NonEmpty()
+   |
+54 | import qualified Data.List.NonEmpty as NE
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:84:22: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘tokens’ shadows the existing binding
+      imported from ‘Text.Megaparsec’ at src/Fluxus/Parser/Go/Parser.hs:50:1-36
+      (and originally defined in ‘megaparsec-9.6.1:Text.Megaparsec.Class’)
+   |
+84 | runGoParser filename tokens = parse parseGo (T.unpack filename) tokens
+   |                      ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:115:8: warning: [GHC-40910] [-Wunused-local-binds]
+    Defined but not used: ‘importDecls’
+    |
+115 |   let (importDecls, otherDecls) = partition isImportDecl decls
+    |        ^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:419:7: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘init’ shadows the existing binding
+      imported from ‘Prelude’ at src/Fluxus/Parser/Go/Parser.hs:8:8-30
+      (and originally defined in ‘GHC.List’)
+    |
+419 |       init <- optional $ do
+    |       ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:524:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘label’ shadows the existing binding
+      imported from ‘Text.Megaparsec’ at src/Fluxus/Parser/Go/Parser.hs:50:1-36
+      (and originally defined in ‘megaparsec-9.6.1:Text.Megaparsec.Class’)
+    |
+524 |   label <- optional parseGoIdentifier
+    |   ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:531:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘label’ shadows the existing binding
+      imported from ‘Text.Megaparsec’ at src/Fluxus/Parser/Go/Parser.hs:50:1-36
+      (and originally defined in ‘megaparsec-9.6.1:Text.Megaparsec.Class’)
+    |
+531 |   label <- optional parseGoIdentifier
+    |   ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:538:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘label’ shadows the existing binding
+      imported from ‘Text.Megaparsec’ at src/Fluxus/Parser/Go/Parser.hs:50:1-36
+      (and originally defined in ‘megaparsec-9.6.1:Text.Megaparsec.Class’)
+    |
+538 |   label <- parseGoIdentifier
+    |   ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:661:13: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘token’ shadows the existing binding
+      imported from ‘Text.Megaparsec’ at src/Fluxus/Parser/Go/Parser.hs:50:1-36
+      (and originally defined in ‘megaparsec-9.6.1:Text.Megaparsec.Class’)
+    |
+661 |   Located _ token <- anySingle
+    |             ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:668:17: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘char’ shadows the existing binding
+      imported from ‘Text.Megaparsec.Char’ at src/Fluxus/Parser/Go/Parser.hs:52:1-27
+    |
+668 |     GoTokenRune char -> return $ GoLiteral $ GoRune char
+    |                 ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:899:13: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘token’ shadows the existing binding
+      imported from ‘Text.Megaparsec’ at src/Fluxus/Parser/Go/Parser.hs:50:1-36
+      (and originally defined in ‘megaparsec-9.6.1:Text.Megaparsec.Class’)
+    |
+899 |   Located _ token <- anySingle
+    |             ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:906:13: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘token’ shadows the existing binding
+      imported from ‘Text.Megaparsec’ at src/Fluxus/Parser/Go/Parser.hs:50:1-36
+      (and originally defined in ‘megaparsec-9.6.1:Text.Megaparsec.Class’)
+    |
+906 |   Located _ token <- anySingle
+    |             ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:965:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘skipComments’
+    |
+965 | skipComments = void $ MP.many $ satisfy $ \case
+    | ^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:980:7: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘span’ shadows the existing binding
+      imported from ‘Prelude’ at src/Fluxus/Parser/Go/Parser.hs:8:8-30
+      (and originally defined in ‘GHC.List’)
+    |
+980 |   let span = SourceSpan "<input>" (Common.SourcePos 0 0) (Common.SourcePos 0 0)
+    |       ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Go/Parser.hs:987:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘convertPos’
+    |
+987 | convertPos pos = Common.SourcePos
+    | ^^^^^^^^^^
+[15 of 23] Compiling Fluxus.Parser.Python.Lexer
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Lexer.hs:34:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Control.Monad.Trans.Class’ is redundant
+      except perhaps to import instances from ‘Control.Monad.Trans.Class’
+    To import instances alone, use: import Control.Monad.Trans.Class()
+   |
+34 | import Control.Monad.Trans.Class (lift)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Lexer.hs:37:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Data.Char’ is redundant
+      except perhaps to import instances from ‘Data.Char’
+    To import instances alone, use: import Data.Char()
+   |
+37 | import Data.Char (isAlphaNum, isAlpha, isDigit)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Lexer.hs:42:119: warning: [GHC-38856] [-Wunused-imports]
+    The import of ‘anySingle’
+    from module ‘Text.Megaparsec’ is redundant
+   |
+42 | import Text.Megaparsec (many, choice, try, notFollowedBy, optional, eof, getSourcePos, satisfy, takeWhileP, manyTill, anySingle, (<|>), lookAhead, skipMany)
+   |                                                                                                                       ^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Lexer.hs:43:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Text.Megaparsec.Char’ is redundant
+      except perhaps to import instances from ‘Text.Megaparsec.Char’
+    To import instances alone, use: import Text.Megaparsec.Char()
+   |
+43 | import Text.Megaparsec.Char (string)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Lexer.hs:44:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Control.Applicative’ is redundant
+      except perhaps to import instances from ‘Control.Applicative’
+    To import instances alone, use: import Control.Applicative()
+   |
+44 | import Control.Applicative ((<*), (*>))
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Lexer.hs:163:39: warning: [GHC-63394] [-Wx-partial]
+    In the use of ‘tail’
+    (imported from Prelude, but defined in GHC.List):
+    "This is a partial function, it throws an error on empty lists. Replace it with drop 1, or use pattern matching or Data.List.uncons instead. Consider refactoring to use Data.List.NonEmpty."
+    |
+163 |                            (reverse $ tail (indentStack finalState))
+    |                                       ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Lexer.hs:172:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘state’ shadows the existing binding
+      imported from ‘Control.Monad.State’ at src/Fluxus/Parser/Python/Lexer.hs:33:1-26
+      (and originally defined in ‘Control.Monad.State.Class’)
+    |
+172 |   state <- get
+    |   ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Lexer.hs:191:7: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘span’ shadows the existing binding
+      imported from ‘Prelude’ at src/Fluxus/Parser/Python/Lexer.hs:8:8-33
+      (and originally defined in ‘GHC.List’)
+    |
+191 |   let span = SourceSpan "<input>" (convertPos start) (convertPos end)
+    |       ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Lexer.hs:209:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘state’ shadows the existing binding
+      imported from ‘Control.Monad.State’ at src/Fluxus/Parser/Python/Lexer.hs:33:1-26
+      (and originally defined in ‘Control.Monad.State.Class’)
+    |
+209 |   state <- get
+    |   ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Lexer.hs:211:22: warning: [GHC-63394] [-Wx-partial]
+    In the use of ‘head’
+    (imported from Prelude, but defined in GHC.List):
+    "This is a partial function, it throws an error on empty lists. Use pattern matching or Data.List.uncons instead. Consider refactoring to use Data.List.NonEmpty."
+    |
+211 |       currentLevel = head currentStack
+    |                      ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Lexer.hs:216:7: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘span’ shadows the existing binding
+      imported from ‘Prelude’ at src/Fluxus/Parser/Python/Lexer.hs:8:8-33
+      (and originally defined in ‘GHC.List’)
+    |
+216 |   let span = SourceSpan "<input>" (convertPos start) (convertPos end)
+    |       ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Lexer.hs:265:3: warning: [GHC-81995] [-Wunused-do-bind]
+    A do-notation statement discarded a result of type
+      ‘[MP.Token Text]’
+    Suggested fix:
+      Suppress this warning by saying
+        ‘_ <- lift $ many (satisfy (\ c -> c == ' ' || c == '\t'))’
+    |
+265 |   lift $ many (satisfy (\c -> c == ' ' || c == '\t'))
+    |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Lexer.hs:269:7: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘span’ shadows the existing binding
+      imported from ‘Prelude’ at src/Fluxus/Parser/Python/Lexer.hs:8:8-33
+      (and originally defined in ‘GHC.List’)
+    |
+269 |   let span = SourceSpan "<input>" (convertPos start) (convertPos end)
+    |       ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Lexer.hs:403:9: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘exp’ shadows the existing binding
+      imported from ‘Prelude’ at src/Fluxus/Parser/Python/Lexer.hs:8:8-33
+      (and originally defined in ‘GHC.Float’)
+    |
+403 |         exp <- MP.some digitChar
+    |         ^^^
+[16 of 23] Compiling Fluxus.Parser.Python.Parser
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:34:29: warning: [GHC-38856] [-Wunused-imports]
+    The import of ‘when’ from module ‘Control.Monad’ is redundant
+   |
+34 | import Control.Monad (void, when)
+   |                             ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:35:1: warning: [GHC-38856] [-Wunused-imports]
+    The import of ‘<|>, optional’
+    from module ‘Control.Applicative’ is redundant
+   |
+35 | import Control.Applicative ((<|>), optional, many, some)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:37:1: warning: [GHC-66111] [-Wunused-imports]
+    The qualified import of ‘Control.Applicative’ is redundant
+      except perhaps to import instances from ‘Control.Applicative’
+    To import instances alone, use: import Control.Applicative()
+   |
+37 | import qualified Control.Applicative as A
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:43:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Text.Megaparsec.Char’ is redundant
+      except perhaps to import instances from ‘Text.Megaparsec.Char’
+    To import instances alone, use: import Text.Megaparsec.Char()
+   |
+43 | import Text.Megaparsec.Char
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:44:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Data.List.NonEmpty’ is redundant
+      except perhaps to import instances from ‘Data.List.NonEmpty’
+    To import instances alone, use: import Data.List.NonEmpty()
+   |
+44 | import Data.List.NonEmpty (NonEmpty)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:45:1: warning: [GHC-66111] [-Wunused-imports]
+    The qualified import of ‘Data.List.NonEmpty’ is redundant
+      except perhaps to import instances from ‘Data.List.NonEmpty’
+    To import instances alone, use: import Data.List.NonEmpty()
+   |
+45 | import qualified Data.List.NonEmpty as NE
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:74:26: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘tokens’ shadows the existing binding
+      imported from ‘Text.Megaparsec’ at src/Fluxus/Parser/Python/Parser.hs:41:1-42
+      (and originally defined in ‘megaparsec-9.6.1:Text.Megaparsec.Class’)
+   |
+74 | runPythonParser filename tokens = parse parsePython (T.unpack filename) tokens
+   |                          ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:174:17: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘token’ shadows the existing binding
+      imported from ‘Text.Megaparsec’ at src/Fluxus/Parser/Python/Parser.hs:41:1-42
+      (and originally defined in ‘megaparsec-9.6.1:Text.Megaparsec.Class’)
+    |
+174 |       Located _ token <- anySingle
+    |                 ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:445:13: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘token’ shadows the existing binding
+      imported from ‘Text.Megaparsec’ at src/Fluxus/Parser/Python/Parser.hs:41:1-42
+      (and originally defined in ‘megaparsec-9.6.1:Text.Megaparsec.Class’)
+    |
+445 |   Located _ token <- anySingle
+    |             ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:448:23: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘exprs’
+    |
+448 |     TokenFString text exprs -> return $ PyLiteral $ PyFString text []  -- TODO: Parse embedded expressions
+    |                       ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:566:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘parseComprehension’
+    |
+566 | parseComprehension = do
+    | ^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:597:13: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘token’ shadows the existing binding
+      imported from ‘Text.Megaparsec’ at src/Fluxus/Parser/Python/Parser.hs:41:1-42
+      (and originally defined in ‘megaparsec-9.6.1:Text.Megaparsec.Class’)
+    |
+597 |   Located _ token <- satisfy $ \case
+    |             ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:614:13: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘token’ shadows the existing binding
+      imported from ‘Text.Megaparsec’ at src/Fluxus/Parser/Python/Parser.hs:41:1-42
+      (and originally defined in ‘megaparsec-9.6.1:Text.Megaparsec.Class’)
+    |
+614 |   Located _ token <- anySingle
+    |             ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:646:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘skipNewlines’
+    |
+646 | skipNewlines = void $ many $ satisfy $ \case
+    | ^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:651:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘skipComments’
+    |
+651 | skipComments = void $ many $ satisfy $ \case
+    | ^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:666:7: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘span’ shadows the existing binding
+      imported from ‘Prelude’ at src/Fluxus/Parser/Python/Parser.hs:8:8-34
+      (and originally defined in ‘GHC.List’)
+    |
+666 |   let span = SourceSpan "<input>" (Common.SourcePos 0 0) (Common.SourcePos 0 0)
+    |       ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Parser/Python/Parser.hs:680:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘convertPos’
+    |
+680 | convertPos pos = Common.SourcePos
+    | ^^^^^^^^^^
+[17 of 23] Compiling Fluxus.Runtime.Go
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Runtime/Go.hs:36:1: warning: [GHC-66111] [-Wunused-imports]
+    The qualified import of ‘Data.Vector’ is redundant
+      except perhaps to import instances from ‘Data.Vector’
+    To import instances alone, use: import Data.Vector()
+   |
+36 | import qualified Data.Vector as Vector
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Runtime/Go.hs:40:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Foreign.C.Types’ is redundant
+      except perhaps to import instances from ‘Foreign.C.Types’
+    To import instances alone, use: import Foreign.C.Types()
+   |
+40 | import Foreign.C.Types
+   | ^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Runtime/Go.hs:41:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Foreign.C.String’ is redundant
+      except perhaps to import instances from ‘Foreign.C.String’
+    To import instances alone, use: import Foreign.C.String()
+   |
+41 | import Foreign.C.String
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+[18 of 23] Compiling Fluxus.Runtime.Python
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Runtime/Python.hs:30:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘Control.Monad.IO.Class’ is redundant
+      except perhaps to import instances from ‘Control.Monad.IO.Class’
+    To import instances alone, use: import Control.Monad.IO.Class()
+   |
+30 | import Control.Monad.IO.Class
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Runtime/Python.hs:144:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘refCount’ shadows the existing binding
+      imported from ‘Fluxus.AST.Common’ at src/Fluxus/Runtime/Python.hs:29:1-24
+      (and originally defined at src/Fluxus/AST/Common.hs:238:5-12)
+    |
+144 |   refCount <- newTVarIO 1
+    |   ^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Runtime/Python.hs:163:3: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘refCount’ shadows the existing binding
+      imported from ‘Fluxus.AST.Common’ at src/Fluxus/Runtime/Python.hs:29:1-24
+      (and originally defined at src/Fluxus/AST/Common.hs:238:5-12)
+    |
+163 |   refCount <- atomically $ do
+    |   ^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Runtime/Python.hs:220:20: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘runtime’
+    |
+220 | createPythonObject runtime className args = do
+    |                    ^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Runtime/Python.hs:220:38: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘args’
+    |
+220 | createPythonObject runtime className args = do
+    |                                      ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Runtime/Python.hs:255:15: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘runtime’
+    |
+255 | runPythonCode runtime code = do
+    |               ^^^^^^^
+[19 of 23] Compiling Fluxus.Utils.Graph
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:103:9: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeData’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:77:5
+    |
+103 | addNode nodeData graph = 
+    |         ^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:104:7: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeId’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:76:5
+    |
+104 |   let nodeId = graphNextId graph
+    |       ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:122:12: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeId’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:76:5
+    |
+122 | removeNode nodeId graph =
+    |            ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:143:12: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeId’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:76:5
+    |
+143 | successors nodeId graph = 
+    |            ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:148:14: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeId’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:76:5
+    |
+148 | predecessors nodeId graph = 
+    |              ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:153:11: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeId’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:76:5
+    |
+153 | neighbors nodeId graph = successors nodeId graph ++ predecessors nodeId graph
+    |           ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:157:12: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeId’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:76:5
+    |
+157 | nodeExists nodeId graph = Map.member nodeId (graphNodes graph)
+    |            ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:168:14: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeId’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:76:5
+    |
+168 |     inDegree nodeId = length $ predecessors nodeId graph
+    |              ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:190:6: warning: [GHC-18042] [-Wtype-defaults]
+    • Defaulting the type variable ‘a0’ to type ‘Integer’ in the following constraints
+        (Num a0)
+          arising from a use of ‘tarjan’
+          at src/Fluxus/Utils/Graph.hs:190:6-11
+        (Ord a0)
+          arising from a use of ‘tarjan’
+          at src/Fluxus/Utils/Graph.hs:190:6-11
+    • In the expression: tarjan allNodes Map.empty Map.empty [] 0 []
+      In the expression:
+        let allNodes = map nodeId $ nodes graph
+        in tarjan allNodes Map.empty Map.empty [] 0 []
+      In an equation for ‘stronglyConnectedComponents’:
+          stronglyConnectedComponents graph
+            = let allNodes = map nodeId $ nodes graph
+              in tarjan allNodes Map.empty Map.empty [] 0 []
+            where
+                tarjan [] _ _ _ _ result = result
+                tarjan (v : vs) indices lowlinks stack index result
+                  | Map.member v indices
+                  = tarjan vs indices lowlinks stack index result
+                  | otherwise
+                  = let ...
+                    in tarjan vs newIndices newLowlinks newStack newIndex newResult
+                strongConnect v indices lowlinks stack index result
+                  = let ...
+                    in
+                      foldl'
+                        (processSuccessor v) (indices', lowlinks', stack', index', result)
+                        (successors v graph)
+                processSuccessor v (indices, lowlinks, stack, index, result) w
+                  | not (Map.member w indices)
+                  = let ... in (indices', lowlinks'', stack', index', result')
+                  | w `elem` stack
+                  = let ... in (indices, lowlinks', stack, index, result)
+                  | otherwise = (indices, lowlinks, stack, index, result)
+    |
+190 |   in tarjan allNodes Map.empty Map.empty [] 0 []
+    |      ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:230:19: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeId’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:76:5
+    |
+230 |     updateDom dom nodeId currentDom
+    |                   ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:280:9: warning: [GHC-40910] [-Wunused-matches]
+    Defined but not used: ‘paths’
+    |
+280 |     bfs paths [] = Nothing
+    |         ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:358:24: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeId’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:76:5
+    |
+358 |     updateNode current nodeId _ = 
+    |                        ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:362:11: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeData’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:77:5
+    |
+362 |           nodeData = case Map.lookup nodeId (graphNodes graph) of
+    |           ^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:388:36: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeId’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:76:5
+    |
+388 |     findImmediateDominator allDoms nodeId nodeDoms
+    |                                    ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:395:28: warning: [GHC-63394] [-Wx-partial]
+    In the use of ‘head’
+    (imported from Prelude, but defined in GHC.List):
+    "This is a partial function, it throws an error on empty lists. Use pattern matching or Data.List.uncons instead. Consider refactoring to use Data.List.NonEmpty."
+    |
+395 |                _ -> Just $ head $ filter (\d -> all (\other -> Set.member d (allDoms Map.! other)) candidates) candidates
+    |                            ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:397:22: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeId’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:76:5
+    |
+397 |     addDomEdge tree (nodeId, mImmDom) = 
+    |                      ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:404:20: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeId’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:76:5
+    |
+404 | immediateDominator nodeId domTree = 
+    |                    ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Graph.hs:412:19: warning: [GHC-63397] [-Wname-shadowing]
+    This binding for ‘nodeId’ shadows the existing binding
+      defined at src/Fluxus/Utils/Graph.hs:76:5
+    |
+412 | dominatorFrontier nodeId graph domTree = 
+    |                   ^^^^^^
+[20 of 23] Compiling Fluxus.Utils.Pretty
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:35:1: warning: [GHC-66111] [-Wunused-imports]
+    The qualified import of ‘Data.Text’ is redundant
+      except perhaps to import instances from ‘Data.Text’
+    To import instances alone, use: import Data.Text()
+   |
+35 | import qualified Data.Text as T
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:36:1: warning: [GHC-15328] [-Wdeprecations]
+    Module ‘Data.Text.Prettyprint.Doc’ is deprecated:
+      "Use \"Prettyprinter\" instead."
+   |
+36 | import Data.Text.Prettyprint.Doc hiding (Pretty)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:37:1: warning: [GHC-15328] [-Wdeprecations]
+    Module ‘Data.Text.Prettyprint.Doc’ is deprecated:
+      "Use \"Prettyprinter\" instead."
+   |
+37 | import qualified Data.Text.Prettyprint.Doc as PrettyDoc
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:38:1: warning: [GHC-15328] [-Wdeprecations]
+    Module ‘Data.Text.Prettyprint.Doc.Render.Text’ is deprecated:
+      "Use \"Prettyprinter.Render.Text\" instead."
+   |
+38 | import Data.Text.Prettyprint.Doc.Render.Text
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:39:1: warning: [GHC-15328] [-Wdeprecations]
+    Module ‘Data.Text.Prettyprint.Doc.Render.Terminal’ is deprecated:
+      "Use \"Prettyprinter.Render.Terminal\" instead."
+   |
+39 | import Data.Text.Prettyprint.Doc.Render.Terminal
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:40:1: warning: [GHC-66111] [-Wunused-imports]
+    The import of ‘System.Console.ANSI’ is redundant
+      except perhaps to import instances from ‘System.Console.ANSI’
+    To import instances alone, use: import System.Console.ANSI()
+   |
+40 | import System.Console.ANSI (ColorIntensity(..), ConsoleLayer(..))
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:98:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘space’
+   |
+98 | space = Data.Text.Prettyprint.Doc.space
+   | ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:101:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘line’
+    |
+101 | line = Data.Text.Prettyprint.Doc.line
+    | ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:104:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘softline’
+    |
+104 | softline = Data.Text.Prettyprint.Doc.softline
+    | ^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:108:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘<+>’
+    |
+108 | (<+>) = (Data.Text.Prettyprint.Doc.<+>)
+    | ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:116:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘hsep’
+    |
+116 | hsep = Data.Text.Prettyprint.Doc.hsep
+    | ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:120:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘vsep’
+    |
+120 | vsep = Data.Text.Prettyprint.Doc.vsep
+    | ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:124:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘sep’
+    |
+124 | sep = Data.Text.Prettyprint.Doc.sep
+    | ^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:128:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘cat’
+    |
+128 | cat = Data.Text.Prettyprint.Doc.cat
+    | ^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:132:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘hcat’
+    |
+132 | hcat = Data.Text.Prettyprint.Doc.hcat
+    | ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:136:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘vcat’
+    |
+136 | vcat = Data.Text.Prettyprint.Doc.vcat
+    | ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:140:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘parens’
+    |
+140 | parens = Data.Text.Prettyprint.Doc.parens
+    | ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:143:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘brackets’
+    |
+143 | brackets = Data.Text.Prettyprint.Doc.brackets
+    | ^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:146:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘braces’
+    |
+146 | braces = Data.Text.Prettyprint.Doc.braces
+    | ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:149:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘angles’
+    |
+149 | angles = Data.Text.Prettyprint.Doc.angles
+    | ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:159:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘indent’
+    |
+159 | indent = Data.Text.Prettyprint.Doc.indent
+    | ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:162:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘hang’
+    |
+162 | hang = Data.Text.Prettyprint.Doc.hang
+    | ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:165:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘align’
+    |
+165 | align = Data.Text.Prettyprint.Doc.align
+    | ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:169:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘group’
+    |
+169 | group = Data.Text.Prettyprint.Doc.group
+    | ^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:172:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘nest’
+    |
+172 | nest = Data.Text.Prettyprint.Doc.nest
+    | ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:176:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘list’
+    |
+176 | list = Data.Text.Prettyprint.Doc.list
+    | ^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:179:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘tupled’
+    |
+179 | tupled = Data.Text.Prettyprint.Doc.tupled
+    | ^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:182:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘punctuate’
+    |
+182 | punctuate = Data.Text.Prettyprint.Doc.punctuate
+    | ^^^^^^^^^
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/Utils/Pretty.hs:204:1: warning: [GHC-40910] [-Wunused-top-binds]
+    Defined but not used: ‘bold’
+    |
+204 | bold = annotate Data.Text.Prettyprint.Doc.Render.Terminal.bold
+    | ^^^^
+[21 of 23] Compiling Fluxus.CodeGen.CPP
+
+/home/qwe12345678/hyperstatic2/src/Fluxus/CodeGen/CPP.hs:412:7: error: [GHC-07626]
+    Parse error in pattern: (_, _) when length ops + 1 == length exprs
+    |
+412 |       (_, _) when length ops + 1 == length exprs -> do
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Error: [S-7282]
        Stack failed to execute the build plan.
@@ -1224,5 +1391,5 @@ Error: [S-7282]
        
        [S-7011]
        While building package fluxus-0.1.0.0 (scroll up to its section to see the error) using:
-       /home/qwe12345678/.stack/setup-exe-cache/x86_64-linux/Cabal-simple_w2MFVN35_3.10.3.0_ghc-9.8.4 --verbose=1 --builddir=.stack-work/dist/x86_64-linux/ghc-9.8.4 build lib:fluxus exe:fluxus --ghc-options ""
+       /home/qwe12345678/.stack/setup-exe-cache/x86_64-linux/Cabal-simple_w2MFVN35_3.10.3.0_ghc-9.8.4 --verbose=1 --builddir=.stack-work/dist/x86_64-linux/ghc-9.8.4 build lib:fluxus exe:fluxus exe:test-python-lexer exe:test-python-parser --ghc-options ""
        Process exited with code: ExitFailure 1 

@@ -1,0 +1,4 @@
+package mypackage
+
+func MyFunction() {
+}

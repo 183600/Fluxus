@@ -1,0 +1,264 @@
+fluxus> test (suite: fluxus-test)
+
+
+HyperStatic Compiler Test Suite
+  Python Parser
+    Python Lexer
+      tokenizes simple expressions [✔]
+      tokenizes Python keywords [✔]
+      tokenizes string literals [✔]
+      tokenizes number literals [✔]
+    Python Lexer - tokens coverage
+      tokenizes identifiers [✔]
+      tokenizes common keywords [✔]
+      tokenizes arithmetic operators [✔]
+      tokenizes comparison operators [✔]
+      tokenizes logical operators [✔]
+      tokenizes assignment/walrus/arrow/ellipsis [✔]
+      tokenizes @ delimiter and decorators [✔]
+      tokenizes compound assignments [✔]
+      tokenizes number literals (dec/hex/oct/bin/float/exp) [✔]
+      tokenizes bytes literals (b/B prefixes) [✔]
+      tokenizes strings and f-strings [✔]
+      tokenizes bytes literals [✔]
+      tokenizes delimiters [✔]
+      tokenizes parentheses, brackets and braces around identifiers [✔]
+    Python Parser
+      parses simple expressions [✔]
+      parses function definitions [✔]
+      parses class definitions [✔]
+      parses if statements [✔]
+  Go Parser
+    Go Lexer
+      tokenizes simple expressions [✔]
+      tokenizes Go keywords [✔]
+      tokenizes string literals [✔]
+      tokenizes raw string literals [✔]
+      tokenizes number literals [✔]
+    Go Lexer - tokens coverage
+      tokenizes identifiers [✔]
+      tokenizes common keywords [✔]
+      tokenizes arithmetic operators [✔]
+      tokenizes comparison operators [✔]
+      tokenizes logical operators [✔]
+      tokenizes assignment and define [✔]
+      tokenizes inc/dec, shifts and bitwise [✔]
+      tokenizes compound assignments [✔]
+      tokenizes special operators [✔]
+      tokenizes number literals (dec/float/exp/imag) [✔]
+      tokenizes string, raw string and rune literals [✔]
+      tokenizes delimiters [✔]
+      tokenizes function literal tokens [✔]
+      tokenizes hex, octal and binary integers [✔]
+      tokenizes string escape sequences [✔]
+      produces newline tokens [✔]
+    Go Lexer - basic data types
+      tokenizes boolean literals true/false as identifiers [✔]
+      tokenizes basic type identifiers [✔]
+      tokenizes UTF-8 string literals [✔]
+      tokenizes imaginary number literals for complex numbers [✔]
+    Go Parser - Import Declaration
+parseFile: parsing decls
+parseFuncDecl: entering
+parseFile: decls count = 0
+      parses single import statement [✔]
+      parses grouped import statements [✘]
+parseFile: decls count = 0
+      parses import with alias [✔]
+parseFile: decls count = 0
+      parses import with dot notation [✔]
+parseFile: decls count = 0
+      parses import with blank identifier [✔]
+      parses multiple imports with different styles [✘]
+parseFile: decls count = 0
+      parses import with nested package path [✔]
+parseFile: decls count = 0
+      parses import with deeply nested package path [✔]
+parseFile: decls count = 0
+parseFile: decls count = 0
+parseFile: decls count = 0
+parseFile: decls count = 0
+parseFile: decls count = 0
+parseFile: decls count = 0
+parseFile: decls count = 0
+parseFile: decls count = 0
+      parses standard library imports [✔]
+      parses package with both imports and declarations [✘]
+    Go Parser
+      Go Parser - Package Declaration
+parseFile: decls count = 0
+        parses package main declaration [✔]
+parseFile: decls count = 0
+        parses package with custom name [✔]
+parseFile: decls count = 0
+        parses package with underscore in name [✔]
+parseFile: decls count = 0
+        parses package with numbers in name [✔]
+        parses package declaration followed by imports [✔]
+parseFile: decls count = 1
+        parses package declaration followed by function [✔]
+parseFile: decls count = 0
+parseFile: decls count = 0
+parseFile: decls count = 0
+parseFile: decls count = 0
+parseFile: decls count = 0
+parseFile: decls count = 0
+parseFile: decls count = 0
+parseFile: decls count = 0
+        parses package declaration with common library names [✔]
+parseFile: decls count = 1
+        parses package declaration at start of file [✔]
+        rejects file without package declaration [✔]
+      parses package declaration [✔]
+parseFile: decls count = 1
+      parses function declarations [✔]
+parseFile: decls count = 1
+      parses variable declarations [✔]
+parseFile: decls count = 1
+      parses type declarations [✔]
+parseFile: decls count = 0
+      parses function with parameters and return type [✘]
+parseFile: decls count = 0
+      parses function with multiple return values [✘]
+parseFile: decls count = 0
+      parses function with no parameters and no return value [✘]
+parseFile: decls count = 0
+      parses main function as program entry point [✘]
+parseFile: decls count = 0
+      parses function with variadic parameters [✘]
+parseFile: decls count = 0
+      parses function with named return values [✘]
+parseFile: decls count = 0
+      parses recursive function [✘]
+parseFile: decls count = 0
+      parses function with pointer parameters and return type [✘]
+  Type Inference
+    Basic Type Inference
+      infers integer literal types [✔]
+      infers string literal types [✔]
+      infers boolean literal types [✔]
+      infers list types [✔]
+      infers function types [✔]
+    Type Unification
+      unifies identical types [✔]
+      fails to unify different types [✔]
+      unifies type variables [✔]
+      unifies complex types [✔]
+    Constraint Solving
+      solves simple constraints [✔]
+      detects inconsistent constraints [✔]
+      propagates constraints [✔]
+  C++ Code Generation
+    Type Mapping
+      maps basic types correctly [✔]
+      maps container types correctly [✔]
+      maps smart pointer types correctly [✔]
+      maps complex types correctly [✔]
+    Expression Generation
+      generates literal expressions [✔]
+      generates binary expressions [✔]
+      generates function calls [✔]
+    Statement Generation
+      generates expression statements [✔]
+      generates return statements [✔]
+    Declaration Generation
+      generates variable declarations [✔]
+      generates function declarations [✔]
+      generates class declarations [✔]
+      generates program units [✔]
+
+Failures:
+
+  test/Test/Fluxus/Parser/Go.hs:388:17: 
+  1) HyperStatic Compiler Test Suite, Go Parser, Go Parser - Import Declaration, parses grouped import statements
+       Parser failed
+
+  To rerun use: --match "/HyperStatic Compiler Test Suite/Go Parser/Go Parser - Import Declaration/parses grouped import statements/" --seed 2070610598
+
+  test/Test/Fluxus/Parser/Go.hs:482:17: 
+  2) HyperStatic Compiler Test Suite, Go Parser, Go Parser - Import Declaration, parses multiple imports with different styles
+       Parser failed
+
+  To rerun use: --match "/HyperStatic Compiler Test Suite/Go Parser/Go Parser - Import Declaration/parses multiple imports with different styles/" --seed 2070610598
+
+  test/Test/Fluxus/Parser/Go.hs:570:17: 
+  3) HyperStatic Compiler Test Suite, Go Parser, Go Parser - Import Declaration, parses package with both imports and declarations
+       Parser failed
+
+  To rerun use: --match "/HyperStatic Compiler Test Suite/Go Parser/Go Parser - Import Declaration/parses package with both imports and declarations/" --seed 2070610598
+
+  test/Test/Fluxus/Parser/Go.hs:820:22: 
+  4) HyperStatic Compiler Test Suite, Go Parser, Go Parser, parses function with parameters and return type
+       expected: 1
+        but got: 0
+
+  To rerun use: --match "/HyperStatic Compiler Test Suite/Go Parser/Go Parser/parses function with parameters and return type/" --seed 2070610598
+
+  test/Test/Fluxus/Parser/Go.hs:860:22: 
+  5) HyperStatic Compiler Test Suite, Go Parser, Go Parser, parses function with multiple return values
+       expected: 1
+        but got: 0
+
+  To rerun use: --match "/HyperStatic Compiler Test Suite/Go Parser/Go Parser/parses function with multiple return values/" --seed 2070610598
+
+  test/Test/Fluxus/Parser/Go.hs:892:22: 
+  6) HyperStatic Compiler Test Suite, Go Parser, Go Parser, parses function with no parameters and no return value
+       expected: 1
+        but got: 0
+
+  To rerun use: --match "/HyperStatic Compiler Test Suite/Go Parser/Go Parser/parses function with no parameters and no return value/" --seed 2070610598
+
+  test/Test/Fluxus/Parser/Go.hs:924:22: 
+  7) HyperStatic Compiler Test Suite, Go Parser, Go Parser, parses main function as program entry point
+       expected: 1
+        but got: 0
+
+  To rerun use: --match "/HyperStatic Compiler Test Suite/Go Parser/Go Parser/parses main function as program entry point/" --seed 2070610598
+
+  test/Test/Fluxus/Parser/Go.hs:973:22: 
+  8) HyperStatic Compiler Test Suite, Go Parser, Go Parser, parses function with variadic parameters
+       expected: 1
+        but got: 0
+
+  To rerun use: --match "/HyperStatic Compiler Test Suite/Go Parser/Go Parser/parses function with variadic parameters/" --seed 2070610598
+
+  test/Test/Fluxus/Parser/Go.hs:1024:22: 
+  9) HyperStatic Compiler Test Suite, Go Parser, Go Parser, parses function with named return values
+       expected: 1
+        but got: 0
+
+  To rerun use: --match "/HyperStatic Compiler Test Suite/Go Parser/Go Parser/parses function with named return values/" --seed 2070610598
+
+  test/Test/Fluxus/Parser/Go.hs:1071:22: 
+  10) HyperStatic Compiler Test Suite, Go Parser, Go Parser, parses recursive function
+       expected: 1
+        but got: 0
+
+  To rerun use: --match "/HyperStatic Compiler Test Suite/Go Parser/Go Parser/parses recursive function/" --seed 2070610598
+
+  test/Test/Fluxus/Parser/Go.hs:1103:22: 
+  11) HyperStatic Compiler Test Suite, Go Parser, Go Parser, parses function with pointer parameters and return type
+       expected: 1
+        but got: 0
+
+  To rerun use: --match "/HyperStatic Compiler Test Suite/Go Parser/Go Parser/parses function with pointer parameters and return type/" --seed 2070610598
+
+Randomized with seed 2070610598
+
+Finished in 0.0221 seconds
+103 examples, 11 failures
+
+
+
+fluxus> Test suite fluxus-test failed
+
+Error: [S-7282]
+       Stack failed to execute the build plan.
+       
+       While executing the build plan, Stack encountered the error:
+       
+       Error: [S-1995]
+       Test suite failure for package fluxus-0.1.0.0
+           fluxus-test:  exited with: ExitFailure 1
+       Logs printed to console
+       

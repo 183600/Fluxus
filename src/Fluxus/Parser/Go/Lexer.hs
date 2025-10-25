@@ -42,7 +42,7 @@ import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 
-import qualified Fluxus.AST.Go as Go
+import Fluxus.AST.Common (SourcePos(..), SourceSpan(..), Located(..))
 
 -- | Go token types
 data GoToken
@@ -105,19 +105,16 @@ data GoOperator
   
   -- Channels
   | GoOpArrow                                           -- <-
-
+  
   -- Increment/Decrement
   | GoOpIncrement | GoOpDecrement                       -- ++ and --
-
+  
   -- Address/Dereference
   | GoOpAddress | GoOpDeref                             -- & and *
-
+  
   -- Ellipsis
   | GoOpEllipsis                                        -- ...
-
-  -- Approximation constraint (Go 1.18+)
-  | GoOpTilde                                           -- ~
-
+  
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
   deriving anyclass (Hashable, NFData)
 
@@ -134,27 +131,30 @@ data GoDelimiter
 type GoLexer = MP.Parsec Void Text
 
 -- | Run the Go lexer
-runGoLexer :: Text -> Text -> Either (MP.ParseErrorBundle Text Void) [Go.Located GoToken]
+runGoLexer :: Text -> Text -> Either (MP.ParseErrorBundle Text Void) [Located GoToken]
 runGoLexer filename input = MP.parse lexGo (T.unpack filename) input
 
 -- | Main lexer entry point
-lexGo :: GoLexer [Go.Located GoToken]
+lexGo :: GoLexer [Located GoToken]
 lexGo = do
   tokens <- manyTill locatedToken eof
   return tokens
   where
     locatedToken = do
       -- Skip whitespace (but not newlines)
-      void $ many (satisfy (\c -> c == ' ' || c == '\t'))
+      _ <- many (satisfy (\c -> c == ' ' || c == '\t'))
       start <- getSourcePos
       token <- goToken
       end <- getSourcePos
-      let position = Go.Position { Go.posLine = MP.unPos (MP.sourceLine start), Go.posColumn = MP.unPos (MP.sourceColumn start) }
-      let endPosition = Go.Position { Go.posLine = MP.unPos (MP.sourceLine end), Go.posColumn = MP.unPos (MP.sourceColumn end) }
-      let tokenSpan = Just $ Go.Span { Go.spanStart = position, Go.spanEnd = endPosition }
-      let nodeAnn = Go.NodeAnn { Go.annSpan = tokenSpan, Go.annLeading = [], Go.annTrailing = [] }
-      return $ Go.Located nodeAnn token
+      let sourceSpan = SourceSpan "<input>" (convertPos start) (convertPos end)
+      return $ Located sourceSpan token
 
+-- | Convert Megaparsec SourcePos to our SourcePos
+convertPos :: MP.SourcePos -> SourcePos
+convertPos pos = SourcePos
+  { posLine = MP.unPos (MP.sourceLine pos)
+  , posColumn = MP.unPos (MP.sourceColumn pos)
+  }
 
 -- | Parse a single Go token
 goToken :: GoLexer GoToken
@@ -187,10 +187,9 @@ goIdentifier = do
   first <- letterChar <|> char '_'
   rest <- many (alphaNumChar <|> char '_')
   let ident = T.pack (first : rest)
-  -- Do not reject identifiers that happen to match keyword text here;
-  -- keywords are recognized by goKeyword before this parser.
-  -- This makes the lexer more permissive in tricky contexts like i.(type).
-  return $ GoTokenIdent ident
+  if isGoKeyword ident
+    then fail "identifier cannot be a keyword"
+    else return $ GoTokenIdent ident
 
 -- | Parse Go operators
 goOperator :: GoLexer GoToken
@@ -220,7 +219,6 @@ goOperator = GoTokenOperator <$> choice
   , string ":=" $> GoOpDefine
   , string "&^" $> GoOpBitClear
   , string "..." $> GoOpEllipsis
-  , string "~" $> GoOpTilde
   , string "+" $> GoOpPlus
   , string "-" $> GoOpMinus
   , string "*" $> GoOpMult
@@ -318,7 +316,7 @@ goNumberLiteral = choice
             GoTokenInt t -> t
             _ -> ""
       return $ GoTokenImag (numText <> "i")
-
+    
     goFloat = do
       intPart <- MP.some digitChar
       fractPart <- optional $ do
@@ -326,32 +324,28 @@ goNumberLiteral = choice
         MP.some digitChar
       expPart <- optional $ do
         _ <- char 'e' <|> char 'E'
-        signChar <- optional (char '+' <|> char '-')
+        sign <- optional (char '+' <|> char '-')
         expDigits <- MP.some digitChar
-        return $ 'e' : maybe "" (:[]) signChar ++ expDigits
-
-      -- At least one of fractPart or expPart must be present for a float
-      case (fractPart, expPart) of
-        (Nothing, Nothing) -> fail "Not a float - missing fractional or exponent part"
-        _ -> do
-          let result = intPart ++ maybe "" ('.':) fractPart ++ maybe "" id expPart
-          return $ GoTokenFloat (T.pack result)
-
+        return $ 'e' : maybe "" (:[]) sign ++ expDigits
+      
+      let result = intPart ++ maybe "" ('.':) fractPart ++ maybe "" id expPart
+      return $ GoTokenFloat (T.pack result)
+    
     goHexInt = do
       _ <- string "0x" <|> string "0X"
       digits <- MP.some hexDigitChar
       return $ GoTokenInt ("0x" <> T.pack digits)
-
+    
     goOctInt = do
       _ <- string "0o" <|> string "0O" <|> string "0"
       digits <- MP.some octDigitChar
       return $ GoTokenInt ("0o" <> T.pack digits)
-
+    
     goBinInt = do
       _ <- string "0b" <|> string "0B"
       digits <- MP.some binDigitChar
       return $ GoTokenInt ("0b" <> T.pack digits)
-
+    
     goDecInt = do
       digits <- MP.some digitChar
       return $ GoTokenInt (T.pack digits)
@@ -371,7 +365,7 @@ goComment = choice
       _ <- string "//"
       content <- takeWhileP (Just "comment") (/= '\n')
       return $ GoTokenComment content
-
+    
     blockComment = do
       _ <- string "/*"
       content <- manyTill anySingle (string "*/")

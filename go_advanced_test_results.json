@@ -1,0 +1,72 @@
+{
+  "Concurrency": {
+    "buffered_channel": [
+      "first",
+      "second",
+      "third"
+    ],
+    "goroutine_completed": true,
+    "worker_pool_results": [
+      1,
+      4,
+      9,
+      16,
+      25
+    ]
+  },
+  "Context": {
+    "cancellation_test": true,
+    "context_value": "value",
+    "timeout_error": "context deadline exceeded",
+    "timeout_test": true
+  },
+  "Defer": {
+    "defer_order": [
+      3,
+      2,
+      1
+    ],
+    "defer_return_modification": 10
+  },
+  "Error Handling": {
+    "custom_error_code": 1001,
+    "custom_error_field": "age",
+    "custom_error_message": "Validation error in field 'age': age cannot be negative (code: 1001)",
+    "error_is": true,
+    "unwrap_success": true,
+    "wrapped_error": "wrapped: original error"
+  },
+  "Generic Patterns": {
+    "compare_result": -1,
+    "equal_compare": 0,
+    "interface_types": [
+      "int",
+      "string",
+      "bool",
+      "[]int"
+    ],
+    "reverse_compare": 1
+  },
+  "Panic/Recover": {
+    "division_result": "panic: division by zero",
+    "panic_recovered": true,
+    "panic_value": "test panic"
+  },
+  "Reflection": {
+    "field_values": {
+      "Age": 30,
+      "Name": "Alice"
+    },
+    "method_call_result": "Hello, I'm Alice",
+    "num_fields": 2,
+    "num_methods": 1,
+    "struct_name": "Person",
+    "type_name": "int",
+    "value_int": 42,
+    "value_kind": "int"
+  },
+  "Select": {
+    "select_result": "from ch1",
+    "timeout_select": "time.After triggered"
+  }
+}

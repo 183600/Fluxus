@@ -65,8 +65,3 @@ packages:
 #
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
-
-# Nix configuration for reproducible builds
-nix:
-  enable: false
-  shell-file: shell.nix

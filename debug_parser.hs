@@ -1,14 +1,24 @@
-import Fluxus.Parser.Python.Lexer as Lexer
-import Fluxus.Parser.Python.Parser as Parser
-import Data.Text (pack)
+#!/usr/bin/env runhaskell
+
+import System.Process
+import System.Exit
+import System.IO
+import Control.Monad
+
+testFile :: FilePath -> String -> IO ()
+testFile filename lang = do
+    putStrLn $ "Testing " ++ lang ++ " file: " ++ filename
+    (exitCode, stdout, stderr) <- readProcessWithExitCode "cabal" ["run", "fluxus", "--", lang, filename] ""
+    case exitCode of
+        ExitSuccess -> putStrLn $ "✅ " ++ lang ++ " parser succeeded"
+        ExitFailure code -> do
+            putStrLn $ "❌ " ++ lang ++ " parser failed with code " ++ show code
+            putStrLn $ "STDOUT: " ++ stdout
+            putStrLn $ "STDERR: " ++ stderr
 
 main :: IO ()
 main = do
-  let code = pack "x = 1"
-  case Lexer.tokenizePython code of
-    Left err -> putStrLn $ "Lexing failed: " ++ show err
-    Right tokens -> do
-      putStrLn $ "Tokens: " ++ show tokens
-      case Parser.parsePython code of
-        Left err -> putStrLn $ "Parsing failed: " ++ show err
-        Right ast -> putStrLn $ "AST: " ++ show ast
+    putStrLn "=== Parser Debug Session ==="
+    testFile "examples/python/fibonacci.py" "python"
+    testFile "examples/go/fibonacci.go" "go"
+    putStrLn "=== Debug Complete ==="

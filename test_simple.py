@@ -1,1 +1,4 @@
-print("Hello", 42)
+def main():
+    print("Hello, World\!")
+    x = 42
+    return x

@@ -1,0 +1,299 @@
+{
+  "Built-in Functions": {
+    "len": 5,
+    "sum": 15,
+    "max": 5,
+    "min": 1,
+    "sorted": [
+      5,
+      4,
+      3,
+      2,
+      1
+    ],
+    "enumerate": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        4
+      ],
+      [
+        4,
+        5
+      ]
+    ],
+    "zip": [
+      [
+        1,
+        "a"
+      ],
+      [
+        2,
+        "b"
+      ],
+      [
+        3,
+        "c"
+      ],
+      [
+        4,
+        "d"
+      ],
+      [
+        5,
+        "e"
+      ]
+    ],
+    "range": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "map": [
+      2,
+      4,
+      6,
+      8,
+      10
+    ],
+    "filter": [
+      2,
+      4
+    ]
+  },
+  "String Operations": {
+    "upper": "HELLO, WORLD!",
+    "lower": "hello, world!",
+    "replace": "Hello, Python!",
+    "split": [
+      "Hello",
+      " World!"
+    ],
+    "join": "a-b-c",
+    "strip": "spaces",
+    "format": "Hello, Python!",
+    "f_string": "Hello, Python!"
+  },
+  "OS Module": {
+    "getcwd": "/home/qwe12345678/hyperstatic2",
+    "listdir_exists": true,
+    "path_join": "path/to/file.txt",
+    "path_exists": true,
+    "environ_home": "/home/qwe12345678"
+  },
+  "Sys Module": {
+    "platform": "linux",
+    "version_info": "3.13",
+    "argv_length": 1,
+    "maxsize": true
+  },
+  "JSON Module": {
+    "serialized": "{\"name\": \"test\", \"value\": 42, \"items\": [1, 2, 3]}",
+    "deserialized": {
+      "name": "test",
+      "value": 42,
+      "items": [
+        1,
+        2,
+        3
+      ]
+    },
+    "round_trip_success": true
+  },
+  "Math Module": {
+    "pi": 3.141592653589793,
+    "e": 2.718281828459045,
+    "sqrt": 4.0,
+    "pow": 8.0,
+    "sin": 1.0,
+    "cos": 1.0,
+    "log": 1.0,
+    "factorial": 120,
+    "gcd": 6,
+    "ceil": 5,
+    "floor": 4
+  },
+  "DateTime Module": {
+    "now_year": 2025,
+    "today_day": 17,
+    "time_hour": 12,
+    "strftime": "2025-07-17",
+    "timedelta": "7 days, 0:00:00"
+  },
+  "Random Module": {
+    "randint": 82,
+    "random": 0.11133106816568039,
+    "choice": "c",
+    "shuffle_test": [
+      3,
+      9,
+      2,
+      5,
+      0
+    ]
+  },
+  "Collections Module": {
+    "counter": {
+      "a": 3,
+      "b": 2,
+      "c": 1
+    },
+    "counter_most_common": [
+      [
+        "a",
+        3
+      ],
+      [
+        "b",
+        2
+      ]
+    ],
+    "defaultdict": {
+      "key": 1
+    },
+    "deque": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  "Itertools Module": {
+    "chain": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "cycle_take_5": [
+      "a",
+      "b",
+      "a",
+      "b",
+      "a"
+    ],
+    "count_take_3": [
+      10,
+      12,
+      14
+    ],
+    "combinations": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        2,
+        3
+      ]
+    ],
+    "permutations": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        3,
+        2
+      ]
+    ],
+    "product": [
+      [
+        "A",
+        1
+      ],
+      [
+        "A",
+        2
+      ],
+      [
+        "B",
+        1
+      ],
+      [
+        "B",
+        2
+      ]
+    ]
+  },
+  "Functools Module": {
+    "fibonacci_10": 55,
+    "reduce_product": 120,
+    "partial_result": 10,
+    "cache_info": "CacheInfo(hits=8, misses=11, maxsize=128, currsize=11)"
+  },
+  "Complex Operations": {
+    "sorted_data": [
+      {
+        "name": "Bob",
+        "age": 25,
+        "score": 92
+      },
+      {
+        "name": "Alice",
+        "age": 30,
+        "score": 85
+      },
+      {
+        "name": "Charlie",
+        "age": 35,
+        "score": 78
+      }
+    ],
+    "age_groups": {
+      "old": [
+        "Alice",
+        "Charlie"
+      ],
+      "young": [
+        "Bob"
+      ]
+    },
+    "statistics": {
+      "mean": 85.0,
+      "min": 78,
+      "max": 92,
+      "std_dev": 5.715476066494082
+    },
+    "json_export": "[\n  {\n    \"name\": \"Alice\",\n    \"age\": 30,\n    \"score\": 85\n  },\n  {\n    \"name\": \"Bob\",\n    \"age\": 25,\n    \"score\": 92\n  },\n  {\n    \"name\": \"Charlie\",\n    \"age\": 35,\n    \"score\": 78\n  }\n]"
+  },
+  "Error Handling": {
+    "file_error": true,
+    "json_error": true,
+    "math_error": true
+  }
+}
