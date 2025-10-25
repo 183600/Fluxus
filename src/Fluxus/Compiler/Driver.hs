@@ -724,11 +724,14 @@ renderCppExpr = \case
       hasThisInExpr (CppCall expr args) = hasThisInExpr expr || any hasThisInExpr args
       hasThisInExpr (CppBinary _ left right) = hasThisInExpr left || hasThisInExpr right
       hasThisInExpr (CppUnary _ expr) = hasThisInExpr expr
+      hasThisInExpr (CppBracedInit _ exprs) = any hasThisInExpr exprs
       hasThisInExpr _ = False
   CppMove expr -> "std::move(" <> renderCppExpr expr <> ")"
   CppForward expr -> "std::forward(" <> renderCppExpr expr <> ")"
   CppMakeUnique cppType args -> "std::make_unique<" <> renderCppType cppType <> ">(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
   CppMakeShared cppType args -> "std::make_shared<" <> renderCppType cppType <> ">(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
+  CppBracedInit cppType exprs ->
+    renderCppType cppType <> "{" <> T.intercalate ", " (map renderCppExpr exprs) <> "}"
   CppThis -> "this"
   _ -> "/* unimplemented expr */"
 

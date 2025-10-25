@@ -33,10 +33,11 @@ module Fluxus.CodeGen.CPP
 
 import Control.Monad.State
 import Control.Monad.Writer
-import Control.Monad (when, unless)
+import Control.Monad (when, unless, foldM)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.List (intercalate, partition)
+import Data.List (intercalate, partition, nub)
+import Data.Maybe (catMaybes)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable (Hashable)
@@ -140,6 +141,7 @@ data CppExpr
   | CppForward !CppExpr                                 -- std::forward
   | CppMakeUnique !CppType ![CppExpr]                   -- std::make_unique
   | CppMakeShared !CppType ![CppExpr]                   -- std::make_shared
+  | CppBracedInit !CppType ![CppExpr]                   -- Type{args...}
   deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
@@ -357,21 +359,17 @@ generatePythonStmt (Located _ stmt) = case stmt of
       [Located _ (PatVar (Identifier varName))] -> do
         symtab <- gets cgsSymbolTable
         case exprVal of
-          -- Special handling for list literals: materialize a std::vector<long long>
+          -- Special handling for list literals: materialize a std::vector with the appropriate element type
           PyList elems -> do
-            addInclude "<vector>"
-            cppElems <- mapM generatePythonExpr elems
-            let vecType = CppVector CppLongLong
-            let declStmt = CppDecl (CppVariable varName vecType Nothing)
-            -- Decide whether to declare or assign based on existing symbol table
-            let initStmt = if HM.member varName symtab
-                           then CppExprStmt (CppBinary "=" (CppVar varName) (CppCall (CppVar "std::vector<long long>") []))
-                           else declStmt
-            -- Update symbol table when declaring new variable
-            unless (HM.member varName symtab) $
-              modify $ \s -> s { cgsSymbolTable = HM.insert varName vecType (cgsSymbolTable s) }
-            let pushStmts = map (\e -> CppExprStmt (CppCall (CppMember (CppVar varName) "push_back") [e])) cppElems
-            return $ CppBlock (initStmt : pushStmts)
+            (vectorType, vectorExpr) <- generatePythonListLiteral elems
+            let updateSymbolTable = modify $ \s -> s { cgsSymbolTable = HM.insert varName vectorType (cgsSymbolTable s) }
+            if HM.member varName symtab
+              then do
+                updateSymbolTable
+                return $ CppExprStmt (CppBinary "=" (CppVar varName) vectorExpr)
+              else do
+                updateSymbolTable
+                return $ CppDecl $ CppVariable varName vectorType (Just vectorExpr)
           -- Default: evaluate RHS and either declare or assign
           _ -> do
             cppExpr <- generatePythonExpr expr
@@ -515,13 +513,101 @@ generatePythonExpr (Located _ expr) = case expr of
           _ -> return $ CppCall (CppVar "range") cppArgs
       _ -> return $ CppCall cppFunc cppArgs
   PyList exprs -> do
-    -- Fallback: construct an empty vector to avoid invalid code; list literals
-    -- are primarily handled in assignment statements where we can emit push_backs.
-    addInclude "<vector>"
-    return $ CppCall (CppVar "std::vector<long long>") []
+    (_, vectorExpr) <- generatePythonListLiteral exprs
+    return vectorExpr
   _ -> do
     addComment $ "TODO: Implement Python expression: " <> T.pack (show expr)
     return $ CppLiteral $ CppIntLit 0
+
+-- | Materialize a Python list literal into a C++ vector expression
+generatePythonListLiteral :: [Located PythonExpr] -> CppCodeGen (CppType, CppExpr)
+generatePythonListLiteral elems = do
+  addInclude "<vector>"
+  cppElems <- mapM generatePythonExpr elems
+  let inferredTypes = map inferPythonExprCppTypeLocated elems
+      knownTypes = catMaybes inferredTypes
+      hasUnknown = length knownTypes /= length elems
+      combinedType = case knownTypes of
+        [] -> Nothing
+        (t:ts) -> foldM unifyElementType t ts
+      uniqueTypes = nub knownTypes
+      fallbackAny = do
+        addInclude "<any>"
+        return $ CppClassType "std::any" []
+  elementType <-
+    if null elems
+      then return CppLongLong
+      else case combinedType of
+        Just t | not hasUnknown -> return t
+        Just _ -> fallbackAny
+        Nothing | not hasUnknown && not (null uniqueTypes) -> do
+          addInclude "<variant>"
+          return $ CppVariant uniqueTypes
+        _ -> fallbackAny
+  let vectorType = CppVector elementType
+  return (vectorType, CppBracedInit vectorType cppElems)
+
+inferPythonExprCppTypeLocated :: Located PythonExpr -> Maybe CppType
+inferPythonExprCppTypeLocated (Located _ e) = inferPythonExprCppType e
+
+inferPythonExprCppType :: PythonExpr -> Maybe CppType
+inferPythonExprCppType = \case
+  PyLiteral lit -> inferPythonLiteralType lit
+  PyConst (QualifiedName _ (Identifier name)) -> case name of
+    "True" -> Just CppBool
+    "False" -> Just CppBool
+    _ -> Nothing
+  PyUnaryOp op inner -> case op of
+    OpNot -> Just CppBool
+    _ -> inferPythonExprCppTypeLocated inner
+  PyBinaryOp _ left right -> do
+    t1 <- inferPythonExprCppTypeLocated left
+    t2 <- inferPythonExprCppTypeLocated right
+    unifyElementType t1 t2
+  PyBoolOp _ _ -> Just CppBool
+  PyComparison _ _ -> Just CppBool
+  _ -> Nothing
+
+inferPythonLiteralType :: PythonLiteral -> Maybe CppType
+inferPythonLiteralType = \case
+  PyInt _ -> Just CppLongLong
+  PyFloat _ -> Just CppDouble
+  PyBool _ -> Just CppBool
+  PyString _ -> Just CppString
+  PyFString _ _ -> Just CppString
+  PyBytes _ -> Just CppString
+  _ -> Nothing
+
+unifyElementType :: CppType -> CppType -> Maybe CppType
+unifyElementType t1 t2
+  | t1 == t2 = Just t1
+  | isNumericType t1 && isNumericType t2 = Just (promoteNumericType t1 t2)
+  | t1 == CppBool && t2 == CppBool = Just CppBool
+  | t1 == CppBool && isNumericType t2 = Just (promoteNumericType CppLongLong t2)
+  | isNumericType t1 && t2 == CppBool = Just (promoteNumericType t1 CppLongLong)
+  | otherwise = Nothing
+
+isNumericType :: CppType -> Bool
+isNumericType = \case
+  CppShort -> True
+  CppUShort -> True
+  CppInt -> True
+  CppUInt -> True
+  CppLong -> True
+  CppULong -> True
+  CppLongLong -> True
+  CppULongLong -> True
+  CppFloat -> True
+  CppDouble -> True
+  CppLongDouble -> True
+  _ -> False
+
+promoteNumericType :: CppType -> CppType -> CppType
+promoteNumericType t1 t2
+  | t1 `elem` floatingTypes || t2 `elem` floatingTypes = CppDouble
+  | otherwise = CppLongLong
+  where
+    floatingTypes = [CppFloat, CppDouble, CppLongDouble]
 
 -- | Generate C++ from Go files
 generateGoFile :: GoFile -> CppCodeGen ()
