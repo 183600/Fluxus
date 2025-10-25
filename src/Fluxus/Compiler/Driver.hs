@@ -652,12 +652,15 @@ renderCppStmt = \case
     T.unlines (map ("    " <>) (map renderCppStmt body)) <>
     "}"
   CppFor init cond incr body ->
-    "for (" <> 
-    (maybe "" renderCppStmt init) <> "; " <>
-    (maybe "" renderCppExpr cond) <> "; " <>
-    (maybe "" renderCppExpr incr) <> ") {\n" <>
-    T.unlines (map ("    " <>) (map renderCppStmt body)) <>
-    "}"
+    let initPart = case init of
+          Nothing   -> "; "
+          Just stmt -> renderCppStmt stmt <> " "
+    in "for (" <>
+       initPart <>
+       (maybe "" renderCppExpr cond) <> "; " <>
+       (maybe "" renderCppExpr incr) <> ") {\n" <>
+       T.unlines (map ("    " <>) (map renderCppStmt body)) <>
+       "}"
   CppBlock stmts ->
     "{\n" <>
     T.unlines (map ("    " <>) (map renderCppStmt stmts)) <>

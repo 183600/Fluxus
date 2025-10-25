@@ -351,13 +351,37 @@ generatePythonStmt (Located _ stmt) = case stmt of
   PyExprStmt expr -> do
     cppExpr <- generatePythonExpr expr
     return $ CppExprStmt cppExpr
-  PyAssign patterns expr -> do
-    cppExpr <- generatePythonExpr expr
+  PyAssign patterns expr@(Located _ exprVal) -> do
     -- For now, handle simple single-target assignment
     case patterns of
       [Located _ (PatVar (Identifier varName))] -> do
-        let varType = CppAuto  -- Use auto for type inference
-        return $ CppDecl $ CppVariable varName varType (Just cppExpr)
+        symtab <- gets cgsSymbolTable
+        case exprVal of
+          -- Special handling for list literals: materialize a std::vector<long long>
+          PyList elems -> do
+            addInclude "<vector>"
+            cppElems <- mapM generatePythonExpr elems
+            let vecType = CppVector CppLongLong
+            let declStmt = CppDecl (CppVariable varName vecType Nothing)
+            -- Decide whether to declare or assign based on existing symbol table
+            let initStmt = if HM.member varName symtab
+                           then CppExprStmt (CppBinary "=" (CppVar varName) (CppCall (CppVar "std::vector<long long>") []))
+                           else declStmt
+            -- Update symbol table when declaring new variable
+            unless (HM.member varName symtab) $
+              modify $ \s -> s { cgsSymbolTable = HM.insert varName vecType (cgsSymbolTable s) }
+            let pushStmts = map (\e -> CppExprStmt (CppCall (CppMember (CppVar varName) "push_back") [e])) cppElems
+            return $ CppBlock (initStmt : pushStmts)
+          -- Default: evaluate RHS and either declare or assign
+          _ -> do
+            cppExpr <- generatePythonExpr expr
+            if HM.member varName symtab
+              then return $ CppExprStmt (CppBinary "=" (CppVar varName) cppExpr)
+              else do
+                let varType = CppAuto
+                -- Update symbol table for new variable
+                modify $ \s -> s { cgsSymbolTable = HM.insert varName varType (cgsSymbolTable s) }
+                return $ CppDecl $ CppVariable varName varType (Just cppExpr)
       _ -> do
         -- Multiple assignment - not fully implemented
         return $ CppComment "Multiple assignment not implemented"
@@ -375,10 +399,11 @@ generatePythonStmt (Located _ stmt) = case stmt of
     -- Handle range() function calls
     case cppIter of
       CppCall (CppVar "range") [CppLiteral (CppIntLit n)] -> do
-        let initStmt = CppExprStmt (CppBinary "=" (CppVar varName) (CppLiteral (CppIntLit 0)))
+        -- Declare loop variable in the init part to ensure proper scoping
+        let initDecl = CppDecl (CppVariable varName CppAuto (Just (CppLiteral (CppIntLit 0))))
         let condition = CppBinary "<" (CppVar varName) (CppLiteral (CppIntLit n))
         let increment = CppUnary "++" (CppVar varName)
-        return $ CppFor (Just initStmt) (Just condition) (Just increment) cppBody
+        return $ CppFor (Just initDecl) (Just condition) (Just increment) cppBody
       _ -> return $ CppComment "For loop not fully implemented"
   _ -> return $ CppComment $ "TODO: Implement Python statement: " <> T.pack (show stmt)
 
@@ -394,12 +419,24 @@ generatePythonArgument (Located _ arg) = case arg of
 generatePythonExpr :: Located PythonExpr -> CppCodeGen CppExpr
 generatePythonExpr (Located _ expr) = case expr of
   PyLiteral lit -> return $ CppLiteral $ mapPythonLiteral lit
+  PyConst (QualifiedName _ (Identifier name)) -> case name of
+    "True"  -> return $ CppLiteral (CppBoolLit True)
+    "False" -> return $ CppLiteral (CppBoolLit False)
+    "None"  -> return $ CppLiteral CppNullPtr
+    _        -> return $ CppVar name
   PyVar (Identifier name) -> return $ CppVar name
   PyBinaryOp op left right -> do
     cppLeft <- generatePythonExpr left
     cppRight <- generatePythonExpr right
     let cppOp = mapPythonBinaryOp op
     return $ CppBinary cppOp cppLeft cppRight
+  PyBoolOp op exprs -> do
+    cppExprs <- mapM generatePythonExpr exprs
+    let cppOp = case op of
+          OpAnd -> "&&"
+          OpOr  -> "||"
+          _     -> "&&"
+    return $ foldl1 (\acc e -> CppBinary cppOp acc e) cppExprs
   PyComparison ops exprs -> do
     -- Handle chained comparisons: a < b < c becomes (a < b) && (b < c)
     case (ops, exprs) of
@@ -419,6 +456,15 @@ generatePythonExpr (Located _ expr) = case expr of
       _ -> do
         addComment $ "Invalid comparison expression"
         return $ CppLiteral $ CppBoolLit False
+  PySubscript obj sliceExpr -> do
+    cppObj <- generatePythonExpr obj
+    case sliceExpr of
+      Located _ (SliceIndex idx) -> do
+        cppIdx <- generatePythonExpr idx
+        return $ CppIndex cppObj cppIdx
+      _ -> do
+        addComment "Unsupported slice expression"
+        return $ CppLiteral (CppIntLit 0)
   PyCall func args -> do
     cppFunc <- generatePythonExpr func
     cppArgs <- mapM generatePythonArgument args
@@ -434,6 +480,10 @@ generatePythonExpr (Located _ expr) = case expr of
             -- Chain multiple << operators for multiple arguments
             let chainedOutput = foldl (\acc arg -> CppBinary "<<" (CppBinary "<<" acc arg) (CppLiteral (CppStringLit " "))) (CppVar "std::cout") (init args)
             return $ CppBinary "<<" (CppBinary "<<" chainedOutput (last args)) (CppVar "std::endl")
+      Located _ (PyVar (Identifier "len")) -> do
+        case cppArgs of
+          [arg0] -> return $ CppCall (CppMember arg0 "size") []
+          _      -> return $ CppLiteral (CppIntLit 0)
       Located _ (PyVar (Identifier "range")) -> do
         -- Handle range() function calls
         case cppArgs of
@@ -441,10 +491,10 @@ generatePythonExpr (Located _ expr) = case expr of
           _ -> return $ CppCall (CppVar "range") cppArgs
       _ -> return $ CppCall cppFunc cppArgs
   PyList exprs -> do
-    cppExprs <- mapM generatePythonExpr exprs
-    -- Generate std::vector initialization
-    let elemType = CppAuto  -- Type inference
-    return $ CppCall (CppVar "std::vector") cppExprs
+    -- Fallback: construct an empty vector to avoid invalid code; list literals
+    -- are primarily handled in assignment statements where we can emit push_backs.
+    addInclude "<vector>"
+    return $ CppCall (CppVar "std::vector<long long>") []
   _ -> do
     addComment $ "TODO: Implement Python expression: " <> T.pack (show expr)
     return $ CppLiteral $ CppIntLit 0
@@ -492,7 +542,9 @@ generatePythonFunction funcDef = do
                else do
                  -- Infer return type from function body
                  let hasReturn = any hasReturnValue (pyFuncBody funcDef)
-                 return $ if hasReturn then CppAuto else CppVoid
+                 -- Default to int for functions that appear to return a value to ensure
+                 -- valid C++ in presence of recursion; otherwise use void
+                 return $ if hasReturn then CppInt else CppVoid
   
   -- Generate function body
   bodyStmts <- mapM generatePythonStmt (pyFuncBody funcDef)
