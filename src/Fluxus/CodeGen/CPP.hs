@@ -393,16 +393,32 @@ generatePythonStmt (Located _ stmt) = case stmt of
     cppThen <- mapM generatePythonStmt thenStmts
     cppElse <- mapM generatePythonStmt elseStmts
     return $ CppIf cppCond cppThen cppElse
+  PyWhile condition bodyStmts _ -> do
+    cppCond <- generatePythonExpr condition
+    cppBody <- mapM generatePythonStmt bodyStmts
+    return $ CppWhile cppCond cppBody
   PyFor (Located _ (PatVar (Identifier varName))) iterExpr bodyStmts _ -> do
     cppIter <- generatePythonExpr iterExpr
     cppBody <- mapM generatePythonStmt bodyStmts
-    -- Handle range() function calls
+    -- Handle range() function calls with 1-3 arguments
     case cppIter of
-      CppCall (CppVar "range") [CppLiteral (CppIntLit n)] -> do
-        -- Declare loop variable in the init part to ensure proper scoping
+      -- range(end)
+      CppCall (CppVar "range") [end] -> do
         let initDecl = CppDecl (CppVariable varName CppAuto (Just (CppLiteral (CppIntLit 0))))
-        let condition = CppBinary "<" (CppVar varName) (CppLiteral (CppIntLit n))
+        let condition = CppBinary "<" (CppVar varName) end
         let increment = CppUnary "++" (CppVar varName)
+        return $ CppFor (Just initDecl) (Just condition) (Just increment) cppBody
+      -- range(start, end)
+      CppCall (CppVar "range") [start, end] -> do
+        let initDecl = CppDecl (CppVariable varName CppAuto (Just start))
+        let condition = CppBinary "<" (CppVar varName) end
+        let increment = CppUnary "++" (CppVar varName)
+        return $ CppFor (Just initDecl) (Just condition) (Just increment) cppBody
+      -- range(start, end, step) - simplified handling
+      CppCall (CppVar "range") [start, end, step] -> do
+        let initDecl = CppDecl (CppVariable varName CppAuto (Just start))
+        let condition = CppBinary "<" (CppVar varName) end
+        let increment = CppBinary "+=" (CppVar varName) step
         return $ CppFor (Just initDecl) (Just condition) (Just increment) cppBody
       _ -> return $ CppComment "For loop not fully implemented"
   _ -> return $ CppComment $ "TODO: Implement Python statement: " <> T.pack (show stmt)
@@ -430,6 +446,14 @@ generatePythonExpr (Located _ expr) = case expr of
     cppRight <- generatePythonExpr right
     let cppOp = mapPythonBinaryOp op
     return $ CppBinary cppOp cppLeft cppRight
+  PyUnaryOp op inner -> do
+    cppInner <- generatePythonExpr inner
+    let uop = case op of
+          OpNot      -> "!"
+          OpNegate   -> "-"
+          OpBitNot   -> "~"
+          OpPositive -> "+"
+    return $ CppUnary uop cppInner
   PyBoolOp op exprs -> do
     cppExprs <- mapM generatePythonExpr exprs
     let cppOp = case op of
