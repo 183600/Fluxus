@@ -107,19 +107,30 @@ parseFile = do
   packageName <- parseGoIdentifier
   skipCommentsAndNewlines
   
-  imports <- MP.many (parseImportDecl <* skipCommentsAndNewlines)
-  decls <- MP.many (skipCommentsAndNewlines *> parseDeclaration <* skipCommentsAndNewlines)
+  let lookAheadImport = lookAhead $ do
+        skipCommentsAndNewlines
+        goKeywordP GoKwImport
+  importGroups <- MP.many $ do
+    lookAheadImport
+    skipCommentsAndNewlines
+    parseImportDecl <* skipCommentsAndNewlines
+  decls <- MP.many $ do
+    skipCommentsAndNewlines
+    d <- parseDeclaration
+    skipCommentsAndNewlines
+    return d
   traceM ("parseFile: decls count = " ++ show (length decls))
   skipCommentsAndNewlines  -- Skip any trailing newlines
   
-  let (importDecls, otherDecls) = partition isImportDecl decls
+  let (_, otherDecls) = partition isImportDecl decls
+      imports = concat importGroups
       isImportDecl (Located _ (GoImportDecl _)) = True
       isImportDecl _ = False
   
   return $ GoFile
     { goFileName = "<input>"
     , goFilePackage = packageName
-    , goFileImports = concat imports
+    , goFileImports = imports
     , goFileDecls = otherDecls
     }
 
@@ -132,12 +143,13 @@ parseImportDecl = do
     [ do
         -- Parenthesized imports
         void $ goDelimiterP GoDelimLeftParen
-        skipCommentsAndNewlines
         imports <- many $ do
+          skipCommentsAndNewlines
           notFollowedBy (goDelimiterP GoDelimRightParen)
           imp <- parseImportSpec
           skipCommentsAndNewlines
           return $ located' imp
+        skipCommentsAndNewlines
         void $ goDelimiterP GoDelimRightParen
         return imports
     , do
@@ -782,6 +794,7 @@ parseGoType = located $ choice
   , try parseFuncType
   , try parseInterfaceType
   , try parseStructType
+  , try parseEllipsisType
   , parseBasicType
   ]
 
@@ -843,6 +856,13 @@ parsePointerType = do
   void $ goOperatorP GoOpMult
   baseType <- parseGoType
   return $ GoPointerType baseType
+
+-- | Parse variadic (ellipsis) types
+parseEllipsisType :: GoParser GoType
+parseEllipsisType = do
+  void $ goOperatorP GoOpEllipsis
+  elemType <- parseGoType
+  return $ GoEllipsisType elemType
 
 -- | Parse function types
 parseFuncType :: GoParser GoType
