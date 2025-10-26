@@ -43,11 +43,15 @@ import qualified Data.HashMap.Strict as HM
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
+import Data.Bifunctor (first)
+import qualified Text.Megaparsec as MP
 
 import Fluxus.AST.Common
 import Fluxus.AST.Python
 import Fluxus.AST.Go
 import Fluxus.Utils.Pretty
+import Fluxus.Parser.Python.Lexer (runPythonLexer, PythonToken(..))
+import Fluxus.Parser.Python.Parser (parseExpression)
 
 -- | C++ code generation configuration
 data CppGenConfig = CppGenConfig
@@ -116,6 +120,7 @@ data CppStmt
   | CppThrow !(Maybe CppExpr)
   | CppBreak
   | CppContinue
+  | CppStmtSeq ![CppStmt]
   | CppBlock ![CppStmt]
   | CppDecl !CppDecl
   | CppComment !Text
@@ -266,14 +271,17 @@ generateCppFromPython (PythonAST pyModule) = do
   let isActualStatement (CppComment _) = False
       isActualStatement _ = True
       actualStmts = filter isActualStatement moduleStmtsCpp
+      nameBinding = CppDecl (CppVariable "__name__" (CppConst CppString) (Just (CppLiteral (CppStringLit "__main__"))))
+      preludeStmts = if null actualStmts then [] else [nameBinding]
+      bodyStmts = preludeStmts ++ actualStmts
   
   -- Ensure we have a main function for standalone execution
   hasMain <- gets (any isMainFunction . cgsDeclarations)
   unless hasMain $ do
     -- If we have module-level statements, wrap them in main function
-    let mainBody = if null actualStmts 
+    let mainBody = if null bodyStmts
                    then [CppReturn (Just (CppLiteral (CppIntLit 0)))]
-                   else actualStmts ++ [CppReturn (Just (CppLiteral (CppIntLit 0)))]
+                   else bodyStmts ++ [CppReturn (Just (CppLiteral (CppIntLit 0)))]
     addDeclaration $ CppFunction "main" CppInt [] mainBody
   
   -- Build final unit
@@ -342,6 +350,13 @@ generateCppFromGo (GoAST goPackage) = do
     isMainFunction (CppFunction "main" _ _ _) = True
     isMainFunction _ = False
 
+data RangeSpec = RangeSpec
+  { rsStart :: CppExpr
+  , rsEnd :: CppExpr
+  , rsStep :: CppExpr
+  , rsStepValue :: Maybe Integer
+  }
+
 -- | Generate C++ from Python statements
 generatePythonStmt :: Located PythonStmt -> CppCodeGen CppStmt
 generatePythonStmt (Located _ stmt) = case stmt of
@@ -397,30 +412,120 @@ generatePythonStmt (Located _ stmt) = case stmt of
     cppBody <- mapM generatePythonStmt bodyStmts
     return $ CppWhile cppCond cppBody
   PyFor (Located _ (PatVar (Identifier varName))) iterExpr bodyStmts _ -> do
-    cppIter <- generatePythonExpr iterExpr
+    symtab <- gets cgsSymbolTable
+    let varAlreadyDeclared = HM.member varName symtab
+    unless varAlreadyDeclared $
+      modify $ \r -> r { cgsSymbolTable = HM.insert varName CppAuto (cgsSymbolTable r) }
     cppBody <- mapM generatePythonStmt bodyStmts
-    -- Handle range() function calls with 1-3 arguments
-    case cppIter of
-      -- range(end)
-      CppCall (CppVar "range") [end] -> do
-        let initDecl = CppDecl (CppVariable varName CppAuto (Just (CppLiteral (CppIntLit 0))))
-        let condition = CppBinary "<" (CppVar varName) end
-        let increment = CppUnary "++" (CppVar varName)
-        return $ CppFor (Just initDecl) (Just condition) (Just increment) cppBody
-      -- range(start, end)
-      CppCall (CppVar "range") [start, end] -> do
-        let initDecl = CppDecl (CppVariable varName CppAuto (Just start))
-        let condition = CppBinary "<" (CppVar varName) end
-        let increment = CppUnary "++" (CppVar varName)
-        return $ CppFor (Just initDecl) (Just condition) (Just increment) cppBody
-      -- range(start, end, step) - simplified handling
-      CppCall (CppVar "range") [start, end, step] -> do
-        let initDecl = CppDecl (CppVariable varName CppAuto (Just start))
-        let condition = CppBinary "<" (CppVar varName) end
-        let increment = CppBinary "+=" (CppVar varName) step
-        return $ CppFor (Just initDecl) (Just condition) (Just increment) cppBody
-      _ -> return $ CppComment "For loop not fully implemented"
+    case locatedValue iterExpr of
+      PyCall (Located _ (PyVar (Identifier "range"))) rangeArgs -> do
+        mSpec <- parseRangeArgs rangeArgs
+        case mSpec of
+          Nothing -> return $ CppComment "range() with unsupported arguments"
+          Just spec -> buildRangeLoop varAlreadyDeclared varName cppBody spec
+      _ -> do
+        addComment "Only range() iteration is currently supported"
+        return $ CppComment "For loop not fully implemented"
   _ -> return $ CppComment $ "TODO: Implement Python statement: " <> T.pack (show stmt)
+  where
+    parseRangeArgs :: [Located PythonArgument] -> CppCodeGen (Maybe RangeSpec)
+    parseRangeArgs args = case traverse extractPositional args of
+      Nothing -> return Nothing
+      Just posArgs -> case posArgs of
+        [endExpr] -> do
+          end <- generatePythonExpr endExpr
+          let start = CppLiteral (CppIntLit 0)
+              step = CppLiteral (CppIntLit 1)
+          return $ Just RangeSpec
+            { rsStart = start
+            , rsEnd = end
+            , rsStep = step
+            , rsStepValue = Just 1
+            }
+        [startExpr, endExpr] -> do
+          start <- generatePythonExpr startExpr
+          end <- generatePythonExpr endExpr
+          let step = CppLiteral (CppIntLit 1)
+          return $ Just RangeSpec
+            { rsStart = start
+            , rsEnd = end
+            , rsStep = step
+            , rsStepValue = Just 1
+            }
+        [startExpr, endExpr, stepExpr] -> do
+          start <- generatePythonExpr startExpr
+          end <- generatePythonExpr endExpr
+          stepRaw <- generatePythonExpr stepExpr
+          let (stepNorm, stepVal) = normalizeStepExpr stepRaw
+          return $ Just RangeSpec
+            { rsStart = start
+            , rsEnd = end
+            , rsStep = stepNorm
+            , rsStepValue = stepVal
+            }
+        _ -> return Nothing
+
+    extractPositional :: Located PythonArgument -> Maybe (Located PythonExpr)
+    extractPositional (Located _ arg) = case arg of
+      ArgPositional expr -> Just expr
+      _ -> Nothing
+
+    normalizeStepExpr :: CppExpr -> (CppExpr, Maybe Integer)
+    normalizeStepExpr expr = case expr of
+      CppLiteral (CppIntLit n) -> (CppLiteral (CppIntLit n), Just n)
+      CppUnary "-" inner -> case inner of
+        CppLiteral (CppIntLit n) -> (CppLiteral (CppIntLit (-n)), Just (-n))
+        _ -> (expr, Nothing)
+      _ -> (expr, Nothing)
+
+    buildRangeLoop :: Bool -> Text -> [CppStmt] -> RangeSpec -> CppCodeGen CppStmt
+    buildRangeLoop varAlreadyDeclared varName cppBody (RangeSpec startExpr endExpr stepExpr stepVal) = do
+      iterVarName <- generateTempVar
+      let iterVar = CppVar iterVarName
+          pythonVar = CppVar varName
+          assignmentStmt = CppExprStmt (CppBinary "=" pythonVar iterVar)
+          loopBody = assignmentStmt : cppBody
+          prefixDecls = if varAlreadyDeclared
+                        then []
+                        else [CppDecl (CppVariable varName CppAuto (Just startExpr))]
+          iterInitExpr = if varAlreadyDeclared then startExpr else pythonVar
+      case stepVal of
+        Just 0 -> do
+          addComment "range() with step 0 is invalid"
+          return $ CppComment "range step 0 not supported"
+        Just n -> do
+          let condition = if n > 0
+                            then CppBinary "<" iterVar endExpr
+                            else CppBinary ">" iterVar endExpr
+              increment
+                | n == 1 = CppUnary "++" iterVar
+                | n == -1 = CppUnary "--" iterVar
+                | otherwise = CppBinary "+=" iterVar (CppLiteral (CppIntLit n))
+              iterInit = CppDecl (CppVariable iterVarName CppAuto (Just iterInitExpr))
+              loopStmt = CppFor (Just iterInit) (Just condition) (Just increment) loopBody
+              stmts = prefixDecls ++ [loopStmt]
+          return $ case stmts of
+            [single] -> single
+            _ -> CppStmtSeq stmts
+        Nothing -> do
+          stepVarName <- generateTempVar
+          let stepVar = CppVar stepVarName
+              stepDecl = CppDecl (CppVariable stepVarName CppAuto (Just stepExpr))
+              iterInit = CppDecl (CppVariable iterVarName CppAuto (Just iterInitExpr))
+              positiveCond = CppBinary "&&"
+                               (CppBinary ">" stepVar (CppLiteral (CppIntLit 0)))
+                               (CppBinary "<" iterVar endExpr)
+              negativeCond = CppBinary "&&"
+                               (CppBinary "<" stepVar (CppLiteral (CppIntLit 0)))
+                               (CppBinary ">" iterVar endExpr)
+              condition = CppBinary "||" positiveCond negativeCond
+              increment = CppBinary "+=" iterVar stepVar
+              loopStmt = CppFor (Just iterInit) (Just condition) (Just increment) loopBody
+              scopedLoop = CppBlock [stepDecl, loopStmt]
+              stmts = prefixDecls ++ [scopedLoop]
+          return $ case stmts of
+            [single] -> single
+            _ -> CppStmtSeq stmts
 
 -- | Generate C++ from Python expressions
 -- | Generate C++ expression from Python argument
@@ -431,9 +536,128 @@ generatePythonArgument (Located _ arg) = case arg of
   ArgStarred expr -> generatePythonExpr expr  -- Simplified
   ArgKwStarred expr -> generatePythonExpr expr  -- Simplified
 
+-- | Segments extracted from an f-string literal
+data FStringSegment
+  = FStringLiteral !Text
+  | FStringExpression !Text
+  deriving (Eq, Show)
+
+splitFStringSegments :: Text -> Either Text [FStringSegment]
+splitFStringSegments input = go input []
+  where
+    go txt acc =
+      case T.uncons txt of
+        Nothing -> Right (reverse acc)
+        Just ('{', rest)
+          | "{{" `T.isPrefixOf` txt -> go (T.drop 2 txt) (addLiteral "{" acc)
+          | otherwise -> do
+              (exprText, remainder) <- takeExpression rest
+              let (exprCoreRaw, debugLiteral) = stripFormatSpec exprText
+                  exprCore = T.strip exprCoreRaw
+              when (T.null exprCore) $
+                Left "Empty expression in f-string"
+              let accWithDebug = maybe acc (\lit -> addLiteral lit acc) debugLiteral
+              go remainder (FStringExpression exprCore : accWithDebug)
+        Just ('}', _)
+          | "}}" `T.isPrefixOf` txt -> go (T.drop 2 txt) (addLiteral "}" acc)
+          | otherwise -> Left "Single '}' in f-string"
+        _ ->
+          let (literal, remainder) = T.break (`elem` ("{}" :: String)) txt
+          in go remainder (addLiteral literal acc)
+
+    addLiteral lit acc
+      | T.null lit = acc
+      | otherwise = case acc of
+          (FStringLiteral existing : rest) -> FStringLiteral (existing <> lit) : rest
+          _ -> FStringLiteral lit : acc
+
+    takeExpression :: Text -> Either Text (Text, Text)
+    takeExpression txt = goExpr 0 [] txt
+      where
+        goExpr depth acc remaining =
+          case T.uncons remaining of
+            Nothing -> Left "Unterminated '{' in f-string"
+            Just ('{', rest') -> goExpr (depth + 1) ('{' : acc) rest'
+            Just ('}', rest')
+              | depth == 0 -> Right (T.pack (reverse acc), rest')
+              | otherwise  -> goExpr (depth - 1) ('}' : acc) rest'
+            Just (c, rest') -> goExpr depth (c : acc) rest'
+
+    stripFormatSpec :: Text -> (Text, Maybe Text)
+    stripFormatSpec txt =
+      let (core, _) = breakOnFormat txt
+          trimmed = T.strip core
+      in case T.unsnoc trimmed of
+           Just (rest, '=') ->
+             let exprPart = T.strip rest
+             in (exprPart, Just core)
+           _ -> (trimmed, Nothing)
+
+    breakOnFormat :: Text -> (Text, Text)
+    breakOnFormat txt = goFmt 0 0 0 [] txt
+      where
+        goFmt braceDepth parenDepth bracketDepth acc remaining =
+          case T.uncons remaining of
+            Nothing -> (T.pack (reverse acc), T.empty)
+            Just (c, rest')
+              | c == '{' -> goFmt (braceDepth + 1) parenDepth bracketDepth (c : acc) rest'
+              | c == '}' && braceDepth > 0 -> goFmt (braceDepth - 1) parenDepth bracketDepth (c : acc) rest'
+              | c == '(' -> goFmt braceDepth (parenDepth + 1) bracketDepth (c : acc) rest'
+              | c == ')' && parenDepth > 0 -> goFmt braceDepth (parenDepth - 1) bracketDepth (c : acc) rest'
+              | c == '[' -> goFmt braceDepth parenDepth (bracketDepth + 1) (c : acc) rest'
+              | c == ']' && bracketDepth > 0 -> goFmt braceDepth parenDepth (bracketDepth - 1) (c : acc) rest'
+              | (c == ':' || c == '!') && braceDepth == 0 && parenDepth == 0 && bracketDepth == 0 ->
+                  (T.pack (reverse acc), rest')
+              | otherwise -> goFmt braceDepth parenDepth bracketDepth (c : acc) rest'
+
+-- | Parse a small Python expression (used in f-strings)
+parseInlinePythonExpr :: Text -> Either Text (Located PythonExpr)
+parseInlinePythonExpr exprText = do
+  let trimmed = T.strip exprText
+  when (T.null trimmed) $
+    Left "Empty expression"
+  tokens <- first (T.pack . MP.errorBundlePretty) $
+    runPythonLexer "<f-string>" trimmed
+  let eofToken = Located syntheticSpan TokenEOF
+      tokenStream = tokens ++ [eofToken]
+  first (T.pack . MP.errorBundlePretty) $
+    MP.parse (parseExpression <* MP.eof) "<f-string>" tokenStream
+
+-- | Generate a C++ expression from a Python f-string literal
+generateFStringExpr :: Text -> CppCodeGen CppExpr
+generateFStringExpr raw = do
+  segments <- case splitFStringSegments raw of
+    Left err -> do
+      addComment $ "Failed to parse f-string: " <> err
+      return [FStringLiteral raw]
+    Right segs -> return segs
+  compiled <- mapM compileSegment segments
+  ossName <- generateTempVar
+  addInclude "<sstream>"
+  let ossVar = CppVar ossName
+      ossType = CppClassType "std::ostringstream" []
+      ossDecl = CppDecl (CppVariable ossName ossType Nothing)
+      streamStmts = map (\expr -> CppExprStmt (CppBinary "<<" ossVar expr)) compiled
+      resultExpr = CppCall (CppMember ossVar "str") []
+      lambdaBody = ossDecl : streamStmts ++ [CppReturn (Just resultExpr)]
+  return $ CppCall (CppLambda [] lambdaBody) []
+  where
+    compileSegment (FStringLiteral lit) = return $ CppLiteral (CppStringLit lit)
+    compileSegment (FStringExpression exprTxt) =
+      case parseInlinePythonExpr exprTxt of
+        Left err -> do
+          addComment $ "Failed to parse f-string expression: " <> err
+          return $ CppLiteral (CppStringLit ("{" <> exprTxt <> "}"))
+        Right parsed -> generatePythonExpr parsed
+
+syntheticSpan :: SourceSpan
+syntheticSpan = SourceSpan "<f-string>" (SourcePos 0 0) (SourcePos 0 0)
+
 generatePythonExpr :: Located PythonExpr -> CppCodeGen CppExpr
 generatePythonExpr (Located _ expr) = case expr of
-  PyLiteral lit -> return $ CppLiteral $ mapPythonLiteral lit
+  PyLiteral lit -> case lit of
+    PyFString text _ -> generateFStringExpr text
+    _ -> return $ CppLiteral $ mapPythonLiteral lit
   PyConst (QualifiedName _ (Identifier name)) -> case name of
     "True"  -> return $ CppLiteral (CppBoolLit True)
     "False" -> return $ CppLiteral (CppBoolLit False)
@@ -443,8 +667,13 @@ generatePythonExpr (Located _ expr) = case expr of
   PyBinaryOp op left right -> do
     cppLeft <- generatePythonExpr left
     cppRight <- generatePythonExpr right
-    let cppOp = mapPythonBinaryOp op
-    return $ CppBinary cppOp cppLeft cppRight
+    case op of
+      OpPow -> do
+        addInclude "<cmath>"
+        return $ CppCall (CppVar "std::pow") [cppLeft, cppRight]
+      _ -> do
+        let cppOp = mapPythonBinaryOp op
+        return $ CppBinary cppOp cppLeft cppRight
   PyUnaryOp op inner -> do
     cppInner <- generatePythonExpr inner
     let uop = case op of
@@ -488,6 +717,9 @@ generatePythonExpr (Located _ expr) = case expr of
       _ -> do
         addComment "Unsupported slice expression"
         return $ CppLiteral (CppIntLit 0)
+  PyAttribute obj (Identifier member) -> do
+    cppObj <- generatePythonExpr obj
+    return $ CppMember cppObj member
   PyCall func args -> do
     cppFunc <- generatePythonExpr func
     cppArgs <- mapM generatePythonArgument args
@@ -710,10 +942,14 @@ generateGoFunction func = do
 
 -- | Check if statement list contains a return statement with a value
 hasReturnStmt :: [CppStmt] -> Bool
-hasReturnStmt = any isReturnStmt
+hasReturnStmt = any isReturnStmt . concatMap flatten
   where
+    flatten stmt = case stmt of
+      CppStmtSeq seqStmts -> concatMap flatten seqStmts
+      CppBlock stmts -> concatMap flatten stmts
+      other -> [other]
+
     isReturnStmt (CppReturn _) = True
-    isReturnStmt (CppBlock stmts) = hasReturnStmt stmts
     isReturnStmt _ = False
 
 -- | Check if Python statement has a return with value
@@ -952,7 +1188,7 @@ spaceSeparate (x:xs) = x : concatMap (\arg -> [CppLiteral (CppStringLit " "), ar
 
 -- | Type mapping functions
 mapPythonTypeToCpp :: Type -> CppType
-
+mapPythonTypeToCpp = \case
   TInt _ -> CppInt
   TFloat _ -> CppDouble
   TBool -> CppBool
@@ -1008,9 +1244,16 @@ mapPythonBinaryOp = \case
   OpSub -> "-"
   OpMul -> "*"
   OpDiv -> "/"
+  OpFloorDiv -> "/"
   OpMod -> "%"
+  OpBitAnd -> "&"
+  OpBitOr -> "|"
+  OpBitXor -> "^"
+  OpShiftL -> "<<"
+  OpShiftR -> ">>"
   OpAnd -> "&&"
   OpOr -> "||"
+  OpConcat -> "+"
   _ -> "+"  -- Fallback
 
 mapGoBinaryOp :: BinaryOp -> Text

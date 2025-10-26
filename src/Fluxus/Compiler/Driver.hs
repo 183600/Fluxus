@@ -533,6 +533,14 @@ logVerbose msg = do
     liftIO $ TIO.putStrLn $ "[VERBOSE] " <> msg
 
 -- | Render C++ unit to text
+flattenStmt :: CppStmt -> [CppStmt]
+flattenStmt = \case
+  CppStmtSeq stmts -> flattenStmts stmts
+  stmt -> [stmt]
+
+flattenStmts :: [CppStmt] -> [CppStmt]
+flattenStmts = concatMap flattenStmt
+
 renderCppUnit :: CppUnit -> Text
 renderCppUnit (CppUnit includes _ decls) = 
   T.unlines $ 
@@ -545,10 +553,11 @@ renderCppUnit (CppUnit includes _ decls) =
 renderCppDecl :: CppDecl -> Text
 renderCppDecl = \case
   CppFunction name retType params body -> 
-    renderCppType retType <> " " <> name <> "(" <> 
-    T.intercalate ", " (map renderCppParam params) <> ") {\n" <>
-    T.unlines (map ("    " <>) (map renderCppStmt body)) <>
-    "}\n"
+    let renderedBody = map renderCppStmt (flattenStmts body)
+    in renderCppType retType <> " " <> name <> "(" <> 
+       T.intercalate ", " (map renderCppParam params) <> ") {\n" <>
+       T.unlines (map ("    " <>) renderedBody) <>
+       "}\n"
   CppVariable name varType Nothing -> 
     renderCppType varType <> " " <> name <> ";\n"
   CppVariable name varType (Just expr) -> 
@@ -562,16 +571,18 @@ renderCppDecl = \case
   CppStruct structName members ->
     renderClassLike "struct" structName [] members
   CppMethod name retType params body isVirtual ->
-    (if isVirtual then "virtual " else "") <>
-    renderCppType retType <> " " <> name <> "(" <> 
-    T.intercalate ", " (map renderCppParam params) <> ") {\n" <>
-    T.unlines (map ("        " <>) (map renderCppStmt body)) <>
-    "    }\n"
+    let renderedBody = map renderCppStmt (flattenStmts body)
+    in (if isVirtual then "virtual " else "") <>
+       renderCppType retType <> " " <> name <> "(" <> 
+       T.intercalate ", " (map renderCppParam params) <> ") {\n" <>
+       T.unlines (map ("        " <>) renderedBody) <>
+       "    }\n"
   CppConstructor className params body ->
-    className <> "(" <> 
-    T.intercalate ", " (map renderCppParam params) <> ") {\n" <>
-    T.unlines (map ("        " <>) (map renderCppStmt body)) <>
-    "    }\n"
+    let renderedBody = map renderCppStmt (flattenStmts body)
+    in className <> "(" <> 
+       T.intercalate ", " (map renderCppParam params) <> ") {\n" <>
+       T.unlines (map ("        " <>) renderedBody) <>
+       "    }\n"
   CppTypedef alias cppType ->
     "typedef " <> renderCppType cppType <> " " <> alias <> ";\n"
   CppUsing alias cppType ->
@@ -654,33 +665,39 @@ renderCppParam (CppParam name paramType _) =
 -- | Render C++ statement
 renderCppStmt :: CppStmt -> Text
 renderCppStmt = \case
+  CppStmtSeq stmts -> T.unlines (map renderCppStmt (flattenStmts stmts))
   CppReturn Nothing -> "return;"
   CppReturn (Just expr) -> "return " <> renderCppExpr expr <> ";"
   CppExprStmt expr -> renderCppExpr expr <> ";"
   CppIf cond thenStmts elseStmts ->
-    "if (" <> renderCppExpr cond <> ") {\n" <>
-    T.unlines (map ("    " <>) (map renderCppStmt thenStmts)) <>
-    "}" <> (if null elseStmts then "" else " else {\n" <>
-    T.unlines (map ("    " <>) (map renderCppStmt elseStmts)) <>
-    "}")
+    let renderedThen = map renderCppStmt (flattenStmts thenStmts)
+        renderedElse = map renderCppStmt (flattenStmts elseStmts)
+    in "if (" <> renderCppExpr cond <> ") {\n" <>
+       T.unlines (map ("    " <>) renderedThen) <>
+       "}" <> (if null renderedElse then "" else " else {\n" <>
+       T.unlines (map ("    " <>) renderedElse) <>
+       "}")
   CppWhile cond body ->
-    "while (" <> renderCppExpr cond <> ") {\n" <>
-    T.unlines (map ("    " <>) (map renderCppStmt body)) <>
-    "}"
+    let renderedBody = map renderCppStmt (flattenStmts body)
+    in "while (" <> renderCppExpr cond <> ") {\n" <>
+       T.unlines (map ("    " <>) renderedBody) <>
+       "}"
   CppFor init cond incr body ->
     let initPart = case init of
           Nothing   -> "; "
           Just stmt -> renderCppStmt stmt <> " "
+        renderedBody = map renderCppStmt (flattenStmts body)
     in "for (" <>
        initPart <>
        (maybe "" renderCppExpr cond) <> "; " <>
        (maybe "" renderCppExpr incr) <> ") {\n" <>
-       T.unlines (map ("    " <>) (map renderCppStmt body)) <>
+       T.unlines (map ("    " <>) renderedBody) <>
        "}"
   CppBlock stmts ->
-    "{\n" <>
-    T.unlines (map ("    " <>) (map renderCppStmt stmts)) <>
-    "}"
+    let renderedBody = map renderCppStmt (flattenStmts stmts)
+    in "{\n" <>
+       T.unlines (map ("    " <>) renderedBody) <>
+       "}"
   CppComment comment -> "// " <> comment
   CppDecl decl -> T.stripEnd (renderCppDecl decl)  -- Remove trailing newline for inline declarations
   CppSwitch expr cases ->
@@ -689,12 +706,14 @@ renderCppStmt = \case
     "}"
     where
       renderCppCase (CppCase caseExpr stmts) = 
-        "case " <> renderCppExpr caseExpr <> ":\n" <>
-        T.unlines (map ("    " <>) (map renderCppStmt stmts)) <>
-        "    break;"
+        let renderedBody = map renderCppStmt (flattenStmts stmts)
+        in "case " <> renderCppExpr caseExpr <> ":\n" <>
+           T.unlines (map ("    " <>) renderedBody) <>
+           "    break;"
       renderCppCase (CppDefault stmts) =
-        "default:\n" <>
-        T.unlines (map ("    " <>) (map renderCppStmt stmts))
+        let renderedBody = map renderCppStmt (flattenStmts stmts)
+        in "default:\n" <>
+           T.unlines (map ("    " <>) renderedBody)
   _ -> "// TODO: Render other statement types"
 
 -- | Render C++ expression  
@@ -727,7 +746,7 @@ renderCppExpr = \case
     "}"
     where
       hasThisInStmts :: [CppStmt] -> Bool
-      hasThisInStmts stmts = any hasThisInStmt stmts
+      hasThisInStmts stmts = any hasThisInStmt (flattenStmts stmts)
       
       hasThisInStmt :: CppStmt -> Bool
       hasThisInStmt (CppReturn (Just expr)) = hasThisInExpr expr
