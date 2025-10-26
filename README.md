@@ -116,30 +116,6 @@
   - Python 3.10+ （用于 Python 互操作）
   - Go 1.20+ （用于 Go 互操作）
 
-### 自动配置 Haskell 开发环境
-
-为了方便快速开始开发，仓库提供了基于 [ghcup](https://www.haskell.org/ghcup/) 的自动化安装脚本，可在 Linux 与 macOS 上安装并配置完整的 Haskell 工具链：
-
-```bash
-chmod +x ./setup_haskell_env.sh
-./setup_haskell_env.sh
-```
-
-脚本将会：
-
-- 安装或更新 ghcup（官方 Haskell 工具链安装器）
-- 安装推荐版本的 GHC 与 Cabal，并设置为默认版本
-- 安装最新的 Stack（可选安装 Haskell Language Server）
-- 更新 Cabal 包索引（可通过 `--skip-cabal-update` 参数跳过）
-
-可以通过环境变量自定义版本号：
-
-```bash
-GHC_VERSION=9.4.8 CABAL_VERSION=3.10.2.0 STACK_VERSION=latest ./setup_haskell_env.sh
-```
-
-若需要同时安装 Haskell Language Server，可加上 `--install-hls` 参数。脚本结束后会提示如何将 `~/.ghcup/bin` 及 `~/.local/bin` 永久加入 `PATH`。
-
 ### 构建编译器
 
 ```bash
