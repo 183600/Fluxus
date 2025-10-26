@@ -602,32 +602,37 @@ renderCppDecl = \case
   where
     renderClassLike :: Text -> Text -> [Text] -> [CppDecl] -> Text
     renderClassLike keyword name baseClasses members =
-      let header = keyword <> " " <> name <>
-            (if null baseClasses then "" else " : " <> T.intercalate ", " baseClasses) <> " {\n"
-          body = renderMembers Nothing members
+      let header =
+            keyword <> " " <> name <>
+              (if null baseClasses then "" else " : " <> T.intercalate ", " baseClasses) <> " {\n"
+          body = renderClassMembers members
       in header <> body <> "};\n"
+
+    renderClassMembers :: [CppDecl] -> Text
+    renderClassMembers = go Nothing
       where
-        renderMembers :: Maybe Text -> [CppDecl] -> Text
-        renderMembers _ [] = ""
-        renderMembers _ (CppAccessSpec spec : rest) =
-          spec <> ":\n" <> renderMembers (Just spec) rest
-        renderMembers currentAccess (decl : rest) =
+        go :: Maybe Text -> [CppDecl] -> Text
+        go _ [] = ""
+        go _ (CppAccessSpec spec : rest) =
+          spec <> ":\n" <> go (Just spec) rest
+        go currentAccess (decl : rest) =
           let (prefix, nextAccess) = case currentAccess of
                 Nothing -> ("public:\n", Just "public")
                 access -> ("", access)
-              declText = ensureTrailingNewline (renderCppDecl decl)
-              indented = indentDecl declText
-          in prefix <> indented <> renderMembers nextAccess rest
+              declText = indentBlock (ensureTrailingNewline (renderCppDecl decl))
+          in prefix <> declText <> go nextAccess rest
 
-        ensureTrailingNewline :: Text -> Text
-        ensureTrailingNewline txt
-          | T.null txt = txt
-          | T.isSuffixOf "\n" txt = txt
-          | otherwise = txt <> "\n"
-    indentDecl :: Text -> Text
-    indentDecl txt =
-      let ls = T.lines txt
-      in if null ls then "" else T.unlines (map ("    " <>) ls)
+    indentBlock :: Text -> Text
+    indentBlock txt =
+      case T.lines txt of
+        [] -> ""
+        ls -> T.unlines (map ("    " <>) ls)
+
+    ensureTrailingNewline :: Text -> Text
+    ensureTrailingNewline txt
+      | T.null txt = txt
+      | T.isSuffixOf "\n" txt = txt
+      | otherwise = txt <> "\n"
 
 -- | Render C++ type
 renderCppType :: CppType -> Text
