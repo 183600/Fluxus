@@ -558,10 +558,9 @@ renderCppDecl = \case
     T.unlines (map renderCppDecl innerDecls) <>
     "}\n"
   CppClass className baseClasses members ->
-    "class " <> className <>
-    (if null baseClasses then "" else " : " <> T.intercalate ", " baseClasses) <> " {\n" <>
-    T.unlines (map ("    " <>) (map renderCppDecl members)) <>
-    "};\n"
+    renderClassLike "class" className baseClasses members
+  CppStruct structName members ->
+    renderClassLike "struct" structName [] members
   CppMethod name retType params body isVirtual ->
     (if isVirtual then "virtual " else "") <>
     renderCppType retType <> " " <> name <> "(" <> 
@@ -584,9 +583,26 @@ renderCppDecl = \case
     "extern \"C\" {\n" <>
     T.unlines (map renderCppDecl decls) <>
     "}\n"
+  CppAccessSpec spec ->
+    spec <> ":"
   CppCommentDecl comment ->
     "// " <> comment
   _ -> "// TODO: Render other declaration types\n"
+  where
+    renderClassLike :: Text -> Text -> [Text] -> [CppDecl] -> Text
+    renderClassLike keyword name baseClasses members =
+      let header = keyword <> " " <> name <>
+            (if null baseClasses then "" else " : " <> T.intercalate ", " baseClasses) <> " {\n"
+          renderedMembers = map renderMember members
+      in header <> T.concat renderedMembers <> "};\n"
+      where
+        renderMember :: CppDecl -> Text
+        renderMember (CppAccessSpec spec) = spec <> ":\n"
+        renderMember decl = indentDecl (renderCppDecl decl)
+    indentDecl :: Text -> Text
+    indentDecl txt =
+      let ls = T.lines txt
+      in if null ls then "" else T.unlines (map ("    " <>) ls)
 
 -- | Render C++ type
 renderCppType :: CppType -> Text
