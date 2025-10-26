@@ -36,8 +36,8 @@ import Control.Monad.Writer
 import Control.Monad (when, unless, foldM)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.List (intercalate, partition, nub)
-import Data.Maybe (catMaybes)
+import Data.List (intercalate, nub)
+import Data.Maybe (catMaybes, fromMaybe)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable (Hashable)
@@ -68,12 +68,13 @@ data CppGenConfig = CppGenConfig
 
 -- | Code generation state
 data CppGenState = CppGenState
-  { cgsIncludes     :: ![Text]                          -- Required includes
-  , cgsDeclarations :: ![CppDecl]                       -- Generated declarations
-  , cgsNamespaces   :: ![Text]                          -- Current namespace stack
-  , cgsTempVarCount :: !Int                             -- Temporary variable counter
-  , cgsSymbolTable  :: !(HashMap Text CppType)         -- Symbol to type mapping
-  , cgsConfig       :: !CppGenConfig                    -- Configuration
+  { cgsIncludes        :: ![Text]                          -- Required includes
+  , cgsDeclarations    :: ![CppDecl]                       -- Generated declarations
+  , cgsNamespaces      :: ![Text]                          -- Current namespace stack
+  , cgsTempVarCount    :: !Int                             -- Temporary variable counter
+  , cgsSymbolTable     :: !(HashMap Text CppType)          -- Symbol to type mapping
+  , cgsHoistedGlobals  :: ![Text]                          -- Hoisted module-level globals (in encounter order)
+  , cgsConfig          :: !CppGenConfig                    -- Configuration
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
@@ -232,6 +233,7 @@ initialCppGenState config = CppGenState
   , cgsNamespaces = []
   , cgsTempVarCount = 0
   , cgsSymbolTable = HM.empty
+  , cgsHoistedGlobals = []
   , cgsConfig = config
   }
 
@@ -256,17 +258,11 @@ generateCppFromPython (PythonAST pyModule) = do
   addInclude "<iostream>"
   addInclude "<string>"
   
-  -- Generate module namespace
-  let moduleName = maybe "main" (\(ModuleName n) -> n) (pyModuleName pyModule)
+  -- Generate module namespace (reserved for future use)
+  let _moduleName = maybe "main" (\(ModuleName n) -> n) (pyModuleName pyModule)
   
-  -- Process module body - separate function definitions from module-level statements
-  let (funcDefs, moduleStmts) = partitionStmts (pyModuleBody pyModule)
-  
-  -- Process function definitions first
-  mapM_ generatePythonStmt funcDefs
-  
-  -- Process module-level statements
-  moduleStmtsCpp <- mapM generatePythonStmt moduleStmts
+  -- Process module body sequentially, capturing declarations and runtime statements
+  moduleStmtsCpp <- mapM (generatePythonStmt ScopeModule) (pyModuleBody pyModule)
   -- Filter out comment statements that don't generate actual code
   let isActualStatement (CppComment _) = False
       isActualStatement _ = True
@@ -287,18 +283,37 @@ generateCppFromPython (PythonAST pyModule) = do
   -- Build final unit
   includes <- gets cgsIncludes
   decls <- gets cgsDeclarations
+  hoistedNames <- gets cgsHoistedGlobals
   
-  return $ CppUnit includes [] (reverse decls)  -- Reverse to maintain declaration order
+  let reversedDecls = reverse decls
+      (hoistedDecls, remainingDecls) = extractHoisted hoistedNames reversedDecls
+      finalDecls = hoistedDecls ++ remainingDecls
+  
+  return $ CppUnit includes [] finalDecls
   where
     isMainFunction (CppFunction "main" _ _ _) = True
     isMainFunction _ = False
-    
-    partitionStmts stmts = 
-      let (funcs, others) = partition isFuncDef stmts
-      in (funcs, others)
-    
-    isFuncDef (Located _ (PyFuncDef _)) = True
-    isFuncDef _ = False
+
+    extractHoisted :: [Text] -> [CppDecl] -> ([CppDecl], [CppDecl])
+    extractHoisted [] ds = ([], ds)
+    extractHoisted (name:names) ds =
+      let (match, rest) = removeFirst (declMatches name) ds
+          (more, remaining) = extractHoisted names rest
+      in case match of
+           Just decl -> (decl : more, remaining)
+           Nothing -> (more, remaining)
+
+    declMatches :: Text -> CppDecl -> Bool
+    declMatches target (CppVariable name _ _) = name == target
+    declMatches _ _ = False
+
+    removeFirst :: (a -> Bool) -> [a] -> (Maybe a, [a])
+    removeFirst _ [] = (Nothing, [])
+    removeFirst p (x:xs)
+      | p x = (Just x, xs)
+      | otherwise =
+          let (match, rest) = removeFirst p xs
+          in (match, x : rest)
 
 -- | Generate C++ from Go AST
 generateCppFromGo :: GoAST -> CppCodeGen CppUnit
@@ -357,77 +372,123 @@ data RangeSpec = RangeSpec
   , rsStepValue :: Maybe Integer
   }
 
+data PythonScope
+  = ScopeModule
+  | ScopeFunction
+  deriving (Eq, Show)
+
 -- | Generate C++ from Python statements
-generatePythonStmt :: Located PythonStmt -> CppCodeGen CppStmt
-generatePythonStmt (Located _ stmt) = case stmt of
-  PyFuncDef funcDef -> do
-    generatePythonFunction funcDef
-    return $ CppComment "Function definition processed"
-  PyClassDef classDef -> do
-    generatePythonClass classDef
-    return $ CppComment "Class definition processed"
-  PyExprStmt expr -> do
-    cppExpr <- generatePythonExpr expr
-    return $ CppExprStmt cppExpr
-  PyAssign patterns expr@(Located _ exprVal) -> do
-    -- For now, handle simple single-target assignment
-    case patterns of
-      [Located _ (PatVar (Identifier varName))] -> do
-        symtab <- gets cgsSymbolTable
-        case exprVal of
-          -- Special handling for list literals: materialize a std::vector with the appropriate element type
-          PyList elems -> do
-            (vectorType, vectorExpr) <- generatePythonListLiteral elems
-            let updateSymbolTable = modify $ \s -> s { cgsSymbolTable = HM.insert varName vectorType (cgsSymbolTable s) }
-            if HM.member varName symtab
-              then do
-                updateSymbolTable
-                return $ CppExprStmt (CppBinary "=" (CppVar varName) vectorExpr)
-              else do
-                updateSymbolTable
-                return $ CppDecl $ CppVariable varName vectorType (Just vectorExpr)
-          -- Default: evaluate RHS and either declare or assign
-          _ -> do
-            cppExpr <- generatePythonExpr expr
-            if HM.member varName symtab
-              then return $ CppExprStmt (CppBinary "=" (CppVar varName) cppExpr)
-              else do
-                let varType = CppAuto
-                -- Update symbol table for new variable
-                modify $ \s -> s { cgsSymbolTable = HM.insert varName varType (cgsSymbolTable s) }
-                return $ CppDecl $ CppVariable varName varType (Just cppExpr)
-      _ -> do
-        -- Multiple assignment - not fully implemented
-        return $ CppComment "Multiple assignment not implemented"
-  PyReturn mexpr -> do
-    mcppExpr <- mapM generatePythonExpr mexpr
-    return $ CppReturn mcppExpr
-  PyIf condition thenStmts elseStmts -> do
-    cppCond <- generatePythonExpr condition
-    cppThen <- mapM generatePythonStmt thenStmts
-    cppElse <- mapM generatePythonStmt elseStmts
-    return $ CppIf cppCond cppThen cppElse
-  PyWhile condition bodyStmts _ -> do
-    cppCond <- generatePythonExpr condition
-    cppBody <- mapM generatePythonStmt bodyStmts
-    return $ CppWhile cppCond cppBody
-  PyFor (Located _ (PatVar (Identifier varName))) iterExpr bodyStmts _ -> do
-    symtab <- gets cgsSymbolTable
-    let varAlreadyDeclared = HM.member varName symtab
-    unless varAlreadyDeclared $
-      modify $ \r -> r { cgsSymbolTable = HM.insert varName CppAuto (cgsSymbolTable r) }
-    cppBody <- mapM generatePythonStmt bodyStmts
-    case locatedValue iterExpr of
-      PyCall (Located _ (PyVar (Identifier "range"))) rangeArgs -> do
-        mSpec <- parseRangeArgs rangeArgs
-        case mSpec of
-          Nothing -> return $ CppComment "range() with unsupported arguments"
-          Just spec -> buildRangeLoop varAlreadyDeclared varName cppBody spec
-      _ -> do
-        addComment "Only range() iteration is currently supported"
-        return $ CppComment "For loop not fully implemented"
-  _ -> return $ CppComment $ "TODO: Implement Python statement: " <> T.pack (show stmt)
+generatePythonStmt :: PythonScope -> Located PythonStmt -> CppCodeGen CppStmt
+generatePythonStmt scope (Located _ stmt) =
+  case stmt of
+    PyFuncDef funcDef -> do
+      generatePythonFunction funcDef
+      return $ CppComment "Function definition processed"
+    PyClassDef classDef -> do
+      generatePythonClass classDef
+      return $ CppComment "Class definition processed"
+    PyExprStmt expr -> do
+      cppExpr <- generatePythonExpr expr
+      return $ CppExprStmt cppExpr
+    PyAssign patterns expr@(Located _ exprVal) ->
+      case patterns of
+        [Located _ (PatVar (Identifier varName))] ->
+          handleSimpleAssignment scope varName expr exprVal
+        _ ->
+          -- Multiple assignment - not fully implemented
+          return $ CppComment "Multiple assignment not implemented"
+    PyReturn mexpr -> do
+      mcppExpr <- mapM generatePythonExpr mexpr
+      return $ CppReturn mcppExpr
+    PyIf condition thenStmts elseStmts -> do
+      cppCond <- generatePythonExpr condition
+      cppThen <- mapM (generatePythonStmt scope) thenStmts
+      cppElse <- mapM (generatePythonStmt scope) elseStmts
+      return $ CppIf cppCond cppThen cppElse
+    PyWhile condition bodyStmts _ -> do
+      cppCond <- generatePythonExpr condition
+      cppBody <- mapM (generatePythonStmt scope) bodyStmts
+      return $ CppWhile cppCond cppBody
+    PyFor (Located _ (PatVar (Identifier varName))) iterExpr bodyStmts _ -> do
+      symtab <- gets cgsSymbolTable
+      let varAlreadyDeclared = HM.member varName symtab
+      unless varAlreadyDeclared $
+        modify $ \r -> r { cgsSymbolTable = HM.insert varName CppAuto (cgsSymbolTable r) }
+      cppBody <- mapM (generatePythonStmt scope) bodyStmts
+      case locatedValue iterExpr of
+        PyCall (Located _ (PyVar (Identifier "range"))) rangeArgs -> do
+          mSpec <- parseRangeArgs rangeArgs
+          case mSpec of
+            Nothing -> return $ CppComment "range() with unsupported arguments"
+            Just spec -> buildRangeLoop varAlreadyDeclared varName cppBody spec
+        _ -> do
+          addComment "Only range() iteration is currently supported"
+          return $ CppComment "For loop not fully implemented"
+    _ ->
+      return $ CppComment $ "TODO: Implement Python statement: " <> T.pack (show stmt)
   where
+    handleSimpleAssignment :: PythonScope -> Text -> Located PythonExpr -> PythonExpr -> CppCodeGen CppStmt
+    handleSimpleAssignment scope' varName locatedExpr exprVal = do
+      symtab <- gets cgsSymbolTable
+      case exprVal of
+        PyList elems ->
+          handleListAssignment scope' symtab varName elems
+        _ ->
+          handleRegularAssignment scope' symtab varName locatedExpr
+
+    handleListAssignment :: PythonScope -> HashMap Text CppType -> Text -> [Located PythonExpr] -> CppCodeGen CppStmt
+    handleListAssignment scope' symtab varName elems = do
+      (vectorType, vectorExpr) <- generatePythonListLiteral elems
+      let updateSymbolTable = modify $ \s -> s { cgsSymbolTable = HM.insert varName vectorType (cgsSymbolTable s) }
+          assignmentExpr = CppExprStmt (CppBinary "=" (CppVar varName) vectorExpr)
+          declarationStmt = CppDecl (CppVariable varName vectorType (Just vectorExpr))
+      case scope' of
+        ScopeModule ->
+          if HM.member varName symtab
+            then do
+              updateSymbolTable
+              return assignmentExpr
+            else do
+              updateSymbolTable
+              recordHoistedGlobal varName
+              addDeclaration $ CppVariable varName vectorType (Just vectorExpr)
+              return $ CppComment $ "Initialized module-level list " <> varName
+        ScopeFunction ->
+          if HM.member varName symtab
+            then do
+              updateSymbolTable
+              return assignmentExpr
+            else do
+              updateSymbolTable
+              return declarationStmt
+
+    handleRegularAssignment :: PythonScope -> HashMap Text CppType -> Text -> Located PythonExpr -> CppCodeGen CppStmt
+    handleRegularAssignment scope' symtab varName locatedExpr = do
+      cppExpr <- generatePythonExpr locatedExpr
+      let inferredType = fromMaybe CppAuto (inferPythonExprCppTypeLocated locatedExpr)
+          updateSymbolTableWith t = modify $ \s -> s { cgsSymbolTable = HM.insert varName t (cgsSymbolTable s) }
+          assignmentStmt = CppExprStmt (CppBinary "=" (CppVar varName) cppExpr)
+          declarationStmt t = CppDecl (CppVariable varName t (Just cppExpr))
+      case scope' of
+        ScopeModule ->
+          if HM.member varName symtab
+            then do
+              updateSymbolTableWith inferredType
+              return assignmentStmt
+            else do
+              updateSymbolTableWith inferredType
+              recordHoistedGlobal varName
+              addDeclaration $ CppVariable varName inferredType (Just cppExpr)
+              return $ CppComment $ "Initialized module-level variable " <> varName
+        ScopeFunction ->
+          if HM.member varName symtab
+            then do
+              updateSymbolTableWith inferredType
+              return assignmentStmt
+            else do
+              updateSymbolTableWith inferredType
+              return $ declarationStmt inferredType
+
     parseRangeArgs :: [Located PythonArgument] -> CppCodeGen (Maybe RangeSpec)
     parseRangeArgs args = case traverse extractPositional args of
       Nothing -> return Nothing
@@ -885,7 +946,7 @@ generatePythonFunction funcDef = do
       | otherwise -> inferFunctionReturnType (pyFuncBody funcDef)
   
   -- Generate function body
-  bodyStmts <- mapM generatePythonStmt (pyFuncBody funcDef)
+  bodyStmts <- mapM (generatePythonStmt ScopeFunction) (pyFuncBody funcDef)
   
   -- Add return statement for main function if needed
   let finalBodyStmts = if funcName == "main" && returnType == CppInt
@@ -1426,6 +1487,14 @@ addStatement stmt = do
 
 addComment :: Text -> CppCodeGen ()
 addComment comment = addDeclaration $ CppCommentDecl comment
+
+recordHoistedGlobal :: Text -> CppCodeGen ()
+recordHoistedGlobal name =
+  modify $ \s ->
+    let globals = cgsHoistedGlobals s
+    in if name `elem` globals
+         then s
+         else s { cgsHoistedGlobals = globals ++ [name] }
 
 enterNamespace :: Text -> CppCodeGen ()
 enterNamespace ns = modify $ \s -> s { cgsNamespaces = ns : cgsNamespaces s }
