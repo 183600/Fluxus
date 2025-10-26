@@ -880,14 +880,9 @@ generatePythonFunction funcDef = do
   -- Determine return type
   returnType <- case pyFuncReturns funcDef of
     Just typeExpr -> mapPythonType typeExpr
-    Nothing -> if funcName == "main" 
-               then return CppInt 
-               else do
-                 -- Infer return type from function body
-                 let hasReturn = any hasReturnValue (pyFuncBody funcDef)
-                 -- Default to int for functions that appear to return a value to ensure
-                 -- valid C++ in presence of recursion; otherwise use void
-                 return $ if hasReturn then CppInt else CppVoid
+    Nothing
+      | funcName == "main" -> return CppInt
+      | otherwise -> inferFunctionReturnType (pyFuncBody funcDef)
   
   -- Generate function body
   bodyStmts <- mapM generatePythonStmt (pyFuncBody funcDef)
@@ -898,6 +893,61 @@ generatePythonFunction funcDef = do
                       else bodyStmts
   
   addDeclaration $ CppFunction funcName returnType cppParams finalBodyStmts
+
+-- | Infer the appropriate C++ return type for a Python function when no annotation is provided
+inferFunctionReturnType :: [Located PythonStmt] -> CppCodeGen CppType
+inferFunctionReturnType body = do
+  let returnExprs = collectReturnExprs body
+  if null returnExprs
+    then return CppVoid
+    else do
+      let inferredTypes = map inferPythonExprCppTypeLocated returnExprs
+          knownTypes = catMaybes inferredTypes
+          hasUnknown = length knownTypes /= length returnExprs
+          combinedType = case knownTypes of
+            [] -> Nothing
+            (t:ts) -> foldM unifyElementType t ts
+      case combinedType of
+        Just t -> return t
+        Nothing ->
+          case nub knownTypes of
+            [] ->
+              if hasUnknown
+                then return CppAuto
+                else return CppVoid
+            [single] -> return single
+            multiple -> do
+              addInclude "<variant>"
+              return (CppVariant multiple)
+
+-- | Collect return expressions that yield values from a list of Python statements
+collectReturnExprs :: [Located PythonStmt] -> [Located PythonExpr]
+collectReturnExprs = concatMap collectStmt
+  where
+    collectStmt :: Located PythonStmt -> [Located PythonExpr]
+    collectStmt (Located _ stmt) = case stmt of
+      PyReturn (Just expr) -> [expr]
+      PyIf _ thenStmts elseStmts ->
+        collectReturnExprs thenStmts ++ collectReturnExprs elseStmts
+      PyWhile _ bodyStmts elseStmts ->
+        collectReturnExprs bodyStmts ++ collectReturnExprs elseStmts
+      PyFor _ _ bodyStmts elseStmts ->
+        collectReturnExprs bodyStmts ++ collectReturnExprs elseStmts
+      PyWith _ bodyStmts ->
+        collectReturnExprs bodyStmts
+      PyTry tryBlock excepts orelse finally ->
+        collectReturnExprs tryBlock
+        ++ concatMap (collectReturnExprs . pyExceptBody . locatedValue) excepts
+        ++ collectReturnExprs orelse
+        ++ collectReturnExprs finally
+      PyAsyncWith _ bodyStmts ->
+        collectReturnExprs bodyStmts
+      PyAsyncFor _ _ bodyStmts elseStmts ->
+        collectReturnExprs bodyStmts ++ collectReturnExprs elseStmts
+      PyFuncDef _ -> []
+      PyAsyncFuncDef _ -> []
+      PyClassDef _ -> []
+      _ -> []
 
 -- | Generate C++ classes from Python
 generatePythonClass :: PythonClassDef -> CppCodeGen ()
@@ -953,15 +1003,7 @@ hasReturnStmt = any isReturnStmt . concatMap flatten
     isReturnStmt (CppReturn _) = True
     isReturnStmt _ = False
 
--- | Check if Python statement has a return with value
-hasReturnValue :: Located PythonStmt -> Bool
-hasReturnValue (Located _ stmt) = case stmt of
-  PyReturn (Just _) -> True
-  PyReturn Nothing -> False
-  PyIf _ thenStmts elseStmts -> any hasReturnValue thenStmts || any hasReturnValue elseStmts
-  PyWhile _ bodyStmts _ -> any hasReturnValue bodyStmts
-  PyFor _ _ bodyStmts _ -> any hasReturnValue bodyStmts
-  _ -> False
+
 
 -- | Generate block statement from Go (handling compound statements)
 generateGoBlockStmt :: Located GoStmt -> CppCodeGen [CppStmt]
