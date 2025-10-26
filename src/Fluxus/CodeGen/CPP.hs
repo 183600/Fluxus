@@ -636,6 +636,7 @@ splitFStringSegments input = go input []
     takeExpression :: Text -> Either Text (Text, Text)
     takeExpression txt = goExpr 0 [] txt
       where
+        goExpr :: Int -> String -> Text -> Either Text (Text, Text)
         goExpr depth acc remaining =
           case T.uncons remaining of
             Nothing -> Left "Unterminated '{' in f-string"
@@ -658,6 +659,7 @@ splitFStringSegments input = go input []
     breakOnFormat :: Text -> (Text, Text)
     breakOnFormat txt = goFmt 0 0 0 [] txt
       where
+        goFmt :: Int -> Int -> Int -> String -> Text -> (Text, Text)
         goFmt braceDepth parenDepth bracketDepth acc remaining =
           case T.uncons remaining of
             Nothing -> (T.pack (reverse acc), T.empty)

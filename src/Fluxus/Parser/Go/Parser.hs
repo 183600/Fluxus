@@ -56,7 +56,9 @@ import qualified Text.Megaparsec as MP
 import Fluxus.AST.Common as Common
 import Fluxus.AST.Go
 import Data.List (partition)
+import Data.Maybe (isJust)
 import Fluxus.Parser.Go.Lexer
+import Debug.Trace (traceM)
 
 -- | Simple chainl1 implementation for left-associative operators
 chainl1 :: GoParser a -> GoParser (a -> a -> a) -> GoParser a
@@ -106,7 +108,6 @@ parseFile = do
   skipCommentsAndNewlines
   
   imports <- MP.many (parseImportDecl <* skipCommentsAndNewlines)
-  traceM "parseFile: parsing decls"
   decls <- MP.many (skipCommentsAndNewlines *> parseDeclaration <* skipCommentsAndNewlines)
   traceM ("parseFile: decls count = " ++ show (length decls))
   skipCommentsAndNewlines  -- Skip any trailing newlines
@@ -189,6 +190,7 @@ parseFuncDecl :: GoParser GoDecl
 parseFuncDecl = do
   traceM "parseFuncDecl: entering"
   void $ goKeywordP GoKwFunc
+  traceM "parseFuncDecl: parsed func keyword"
   
   -- Check for method receiver
   receiver <- optional $ try $ do
@@ -196,11 +198,14 @@ parseFuncDecl = do
     recv <- parseReceiver
     void $ goDelimiterP GoDelimRightParen
     return recv
+  traceM ("parseFuncDecl: receiver parsed = " ++ show (isJust receiver))
   
   name <- parseGoIdentifier
+  traceM ("parseFuncDecl: name = " ++ show name)
   
   void $ goDelimiterP GoDelimLeftParen
   params <- parseParameterList
+  traceM ("parseFuncDecl: params count = " ++ show (length params))
   void $ goDelimiterP GoDelimRightParen
   
   -- Parse return type/parameters
@@ -218,8 +223,10 @@ parseFuncDecl = do
         -- No return type
         return []
     ]
+  traceM ("parseFuncDecl: results count = " ++ show (maybe 0 length results))
   
   body <- optional parseBlockStmt
+  traceM ("parseFuncDecl: has body = " ++ show (isJust body))
   
   let func = GoFunction
         { goFuncName = Just name
@@ -229,8 +236,12 @@ parseFuncDecl = do
         }
   
   case receiver of
-    Nothing -> return $ GoFuncDecl func
-    Just recv -> return $ GoMethodDecl recv func
+    Nothing -> do
+      traceM "parseFuncDecl: returning function decl"
+      return $ GoFuncDecl func
+    Just recv -> do
+      traceM "parseFuncDecl: returning method decl"
+      return $ GoMethodDecl recv func
 
 -- | Parse type declarations
 parseTypeDecl :: GoParser GoDecl
@@ -502,17 +513,29 @@ parseBlockStmt = located parseBlockStmt'
 
 parseBlockStmt' :: GoParser GoStmt
 parseBlockStmt' = do
+  traceM "parseBlockStmt': entering"
   void $ goDelimiterP GoDelimLeftBrace
   skipCommentsAndNewlines
   stmts <- many (parseStatement <* skipCommentsAndNewlines)
+  traceM ("parseBlockStmt': statements parsed = " ++ show (length stmts))
+  nextToken <- lookAhead anySingle
+  traceM ("parseBlockStmt': next token before closing = " ++ show nextToken)
   void $ goDelimiterP GoDelimRightBrace
+  traceM "parseBlockStmt': exiting"
   return $ GoBlock stmts
 
 -- | Parse return statements
 parseReturnStmt :: GoParser GoStmt
 parseReturnStmt = do
   void $ goKeywordP GoKwReturn
-  exprs <- option [] $ try parseExpressionList
+  result <- MP.observing (try parseExpressionList)
+  exprs <- case result of
+    Left err -> do
+      traceM ("parseReturnStmt: failed to parse expressions: " ++ show err)
+      return []
+    Right es -> do
+      traceM ("parseReturnStmt: parsed expressions count = " ++ show (length es))
+      return es
   return $ GoReturn exprs
 
 -- | Parse break statements
