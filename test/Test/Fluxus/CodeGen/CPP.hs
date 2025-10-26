@@ -11,6 +11,7 @@ import Data.Maybe (listToMaybe)
 import Fluxus.CodeGen.CPP
 import Fluxus.AST.Common
 import Fluxus.AST.Go
+import Fluxus.AST.Python
 
 spec :: Spec
 spec = describe "C++ Code Generation" $ do
@@ -18,6 +19,7 @@ spec = describe "C++ Code Generation" $ do
   expressionGenerationSpec
   statementGenerationSpec
   declarationGenerationSpec
+  pythonGlobalSpec
   goPrintingSpec
 
 typeMappingSpec :: Spec
@@ -102,6 +104,52 @@ declarationGenerationSpec = describe "Declaration Generation" $ do
     let program = CppUnit [] [] decls  -- includes, namespaces, declarations
     
     program `shouldBe` CppUnit [] [] decls
+
+pythonGlobalSpec :: Spec
+pythonGlobalSpec = describe "Python module handling" $ do
+  it "hoists module-level assignments to global declarations" $ do
+    let unit = generateCpp testCppConfig (Left pythonAst)
+        decls = cppDeclarations unit
+    case decls of
+      (CppVariable name _ _) : rest -> do
+        name `shouldBe` "x"
+        case find isFooFunction rest of
+          Just _ -> pure ()
+          Nothing -> expectationFailure "Expected foo function declaration"
+        case find isMainFunction rest of
+          Just (CppFunction _ _ _ body) ->
+            any (declaresVar "x") body `shouldBe` False
+          _ -> expectationFailure "Expected generated main function"
+      _ -> expectationFailure "Expected module-level variable declaration"
+  where
+    pythonAst = PythonAST PythonModule
+      { pyModuleName = Just (ModuleName "sample")
+      , pyModuleDoc = Nothing
+      , pyModuleImports = []
+      , pyModuleBody = moduleBody
+      }
+    moduleBody =
+      [ noLoc (PyAssign [noLoc (PatVar (Identifier "x"))] (noLoc (PyLiteral (PyInt 10))))
+      , noLoc (PyFuncDef fooDef)
+      , noLoc (PyExprStmt (noLoc printCall))
+      ]
+    fooDef = PythonFuncDef
+      { pyFuncName = Identifier "foo"
+      , pyFuncDecorators = []
+      , pyFuncParams = []
+      , pyFuncReturns = Nothing
+      , pyFuncBody = [noLoc (PyReturn (Just (noLoc (PyVar (Identifier "x")))))]
+      , pyFuncDoc = Nothing
+      , pyFuncIsAsync = False
+      }
+    fooCallExpr = noLoc $ PyCall (noLoc (PyVar (Identifier "foo"))) []
+    printCall = PyCall (noLoc (PyVar (Identifier "print")))
+      [noLoc (ArgPositional fooCallExpr)]
+    declaresVar target stmt = case stmt of
+      CppDecl (CppVariable name _ _) -> name == target
+      CppStmtSeq stmts -> any (declaresVar target) stmts
+      CppBlock stmts -> any (declaresVar target) stmts
+      _ -> False
 
 goPrintingSpec :: Spec
 goPrintingSpec = describe "Go fmt translation" $ do
@@ -190,6 +238,10 @@ fmtCall name args = noLoc $ GoCall (fmtSelector name) args
     fmtSelector :: Text -> Located GoExpr
     fmtSelector selectorName =
       noLoc $ GoSelector (noLoc (GoIdent (Identifier "fmt"))) (Identifier selectorName)
+
+isFooFunction :: CppDecl -> Bool
+isFooFunction (CppFunction "foo" _ _ _) = True
+isFooFunction _ = False
 
 isMainFunction :: CppDecl -> Bool
 isMainFunction (CppFunction "main" _ _ _) = True
