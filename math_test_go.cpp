@@ -4,6 +4,7 @@
 #include <functional>
 #include <vector>
 #include <queue>
+#include <cstddef>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -13,39 +14,35 @@
 // Generating C++ for Go package: main
 template<typename T>
 class Channel {
-    std::queue<T> queue_;
-
-    std::mutex mutex_;
-
-    std::condition_variable cv_;
-
-    size_t capacity_;
-
-    Channel(size_t capacity) {
-        this->capacity_ = capacity;
-    }
+public:
+    explicit Channel(size_t capacity)
+        : capacity_(capacity) {}
 
     void send(T value) {
-        std::unique_lock<std::mutex> lock = std::unique_lock<std::mutex>(this->mutex_);
+        std::unique_lock<std::mutex> lock(this->mutex_);
         this->cv_.wait(lock, [this]() {
-    return this->queue_.size() < this->capacity_;
-});
+            return this->queue_.size() < this->capacity_;
+        });
         this->queue_.push(value);
-        cv_.notify_one();
+        this->cv_.notify_one();
     }
 
     T receive() {
-        T value;
-        std::unique_lock<std::mutex> lock = std::unique_lock<std::mutex>(this->mutex_);
+        std::unique_lock<std::mutex> lock(this->mutex_);
         this->cv_.wait(lock, [this]() {
-    return !this->queue_.empty();
-});
-        value = this->queue_.front();
+            return !this->queue_.empty();
+        });
+        T value = this->queue_.front();
         this->queue_.pop();
-        cv_.notify_one();
+        this->cv_.notify_one();
         return value;
     }
 
+private:
+    std::queue<T> queue_;
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    size_t capacity_;
 };
 
 // Found 1 files in package
