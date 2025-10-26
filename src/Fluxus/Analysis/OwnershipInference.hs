@@ -333,6 +333,7 @@ inferOptimalStrategy ownership = do
     (Heap, _, False) -> return BorrowedReference
     (Global, _, _) -> return BorrowedReference
     (Unknown, _, _) -> return UniqueOwnership  -- Conservative choice
+    _ -> return BorrowedReference
 
 -- | Generate C++ type based on ownership strategy
 generateCppType :: CommonExpr -> OwnershipInfo -> OwnershipStrategy -> OwnershipInferenceM Text

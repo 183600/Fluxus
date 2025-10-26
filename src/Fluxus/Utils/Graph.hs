@@ -66,7 +66,7 @@ import qualified Data.Text as T
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
-import Data.List (foldl')
+import Data.List (foldl', find)
 
 -- | Node identifier
 type NodeId = Int
@@ -185,31 +185,42 @@ topologicalSort graph = go (Set.fromList $ map nodeId $ nodes graph) [] []
 
 -- | Find strongly connected components using Tarjan's algorithm
 stronglyConnectedComponents :: Graph a -> [[NodeId]]
-stronglyConnectedComponents graph = 
-  let allNodes = map nodeId $ nodes graph
-  in tarjan allNodes Map.empty Map.empty [] 0 []
+stronglyConnectedComponents graph =
+  let allNodes = map nodeId (nodes graph) :: [NodeId]
+      emptyIndices :: Map NodeId Int
+      emptyIndices = Map.empty
+      emptyLowlinks :: Map NodeId Int
+      emptyLowlinks = Map.empty
+      emptyStack :: [NodeId]
+      emptyStack = []
+      initialIndex :: Int
+      initialIndex = 0
+      initialResult :: [[NodeId]]
+      initialResult = []
+  in tarjan allNodes emptyIndices emptyLowlinks emptyStack initialIndex initialResult
   where
+    tarjan :: [NodeId] -> Map NodeId Int -> Map NodeId Int -> [NodeId] -> Int -> [[NodeId]] -> [[NodeId]]
     tarjan [] _ _ _ _ result = result
     tarjan (v:vs) indices lowlinks stack index result
       | Map.member v indices = tarjan vs indices lowlinks stack index result
-      | otherwise = 
-          let (newIndices, newLowlinks, newStack, newIndex, newResult) = 
+      | otherwise =
+          let (newIndices, newLowlinks, newStack, newIndex, newResult) =
                 strongConnect v indices lowlinks stack index result
           in tarjan vs newIndices newLowlinks newStack newIndex newResult
-    
+
     strongConnect v indices lowlinks stack index result =
       let indices' = Map.insert v index indices
           lowlinks' = Map.insert v index lowlinks
           stack' = v : stack
           index' = index + 1
       in foldl' (processSuccessor v) (indices', lowlinks', stack', index', result) (successors v graph)
-    
+
     processSuccessor v (indices, lowlinks, stack, index, result) w
-      | not (Map.member w indices) = 
+      | not (Map.member w indices) =
           let (indices', lowlinks', stack', index', result') = strongConnect w indices lowlinks stack index result
               lowlinks'' = Map.adjust (min (lowlinks' Map.! w)) v lowlinks'
           in (indices', lowlinks'', stack', index', result')
-      | w `elem` stack = 
+      | w `elem` stack =
           let lowlinks' = Map.adjust (min (indices Map.! w)) v lowlinks
           in (indices, lowlinks', stack, index, result)
       | otherwise = (indices, lowlinks, stack, index, result)
@@ -392,9 +403,9 @@ buildDominatorTree entry graph =
               candidates = Set.toList properDoms
           in case candidates of
                [] -> Nothing
-               _ -> Just $ head $ filter (\d -> all (\other -> Set.member d (allDoms Map.! other)) candidates) candidates
-    
-    addDomEdge tree (nodeId, mImmDom) = 
+               _ -> find (\d -> all (\other -> Set.member d (allDoms Map.! other)) candidates) candidates
+
+    addDomEdge tree (nodeId, mImmDom) =
       case mImmDom of
         Nothing -> tree
         Just immDom -> addEdge immDom nodeId Nothing tree
