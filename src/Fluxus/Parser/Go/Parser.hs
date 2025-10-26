@@ -106,12 +106,10 @@ parseFile = do
   skipCommentsAndNewlines
   
   imports <- MP.many (parseImportDecl <* skipCommentsAndNewlines)
-  traceM "parseFile: parsing decls"
   decls <- MP.many (skipCommentsAndNewlines *> parseDeclaration <* skipCommentsAndNewlines)
-  traceM ("parseFile: decls count = " ++ show (length decls))
   skipCommentsAndNewlines  -- Skip any trailing newlines
   
-  let (importDecls, otherDecls) = partition isImportDecl decls
+  let (_, otherDecls) = partition isImportDecl decls
       isImportDecl (Located _ (GoImportDecl _)) = True
       isImportDecl _ = False
   
@@ -187,7 +185,6 @@ parseDeclaration = located $ choice
 -- | Parse function declarations
 parseFuncDecl :: GoParser GoDecl
 parseFuncDecl = do
-  traceM "parseFuncDecl: entering"
   void $ goKeywordP GoKwFunc
   
   -- Check for method receiver
@@ -656,7 +653,7 @@ parseAtom = located $ choice
 -- | Parse Go literals
 parseGoLiteral :: GoParser GoExpr
 parseGoLiteral = do
-  Located _ token <- anySingle
+  Located _ token <- satisfy isLiteralToken
   case token of
     GoTokenInt text -> return $ GoLiteral $ GoInt (read $ T.unpack text)
     GoTokenFloat text -> return $ GoLiteral $ GoFloat (read $ T.unpack text)
@@ -665,6 +662,16 @@ parseGoLiteral = do
     GoTokenRawString text -> return $ GoLiteral $ GoRawString text
     GoTokenRune char -> return $ GoLiteral $ GoRune char
     _ -> fail "Expected literal"
+  where
+    isLiteralToken :: Located GoToken -> Bool
+    isLiteralToken (Located _ tok) = case tok of
+      GoTokenInt _ -> True
+      GoTokenFloat _ -> True
+      GoTokenImag _ -> True
+      GoTokenString _ -> True
+      GoTokenRawString _ -> True
+      GoTokenRune _ -> True
+      _ -> False
 
 -- | Parse identifiers as expressions
 parseGoIdentifierExpr :: GoParser GoExpr
@@ -759,6 +766,7 @@ parseGoType = located $ choice
   , try parseFuncType
   , try parseInterfaceType
   , try parseStructType
+  , try parseEllipsisType
   , parseBasicType
   ]
 
@@ -820,6 +828,13 @@ parsePointerType = do
   void $ goOperatorP GoOpMult
   baseType <- parseGoType
   return $ GoPointerType baseType
+
+-- | Parse variadic (ellipsis) types
+parseEllipsisType :: GoParser GoType
+parseEllipsisType = do
+  void $ goOperatorP GoOpEllipsis
+  elemType <- parseGoType
+  return $ GoEllipsisType elemType
 
 -- | Parse function types
 parseFuncType :: GoParser GoType
@@ -894,18 +909,29 @@ parseReceiver = do
 -- | Utility parsers
 parseGoIdentifier :: GoParser Identifier
 parseGoIdentifier = do
-  Located _ token <- anySingle
+  Located _ token <- satisfy isIdentifierToken
   case token of
     GoTokenIdent text -> return $ Identifier text
     _ -> fail "Expected identifier"
+  where
+    isIdentifierToken :: Located GoToken -> Bool
+    isIdentifierToken (Located _ tok) = case tok of
+      GoTokenIdent _ -> True
+      _ -> False
 
 parseGoString :: GoParser Text
 parseGoString = do
-  Located _ token <- anySingle
+  Located _ token <- satisfy isStringToken
   case token of
     GoTokenString text -> return text
     GoTokenRawString text -> return text
     _ -> fail "Expected string"
+  where
+    isStringToken :: Located GoToken -> Bool
+    isStringToken (Located _ tok) = case tok of
+      GoTokenString _ -> True
+      GoTokenRawString _ -> True
+      _ -> False
 
 parseIdentifierList :: GoParser [Identifier]
 parseIdentifierList = parseGoIdentifier `sepBy1` goDelimiterP GoDelimComma
