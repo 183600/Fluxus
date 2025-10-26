@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 -- | C++ code generation module
 module Fluxus.CodeGen.CPP
@@ -681,8 +682,9 @@ parseInlinePythonExpr exprText = do
     runPythonLexer "<f-string>" trimmed
   let eofToken = Located syntheticSpan TokenEOF
       tokenStream = tokens ++ [eofToken]
-  first (T.pack . MP.errorBundlePretty) $
-    MP.parse (parseExpression <* MP.eof) "<f-string>" tokenStream
+  case MP.parse (parseExpression <* MP.eof) "<f-string>" tokenStream of
+    Left _ -> Left $ "Failed to parse inline Python expression: " <> trimmed
+    Right parsed -> Right parsed
 
 -- | Generate a C++ expression from a Python f-string literal
 generateFStringExpr :: Text -> CppCodeGen CppExpr

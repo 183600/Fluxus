@@ -32,12 +32,10 @@ module Fluxus.Utils.Pretty
   ) where
 
 import Data.Text (Text)
--- import qualified Data.Text as T  -- unused
 import Prettyprinter hiding (Pretty)
 import qualified Prettyprinter as PrettyDoc
-import Prettyprinter.Render.Text
-import Prettyprinter.Render.Terminal
--- import System.Console.ANSI (ColorIntensity(..), ConsoleLayer(..))  -- unused
+import Prettyprinter.Render.Text (renderStrict)
+import Prettyprinter.Render.Terminal (AnsiStyle, Color(..), color, bold, underlined)
 
 -- | Class for pretty-printable types
 class Pretty a where
@@ -45,11 +43,11 @@ class Pretty a where
 
 -- | Render document to plain text
 renderDoc :: Doc AnsiStyle -> Text
-renderDoc = Data.Text.Prettyprint.Doc.Render.Text.renderStrict . layoutPretty defaultLayoutOptions
+renderDoc = renderStrict . layoutPretty defaultLayoutOptions
 
 -- | Render document in compact form (no line breaks unless necessary)
 renderCompact :: Doc AnsiStyle -> Text
-renderCompact = Data.Text.Prettyprint.Doc.Render.Text.renderStrict . layoutCompact
+renderCompact = renderStrict . layoutCompact
 
 -- | Basic instances
 instance Pretty Text where
@@ -71,28 +69,28 @@ instance Pretty Bool where
   pretty = PrettyDoc.pretty
 
 instance Pretty a => Pretty [a] where
-  pretty = Data.Text.Prettyprint.Doc.list . map Fluxus.Utils.Pretty.pretty
+  pretty = PrettyDoc.list . map Fluxus.Utils.Pretty.pretty
 
 instance Pretty a => Pretty (Maybe a) where
   pretty Nothing = text "Nothing"
-  pretty (Just x) = text "Just" Data.Text.Prettyprint.Doc.<+> Fluxus.Utils.Pretty.pretty x
+  pretty (Just x) = text "Just" PrettyDoc.<+> Fluxus.Utils.Pretty.pretty x
 
 -- | Re-export common combinators with simplified types
 text :: Text -> Doc AnsiStyle
 text = PrettyDoc.pretty
 
 int :: Int -> Doc AnsiStyle
-int = Data.Text.Prettyprint.Doc.pretty
+int = PrettyDoc.pretty
 
-double :: Double -> Doc AnsiStyle  
-double = Data.Text.Prettyprint.Doc.pretty
+double :: Double -> Doc AnsiStyle
+double = PrettyDoc.pretty
 
 bool :: Bool -> Doc AnsiStyle
 bool True = text "true"
 bool False = text "false"
 
 empty :: Doc AnsiStyle
-empty = Data.Text.Prettyprint.Doc.emptyDoc
+empty = PrettyDoc.emptyDoc
 
 _space :: Doc AnsiStyle
 _space = Prettyprinter.space
@@ -109,7 +107,7 @@ _softline = Prettyprinter.softline
 
 -- | Vertical composition
 (</>) :: Doc AnsiStyle -> Doc AnsiStyle -> Doc AnsiStyle
-x </> y = x <> Data.Text.Prettyprint.Doc.line <> y
+x </> y = x <> PrettyDoc.line <> y
 
 -- | Horizontal separation
 _hsep :: [Doc AnsiStyle] -> Doc AnsiStyle
@@ -183,25 +181,25 @@ _punctuate = Prettyprinter.punctuate
 
 -- | Color and style combinators
 red :: Doc AnsiStyle -> Doc AnsiStyle
-red = annotate (color Data.Text.Prettyprint.Doc.Render.Terminal.Red)
+red = annotate (color Red)
 
 green :: Doc AnsiStyle -> Doc AnsiStyle
-green = annotate (color Data.Text.Prettyprint.Doc.Render.Terminal.Green)
+green = annotate (color Green)
 
 blue :: Doc AnsiStyle -> Doc AnsiStyle
-blue = annotate (color Data.Text.Prettyprint.Doc.Render.Terminal.Blue)
+blue = annotate (color Blue)
 
 yellow :: Doc AnsiStyle -> Doc AnsiStyle
-yellow = annotate (color Data.Text.Prettyprint.Doc.Render.Terminal.Yellow)
+yellow = annotate (color Yellow)
 
 cyan :: Doc AnsiStyle -> Doc AnsiStyle
-cyan = annotate (color Data.Text.Prettyprint.Doc.Render.Terminal.Cyan)
+cyan = annotate (color Cyan)
 
 magenta :: Doc AnsiStyle -> Doc AnsiStyle
-magenta = annotate (color Data.Text.Prettyprint.Doc.Render.Terminal.Magenta)
+magenta = annotate (color Magenta)
 
 _bold :: Doc AnsiStyle -> Doc AnsiStyle
-_bold = annotate Prettyprinter.Render.Terminal.bold
+_bold = annotate bold
 
 underline :: Doc AnsiStyle -> Doc AnsiStyle
-underline = annotate Data.Text.Prettyprint.Doc.Render.Terminal.underlined
+underline = annotate underlined

@@ -57,7 +57,6 @@ import Fluxus.AST.Common as Common
 import Fluxus.AST.Go
 import Data.List (partition)
 import Fluxus.Parser.Go.Lexer
-import Debug.Trace (traceM)
 
 -- | Simple chainl1 implementation for left-associative operators
 chainl1 :: GoParser a -> GoParser (a -> a -> a) -> GoParser a
@@ -134,11 +133,10 @@ parseImportDecl = do
         void $ goDelimiterP GoDelimLeftParen
         skipCommentsAndNewlines
         imports <- many $ do
-          skipCommentsAndNewlines
+          notFollowedBy (goDelimiterP GoDelimRightParen)
           imp <- parseImportSpec
           skipCommentsAndNewlines
           return $ located' imp
-        skipCommentsAndNewlines
         void $ goDelimiterP GoDelimRightParen
         return imports
     , do

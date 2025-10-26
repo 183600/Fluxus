@@ -71,7 +71,7 @@ type PythonParser = Parsec Void [Located PythonToken]
 
 -- | Run the Python parser
 runPythonParser :: Text -> [Located PythonToken] -> Either (ParseErrorBundle [Located PythonToken] Void) PythonAST
-runPythonParser filename tokensList = parse parsePython (T.unpack filename) tokens
+runPythonParser filename tokensList = parse parsePython (T.unpack filename) tokensList
 
 -- | Main parser entry point
 parsePython :: PythonParser PythonAST
