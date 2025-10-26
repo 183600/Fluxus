@@ -98,6 +98,7 @@ data CppDecl
   | CppTemplate ![Text] !CppDecl                        -- template params, declaration
   | CppNamespace !Text ![CppDecl]                       -- name, declarations
   | CppExternC ![CppDecl]                               -- C linkage declarations
+  | CppAccessSpec !Text                                 -- access specifier (public/protected/private)
   | CppCommentDecl !Text                                -- comment at declaration level
   deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
@@ -727,10 +728,10 @@ hasReturnValue (Located _ stmt) = case stmt of
 
 -- | Generate block statement from Go (handling compound statements)
 generateGoBlockStmt :: Located GoStmt -> CppCodeGen [CppStmt]
-generateGoBlockStmt (Located _ stmt) = case stmt of
+generateGoBlockStmt located@(Located _ stmt) = case stmt of
   GoBlock stmts -> mapM generateGoStmt stmts
   _ -> do
-    singleStmt <- generateGoStmt (Located undefined stmt)
+    singleStmt <- generateGoStmt located
     return [singleStmt]
 
 -- | Generate statements from Go
@@ -751,27 +752,36 @@ generateGoStmt (Located _ stmt) = case stmt of
   GoExprStmt expr -> do
     cppExpr <- generateGoExpr expr
     return $ CppExprStmt cppExpr
-  GoIf _ cond thenStmt elseStmt -> do
+  GoIf mInit cond thenStmt elseStmt -> do
     cppCond <- generateGoExpr cond
-    cppThen <- generateGoStmt thenStmt
+    cppThen <- generateGoBlockStmt thenStmt
     cppElse <- case elseStmt of
       Nothing -> return []
-      Just stmt -> do
-        stmt' <- generateGoStmt stmt
-        return [stmt']
-    return $ CppIf cppCond [cppThen] cppElse
+      Just stmt -> generateGoBlockStmt stmt
+    let ifStmt = CppIf cppCond cppThen cppElse
+    case mInit of
+      Nothing -> return ifStmt
+      Just initStmt -> do
+        initCpp <- generateGoStmt initStmt
+        return $ CppBlock [initCpp, ifStmt]
   GoFor mforClause bodyStmt -> do
-    -- Handle for loop (simplified as while for now)
     case mforClause of
       Nothing -> do
         -- Infinite loop - convert to while(true)
         bodyStmts <- generateGoBlockStmt bodyStmt
         return $ CppWhile (CppLiteral $ CppBoolLit True) bodyStmts
       Just forClause -> do
-        -- TODO: Handle proper for clause with init, condition, post
-        -- For now, just convert to while(true)
+        initStmt <- case goForInit forClause of
+          Nothing -> return Nothing
+          Just initS -> generateGoForInit initS
+        condExpr <- case goForCond forClause of
+          Nothing -> return Nothing
+          Just condE -> Just <$> generateGoExpr condE
+        postExpr <- case goForPost forClause of
+          Nothing -> return Nothing
+          Just postS -> generateGoForPost postS
         bodyStmts <- generateGoBlockStmt bodyStmt
-        return $ CppWhile (CppLiteral $ CppBoolLit True) bodyStmts
+        return $ CppFor initStmt condExpr postExpr bodyStmts
   GoBlock stmts -> do
     cppStmts <- mapM generateGoStmt stmts
     return $ CppBlock cppStmts
@@ -818,12 +828,45 @@ generateGoStmt (Located _ stmt) = case stmt of
         -- Multiple assignment - simplified for now
         addComment $ "Multiple assignment not fully implemented"
         return $ CppComment $ "Multiple assignment"
+  GoIncDec expr isIncrement -> do
+    cppExpr <- generateGoExpr expr
+    let op = if isIncrement then "++" else "--"
+    return $ CppExprStmt $ CppUnary op cppExpr
   _ -> do
     addComment $ "TODO: Implement Go statement: " <> T.pack (show stmt)
     return $ CppComment $ "Unimplemented Go statement"
 
+-- | Helpers for translating Go for-loop components
+generateGoForInit :: Located GoStmt -> CppCodeGen (Maybe CppStmt)
+generateGoForInit stmt@(Located _ inner) = case inner of
+  GoDefine _ _ -> Just <$> generateGoStmt stmt
+  GoAssign _ _ -> Just <$> generateGoStmt stmt
+  GoExprStmt _ -> Just <$> generateGoStmt stmt
+  GoIncDec _ _ -> Just <$> generateGoStmt stmt
+  GoEmpty -> return Nothing
+  _ -> do
+    addComment $ "Unsupported for-loop initializer: " <> T.pack (show inner)
+    return Nothing
+
+generateGoForPost :: Located GoStmt -> CppCodeGen (Maybe CppExpr)
+generateGoForPost (Located _ inner) = case inner of
+  GoIncDec expr isInc -> do
+    cppExpr <- generateGoExpr expr
+    let op = if isInc then "++" else "--"
+    return $ Just $ CppUnary op cppExpr
+  GoAssign [leftExpr] [rightExpr] -> do
+    cppLeft <- generateGoExpr leftExpr
+    cppRight <- generateGoExpr rightExpr
+    return $ Just $ CppBinary "=" cppLeft cppRight
+  GoExprStmt expr -> Just <$> generateGoExpr expr
+  GoEmpty -> return Nothing
+  _ -> do
+    addComment $ "Unsupported for-loop post statement: " <> T.pack (show inner)
+    return Nothing
+
 -- | Generate expressions from Go
 generateGoExpr :: Located GoExpr -> CppCodeGen CppExpr
+
 generateGoExpr (Located _ expr) = case expr of
   GoLiteral lit -> return $ CppLiteral $ mapGoLiteral lit
   GoIdent (Identifier name) -> return $ CppVar name
@@ -832,6 +875,19 @@ generateGoExpr (Located _ expr) = case expr of
     cppRight <- generateGoExpr right
     let cppOp = mapGoBinaryOp op
     return $ CppBinary cppOp cppLeft cppRight
+  GoComparison compOp left right -> do
+    cppLeft <- generateGoExpr left
+    cppRight <- generateGoExpr right
+    let cppOp = mapComparisonOp compOp
+    return $ CppBinary cppOp cppLeft cppRight
+  GoUnaryOp uop inner -> do
+    cppInner <- generateGoExpr inner
+    let cppOp = case uop of
+          OpNot -> "!"
+          OpNegate -> "-"
+          OpPositive -> "+"
+          OpBitNot -> "~"
+    return $ CppUnary cppOp cppInner
   GoCall func args -> do
     cppFunc <- generateGoExpr func
     cppArgs <- mapM generateGoExpr args
@@ -848,6 +904,8 @@ generateGoExpr (Located _ expr) = case expr of
         addInclude "<iostream>"
         return $ buildPrintExpr cppArgs
       _ -> return $ CppCall cppFunc cppArgs
+  GoQualifiedIdent (Identifier pkg) (Identifier name) ->
+    return $ CppVar (pkg <> "::" <> name)
   GoSelector obj (Identifier member) -> do
     cppObj <- generateGoExpr obj
     return $ CppMember cppObj member
@@ -975,51 +1033,57 @@ mapComparisonOp = \case
 generateChannelClass :: CppCodeGen ()
 generateChannelClass = do
   let templateParam = CppTemplateType "T" []
-  
-  let channelMembers = 
-        [ CppVariable "queue_" (CppTemplateType "std::queue" [templateParam]) Nothing
-        , CppVariable "mutex_" (CppClassType "std::mutex" []) Nothing
-        , CppVariable "cv_" (CppClassType "std::condition_variable" []) Nothing
-        , CppVariable "capacity_" CppSizeT Nothing
-        ]
-  
-  let channelMethods =
-        [ CppConstructor "Channel" [CppParam "capacity" CppSizeT Nothing] 
+      queueType = CppTemplateType "std::queue" [templateParam]
+      mutexType = CppClassType "std::mutex" []
+      cvType = CppClassType "std::condition_variable" []
+      lockType = CppTemplateType "std::unique_lock" [mutexType]
+
+      publicMembers =
+        [ CppAccessSpec "public"
+        , CppConstructor "Channel" [CppParam "capacity" CppSizeT Nothing]
             [ CppExprStmt $ CppBinary "=" (CppMember CppThis "capacity_") (CppVar "capacity")
             ]
         , CppMethod "send" CppVoid [CppParam "value" templateParam Nothing]
-            [ CppDecl $ CppVariable "lock" (CppTemplateType "std::unique_lock" [CppClassType "std::mutex" []]) 
+            [ CppDecl $ CppVariable "lock" lockType
                 (Just $ CppCall (CppVar "std::unique_lock<std::mutex>") [CppMember CppThis "mutex_"])
-            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "cv_") "wait") 
+            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "cv_") "wait")
                 [ CppVar "lock"
-                , CppLambda [] 
-                    [ CppReturn $ Just $ CppBinary "<" 
-                        (CppCall (CppMember (CppMember CppThis "queue_") "size") []) 
+                , CppLambda []
+                    [ CppReturn $ Just $ CppBinary "<"
+                        (CppCall (CppMember (CppMember CppThis "queue_") "size") [])
                         (CppMember CppThis "capacity_")
                     ]
                 ]
             , CppExprStmt $ CppCall (CppMember (CppMember CppThis "queue_") "push") [CppVar "value"]
-            , CppExprStmt $ CppCall (CppMember (CppVar "cv_") "notify_one") []
+            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "cv_") "notify_one") []
             ] False
         , CppMethod "receive" templateParam []
             [ CppDecl $ CppVariable "value" templateParam Nothing
-            , CppDecl $ CppVariable "lock" (CppTemplateType "std::unique_lock" [CppClassType "std::mutex" []]) 
+            , CppDecl $ CppVariable "lock" lockType
                 (Just $ CppCall (CppVar "std::unique_lock<std::mutex>") [CppMember CppThis "mutex_"])
-            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "cv_") "wait") 
+            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "cv_") "wait")
                 [ CppVar "lock"
-                , CppLambda [] 
-                    [ CppReturn $ Just $ CppUnary "!" 
+                , CppLambda []
+                    [ CppReturn $ Just $ CppUnary "!"
                         (CppCall (CppMember (CppMember CppThis "queue_") "empty") [])
                     ]
                 ]
             , CppExprStmt $ CppBinary "=" (CppVar "value") (CppCall (CppMember (CppMember CppThis "queue_") "front") [])
             , CppExprStmt $ CppCall (CppMember (CppMember CppThis "queue_") "pop") []
-            , CppExprStmt $ CppCall (CppMember (CppVar "cv_") "notify_one") []
+            , CppExprStmt $ CppCall (CppMember (CppMember CppThis "cv_") "notify_one") []
             , CppReturn $ Just $ CppVar "value"
             ] False
         ]
-  
-  addDeclaration $ CppTemplate ["T"] (CppClass "Channel" [] (channelMembers ++ channelMethods))
+
+      privateMembers =
+        [ CppAccessSpec "private"
+        , CppVariable "queue_" queueType Nothing
+        , CppVariable "mutex_" mutexType Nothing
+        , CppVariable "cv_" cvType Nothing
+        , CppVariable "capacity_" CppSizeT Nothing
+        ]
+
+  addDeclaration $ CppTemplate ["T"] (CppClass "Channel" [] (publicMembers ++ privateMembers))
 
 
 -- | Helper functions
