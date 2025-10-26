@@ -447,6 +447,7 @@ bytesShape = ShapeInfo
 
 inferLiteralShape :: Literal -> ShapeInfo
 inferLiteralShape (LInt _) = inferShape (TInt 32)
+inferLiteralShape (LUInt _) = inferShape (TUInt 64)
 inferLiteralShape (LFloat _) = inferShape (TFloat 64)
 inferLiteralShape (LBool _) = booleanShape
 inferLiteralShape (LString _) = stringShape
