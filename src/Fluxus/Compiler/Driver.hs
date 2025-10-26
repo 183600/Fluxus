@@ -604,12 +604,26 @@ renderCppDecl = \case
     renderClassLike keyword name baseClasses members =
       let header = keyword <> " " <> name <>
             (if null baseClasses then "" else " : " <> T.intercalate ", " baseClasses) <> " {\n"
-          renderedMembers = map renderMember members
-      in header <> T.concat renderedMembers <> "};\n"
+          body = renderMembers Nothing members
+      in header <> body <> "};\n"
       where
-        renderMember :: CppDecl -> Text
-        renderMember (CppAccessSpec spec) = spec <> ":\n"
-        renderMember decl = indentDecl (renderCppDecl decl)
+        renderMembers :: Maybe Text -> [CppDecl] -> Text
+        renderMembers _ [] = ""
+        renderMembers _ (CppAccessSpec spec : rest) =
+          spec <> ":\n" <> renderMembers (Just spec) rest
+        renderMembers currentAccess (decl : rest) =
+          let (prefix, nextAccess) = case currentAccess of
+                Nothing -> ("public:\n", Just "public")
+                access -> ("", access)
+              declText = ensureTrailingNewline (renderCppDecl decl)
+              indented = indentDecl declText
+          in prefix <> indented <> renderMembers nextAccess rest
+
+        ensureTrailingNewline :: Text -> Text
+        ensureTrailingNewline txt
+          | T.null txt = txt
+          | T.isSuffixOf "\n" txt = txt
+          | otherwise = txt <> "\n"
     indentDecl :: Text -> Text
     indentDecl txt =
       let ls = T.lines txt

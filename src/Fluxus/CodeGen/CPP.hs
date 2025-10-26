@@ -922,7 +922,8 @@ generateGoFunction func = do
     Nothing -> return ()  -- Function literal, handle differently
     Just (Identifier name) -> do
       -- Map parameters and return types
-      cppParams <- mapM mapGoParameter (goFuncParams func)
+      paramGroups <- mapM mapGoParameter (goFuncParams func)
+      let cppParams = concat paramGroups
       returnType <- mapGoResultsForMain name (goFuncResults func)
       
       -- Generate function body
@@ -1043,27 +1044,36 @@ generateGoStmt (Located _ stmt) = case stmt of
     return $ CppExprStmt $ CppCall (CppMember cppChannel "send") [cppValue]
   GoDefine identifiers exprs -> do
     -- Handle variable definition: x, y := a, b
-    case (identifiers, exprs) of
-      ([Identifier varName], [expr]) -> do
-        -- Single variable assignment
-        cppExpr <- generateGoExpr expr
-        return $ CppDecl $ CppVariable varName CppAuto (Just cppExpr)
-      _ -> do
-        -- Multiple variable assignment - simplified for now
-        addComment $ "Multiple variable definition not fully implemented"
-        return $ CppComment $ "Multiple variable definition"
+    if length identifiers /= length exprs
+      then do
+        addComment $ "Mismatched variable definition arity"
+        return $ CppComment "Unsupported variable definition"
+      else do
+        cppExprs <- mapM generateGoExpr exprs
+        let stmts = zipWith defineBinding identifiers cppExprs
+        return $ wrapStmts stmts
   GoAssign leftExprs rightExprs -> do
     -- Handle assignment: x, y = a, b
     case (leftExprs, rightExprs) of
       ([leftExpr], [rightExpr]) -> do
-        -- Single assignment
-        cppLeft <- generateGoExpr leftExpr
         cppRight <- generateGoExpr rightExpr
-        return $ CppExprStmt $ CppBinary "=" cppLeft cppRight
-      _ -> do
-        -- Multiple assignment - simplified for now
-        addComment $ "Multiple assignment not fully implemented"
-        return $ CppComment $ "Multiple assignment"
+        case leftExpr of
+          Located _ (GoIdent (Identifier "_")) ->
+            return $ CppExprStmt cppRight
+          _ -> do
+            cppLeft <- generateGoExpr leftExpr
+            return $ CppExprStmt $ CppBinary "=" cppLeft cppRight
+      _ ->
+        if length leftExprs /= length rightExprs
+          then do
+            addComment $ "Mismatched assignment arity"
+            return $ CppComment "Multiple assignment"
+          else do
+            prepResults <- mapM prepareAssignment (zip leftExprs rightExprs)
+            let evalStmts = map fst prepResults
+                assignmentInputs = catMaybes (map snd prepResults)
+            assignStmts <- mapM buildAssignment assignmentInputs
+            return $ wrapStmts (evalStmts ++ assignStmts)
   GoIncDec expr isIncrement -> do
     cppExpr <- generateGoExpr expr
     let op = if isIncrement then "++" else "--"
@@ -1071,6 +1081,33 @@ generateGoStmt (Located _ stmt) = case stmt of
   _ -> do
     addComment $ "TODO: Implement Go statement: " <> T.pack (show stmt)
     return $ CppComment $ "Unimplemented Go statement"
+  where
+    wrapStmts :: [CppStmt] -> CppStmt
+    wrapStmts [] = CppStmtSeq []
+    wrapStmts [single] = single
+    wrapStmts stmts = CppStmtSeq stmts
+
+    defineBinding :: Identifier -> CppExpr -> CppStmt
+    defineBinding (Identifier name) expr
+      | name == "_" = CppExprStmt expr
+      | otherwise    = CppDecl $ CppVariable name CppAuto (Just expr)
+
+    prepareAssignment :: (Located GoExpr, Located GoExpr) -> CppCodeGen (CppStmt, Maybe (Located GoExpr, CppExpr))
+    prepareAssignment (leftExpr, rightExpr) = do
+      rhsCpp <- generateGoExpr rightExpr
+      case leftExpr of
+        Located _ (GoIdent (Identifier "_")) ->
+          return (CppExprStmt rhsCpp, Nothing)
+        _ -> do
+          tempName <- generateTempVar
+          let tempVar = CppVar tempName
+              declStmt = CppDecl (CppVariable tempName CppAuto (Just rhsCpp))
+          return (declStmt, Just (leftExpr, tempVar))
+
+    buildAssignment :: (Located GoExpr, CppExpr) -> CppCodeGen CppStmt
+    buildAssignment (leftExpr, tempVarExpr) = do
+      leftCpp <- generateGoExpr leftExpr
+      return $ CppExprStmt (CppBinary "=" leftCpp tempVarExpr)
 
 -- | Helpers for translating Go for-loop components
 generateGoForInit :: Located GoStmt -> CppCodeGen (Maybe CppStmt)
@@ -1379,13 +1416,19 @@ mapPythonParameter (Located _ param) = case param of
     return $ CppParam name cppType cppDefault
   _ -> return $ CppParam "param" CppAuto Nothing
 
-mapGoParameter :: GoField -> CppCodeGen CppParam
+mapGoParameter :: GoField -> CppCodeGen [CppParam]
 mapGoParameter field = do
-  let name = case goFieldNames field of
-        [] -> "param"
-        (Identifier n : _) -> n
   cppType <- generateGoType (goFieldType field)
-  return $ CppParam name cppType Nothing
+  let rawNames = [n | Identifier n <- goFieldNames field]
+  names <- case rawNames of
+    [] -> (:[]) <$> generateTempVar
+    _  -> mapM sanitizeName rawNames
+  return [CppParam name cppType Nothing | name <- names]
+  where
+    sanitizeName :: Text -> CppCodeGen Text
+    sanitizeName name
+      | name == "_" = generateTempVar
+      | otherwise = return name
 
 mapPythonType :: Located PythonTypeExpr -> CppCodeGen CppType
 mapPythonType (Located _ typeExpr) = case typeExpr of
