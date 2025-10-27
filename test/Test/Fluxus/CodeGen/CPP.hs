@@ -3,6 +3,8 @@
 module Test.Fluxus.CodeGen.CPP (spec) where
 
 import Test.Hspec
+import Data.Char (isAlphaNum)
+import Data.Foldable (for_)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.List (find)
@@ -197,48 +199,262 @@ goPrintingSpec = describe "Go fmt translation" $ do
       _ -> expectationFailure "expected generated main function"
 
 pythonEndToEndSpec :: Spec
-pythonEndToEndSpec = describe "Python end-to-end compilation" $
-  it "produces compilable C++ that preserves runtime behavior" $ do
-    maybeCompiler <- findCppCompiler
-    case maybeCompiler of
-      Nothing -> expectationFailure "No C++ compiler found in PATH"
-      Just compilerPath ->
-        withSystemTempDirectory "fluxus-python-cpp" $ \tmpDir -> do
-          let sourcePath = tmpDir </> "sample.py"
-              outputBinary = tmpDir </> "sample"
-              pythonSource =
-                unlines
-                  [ "def square(x):"
-                  , "    return x * x"
-                  , ""
-                  , "result = square(7)"
-                  , "print(result)"
-                  ]
-          writeFile sourcePath pythonSource
-          let config =
-                defaultConfig
-                  { ccSourceLanguage = Python
-                  , ccCppCompiler = T.pack compilerPath
-                  , ccOutputPath = Just outputBinary
-                  , ccVerboseLevel = 0
-                  , ccWorkDirectory = Just tmpDir
-                  , ccKeepIntermediates = True
-                  }
-          compileResult <- runCompiler config $ do
-            setupCompilerEnvironment
-            compileFile sourcePath
-          case compileResult of
-            Left err ->
-              expectationFailure $ "Compilation failed: " <> show err
-            Right (finalBinary, _) -> do
-              finalBinary `shouldBe` outputBinary
-              cppExists <- doesFileExist (replaceExtension sourcePath ".cpp")
-              cppExists `shouldBe` True
-              binaryExists <- doesFileExist finalBinary
-              binaryExists `shouldBe` True
-              (exitCode, stdOut, _) <- readProcessWithExitCode finalBinary [] ""
-              exitCode `shouldBe` ExitSuccess
-              stdOut `shouldBe` "49\n"
+pythonEndToEndSpec = describe "Python end-to-end compilation" $ do
+  maybeCompiler <- runIO findCppCompiler
+  case maybeCompiler of
+    Nothing ->
+      it "requires an available C++ compiler" $
+        expectationFailure "No C++ compiler found in PATH"
+    Just compiler ->
+      for_ pythonRuntimeTests $ \testCase ->
+        it (prtName testCase) $
+          runPythonRuntimeTest compiler testCase
+
+data PythonRuntimeTest = PythonRuntimeTest
+  { prtName :: String
+  , prtSource :: [String]
+  , prtExpectedStdOut :: String
+  }
+
+pythonRuntimeTests :: [PythonRuntimeTest]
+pythonRuntimeTests =
+  [ PythonRuntimeTest
+      { prtName = "compiles simple print"
+      , prtSource =
+          [ "print(\"hello fluxus\")"
+          ]
+      , prtExpectedStdOut = "hello fluxus\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles integer addition"
+      , prtSource =
+          [ "result = 21 + 21"
+          , "print(result)"
+          ]
+      , prtExpectedStdOut = "42\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles integer multiplication"
+      , prtSource =
+          [ "result = 6 * 7"
+          , "print(result)"
+          ]
+      , prtExpectedStdOut = "42\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles float division"
+      , prtSource =
+          [ "print(7 / 2)"
+          ]
+      , prtExpectedStdOut = "3.5\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles power operation"
+      , prtSource =
+          [ "print(2 ** 5)"
+          ]
+      , prtExpectedStdOut = "32\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles function definition and call"
+      , prtSource =
+          [ "def triple(x):"
+          , "    return x * 3"
+          , ""
+          , "print(triple(7))"
+          ]
+      , prtExpectedStdOut = "21\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles nested function calls"
+      , prtSource =
+          [ "def double(x):"
+          , "    return x * 2"
+          , ""
+          , "def quad(x):"
+          , "    return double(double(x))"
+          , ""
+          , "print(quad(3))"
+          ]
+      , prtExpectedStdOut = "12\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles if else true branch"
+      , prtSource =
+          [ "value = 10"
+          , "if value > 5:"
+          , "    print(\"greater\")"
+          , "else:"
+          , "    print(\"smaller\")"
+          ]
+      , prtExpectedStdOut = "greater\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles if else false branch"
+      , prtSource =
+          [ "value = 1"
+          , "if value > 5:"
+          , "    print(\"greater\")"
+          , "else:"
+          , "    print(\"smaller\")"
+          ]
+      , prtExpectedStdOut = "smaller\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles while loop iteration"
+      , prtSource =
+          [ "i = 0"
+          , "while i < 3:"
+          , "    print(i)"
+          , "    i = i + 1"
+          ]
+      , prtExpectedStdOut = unlines ["0", "1", "2"]
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles range simple"
+      , prtSource =
+          [ "for i in range(3):"
+          , "    print(i)"
+          ]
+      , prtExpectedStdOut = unlines ["0", "1", "2"]
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles range with start"
+      , prtSource =
+          [ "for i in range(2, 5):"
+          , "    print(i)"
+          ]
+      , prtExpectedStdOut = unlines ["2", "3", "4"]
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles range with positive step"
+      , prtSource =
+          [ "for i in range(1, 6, 2):"
+          , "    print(i)"
+          ]
+      , prtExpectedStdOut = unlines ["1", "3", "5"]
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles range with negative step"
+      , prtSource =
+          [ "for i in range(5, 0, -2):"
+          , "    print(i)"
+          ]
+      , prtExpectedStdOut = unlines ["5", "3", "1"]
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles len builtin"
+      , prtSource =
+          [ "values = [10, 20, 30, 40]"
+          , "print(len(values))"
+          ]
+      , prtExpectedStdOut = "4\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles list indexing"
+      , prtSource =
+          [ "values = [4, 9, 16]"
+          , "print(values[2])"
+          ]
+      , prtExpectedStdOut = "16\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles f-string formatting"
+      , prtSource =
+          [ "name = \"Fluxus\""
+          , "count = 3"
+          , "print(f\"{name}-{count}\")"
+          ]
+      , prtExpectedStdOut = "Fluxus-3\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles boolean logic"
+      , prtSource =
+          [ "a = True"
+          , "b = False"
+          , "if a and not b:"
+          , "    print(\"passes\")"
+          , "else:"
+          , "    print(\"fails\")"
+          ]
+      , prtExpectedStdOut = "passes\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles chained comparison"
+      , prtSource =
+          [ "x = 7"
+          , "if 1 < x < 10:"
+          , "    print(\"inside\")"
+          , "else:"
+          , "    print(\"outside\")"
+          ]
+      , prtExpectedStdOut = "inside\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles factorial recursion"
+      , prtSource =
+          [ "def factorial(n):"
+          , "    if n <= 1:"
+          , "        return 1"
+          , "    return n * factorial(n - 1)"
+          , ""
+          , "print(factorial(5))"
+          ]
+      , prtExpectedStdOut = "120\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles multiple print arguments"
+      , prtSource =
+          [ "value = 7"
+          , "print(\"value:\", value)"
+          ]
+      , prtExpectedStdOut = "value: 7\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles string concatenation"
+      , prtSource =
+          [ "prefix = \"flux\""
+          , "suffix = \"us\""
+          , "print(prefix + suffix)"
+          ]
+      , prtExpectedStdOut = "fluxus\n"
+      }
+  ]
+
+runPythonRuntimeTest :: FilePath -> PythonRuntimeTest -> Expectation
+runPythonRuntimeTest compiler (PythonRuntimeTest name sourceLines expectedStdOut) =
+  withSystemTempDirectory ("fluxus-python-cpp-" ++ sanitizeName name) $ \tmpDir -> do
+    let sourcePath = tmpDir </> "input.py"
+        outputBinary = tmpDir </> "program"
+        pythonSource = unlines sourceLines
+        config =
+          defaultConfig
+            { ccSourceLanguage = Python
+            , ccCppCompiler = T.pack compiler
+            , ccOutputPath = Just outputBinary
+            , ccVerboseLevel = 0
+            , ccWorkDirectory = Just tmpDir
+            , ccKeepIntermediates = True
+            }
+    writeFile sourcePath pythonSource
+    compileResult <- runCompiler config $ do
+      setupCompilerEnvironment
+      compileFile sourcePath
+    case compileResult of
+      Left err ->
+        expectationFailure $ "Compilation failed: " <> show err
+      Right (finalBinary, _) -> do
+        finalBinary `shouldBe` outputBinary
+        cppExists <- doesFileExist (replaceExtension sourcePath ".cpp")
+        cppExists `shouldBe` True
+        binaryExists <- doesFileExist finalBinary
+        binaryExists `shouldBe` True
+        (exitCode, stdOut, _) <- readProcessWithExitCode finalBinary [] ""
+        exitCode `shouldBe` ExitSuccess
+        stdOut `shouldBe` expectedStdOut
+
+sanitizeName :: String -> String
+sanitizeName = map (\c -> if isAlphaNum c then c else '-')
 
 -- Helpers for Go fmt translation tests
 
