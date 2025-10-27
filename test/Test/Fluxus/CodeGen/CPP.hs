@@ -7,11 +7,24 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.List (find)
 import Data.Maybe (listToMaybe)
+import System.Directory (doesFileExist, findExecutable)
+import System.Exit (ExitCode(..))
+import System.FilePath ((</>), replaceExtension)
+import System.IO.Temp (withSystemTempDirectory)
+import System.Process (readProcessWithExitCode)
 
 import Fluxus.CodeGen.CPP
 import Fluxus.AST.Common
 import Fluxus.AST.Go
 import Fluxus.AST.Python
+import Fluxus.Compiler.Driver
+  ( CompilerConfig(..)
+  , SourceLanguage(..)
+  , compileFile
+  , defaultConfig
+  , runCompiler
+  , setupCompilerEnvironment
+  )
 
 spec :: Spec
 spec = describe "C++ Code Generation" $ do
@@ -21,6 +34,7 @@ spec = describe "C++ Code Generation" $ do
   declarationGenerationSpec
   pythonGlobalSpec
   goPrintingSpec
+  pythonEndToEndSpec
 
 typeMappingSpec :: Spec
 typeMappingSpec = describe "Type Mapping" $ do
@@ -182,6 +196,50 @@ goPrintingSpec = describe "Go fmt translation" $ do
           _ -> expectationFailure "expected fmt.Printf to produce expression statement"
       _ -> expectationFailure "expected generated main function"
 
+pythonEndToEndSpec :: Spec
+pythonEndToEndSpec = describe "Python end-to-end compilation" $
+  it "produces compilable C++ that preserves runtime behavior" $ do
+    maybeCompiler <- findCppCompiler
+    case maybeCompiler of
+      Nothing -> expectationFailure "No C++ compiler found in PATH"
+      Just compilerPath ->
+        withSystemTempDirectory "fluxus-python-cpp" $ \tmpDir -> do
+          let sourcePath = tmpDir </> "sample.py"
+              outputBinary = tmpDir </> "sample"
+              pythonSource =
+                unlines
+                  [ "def square(x):"
+                  , "    return x * x"
+                  , ""
+                  , "result = square(7)"
+                  , "print(result)"
+                  ]
+          writeFile sourcePath pythonSource
+          let config =
+                defaultConfig
+                  { ccSourceLanguage = Python
+                  , ccCppCompiler = T.pack compilerPath
+                  , ccOutputPath = Just outputBinary
+                  , ccVerboseLevel = 0
+                  , ccWorkDirectory = Just tmpDir
+                  , ccKeepIntermediates = True
+                  }
+          compileResult <- runCompiler config $ do
+            setupCompilerEnvironment
+            compileFile sourcePath
+          case compileResult of
+            Left err ->
+              expectationFailure $ "Compilation failed: " <> show err
+            Right (finalBinary, _) -> do
+              finalBinary `shouldBe` outputBinary
+              cppExists <- doesFileExist (replaceExtension sourcePath ".cpp")
+              cppExists `shouldBe` True
+              binaryExists <- doesFileExist finalBinary
+              binaryExists `shouldBe` True
+              (exitCode, stdOut, _) <- readProcessWithExitCode finalBinary [] ""
+              exitCode `shouldBe` ExitSuccess
+              stdOut `shouldBe` "49\n"
+
 -- Helpers for Go fmt translation tests
 
 testCppConfig :: CppGenConfig
@@ -268,3 +326,13 @@ containsCoutCall _ = False
 isStdPrintfCall :: CppExpr -> Bool
 isStdPrintfCall (CppCall (CppVar "std::printf") _) = True
 isStdPrintfCall _ = False
+
+findCppCompiler :: IO (Maybe FilePath)
+findCppCompiler = go ["g++", "clang++", "c++"]
+  where
+    go [] = pure Nothing
+    go (candidate:rest) = do
+      found <- findExecutable candidate
+      case found of
+        Just path -> pure (Just path)
+        Nothing -> go rest
