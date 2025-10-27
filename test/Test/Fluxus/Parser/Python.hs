@@ -12,6 +12,10 @@ import Fluxus.Parser.Python.Parser
 import Fluxus.AST.Python
 import Fluxus.AST.Common
 
+safeHead :: [a] -> a
+safeHead [] = error "safeHead: empty list (test invariant violated)"
+safeHead (x:_) = x
+
 spec :: Spec
 spec = describe "Python Parser" $ do
   lexerSpec
@@ -45,7 +49,7 @@ lexerSpec = describe "Python Lexer" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right tokens -> do
         length tokens `shouldBe` 1
-        case locatedValue (head tokens) of
+        case locatedValue (safeHead tokens) of
           TokenString content -> content `shouldBe` "hello world"
           _ -> expectationFailure "Expected string token"
   
@@ -294,7 +298,7 @@ parserSpec = describe "Python Parser" $ do
       Right ast -> do
         let PythonAST module_ = ast
         length (pyModuleBody module_) `shouldBe` 1
-        case locatedValue (head $ pyModuleBody module_) of
+        case locatedValue (safeHead (pyModuleBody module_)) of
           PyFuncDef funcDef -> pyFuncName funcDef `shouldBe` Identifier "test_func"
           _ -> expectationFailure "Expected function definition"
   
@@ -314,7 +318,7 @@ parserSpec = describe "Python Parser" $ do
       Right ast -> do
         let PythonAST module_ = ast
         length (pyModuleBody module_) `shouldBe` 1
-        case locatedValue (head $ pyModuleBody module_) of
+        case locatedValue (safeHead (pyModuleBody module_)) of
           PyClassDef classDef -> pyClassName classDef `shouldBe` Identifier "TestClass"
           _ -> expectationFailure "Expected class definition"
   
@@ -334,7 +338,7 @@ parserSpec = describe "Python Parser" $ do
       Right ast -> do
         let PythonAST module_ = ast
         length (pyModuleBody module_) `shouldBe` 1
-        case locatedValue (head $ pyModuleBody module_) of
+        case locatedValue (safeHead (pyModuleBody module_)) of
           PyIf _ _ _ -> return ()
           _ -> expectationFailure "Expected if statement"
 
