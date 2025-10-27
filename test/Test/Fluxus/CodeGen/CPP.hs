@@ -419,6 +419,241 @@ pythonRuntimeTests =
           ]
       , prtExpectedStdOut = "fluxus\n"
       }
+  , PythonRuntimeTest
+      { prtName = "compiles subtraction chain"
+      , prtSource =
+          [ "value = 30"
+          , "value = value - 12"
+          , "value = value - 4"
+          , "print(value)"
+          ]
+      , prtExpectedStdOut = "14\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles factorial while loop"
+      , prtSource =
+          [ "i = 1"
+          , "total = 1"
+          , "while i <= 4:"
+          , "    total = total * i"
+          , "    i = i + 1"
+          , "print(total)"
+          ]
+      , prtExpectedStdOut = "24\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles range summation"
+      , prtSource =
+          [ "total = 0"
+          , "for i in range(1, 6):"
+          , "    total = total + i"
+          , "print(total)"
+          ]
+      , prtExpectedStdOut = "15\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles nested loops accumulation"
+      , prtSource =
+          [ "count = 0"
+          , "for i in range(2):"
+          , "    for j in range(3):"
+          , "        count = count + 1"
+          , "print(count)"
+          ]
+      , prtExpectedStdOut = "6\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles string returning function"
+      , prtSource =
+          [ "def greet(name):"
+          , "    return f\"Hello {name}\""
+          , ""
+          , "print(greet(\"Fluxus\"))"
+          ]
+      , prtExpectedStdOut = "Hello Fluxus\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles local variable function"
+      , prtSource =
+          [ "def compute():"
+          , "    result = 10"
+          , "    result = result + 5"
+          , "    return result"
+          , ""
+          , "print(compute())"
+          ]
+      , prtExpectedStdOut = "15\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles dependent functions"
+      , prtSource =
+          [ "def square(x):"
+          , "    return x * x"
+          , ""
+          , "def cube(x):"
+          , "    return x * square(x)"
+          , ""
+          , "print(cube(3))"
+          ]
+      , prtExpectedStdOut = "27\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles equality branch"
+      , prtSource =
+          [ "value = 10"
+          , "if value == 10:"
+          , "    print(\"ten\")"
+          , "else:"
+          , "    print(\"other\")"
+          ]
+      , prtExpectedStdOut = "ten\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles nested conditional branch"
+      , prtSource =
+          [ "a = 5"
+          , "b = 7"
+          , "c = 6"
+          , "if a > b:"
+          , "    print(\"a\")"
+          , "else:"
+          , "    if b > c:"
+          , "        print(\"b\")"
+          , "    else:"
+          , "        print(\"c\")"
+          ]
+      , prtExpectedStdOut = "b\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles indexed list summation"
+      , prtSource =
+          [ "values = [1, 2, 3, 4]"
+          , "total = 0"
+          , "for i in range(len(values)):"
+          , "    total = total + values[i]"
+          , "print(total)"
+          ]
+      , prtExpectedStdOut = "10\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles multi step string concatenation"
+      , prtSource =
+          [ "part = \"Flux\""
+          , "part = part + \"us\""
+          , "part = part + \" Rocks\""
+          , "print(part)"
+          ]
+      , prtExpectedStdOut = "Fluxus Rocks\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles boolean or branch"
+      , prtSource =
+          [ "a = False"
+          , "b = True"
+          , "if a or b:"
+          , "    print(\"pass\")"
+          , "else:"
+          , "    print(\"fail\")"
+          ]
+      , prtExpectedStdOut = "pass\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles ranged even summation"
+      , prtSource =
+          [ "total = 0"
+          , "for i in range(2, 10, 2):"
+          , "    total = total + i"
+          , "print(total)"
+          ]
+      , prtExpectedStdOut = "20\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles descending range summation"
+      , prtSource =
+          [ "total = 0"
+          , "for i in range(5, 0, -1):"
+          , "    total = total + i"
+          , "print(total)"
+          ]
+      , prtExpectedStdOut = "15\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles fibonacci recursion"
+      , prtSource =
+          [ "def fib(n):"
+          , "    if n <= 1:"
+          , "        return n"
+          , "    return fib(n - 1) + fib(n - 2)"
+          , ""
+          , "print(fib(6))"
+          ]
+      , prtExpectedStdOut = "8\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles boolean returning function"
+      , prtSource =
+          [ "def is_positive(n):"
+          , "    if n > 0:"
+          , "        return True"
+          , "    else:"
+          , "        return False"
+          , ""
+          , "if is_positive(5):"
+          , "    print(\"positive\")"
+          , "else:"
+          , "    print(\"non-positive\")"
+          ]
+      , prtExpectedStdOut = "positive\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles countdown loop"
+      , prtSource =
+          [ "count = 3"
+          , "while count > 0:"
+          , "    print(count)"
+          , "    count = count - 1"
+          ]
+      , prtExpectedStdOut = unlines ["3", "2", "1"]
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles list returning function"
+      , prtSource =
+          [ "def pair_sum(a, b):"
+          , "    values = [a, b, a + b]"
+          , "    return values[2]"
+          , ""
+          , "print(pair_sum(3, 4))"
+          ]
+      , prtExpectedStdOut = "7\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles string repetition helper"
+      , prtSource =
+          [ "def repeat_phrase(phrase, count):"
+          , "    result = \"\""
+          , "    i = 0"
+          , "    while i < count:"
+          , "        result = result + phrase"
+          , "        i = i + 1"
+          , "    return result"
+          , ""
+          , "print(repeat_phrase(\"ha\", 3))"
+          ]
+      , prtExpectedStdOut = "hahaha\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles doubled range accumulation"
+      , prtSource =
+          [ "def double_sum(limit):"
+          , "    total = 0"
+          , "    for i in range(limit):"
+          , "        total = total + (i * 2)"
+          , "    return total"
+          , ""
+          , "print(double_sum(4))"
+          ]
+      , prtExpectedStdOut = "12\n"
+      }
   ]
 
 runPythonRuntimeTest :: FilePath -> PythonRuntimeTest -> Expectation
