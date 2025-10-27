@@ -36,6 +36,7 @@ spec = describe "C++ Code Generation" $ do
   declarationGenerationSpec
   pythonGlobalSpec
   goPrintingSpec
+  goEndToEndSpec
   pythonEndToEndSpec
 
 typeMappingSpec :: Spec
@@ -197,6 +198,351 @@ goPrintingSpec = describe "Go fmt translation" $ do
             containsCoutCall expr `shouldBe` False
           _ -> expectationFailure "expected fmt.Printf to produce expression statement"
       _ -> expectationFailure "expected generated main function"
+
+goEndToEndSpec :: Spec
+goEndToEndSpec = describe "Go end-to-end compilation" $ do
+  maybeCompiler <- runIO findCppCompiler
+  case maybeCompiler of
+    Nothing ->
+      it "requires an available C++ compiler" $
+        expectationFailure "No C++ compiler found in PATH"
+    Just compiler ->
+      for_ goRuntimeTests $ \testCase ->
+        it (grtName testCase) $
+          runGoRuntimeTest compiler testCase
+
+data GoRuntimeTest = GoRuntimeTest
+  { grtName :: String
+  , grtSource :: [String]
+  , grtExpectedStdOut :: String
+  }
+
+goRuntimeTests :: [GoRuntimeTest]
+goRuntimeTests =
+  [ GoRuntimeTest
+      { grtName = "compiles go println constant"
+      , grtSource =
+          goProgram
+            []
+            [ "fmt.Println(\"hello from go\")"
+            ]
+      , grtExpectedStdOut = "hello from go\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go addition"
+      , grtSource =
+          goProgram
+            []
+            [ "fmt.Println(21 + 21)"
+            ]
+      , grtExpectedStdOut = "42\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go multiplication"
+      , grtSource =
+          goProgram
+            []
+            [ "fmt.Println(6 * 7)"
+            ]
+      , grtExpectedStdOut = "42\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go function call"
+      , grtSource =
+          goProgram
+            [ "func double(x int) int {"
+            , "    return x * 2"
+            , "}"
+            ]
+            [ "fmt.Println(double(21))"
+            ]
+      , grtExpectedStdOut = "42\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go nested functions"
+      , grtSource =
+          goProgram
+            [ "func double(x int) int {"
+            , "    return x * 2"
+            , "}"
+            , ""
+            , "func quad(x int) int {"
+            , "    return double(double(x))"
+            , "}"
+            ]
+            [ "fmt.Println(quad(3))"
+            ]
+      , grtExpectedStdOut = "12\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go factorial recursion"
+      , grtSource =
+          goProgram
+            [ "func factorial(n int) int {"
+            , "    if n <= 1 {"
+            , "        return 1"
+            , "    }"
+            , "    return n * factorial(n-1)"
+            , "}"
+            ]
+            [ "fmt.Println(factorial(5))"
+            ]
+      , grtExpectedStdOut = "120\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go fibonacci recursion"
+      , grtSource =
+          goProgram
+            [ "func fib(n int) int {"
+            , "    if n <= 1 {"
+            , "        return n"
+            , "    }"
+            , "    return fib(n-1) + fib(n-2)"
+            , "}"
+            ]
+            [ "fmt.Println(fib(6))"
+            ]
+      , grtExpectedStdOut = "8\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go while-style loop"
+      , grtSource =
+          goProgram
+            []
+            [ "i := 0"
+            , "for i < 3 {"
+            , "    fmt.Println(i)"
+            , "    i = i + 1"
+            , "}"
+            ]
+      , grtExpectedStdOut = unlines ["0", "1", "2"]
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go for loop summation"
+      , grtSource =
+          goProgram
+            []
+            [ "sum := 0"
+            , "for i := 1; i <= 5; i = i + 1 {"
+            , "    sum = sum + i"
+            , "}"
+            , "fmt.Println(sum)"
+            ]
+      , grtExpectedStdOut = "15\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go for loop with increment operator"
+      , grtSource =
+          goProgram
+            []
+            [ "total := 0"
+            , "for i := 0; i < 4; i++ {"
+            , "    total = total + i"
+            , "}"
+            , "fmt.Println(total)"
+            ]
+      , grtExpectedStdOut = "6\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go if else true branch"
+      , grtSource =
+          goProgram
+            []
+            [ "value := 10"
+            , "if value > 5 {"
+            , "    fmt.Println(\"greater\")"
+            , "} else {"
+            , "    fmt.Println(\"smaller\")"
+            , "}"
+            ]
+      , grtExpectedStdOut = "greater\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go if else false branch"
+      , grtSource =
+          goProgram
+            []
+            [ "value := 1"
+            , "if value > 5 {"
+            , "    fmt.Println(\"greater\")"
+            , "} else {"
+            , "    fmt.Println(\"smaller\")"
+            , "}"
+            ]
+      , grtExpectedStdOut = "smaller\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go boolean logic"
+      , grtSource =
+          goProgram
+            []
+            [ "a := true"
+            , "b := false"
+            , "if a && !b {"
+            , "    fmt.Println(\"pass\")"
+            , "} else {"
+            , "    fmt.Println(\"fail\")"
+            , "}"
+            ]
+      , grtExpectedStdOut = "pass\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go printf formatting"
+      , grtSource =
+          goProgram
+            []
+            [ "fmt.Printf(\"value: %d\\n\", 7)"
+            ]
+      , grtExpectedStdOut = "value: 7\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go print without newline"
+      , grtSource =
+          goProgram
+            []
+            [ "fmt.Print(\"hello\")"
+            ]
+      , grtExpectedStdOut = "hello"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go println multiple arguments"
+      , grtSource =
+          goProgram
+            []
+            [ "value := 7"
+            , "fmt.Println(\"value:\", value)"
+            ]
+      , grtExpectedStdOut = "value: 7\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go string concatenation"
+      , grtSource =
+          goProgram
+            []
+            [ "prefix := \"flux\""
+            , "suffix := \"us\""
+            , "fmt.Println(prefix + suffix)"
+            ]
+      , grtExpectedStdOut = "fluxus\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go subtraction chain"
+      , grtSource =
+          goProgram
+            []
+            [ "value := 30"
+            , "value = value - 12"
+            , "value = value - 4"
+            , "fmt.Println(value)"
+            ]
+      , grtExpectedStdOut = "14\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go nested loops accumulation"
+      , grtSource =
+          goProgram
+            []
+            [ "count := 0"
+            , "for i := 0; i < 2; i = i + 1 {"
+            , "    for j := 0; j < 3; j = j + 1 {"
+            , "        count = count + 1"
+            , "    }"
+            , "}"
+            , "fmt.Println(count)"
+            ]
+      , grtExpectedStdOut = "6\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go boolean function invocation"
+      , grtSource =
+          goProgram
+            [ "func isPositive(n int) bool {"
+            , "    if n > 0 {"
+            , "        return true"
+            , "    }"
+            , "    return false"
+            , "}"
+            ]
+            [ "if isPositive(5) {"
+            , "    fmt.Println(\"positive\")"
+            , "} else {"
+            , "    fmt.Println(\"non-positive\")"
+            , "}"
+            ]
+      , grtExpectedStdOut = "positive\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go string function"
+      , grtSource =
+          goProgram
+            [ "func greet(name string) string {"
+            , "    return \"Hello \" + name"
+            , "}"
+            ]
+            [ "fmt.Println(greet(\"Fluxus\"))"
+            ]
+      , grtExpectedStdOut = "Hello Fluxus\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go helper compute function"
+      , grtSource =
+          goProgram
+            [ "func compute() int {"
+            , "    result := 0"
+            , "    for i := 1; i <= 3; i = i + 1 {"
+            , "        result = result + i"
+            , "    }"
+            , "    return result"
+            , "}"
+            ]
+            [ "fmt.Println(compute())"
+            ]
+      , grtExpectedStdOut = "6\n"
+      }
+  ]
+
+runGoRuntimeTest :: FilePath -> GoRuntimeTest -> Expectation
+runGoRuntimeTest compiler (GoRuntimeTest name sourceLines expectedStdOut) =
+  withSystemTempDirectory ("fluxus-go-cpp-" ++ sanitizeName name) $ \tmpDir -> do
+    let sourcePath = tmpDir </> "input.go"
+        outputBinary = tmpDir </> "program"
+        goSource = unlines sourceLines
+        config =
+          defaultConfig
+            { ccSourceLanguage = Go
+            , ccCppCompiler = T.pack compiler
+            , ccOutputPath = Just outputBinary
+            , ccVerboseLevel = 0
+            , ccWorkDirectory = Just tmpDir
+            , ccKeepIntermediates = True
+            }
+    writeFile sourcePath goSource
+    compileResult <- runCompiler config $ do
+      setupCompilerEnvironment
+      compileFile sourcePath
+    case compileResult of
+      Left err ->
+        expectationFailure $ "Compilation failed: " <> show err
+      Right (finalBinary, _) -> do
+        finalBinary `shouldBe` outputBinary
+        cppExists <- doesFileExist (replaceExtension sourcePath ".cpp")
+        cppExists `shouldBe` True
+        binaryExists <- doesFileExist finalBinary
+        binaryExists `shouldBe` True
+        (exitCode, stdOut, _) <- readProcessWithExitCode finalBinary [] ""
+        exitCode `shouldBe` ExitSuccess
+        stdOut `shouldBe` expectedStdOut
+
+goProgram :: [String] -> [String] -> [String]
+goProgram helperDecls mainBody =
+  let header = ["package main", "", "import \"fmt\""]
+      helpers = if null helperDecls then [] else [""] ++ helperDecls
+      mainBlock =
+        ["", "func main() {"] ++ indentLines mainBody ++ ["}"]
+  in header ++ helpers ++ mainBlock
+
+indentLines :: [String] -> [String]
+indentLines = map ("    " ++)
 
 pythonEndToEndSpec :: Spec
 pythonEndToEndSpec = describe "Python end-to-end compilation" $ do
