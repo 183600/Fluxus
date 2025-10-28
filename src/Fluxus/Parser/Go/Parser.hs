@@ -351,9 +351,51 @@ parseExprStmt = GoExprStmt <$> parseExpression
 parseAssignment :: GoParser GoStmt
 parseAssignment = do
   lhs <- parseExpressionList
-  void $ goOperatorP GoOpAssign
+  op <- parseAssignOperator
   rhs <- parseExpressionList
-  return $ GoAssign lhs rhs
+  buildAssignment op lhs rhs
+  where
+    parseAssignOperator = do
+      Located _ token <- satisfy isAssignToken
+      case token of
+        GoTokenOperator op -> return op
+        _ -> fail "Expected assignment operator"
+    isAssignToken (Located _ (GoTokenOperator op)) = op `elem` assignOps
+    isAssignToken _ = False
+    assignOps =
+      [ GoOpAssign
+      , GoOpPlusAssign
+      , GoOpMinusAssign
+      , GoOpMultAssign
+      , GoOpDivAssign
+      , GoOpModAssign
+      , GoOpBitAndAssign
+      , GoOpBitOrAssign
+      , GoOpBitXorAssign
+      , GoOpBitClearAssign
+      , GoOpLeftShiftAssign
+      , GoOpRightShiftAssign
+      ]
+    buildAssignment GoOpAssign lhs rhs = return $ GoAssign lhs rhs
+    buildAssignment op [lhsExpr] [rhsExpr] =
+      case compoundBinary op of
+        Just binOp ->
+          let combined = located' $ GoBinaryOp binOp lhsExpr rhsExpr
+          in return $ GoAssign [lhsExpr] [combined]
+        Nothing -> fail "Unsupported compound assignment operator"
+    buildAssignment _ _ _ = fail "Compound assignment requires single operands"
+    compoundBinary GoOpPlusAssign = Just OpAdd
+    compoundBinary GoOpMinusAssign = Just OpSub
+    compoundBinary GoOpMultAssign = Just OpMul
+    compoundBinary GoOpDivAssign = Just OpDiv
+    compoundBinary GoOpModAssign = Just OpMod
+    compoundBinary GoOpBitAndAssign = Just OpBitAnd
+    compoundBinary GoOpBitOrAssign = Just OpBitOr
+    compoundBinary GoOpBitXorAssign = Just OpBitXor
+    compoundBinary GoOpLeftShiftAssign = Just OpShiftL
+    compoundBinary GoOpRightShiftAssign = Just OpShiftR
+    compoundBinary GoOpBitClearAssign = Just OpBitXor
+    compoundBinary _ = Nothing
 
 -- | Parse short variable declaration
 parseShortVarDecl :: GoParser GoStmt

@@ -454,7 +454,6 @@ inferLiteralShape (LString _) = stringShape
 inferLiteralShape (LBytes _) = bytesShape
 inferLiteralShape (LChar _) = inferShape TChar
 inferLiteralShape LNone = unknownShape
-inferLiteralShape _ = unknownShape  -- Catch-all for other literal types
 
 combineBinaryShapes :: BinaryOp -> ShapeInfo -> ShapeInfo -> ShapeAnalysisM ShapeInfo
 combineBinaryShapes OpConcat leftShape rightShape

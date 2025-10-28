@@ -201,7 +201,7 @@ lexerTokensSpec = describe "Go Lexer - tokens coverage" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right toks ->
         map locatedValue toks `shouldBe`
-          [ GoTokenFloat "123"
+          [ GoTokenInt "123"
           , GoTokenFloat "3.14"
           , GoTokenFloat "1e10"
           , GoTokenFloat "2.5e-3"
@@ -259,12 +259,9 @@ lexerTokensSpec = describe "Go Lexer - tokens coverage" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right toks ->
         map locatedValue toks `shouldBe`
-          [ GoTokenFloat "0"
-          , GoTokenIdent "xFF"
-          , GoTokenFloat "0"
-          , GoTokenIdent "o77"
-          , GoTokenFloat "0"
-          , GoTokenIdent "b1010"
+          [ GoTokenInt "0xFF"
+          , GoTokenInt "0o77"
+          , GoTokenInt "0b1010"
           ]
 
   it "tokenizes string escape sequences" $ do
