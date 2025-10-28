@@ -691,15 +691,24 @@ parseAtom = located $ choice
 -- | Parse Go literals
 parseGoLiteral :: GoParser GoExpr
 parseGoLiteral = do
-  Located _ token <- anySingle
+  Located _ token <- satisfy isLiteralToken
   case token of
-    GoTokenInt text -> return $ GoLiteral $ GoInt (read $ T.unpack text)
-    GoTokenFloat text -> return $ GoLiteral $ GoFloat (read $ T.unpack text)
-    GoTokenImag text -> return $ GoLiteral $ GoImag (read $ T.unpack $ T.init text)  -- Remove 'i'
-    GoTokenString text -> return $ GoLiteral $ GoString text
-    GoTokenRawString text -> return $ GoLiteral $ GoRawString text
-    GoTokenRune char -> return $ GoLiteral $ GoRune char
+    GoTokenInt text -> pure $ GoLiteral $ GoInt (read $ T.unpack text)
+    GoTokenFloat text -> pure $ GoLiteral $ GoFloat (read $ T.unpack text)
+    GoTokenImag text -> pure $ GoLiteral $ GoImag (read $ T.unpack $ T.init text)  -- Remove 'i'
+    GoTokenString text -> pure $ GoLiteral $ GoString text
+    GoTokenRawString text -> pure $ GoLiteral $ GoRawString text
+    GoTokenRune char -> pure $ GoLiteral $ GoRune char
     _ -> fail "Expected literal"
+  where
+    isLiteralToken (Located _ tok) = case tok of
+      GoTokenInt _ -> True
+      GoTokenFloat _ -> True
+      GoTokenImag _ -> True
+      GoTokenString _ -> True
+      GoTokenRawString _ -> True
+      GoTokenRune _ -> True
+      _ -> False
 
 -- | Parse identifiers as expressions
 parseGoIdentifierExpr :: GoParser GoExpr
@@ -937,18 +946,27 @@ parseReceiver = do
 -- | Utility parsers
 parseGoIdentifier :: GoParser Identifier
 parseGoIdentifier = do
-  Located _ token <- anySingle
+  Located _ token <- satisfy isIdentifierToken
   case token of
-    GoTokenIdent text -> return $ Identifier text
+    GoTokenIdent text -> pure $ Identifier text
     _ -> fail "Expected identifier"
+  where
+    isIdentifierToken (Located _ tok) = case tok of
+      GoTokenIdent _ -> True
+      _ -> False
 
 parseGoString :: GoParser Text
 parseGoString = do
-  Located _ token <- anySingle
+  Located _ token <- satisfy isStringToken
   case token of
-    GoTokenString text -> return text
-    GoTokenRawString text -> return text
+    GoTokenString text -> pure text
+    GoTokenRawString text -> pure text
     _ -> fail "Expected string"
+  where
+    isStringToken (Located _ tok) = case tok of
+      GoTokenString _ -> True
+      GoTokenRawString _ -> True
+      _ -> False
 
 parseIdentifierList :: GoParser [Identifier]
 parseIdentifierList = parseGoIdentifier `sepBy1` goDelimiterP GoDelimComma
