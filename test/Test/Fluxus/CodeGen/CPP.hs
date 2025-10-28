@@ -499,6 +499,155 @@ goRuntimeTests =
             ]
       , grtExpectedStdOut = "6\n"
       }
+  , GoRuntimeTest
+      { grtName = "compiles go modulo operation"
+      , grtSource =
+          goProgram
+            []
+            [ "fmt.Println(41 % 6)"
+            ]
+      , grtExpectedStdOut = "5\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go integer division"
+      , grtSource =
+          goProgram
+            []
+            [ "fmt.Println(41 / 5)"
+            ]
+      , grtExpectedStdOut = "8\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go decrementing for loop"
+      , grtSource =
+          goProgram
+            []
+            [ "for i := 3; i > 0; i = i - 1 {"
+            , "    fmt.Println(i)"
+            , "}"
+            ]
+      , grtExpectedStdOut = unlines ["3", "2", "1"]
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go if else-if chain"
+      , grtSource =
+          goProgram
+            []
+            [ "value := 0"
+            , "if value > 0 {"
+            , "    fmt.Println(\"positive\")"
+            , "} else if value == 0 {"
+            , "    fmt.Println(\"zero\")"
+            , "} else {"
+            , "    fmt.Println(\"negative\")"
+            , "}"
+            ]
+      , grtExpectedStdOut = "zero\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go nested while loops count"
+      , grtSource =
+          goProgram
+            []
+            [ "outer := 0"
+            , "count := 0"
+            , "for outer < 2 {"
+            , "    inner := 0"
+            , "    for inner < 2 {"
+            , "        count = count + 1"
+            , "        inner = inner + 1"
+            , "    }"
+            , "    outer = outer + 1"
+            , "}"
+            , "fmt.Println(count)"
+            ]
+      , grtExpectedStdOut = "4\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go iterative factorial function"
+      , grtSource =
+          goProgram
+            [ "func factorialIterative(n int) int {"
+            , "    result := 1"
+            , "    for i := 2; i <= n; i = i + 1 {"
+            , "        result = result * i"
+            , "    }"
+            , "    return result"
+            , "}"
+            ]
+            [ "fmt.Println(factorialIterative(5))"
+            ]
+      , grtExpectedStdOut = "120\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go even counter function"
+      , grtSource =
+          goProgram
+            [ "func countEven(limit int) int {"
+            , "    total := 0"
+            , "    for i := 0; i <= limit; i = i + 1 {"
+            , "        if i % 2 == 0 {"
+            , "            total = total + 1"
+            , "        }"
+            , "    }"
+            , "    return total"
+            , "}"
+            ]
+            [ "fmt.Println(countEven(5))"
+            ]
+      , grtExpectedStdOut = "3\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go max of three function"
+      , grtSource =
+          goProgram
+            [ "func maxOfThree(a int, b int, c int) int {"
+            , "    max := a"
+            , "    if b > max {"
+            , "        max = b"
+            , "    }"
+            , "    if c > max {"
+            , "        max = c"
+            , "    }"
+            , "    return max"
+            , "}"
+            ]
+            [ "fmt.Println(maxOfThree(7, 3, 9))"
+            ]
+      , grtExpectedStdOut = "9\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go string repetition function"
+      , grtSource =
+          goProgram
+            [ "func repeat(phrase string, count int) string {"
+            , "    result := \"\""
+            , "    for i := 0; i < count; i = i + 1 {"
+            , "        result = result + phrase"
+            , "    }"
+            , "    return result"
+            , "}"
+            ]
+            [ "fmt.Println(repeat(\"ha\", 3))"
+            ]
+      , grtExpectedStdOut = "hahaha\n"
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go difference compute function"
+      , grtSource =
+          goProgram
+            [ "func computeDifference() int {"
+            , "    value := 50"
+            , "    for i := 0; i < 3; i = i + 1 {"
+            , "        value = value - 5"
+            , "    }"
+            , "    return value"
+            , "}"
+            ]
+            [ "fmt.Println(computeDifference())"
+            ]
+      , grtExpectedStdOut = "35\n"
+      }
   ]
 
 runGoRuntimeTest :: FilePath -> GoRuntimeTest -> Expectation
@@ -999,6 +1148,120 @@ pythonRuntimeTests =
           , "print(double_sum(4))"
           ]
       , prtExpectedStdOut = "12\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles modulo operation"
+      , prtSource =
+          [ "value = 41 % 6"
+          , "print(value)"
+          ]
+      , prtExpectedStdOut = "5\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles floor division operation"
+      , prtSource =
+          [ "value = 41 // 3"
+          , "print(value)"
+          ]
+      , prtExpectedStdOut = "13\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles nested while loops"
+      , prtSource =
+          [ "outer = 0"
+          , "count = 0"
+          , "while outer < 2:"
+          , "    inner = 0"
+          , "    while inner < 2:"
+          , "        count = count + 1"
+          , "        inner = inner + 1"
+          , "    outer = outer + 1"
+          , "print(count)"
+          ]
+      , prtExpectedStdOut = "4\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles if elif chain"
+      , prtSource =
+          [ "value = 0"
+          , "if value > 0:"
+          , "    print(\"positive\")"
+          , "elif value == 0:"
+          , "    print(\"zero\")"
+          , "else:"
+          , "    print(\"negative\")"
+          ]
+      , prtExpectedStdOut = "zero\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles string multiplication"
+      , prtSource =
+          [ "print(\"ha\" * 3)"
+          ]
+      , prtExpectedStdOut = "hahaha\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles boolean list counting"
+      , prtSource =
+          [ "values = [True, False, True, True]"
+          , "count = 0"
+          , "for value in values:"
+          , "    if value:"
+          , "        count = count + 1"
+          , "print(count)"
+          ]
+      , prtExpectedStdOut = "3\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles min function loop"
+      , prtSource =
+          [ "def find_min(values):"
+          , "    smallest = values[0]"
+          , "    for value in values:"
+          , "        if value < smallest:"
+          , "            smallest = value"
+          , "    return smallest"
+          , ""
+          , "print(find_min([5, 3, 7, 2]))"
+          ]
+      , prtExpectedStdOut = "2\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles even counter function"
+      , prtSource =
+          [ "def count_even(limit):"
+          , "    total = 0"
+          , "    for i in range(limit + 1):"
+          , "        if i % 2 == 0:"
+          , "            total = total + 1"
+          , "    return total"
+          , ""
+          , "print(count_even(5))"
+          ]
+      , prtExpectedStdOut = "3\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles iterative factorial function"
+      , prtSource =
+          [ "def factorial_iterative(n):"
+          , "    result = 1"
+          , "    for i in range(2, n + 1):"
+          , "        result = result * i"
+          , "    return result"
+          , ""
+          , "print(factorial_iterative(5))"
+          ]
+      , prtExpectedStdOut = "120\n"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles loop string accumulation"
+      , prtSource =
+          [ "result = \"\""
+          , "for i in range(3):"
+          , "    result = result + f\"{i}\""
+          , "print(result)"
+          ]
+      , prtExpectedStdOut = "012\n"
       }
   ]
 
