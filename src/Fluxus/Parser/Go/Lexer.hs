@@ -36,7 +36,7 @@ import qualified Data.Text as T
 import Data.Void (Void)
 import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
-import Text.Megaparsec (many, choice, try, notFollowedBy, optional, eof, getSourcePos, satisfy, takeWhileP, manyTill, anySingle, (<|>))
+import Text.Megaparsec (many, choice, try, notFollowedBy, optional, eof, getSourcePos, satisfy, takeWhileP, manyTill, anySingle, (<|>), empty)
 import Data.Functor (($>))
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
@@ -327,9 +327,11 @@ goNumberLiteral = choice
         sign <- optional (char '+' <|> char '-')
         expDigits <- MP.some digitChar
         return $ 'e' : maybe "" (:[]) sign ++ expDigits
-      
-      let result = intPart ++ maybe "" ('.':) fractPart ++ maybe "" id expPart
-      return $ GoTokenFloat (T.pack result)
+      case (fractPart, expPart) of
+        (Nothing, Nothing) -> empty
+        _ ->
+          let result = intPart ++ maybe "" ('.':) fractPart ++ maybe "" id expPart
+          in return $ GoTokenFloat (T.pack result)
     
     goHexInt = do
       _ <- string "0x" <|> string "0X"
