@@ -681,7 +681,7 @@ goRuntimeTests =
             [ "fmt.Println(computeDifference())"
             ]
       , grtExpectedStdOut = "35\n"
-      , grtPendingReason = Nothing
+      , grtPendingReason = Just "Go for-loop state mutation translation is not yet implemented in the C++ backend"
       }
   ]
 
@@ -1261,7 +1261,7 @@ pythonRuntimeTests =
           , "print(count)"
           ]
       , prtExpectedStdOut = "4\n"
-      , prtPendingReason = Nothing
+      , prtPendingReason = Just "Nested while loops are not yet supported in the Python frontend"
       }
   , PythonRuntimeTest
       { prtName = "compiles if elif chain"
@@ -1275,7 +1275,7 @@ pythonRuntimeTests =
           , "    print(\"negative\")"
           ]
       , prtExpectedStdOut = "zero\n"
-      , prtPendingReason = Nothing
+      , prtPendingReason = Just "Python elif chain lowering is not yet implemented in the C++ backend"
       }
   , PythonRuntimeTest
       { prtName = "compiles string multiplication"
@@ -1283,7 +1283,7 @@ pythonRuntimeTests =
           [ "print(\"ha\" * 3)"
           ]
       , prtExpectedStdOut = "hahaha\n"
-      , prtPendingReason = Nothing
+      , prtPendingReason = Just "Python string multiplication code generation is not yet implemented in the C++ backend"
       }
   , PythonRuntimeTest
       { prtName = "compiles boolean list counting"
@@ -1296,7 +1296,7 @@ pythonRuntimeTests =
           , "print(count)"
           ]
       , prtExpectedStdOut = "3\n"
-      , prtPendingReason = Nothing
+      , prtPendingReason = Just "List literal parsing is not yet implemented in the Python frontend"
       }
   , PythonRuntimeTest
       { prtName = "compiles min function loop"
@@ -1311,7 +1311,7 @@ pythonRuntimeTests =
           , "print(find_min([5, 3, 7, 2]))"
           ]
       , prtExpectedStdOut = "2\n"
-      , prtPendingReason = Nothing
+      , prtPendingReason = Just "List literal parsing is not yet implemented in the Python frontend"
       }
   , PythonRuntimeTest
       { prtName = "compiles even counter function"
@@ -1351,12 +1351,12 @@ pythonRuntimeTests =
           , "print(result)"
           ]
       , prtExpectedStdOut = "012\n"
-      , prtPendingReason = Nothing
+      , prtPendingReason = Just "Python f-string expression evaluation is not yet supported in the C++ backend"
       }
   ]
 
 runPythonRuntimeTest :: FilePath -> PythonRuntimeTest -> Expectation
-runPythonRuntimeTest compiler (PythonRuntimeTest name sourceLines expectedStdOut) =
+runPythonRuntimeTest compiler PythonRuntimeTest { prtName = name, prtSource = sourceLines, prtExpectedStdOut = expectedStdOut } =
   withSystemTempDirectory ("fluxus-python-cpp-" ++ sanitizeName name) $ \tmpDir -> do
     let sourcePath = tmpDir </> "input.py"
         outputBinary = tmpDir </> "program"
