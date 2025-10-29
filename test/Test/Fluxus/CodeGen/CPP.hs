@@ -683,6 +683,296 @@ goRuntimeTests =
       , grtExpectedStdOut = "35\n"
       , grtPendingReason = Just "Go for-loop state mutation translation is not yet implemented in the C++ backend"
       }
+  , GoRuntimeTest
+      { grtName = "compiles go arithmetic precedence"
+      , grtSource =
+          goProgram
+            []
+            [ "fmt.Println((2 + 3) * 4)"
+            ]
+      , grtExpectedStdOut = "20\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go combined arithmetic updates"
+      , grtSource =
+          goProgram
+            []
+            [ "value := 10"
+            , "value = value * 3"
+            , "value = value - 7"
+            , "fmt.Println(value)"
+            ]
+      , grtExpectedStdOut = "23\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go chained integer division"
+      , grtSource =
+          goProgram
+            []
+            [ "fmt.Println(100 / 5 / 2)"
+            ]
+      , grtExpectedStdOut = "10\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go subtraction expression"
+      , grtSource =
+          goProgram
+            []
+            [ "fmt.Println(13 - 8)"
+            ]
+      , grtExpectedStdOut = "5\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go even branch"
+      , grtSource =
+          goProgram
+            []
+            [ "n := 4"
+            , "if n % 2 == 0 {"
+            , "    fmt.Println(\"even\")"
+            , "} else {"
+            , "    fmt.Println(\"odd\")"
+            , "}"
+            ]
+      , grtExpectedStdOut = "even\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go odd branch"
+      , grtSource =
+          goProgram
+            []
+            [ "n := 5"
+            , "if n % 2 == 0 {"
+            , "    fmt.Println(\"even\")"
+            , "} else {"
+            , "    fmt.Println(\"odd\")"
+            , "}"
+            ]
+      , grtExpectedStdOut = "odd\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go factorial loop in main"
+      , grtSource =
+          goProgram
+            []
+            [ "result := 1"
+            , "for i := 2; i <= 5; i = i + 1 {"
+            , "    result = result * i"
+            , "}"
+            , "fmt.Println(result)"
+            ]
+      , grtExpectedStdOut = "120\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go sum of squares loop"
+      , grtSource =
+          goProgram
+            []
+            [ "sum := 0"
+            , "for i := 0; i < 5; i = i + 1 {"
+            , "    sum = sum + (i * i)"
+            , "}"
+            , "fmt.Println(sum)"
+            ]
+      , grtExpectedStdOut = "30\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go nested loops product accumulation"
+      , grtSource =
+          goProgram
+            []
+            [ "total := 0"
+            , "for i := 1; i <= 3; i = i + 1 {"
+            , "    for j := 1; j <= 2; j = j + 1 {"
+            , "        total = total + (i * j)"
+            , "    }"
+            , "}"
+            , "fmt.Println(total)"
+            ]
+      , grtExpectedStdOut = "18\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go decrementing sum loop"
+      , grtSource =
+          goProgram
+            []
+            [ "sum := 0"
+            , "for i := 5; i > 0; i = i - 1 {"
+            , "    sum = sum + i"
+            , "}"
+            , "fmt.Println(sum)"
+            ]
+      , grtExpectedStdOut = "15\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go nested conditional selection"
+      , grtSource =
+          goProgram
+            []
+            [ "value := 7"
+            , "if value > 10 {"
+            , "    fmt.Println(\"large\")"
+            , "} else {"
+            , "    if value > 5 {"
+            , "        fmt.Println(\"medium\")"
+            , "    } else {"
+            , "        fmt.Println(\"small\")"
+            , "    }"
+            , "}"
+            ]
+      , grtExpectedStdOut = "medium\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go recursive summation function"
+      , grtSource =
+          goProgram
+            [ "func sumDown(n int) int {"
+            , "    if n == 0 {"
+            , "        return 0"
+            , "    }"
+            , "    return n + sumDown(n-1)"
+            , "}"
+            ]
+            [ "fmt.Println(sumDown(4))"
+            ]
+      , grtExpectedStdOut = "10\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go recursive power function"
+      , grtSource =
+          goProgram
+            [ "func power(base int, exp int) int {"
+            , "    if exp == 0 {"
+            , "        return 1"
+            , "    }"
+            , "    return base * power(base, exp-1)"
+            , "}"
+            ]
+            [ "fmt.Println(power(3, 3))"
+            ]
+      , grtExpectedStdOut = "27\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go boolean helper branch"
+      , grtSource =
+          goProgram
+            [ "func isAdult(age int) bool {"
+            , "    if age >= 18 {"
+            , "        return true"
+            , "    }"
+            , "    return false"
+            , "}"
+            ]
+            [ "if isAdult(21) {"
+            , "    fmt.Println(\"adult\")"
+            , "} else {"
+            , "    fmt.Println(\"minor\")"
+            , "}"
+            ]
+      , grtExpectedStdOut = "adult\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go describe function"
+      , grtSource =
+          goProgram
+            [ "func describe(n int) string {"
+            , "    if n < 0 {"
+            , "        return \"negative\""
+            , "    } else if n == 0 {"
+            , "        return \"zero\""
+            , "    }"
+            , "    return \"positive\""
+            , "}"
+            ]
+            [ "fmt.Println(describe(0))"
+            ]
+      , grtExpectedStdOut = "zero\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go print and println sequence"
+      , grtSource =
+          goProgram
+            []
+            [ "fmt.Print(\"go\")"
+            , "fmt.Println(\"lang\")"
+            ]
+      , grtExpectedStdOut = "golang\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go unconditional branch assignment"
+      , grtSource =
+          goProgram
+            []
+            [ "value := 1"
+            , "if true {"
+            , "    value = value + 5"
+            , "}"
+            , "fmt.Println(value)"
+            ]
+      , grtExpectedStdOut = "6\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go sequential accumulation loop"
+      , grtSource =
+          goProgram
+            []
+            [ "total := 0"
+            , "for i := 0; i < 4; i = i + 1 {"
+            , "    total = total + (i + 1)"
+            , "}"
+            , "fmt.Println(total)"
+            ]
+      , grtExpectedStdOut = "10\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go clamp function"
+      , grtSource =
+          goProgram
+            [ "func clamp(n int) int {"
+            , "    if n < 0 {"
+            , "        return 0"
+            , "    } else if n > 10 {"
+            , "        return 10"
+            , "    }"
+            , "    return n"
+            , "}"
+            ]
+            [ "fmt.Println(clamp(12))"
+            ]
+      , grtExpectedStdOut = "10\n"
+      , grtPendingReason = Nothing
+      }
+  , GoRuntimeTest
+      { grtName = "compiles go multiply helper"
+      , grtSource =
+          goProgram
+            [ "func multiply(a int, b int) int {"
+            , "    return a * b"
+            , "}"
+            ]
+            [ "fmt.Println(multiply(6, 7))"
+            ]
+      , grtExpectedStdOut = "42\n"
+      , grtPendingReason = Nothing
+      }
   ]
 
 runGoRuntimeTest :: FilePath -> GoRuntimeTest -> Expectation
