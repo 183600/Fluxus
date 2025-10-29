@@ -34,8 +34,8 @@ main = do
         Right config -> do
           -- Validate configuration
           case validateConfig config of
-            Left (ConfigurationError msg) -> do
-              hPutStrLn stderr $ "Invalid configuration: " ++ T.unpack msg
+            Left validationError -> do
+              hPutStrLn stderr $ "Invalid configuration: " ++ formatCompilerError validationError
               exitFailure
             Right validConfig -> runCompilerMain validConfig args
 
