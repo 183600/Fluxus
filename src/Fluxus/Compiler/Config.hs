@@ -324,14 +324,6 @@ configToArgs config = concat
   , ["--target", showTargetPlatform $ ccTargetPlatform config]
   ]
 
--- | Convert target platform to string
-showTargetPlatform :: TargetPlatform -> String
-showTargetPlatform = \case
-  Linux_x86_64 -> "linux-x86_64"
-  Linux_ARM64 -> "linux-arm64"
-  Darwin_x86_64 -> "darwin-x86_64"
-  Darwin_ARM64 -> "darwin-arm64"
-  Windows_x86_64 -> "windows-x86_64"
 
 -- | Pretty print configuration
 printConfig :: CompilerConfig -> IO ()
@@ -355,65 +347,4 @@ printConfig config = do
   putStrLn $ "Static Analysis: " ++ show (ccEnableAnalysis config)
   putStrLn "=============================================="
 
--- | JSON instances for configuration
-instance ToJSON CompilerConfig where
-  toJSON config = object
-    [ "source_language" .= show (ccSourceLanguage config)
-    , "optimization_level" .= show (ccOptimizationLevel config)
-    , "target_platform" .= showTargetPlatform (ccTargetPlatform config)
-    , "output_path" .= ccOutputPath config
-    , "enable_interop" .= ccEnableInterop config
-    , "enable_debug_info" .= ccEnableDebugInfo config
-    , "enable_profiler" .= ccEnableProfiler config
-    , "enable_parallel" .= ccEnableParallel config
-    , "max_concurrency" .= ccMaxConcurrency config
-    , "include_paths" .= ccIncludePaths config
-    , "library_paths" .= ccLibraryPaths config
-    , "linked_libraries" .= ccLinkedLibraries config
-    , "cpp_standard" .= ccCppStandard config
-    , "cpp_compiler" .= ccCppCompiler config
-    , "verbose_level" .= ccVerboseLevel config
-    , "work_directory" .= ccWorkDirectory config
-    , "keep_intermediates" .= ccKeepIntermediates config
-    , "strict_mode" .= ccStrictMode config
-    , "enable_analysis" .= ccEnableAnalysis config
-    ]
 
-instance FromJSON CompilerConfig where
-  parseJSON = withObject "CompilerConfig" $ \o -> do
-    sourceLang <- o .:? "source_language" .!= ("Python" :: String)
-    optLevel <- o .:? "optimization_level" .!= ("O2" :: String)
-    targetPlatform <- o .:? "target_platform" .!= ("linux-x86_64" :: String)
-    
-    CompilerConfig
-      <$> pure (parseSourceLanguage sourceLang)
-      <*> pure (parseOptLevel optLevel)
-      <*> pure (fromMaybe Linux_x86_64 (parseTargetPlatform targetPlatform))
-      <*> o .:? "output_path"
-      <*> o .:? "enable_interop" .!= True
-      <*> o .:? "enable_debug_info" .!= False
-      <*> o .:? "enable_profiler" .!= False
-      <*> o .:? "enable_parallel" .!= True
-      <*> o .:? "max_concurrency" .!= 4
-      <*> o .:? "include_paths" .!= ["/usr/include", "/usr/local/include"]
-      <*> o .:? "library_paths" .!= ["/usr/lib", "/usr/local/lib"]
-      <*> o .:? "linked_libraries" .!= ["stdc++", "pthread"]
-      <*> o .:? "cpp_standard" .!= "c++20"
-      <*> o .:? "cpp_compiler" .!= "clang++"
-      <*> o .:? "verbose_level" .!= 1
-      <*> o .:? "work_directory"
-      <*> o .:? "keep_intermediates" .!= False
-      <*> o .:? "strict_mode" .!= False
-      <*> o .:? "enable_analysis" .!= True
-      <*> o .:? "stop_at_codegen" .!= False
-    where
-      parseSourceLanguage "Python" = Python
-      parseSourceLanguage "Go" = Go
-      parseSourceLanguage _ = Python
-      
-      parseOptLevel "O0" = O0
-      parseOptLevel "O1" = O1
-      parseOptLevel "O2" = O2
-      parseOptLevel "O3" = O3
-      parseOptLevel "Os" = Os
-      parseOptLevel _ = O2
