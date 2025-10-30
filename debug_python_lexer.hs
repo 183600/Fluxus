@@ -3,7 +3,7 @@
 -- | Simple test program to debug the Python lexer in Fluxus
 -- This program tests the lexer with simple Python expressions to identify tokenization issues
 
-module Main where
+module Main (main) where
 
 import Fluxus.Parser.Python.Lexer
 import Fluxus.AST.Common
@@ -27,8 +27,8 @@ testLexer testName input = do
 
 -- | Print a token with its location information
 printToken :: Located PythonToken -> IO ()
-printToken (Located span token) = do
-    let posStr = show (posLine (spanStart span)) ++ ":" ++ show (posColumn (spanStart span))
+printToken (Located loc token) = do
+    let posStr = show (posLine (spanStart loc)) ++ ":" ++ show (posColumn (spanStart loc))
     putStrLn $ "  " ++ posStr ++ " -> " ++ show token
 
 -- | Test cases for simple Python expressions

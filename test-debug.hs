@@ -3,9 +3,8 @@
 {-# LANGUAGE LambdaCase #-}
 
 -- | Test program to debug Python parser issues
-module Main where
+module Main (main) where
 
-import Control.Monad (void)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
@@ -124,7 +123,7 @@ analyzeParseError err tokens = do
   putStrLn $ "Parse error: " ++ show err
   
   putStrLn "\nTokens being parsed:"
-  mapM_ (\(i, token) -> putStrLn $ "  [" ++ show i ++ "] " ++ show token) (zip [0..] tokens)
+  mapM_ (\(i, token) -> putStrLn $ "  [" ++ show i ++ "] " ++ show token) (zip [0 :: Int ..] tokens)
   
   -- Check for common issues
   putStrLn "\nCommon issue checks:"

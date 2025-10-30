@@ -2,13 +2,12 @@
 {-# LANGUAGE LambdaCase #-}
 
 -- | Main entry point for the HyperStatic/CXX compiler
-module Main where
+module Main (main) where
 
 import System.Environment (getArgs)
 import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 import Control.Monad (when, unless)
-import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.List (isPrefixOf, isSuffixOf)
@@ -94,29 +93,29 @@ extractInputFiles = filter isInputFile
 -- | Format compiler error for display
 formatCompilerError :: CompilerError -> String
 formatCompilerError = \case
-  ParseError msg span -> 
-    "Parse error at " ++ formatSourceSpan span ++ ": " ++ T.unpack msg
-  TypeError msg span -> 
-    "Type error at " ++ formatSourceSpan span ++ ": " ++ T.unpack msg
-  OptimizationError msg -> 
+  ParseError msg srcSpan ->
+    "Parse error at " ++ formatSourceSpan srcSpan ++ ": " ++ T.unpack msg
+  TypeError msg srcSpan ->
+    "Type error at " ++ formatSourceSpan srcSpan ++ ": " ++ T.unpack msg
+  OptimizationError msg ->
     "Optimization error: " ++ T.unpack msg
-  CodeGenError msg -> 
+  CodeGenError msg ->
     "Code generation error: " ++ T.unpack msg
-  LinkError msg -> 
+  LinkError msg ->
     "Link error: " ++ T.unpack msg
-  FileSystemError msg path -> 
+  FileSystemError msg path ->
     "File system error with " ++ path ++ ": " ++ T.unpack msg
-  ConfigurationError msg -> 
+  ConfigurationError msg ->
     "Configuration error: " ++ T.unpack msg
-  RuntimeError msg -> 
+  RuntimeError msg ->
     "Runtime error: " ++ T.unpack msg
 
 -- | Format source span for display
 formatSourceSpan :: SourceSpan -> String
-formatSourceSpan span = 
-  T.unpack (spanFilename span) ++ ":" ++ 
-  show (posLine $ spanStart span) ++ ":" ++
-  show (posColumn $ spanStart span)
+formatSourceSpan sourceSpan =
+  T.unpack (spanFilename sourceSpan) ++ ":" ++
+  show (posLine $ spanStart sourceSpan) ++ ":" ++
+  show (posColumn $ spanStart sourceSpan)
 
 -- | Print compilation statistics
 printCompilationStats :: CompilerState -> IO ()
@@ -137,14 +136,14 @@ printCompilationStats state = do
 -- | Print a single warning
 printWarning :: CompilerWarning -> IO ()
 printWarning warning = case warning of
-  TypeWarning msg span -> 
-    TIO.putStrLn $ "  Warning: " <> msg <> " at " <> T.pack (formatSourceSpan span)
-  OptimizationWarning msg -> 
+  TypeWarning msg srcSpan ->
+    TIO.putStrLn $ "  Warning: " <> msg <> " at " <> T.pack (formatSourceSpan srcSpan)
+  OptimizationWarning msg ->
     TIO.putStrLn $ "  Warning: " <> msg
-  DeprecationWarning msg span -> 
-    TIO.putStrLn $ "  Deprecation warning: " <> msg <> " at " <> T.pack (formatSourceSpan span)
-  PerformanceWarning msg span -> 
-    TIO.putStrLn $ "  Performance warning: " <> msg <> " at " <> T.pack (formatSourceSpan span)
+  DeprecationWarning msg srcSpan ->
+    TIO.putStrLn $ "  Deprecation warning: " <> msg <> " at " <> T.pack (formatSourceSpan srcSpan)
+  PerformanceWarning msg srcSpan ->
+    TIO.putStrLn $ "  Performance warning: " <> msg <> " at " <> T.pack (formatSourceSpan srcSpan)
 
 -- | Print usage information
 printUsage :: IO ()
