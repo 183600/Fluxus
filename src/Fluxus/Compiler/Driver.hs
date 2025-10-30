@@ -29,6 +29,7 @@ module Fluxus.Compiler.Driver
   , defaultConfig
   , validateConfig
   , setupCompilerEnvironment
+  , showTargetPlatform
   ) where
 
 import Data.List (intercalate)
@@ -43,6 +44,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
+import Data.Aeson (ToJSON(..), FromJSON(..), (.=), (.:?), (.!=), withObject, object)
 import Data.Time
 import System.FilePath
 import System.Directory
@@ -115,6 +117,85 @@ data CompilerConfig = CompilerConfig
   , ccStopAtCodegen     :: !Bool            -- Stop after generating C++ source
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
+
+-- | Convert target platform to configuration string
+showTargetPlatform :: TargetPlatform -> String
+showTargetPlatform = \case
+  Linux_x86_64 -> "linux-x86_64"
+  Linux_ARM64 -> "linux-arm64"
+  Darwin_x86_64 -> "darwin-x86_64"
+  Darwin_ARM64 -> "darwin-arm64"
+  Windows_x86_64 -> "windows-x86_64"
+
+instance ToJSON CompilerConfig where
+  toJSON config = object
+    [ "source_language" .= show (ccSourceLanguage config)
+    , "optimization_level" .= show (ccOptimizationLevel config)
+    , "target_platform" .= showTargetPlatform (ccTargetPlatform config)
+    , "output_path" .= ccOutputPath config
+    , "enable_interop" .= ccEnableInterop config
+    , "enable_debug_info" .= ccEnableDebugInfo config
+    , "enable_profiler" .= ccEnableProfiler config
+    , "enable_parallel" .= ccEnableParallel config
+    , "max_concurrency" .= ccMaxConcurrency config
+    , "include_paths" .= ccIncludePaths config
+    , "library_paths" .= ccLibraryPaths config
+    , "linked_libraries" .= ccLinkedLibraries config
+    , "cpp_standard" .= ccCppStandard config
+    , "cpp_compiler" .= ccCppCompiler config
+    , "verbose_level" .= ccVerboseLevel config
+    , "work_directory" .= ccWorkDirectory config
+    , "keep_intermediates" .= ccKeepIntermediates config
+    , "strict_mode" .= ccStrictMode config
+    , "enable_analysis" .= ccEnableAnalysis config
+    ]
+
+instance FromJSON CompilerConfig where
+  parseJSON = withObject "CompilerConfig" $ \o -> do
+    sourceLang <- o .:? "source_language" .!= ("Python" :: String)
+    optLevel <- o .:? "optimization_level" .!= ("O2" :: String)
+    targetStr <- o .:? "target_platform" .!= ("linux-x86_64" :: String)
+
+    let parseSourceLanguage = \case
+          "Python" -> Python
+          "Go" -> Go
+          _ -> Python
+        parseOptLevel = \case
+          "O0" -> O0
+          "O1" -> O1
+          "O2" -> O2
+          "O3" -> O3
+          "Os" -> Os
+          _ -> O2
+        parseTargetPlatformStr = \case
+          "linux-x86_64" -> Just Linux_x86_64
+          "linux-arm64" -> Just Linux_ARM64
+          "darwin-x86_64" -> Just Darwin_x86_64
+          "darwin-arm64" -> Just Darwin_ARM64
+          "windows-x86_64" -> Just Windows_x86_64
+          _ -> Nothing
+
+    CompilerConfig
+      <$> pure (parseSourceLanguage sourceLang)
+      <*> pure (parseOptLevel optLevel)
+      <*> pure (fromMaybe Linux_x86_64 (parseTargetPlatformStr targetStr))
+      <*> o .:? "output_path"
+      <*> o .:? "enable_interop" .!= True
+      <*> o .:? "enable_debug_info" .!= False
+      <*> o .:? "enable_profiler" .!= False
+      <*> o .:? "enable_parallel" .!= True
+      <*> o .:? "max_concurrency" .!= 4
+      <*> o .:? "include_paths" .!= ["/usr/include", "/usr/local/include"]
+      <*> o .:? "library_paths" .!= ["/usr/lib", "/usr/local/lib"]
+      <*> o .:? "linked_libraries" .!= ["stdc++", "pthread"]
+      <*> o .:? "cpp_standard" .!= "c++20"
+      <*> o .:? "cpp_compiler" .!= "clang++"
+      <*> o .:? "verbose_level" .!= 1
+      <*> o .:? "work_directory"
+      <*> o .:? "keep_intermediates" .!= False
+      <*> o .:? "strict_mode" .!= False
+      <*> o .:? "enable_analysis" .!= True
+      <*> o .:? "stop_at_codegen" .!= False
 
 -- | Compiler errors
 data CompilerError
@@ -669,7 +750,6 @@ renderCppType = \case
   CppULongLong -> "unsigned long long"
   CppFloat -> "float"
   CppLongDouble -> "long double"
-  _ -> "auto"
 
 -- | Render C++ parameter
 renderCppParam :: CppParam -> Text
@@ -782,7 +862,6 @@ renderCppExpr = \case
   CppBracedInit cppType exprs ->
     renderCppType cppType <> "{" <> T.intercalate ", " (map renderCppExpr exprs) <> "}"
   CppThis -> "this"
-  _ -> "/* unimplemented expr */"
 
 -- | Render C++ literal
 renderCppLiteral :: CppLiteral -> Text
@@ -792,4 +871,5 @@ renderCppLiteral = \case
   CppBoolLit True -> "true"
   CppBoolLit False -> "false" 
   CppStringLit s -> "\"" <> s <> "\""
+  CppCharLit c -> T.pack $ show c
   CppNullPtr -> "nullptr"
