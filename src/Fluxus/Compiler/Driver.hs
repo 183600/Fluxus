@@ -736,7 +736,7 @@ renderCppExpr = \case
   CppVar name -> name
   CppLiteral lit -> renderCppLiteral lit
   CppBinary op left right -> 
-    renderCppExpr left <> " " <> op <> " " <> renderCppExpr right
+    "(" <> renderCppExpr left <> " " <> op <> " " <> renderCppExpr right <> ")"
   CppCall func args ->
     renderCppExpr func <> "(" <> 
     T.intercalate ", " (map renderCppExpr args) <> ")"
