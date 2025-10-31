@@ -3,131 +3,68 @@
 module Test.Fluxus.Analysis.TypeInference (spec) where
 
 import Test.Hspec
+import qualified Data.HashMap.Strict as HashMap
+import qualified Data.Text as T
 
 import Fluxus.AST.Common
+import Fluxus.Analysis.TypeInference
 
 spec :: Spec
 spec = describe "Type Inference" $ do
-  basicTypeInferenceSpec
-  unificationSpec
-  constraintSolvingSpec
+  describe "inferType" $ do
+    it "infers integer literal types" $ do
+      let expr = CELiteral (LInt 42)
+      case runTypeInference HashMap.empty (inferType expr) of
+        Right inference -> do
+          resultType inference `shouldBe` TInt 32
+          resultConstraints inference `shouldBe` []
+        Left err ->
+          expectationFailure $ "expected inference to succeed, but got: " <> T.unpack err
 
-basicTypeInferenceSpec :: Spec
-basicTypeInferenceSpec = describe "Basic Type Inference" $ do
-  it "infers integer literal types" $ do
-    let intType = TInt 32
-    intType `shouldBe` TInt 32
-  
-  it "infers string literal types" $ do
-    let stringType = TString
-    stringType `shouldBe` TString
-  
-  it "infers boolean literal types" $ do
-    let boolType = TBool
-    boolType `shouldBe` TBool
-  
-  it "infers list types" $ do
-    let listType = TList (TInt 32)
-    listType `shouldBe` TList (TInt 32)
-  
-  it "infers function types" $ do
-    let funcType = TFunction [TInt 32, TString] TBool
-    funcType `shouldBe` TFunction [TInt 32, TString] TBool
+    it "looks up variable types from the environment" $ do
+      let env = HashMap.singleton (Identifier "flag") TBool
+          expr = CEVar (Identifier "flag")
+      case runTypeInference env (inferType expr) of
+        Right inference -> resultType inference `shouldBe` TBool
+        Left err ->
+          expectationFailure $ "expected inference to succeed, but got: " <> T.unpack err
 
-unificationSpec :: Spec
-unificationSpec = describe "Type Unification" $ do
-  it "unifies identical types" $ do
-    let type1 = TInt 32
-    let type2 = TInt 32
-    unifyTypes type1 type2 `shouldBe` Just (TInt 32)
-  
-  it "fails to unify different types" $ do
-    let type1 = TInt 32
-    let type2 = TString
-    unifyTypes type1 type2 `shouldBe` Nothing
-  
-  it "unifies type variables" $ do
-    let type1 = TVar (TypeVar "a")
-    let type2 = TInt 32
-    unifyTypes type1 type2 `shouldBe` Just (TInt 32)
-  
-  it "unifies complex types" $ do
-    let type1 = TList (TVar (TypeVar "a"))
-    let type2 = TList (TInt 32)
-    unifyTypes type1 type2 `shouldBe` Just (TList (TInt 32))
+    it "records constraints when applying functions" $ do
+      let env = HashMap.singleton (Identifier "is_positive") (TFunction [TInt 32] TBool)
+          expr = CECall (noLoc (CEVar (Identifier "is_positive"))) [noLoc (CELiteral (LInt 1))]
+      case runTypeInference env (inferType expr) of
+        Right inference -> do
+          resultType inference `shouldBe` TVar (TypeVar "t0")
+          resultConstraints inference `shouldBe`
+            [ ( TFunction [TInt 32] TBool
+              , TFunction [TInt 32] (TVar (TypeVar "t0"))
+              )
+            ]
+        Left err ->
+          expectationFailure $ "expected inference to succeed, but got: " <> T.unpack err
 
-constraintSolvingSpec :: Spec
-constraintSolvingSpec = describe "Constraint Solving" $ do
-  it "solves simple constraints" $ do
-    let constraints = [(TVar (TypeVar "a"), TInt 32)]
-    solveConstraints constraints `shouldBe` Just [(TypeVar "a", TInt 32)]
-  
-  it "detects inconsistent constraints" $ do
-    let constraints = 
-          [ (TVar (TypeVar "a"), TInt 32)
-          , (TVar (TypeVar "a"), TString)
-          ]
-    solveConstraints constraints `shouldBe` Nothing
-  
-  it "propagates constraints" $ do
-    let constraints = 
-          [ (TVar (TypeVar "a"), TVar (TypeVar "b"))
-          , (TVar (TypeVar "b"), TInt 32)
-          ]
-    case solveConstraints constraints of
-      Just solution -> do
-        lookup (TypeVar "a") solution `shouldBe` Just (TInt 32)
-        lookup (TypeVar "b") solution `shouldBe` Just (TInt 32)
-      Nothing -> expectationFailure "Constraint solving should succeed"
+  describe "solveConstraints" $ do
+    it "detects incompatible arithmetic operands" $ do
+      let expr = CEBinaryOp OpAdd (noLoc (CELiteral (LInt 1))) (noLoc (CELiteral (LString "oops")))
+          action = do
+            _ <- inferExpr expr
+            solveConstraints
+      case runTypeInference HashMap.empty action of
+        Left err ->
+          err `shouldBe` "Failed to solve constraint: Cannot unify TInt 32 with TString"
+        Right _ ->
+          expectationFailure "expected constraint solving to fail for mismatched types"
 
--- Helper functions for type inference testing
-unifyTypes :: Type -> Type -> Maybe Type
-unifyTypes t1 t2
-  | t1 == t2 = Just t1
-  | otherwise = case (t1, t2) of
-      (TVar _, t) -> Just t
-      (t, TVar _) -> Just t
-      (TList t1', TList t2') -> TList <$> unifyTypes t1' t2'
-      (TFunction args1 ret1, TFunction args2 ret2) ->
-        if length args1 == length args2
-          then do
-            unifiedArgs <- sequence $ zipWith unifyTypes args1 args2
-            unifiedRet <- unifyTypes ret1 ret2
-            return $ TFunction unifiedArgs unifiedRet
-          else Nothing
-      _ -> Nothing
+  describe "unifyTypes" $ do
+    it "unifies list element types" $ do
+      let action = unifyTypes (TList (TVar (TypeVar "a"))) (TList (TInt 32))
+      case runTypeInference HashMap.empty action of
+        Right (Just constraints) -> constraints `shouldBe` [(TVar (TypeVar "a"), TInt 32)]
+        Right Nothing -> expectationFailure "expected constraints, but unification returned Nothing"
+        Left err -> expectationFailure $ "expected unification to succeed, but got: " <> T.unpack err
 
-solveConstraints :: [(Type, Type)] -> Maybe [(TypeVar, Type)]
-solveConstraints constraints = go constraints []
-  where
-    go [] solution = Just solution
-    go ((TVar var, typ):rest) solution
-      | not (occurs var typ) = 
-          let subst = substitute var typ
-              newConstraints = [(subst t1, subst t2) | (t1, t2) <- rest]
-              newSolution = (var, typ) : [(v, subst t) | (v, t) <- solution]
-          in go newConstraints newSolution
-    go ((typ, TVar var):rest) solution
-      | not (occurs var typ) = 
-          let subst = substitute var typ
-              newConstraints = [(subst t1, subst t2) | (t1, t2) <- rest]
-              newSolution = (var, typ) : [(v, subst t) | (v, t) <- solution]
-          in go newConstraints newSolution
-    go ((t1, t2):rest) solution
-      | t1 == t2 = go rest solution
-      | otherwise = Nothing
-    
-    occurs :: TypeVar -> Type -> Bool
-    occurs var (TVar var') = var == var'
-    occurs var (TList t) = occurs var t
-    occurs var (TFunction args ret) = any (occurs var) args || occurs var ret
-    occurs _ _ = False
-    
-    substitute :: TypeVar -> Type -> Type -> Type
-    substitute var replacement (TVar var')
-      | var == var' = replacement
-      | otherwise = TVar var'
-    substitute var replacement (TList t) = TList (substitute var replacement t)
-    substitute var replacement (TFunction args ret) = 
-      TFunction (map (substitute var replacement) args) (substitute var replacement ret)
-    substitute _ _ t = t
+    it "fails to unify mismatched primitives" $ do
+      case runTypeInference HashMap.empty (unifyTypes TBool TString) of
+        Right Nothing -> pure ()
+        Right (Just _) -> expectationFailure "expected unification to fail, but it produced constraints"
+        Left err -> expectationFailure $ "expected graceful failure, but got: " <> T.unpack err

@@ -62,65 +62,260 @@ typeMappingSpec = describe "Type Mapping" $ do
 
 expressionGenerationSpec :: Spec
 expressionGenerationSpec = describe "Expression Generation" $ do
-  it "generates literal expressions" $ do
-    let intLit = CppLiteral (CppIntLit 42)
-    let stringLit = CppLiteral (CppStringLit "hello")
-    let boolLit = CppLiteral (CppBoolLit True)
-    
-    intLit `shouldBe` CppLiteral (CppIntLit 42)
-    stringLit `shouldBe` CppLiteral (CppStringLit "hello")
-    boolLit `shouldBe` CppLiteral (CppBoolLit True)
-  
-  it "generates binary expressions" $ do
-    let left = CppVar "x"
-    let right = CppLiteral (CppIntLit 10)
-    let addExpr = CppBinary "+" left right
-    
-    addExpr `shouldBe` CppBinary "+" (CppVar "x") (CppLiteral (CppIntLit 10))
-  
-  it "generates function calls" $ do
-    let args = [CppLiteral (CppStringLit "Hello %s"), CppVar "name"]
-    let funcCall = CppCall (CppVar "printf") args
-    
-    funcCall `shouldBe` CppCall (CppVar "printf") [CppLiteral (CppStringLit "Hello %s"), CppVar "name"]
+  it "translates Python arithmetic expressions when hoisting globals" $ do
+    let moduleBody =
+          [ noLoc (PyAssign [noLoc (PatVar (Identifier "total"))]
+              (noLoc (PyBinaryOp OpAdd
+                        (noLoc (PyLiteral (PyInt 1)))
+                        (noLoc (PyLiteral (PyInt 2))))))
+          ]
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = moduleBody
+              }
+        unit = generateCpp testCppConfig (Left pythonAst)
+        isTotalVar decl = case decl of
+          CppVariable name _ _ -> name == "total"
+          _ -> False
+    case find isTotalVar (cppDeclarations unit) of
+      Just (CppVariable _ _ (Just initializer)) ->
+        initializer `shouldBe`
+          CppBinary "+"
+            (CppLiteral (CppIntLit 1))
+            (CppLiteral (CppIntLit 2))
+      _ ->
+        expectationFailure "Expected hoisted declaration for variable 'total'"
+
+  it "turns Python print into std::cout streaming" $ do
+    let moduleBody =
+          [ noLoc
+              ( PyExprStmt
+                  ( noLoc
+                      ( PyCall
+                          (noLoc (PyVar (Identifier "print")))
+                          [ noLoc (ArgPositional (noLoc (PyLiteral (PyString "hello")))) ]
+                      )
+                  )
+              )
+          ]
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = moduleBody
+              }
+        unit = generateCpp testCppConfig (Left pythonAst)
+    case find isMainFunction (cppDeclarations unit) of
+      Just (CppFunction _ _ _ body) ->
+        case listToMaybe [expr | CppExprStmt expr <- body] of
+          Just expr ->
+            expr `shouldBe`
+              CppBinary "<<"
+                (CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit "hello")))
+                (CppVar "std::endl")
+          Nothing ->
+            expectationFailure "Expected print statement in generated main body"
+      _ ->
+        expectationFailure "Expected generated main function"
 
 statementGenerationSpec :: Spec
 statementGenerationSpec = describe "Statement Generation" $ do
-  it "generates expression statements" $ do
-    let expr = CppCall (CppVar "printf") [CppLiteral (CppStringLit "Hello")]
-    let exprStmt = CppExprStmt expr
-    
-    exprStmt `shouldBe` CppExprStmt (CppCall (CppVar "printf") [CppLiteral (CppStringLit "Hello")])
-  
-  it "generates return statements" $ do
-    let returnStmt = CppReturn (Just (CppLiteral (CppIntLit 0)))
-    returnStmt `shouldBe` CppReturn (Just (CppLiteral (CppIntLit 0)))
+  it "lowers Python if statements to CppIf" $ do
+    let moduleBody =
+          [ noLoc
+              ( PyIf
+                  (noLoc (PyLiteral (PyBool True)))
+                  [ noLoc
+                      ( PyExprStmt
+                          ( noLoc
+                              ( PyCall
+                                  (noLoc (PyVar (Identifier "print")))
+                                  [ noLoc (ArgPositional (noLoc (PyLiteral (PyString "then")))) ]
+                              )
+                          )
+                      )
+                  ]
+                  [ noLoc
+                      ( PyExprStmt
+                          ( noLoc
+                              ( PyCall
+                                  (noLoc (PyVar (Identifier "print")))
+                                  [ noLoc (ArgPositional (noLoc (PyLiteral (PyString "else")))) ]
+                              )
+                          )
+                      )
+                  ]
+              )
+          ]
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = moduleBody
+              }
+        unit = generateCpp testCppConfig (Left pythonAst)
+    case find isMainFunction (cppDeclarations unit) of
+      Just (CppFunction _ _ _ body) ->
+        case listToMaybe [(cond, thenStmts, elseStmts) | CppIf cond thenStmts elseStmts <- body] of
+          Just (cond, thenStmts, elseStmts) -> do
+            cond `shouldBe` CppLiteral (CppBoolLit True)
+            let expectedStream text =
+                  CppBinary "<<"
+                    (CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit text)))
+                    (CppVar "std::endl")
+            listToMaybe [expr | CppExprStmt expr <- thenStmts]
+              `shouldBe` Just (expectedStream "then")
+            listToMaybe [expr | CppExprStmt expr <- elseStmts]
+              `shouldBe` Just (expectedStream "else")
+          Nothing ->
+            expectationFailure "Expected an if statement in generated main body"
+      _ ->
+        expectationFailure "Expected generated main function"
+
+  it "emits CppWhile nodes for Python while loops" $ do
+    let moduleBody =
+          [ noLoc (PyAssign [noLoc (PatVar (Identifier "n"))] (noLoc (PyLiteral (PyInt 0))))
+          , noLoc
+              ( PyWhile
+                  (noLoc (PyBinaryOp OpLt (noLoc (PyVar (Identifier "n"))) (noLoc (PyLiteral (PyInt 3)))))
+                  [ noLoc
+                      ( PyExprStmt
+                          ( noLoc
+                              ( PyCall
+                                  (noLoc (PyVar (Identifier "print")))
+                                  [ noLoc (ArgPositional (noLoc (PyVar (Identifier "n")))) ]
+                              )
+                          )
+                      )
+                  , noLoc
+                      ( PyAssign
+                          [noLoc (PatVar (Identifier "n"))]
+                          ( noLoc
+                              ( PyBinaryOp OpAdd
+                                  (noLoc (PyVar (Identifier "n")))
+                                  (noLoc (PyLiteral (PyInt 1)))
+                              )
+                          )
+                      )
+                  ]
+                  []
+              )
+          ]
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = moduleBody
+              }
+        unit = generateCpp testCppConfig (Left pythonAst)
+    case find isMainFunction (cppDeclarations unit) of
+      Just (CppFunction _ _ _ body) ->
+        case listToMaybe [(cond, loopStmts) | CppWhile cond loopStmts <- body] of
+          Just (cond, loopStmts) -> do
+            cond `shouldBe`
+              CppBinary "<" (CppVar "n") (CppLiteral (CppIntLit 3))
+            let hasIncrement = any incrementsN loopStmts
+                incrementsN stmt =
+                  case stmt of
+                    CppExprStmt (CppBinary "=" (CppVar "n") (CppBinary "+" (CppVar "n") (CppLiteral (CppIntLit 1)))) -> True
+                    CppStmtSeq inner -> any incrementsN inner
+                    CppBlock inner -> any incrementsN inner
+                    _ -> False
+            hasIncrement `shouldBe` True
+          Nothing ->
+            expectationFailure "Expected a while loop in generated main body"
+      _ ->
+        expectationFailure "Expected generated main function"
 
 declarationGenerationSpec :: Spec
 declarationGenerationSpec = describe "Declaration Generation" $ do
-  it "generates variable declarations" $ do
-    let varDecl = CppVariable "counter" CppInt (Just (CppLiteral (CppIntLit 0)))
-    varDecl `shouldBe` CppVariable "counter" CppInt (Just (CppLiteral (CppIntLit 0)))
-  
-  it "generates function declarations" $ do
-    let params = [CppParam "x" CppInt Nothing, CppParam "y" CppInt Nothing]
-    let body = [CppReturn (Just (CppBinary "+" (CppVar "x") (CppVar "y")))]
-    let funcDecl = CppFunction "add" CppInt params body
-    
-    funcDecl `shouldBe` CppFunction "add" CppInt params body
-  
-  it "generates class declarations" $ do
-    let methods = [CppMethod "getValue" CppInt [] [CppReturn (Just (CppVar "value"))] False]
-    let members = ["public", "private"]  -- Base classes as Text list
-    let classDecl = CppClass "MyClass" members methods
-    
-    classDecl `shouldBe` CppClass "MyClass" members methods
-  
-  it "generates program units" $ do
-    let decls = [CppVariable "global_var" CppInt (Just (CppLiteral (CppIntLit 42)))]
-    let program = CppUnit [] [] decls  -- includes, namespaces, declarations
-    
-    program `shouldBe` CppUnit [] [] decls
+  it "emits CppFunction declarations for Python defs" $ do
+    let funcDef = PythonFuncDef
+          { pyFuncName = Identifier "add"
+          , pyFuncDecorators = []
+          , pyFuncParams =
+              [ noLoc (ParamNormal (Identifier "x") Nothing Nothing)
+              , noLoc (ParamNormal (Identifier "y") Nothing Nothing)
+              ]
+          , pyFuncReturns = Nothing
+          , pyFuncBody =
+              [ noLoc
+                  ( PyReturn
+                      ( Just
+                          ( noLoc
+                              ( PyBinaryOp OpAdd
+                                  (noLoc (PyVar (Identifier "x")))
+                                  (noLoc (PyVar (Identifier "y")))
+                              )
+                          )
+                      )
+                  )
+              ]
+          , pyFuncDoc = Nothing
+          , pyFuncIsAsync = False
+          }
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [noLoc (PyFuncDef funcDef)]
+              }
+        unit = generateCpp testCppConfig (Left pythonAst)
+        isAdd decl = case decl of
+          CppFunction name _ _ _ -> name == "add"
+          _ -> False
+    case find isAdd (cppDeclarations unit) of
+      Just (CppFunction _ returnType params body) -> do
+        returnType `shouldBe` CppAuto
+        params `shouldBe`
+          [ CppParam "x" CppAuto Nothing
+          , CppParam "y" CppAuto Nothing
+          ]
+        listToMaybe [expr | CppReturn (Just expr) <- body]
+          `shouldBe`
+            Just (CppBinary "+" (CppVar "x") (CppVar "y"))
+      _ ->
+        expectationFailure "Expected generated declaration for function 'add'"
+
+  it "emits CppClass declarations for Python classes" $ do
+    let classDef = PythonClassDef
+          { pyClassName = Identifier "Sample"
+          , pyClassDecorators = []
+          , pyClassBases = []
+          , pyClassKeywords = []
+          , pyClassBody = []
+          , pyClassDoc = Nothing
+          }
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [noLoc (PyClassDef classDef)]
+              }
+        unit = generateCpp testCppConfig (Left pythonAst)
+        isSample decl = case decl of
+          CppClass name _ _ -> name == "Sample"
+          _ -> False
+    case find isSample (cppDeclarations unit) of
+      Just (CppClass _ bases members) -> do
+        bases `shouldBe` []
+        members `shouldBe` []
+      _ ->
+        expectationFailure "Expected generated declaration for class 'Sample'"
 
 pythonGlobalSpec :: Spec
 pythonGlobalSpec = describe "Python module handling" $ do
