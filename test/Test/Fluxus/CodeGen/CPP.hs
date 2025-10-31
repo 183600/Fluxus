@@ -185,7 +185,14 @@ statementGenerationSpec = describe "Statement Generation" $ do
           [ noLoc (PyAssign [noLoc (PatVar (Identifier "n"))] (noLoc (PyLiteral (PyInt 0))))
           , noLoc
               ( PyWhile
-                  (noLoc (PyBinaryOp OpLt (noLoc (PyVar (Identifier "n"))) (noLoc (PyLiteral (PyInt 3)))))
+                  ( noLoc
+                      ( PyComparison
+                          [OpLt]
+                          [ noLoc (PyVar (Identifier "n"))
+                          , noLoc (PyLiteral (PyInt 3))
+                          ]
+                      )
+                  )
                   [ noLoc
                       ( PyExprStmt
                           ( noLoc
