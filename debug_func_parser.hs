@@ -29,7 +29,7 @@ main = do
             -- Try to parse the entire file normally
             putStrLn "=== Testing Full File Parse ==="
             case runGoParser "simple_test.go" tokens of
-                Left err -> putStrLn $ "Full parse error: " ++ show err
+                Left err -> putStrLn $ "Full parse error: " ++ T.unpack (peMessage err) ++ " at " ++ show (peLocation err)
                 Right ast -> do
                     putStrLn $ "Full parse success!"
                     putStrLn $ "Package: " ++ show (goPackageName (goPackage ast))

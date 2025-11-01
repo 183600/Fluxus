@@ -146,7 +146,8 @@ lexGo = do
       start <- getSourcePos
       token <- goToken
       end <- getSourcePos
-      let sourceSpan = SourceSpan "<input>" (convertPos start) (convertPos end)
+      let fileName = T.pack (MP.sourceName start)
+          sourceSpan = SourceSpan fileName (convertPos start) (convertPos end)
       return $ Located sourceSpan token
 
 -- | Convert Megaparsec SourcePos to our SourcePos
