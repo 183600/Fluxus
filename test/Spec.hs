@@ -7,6 +7,9 @@ import Test.Hspec
 import qualified Test.Fluxus.Parser.Python as PythonTests
 import qualified Test.Fluxus.Parser.Go as GoTests
 import qualified Test.Fluxus.Analysis.TypeInference as TypeInferenceTests
+import qualified Test.Fluxus.Analysis.EscapeAnalysis as EscapeAnalysisTests
+import qualified Test.Fluxus.Analysis.OwnershipInference as OwnershipInferenceTests
+import qualified Test.Fluxus.Analysis.SmartFallback as SmartFallbackTests
 import qualified Test.Fluxus.CodeGen.CPP as CodeGenTests
 
 main :: IO ()
@@ -21,6 +24,9 @@ fullSpec =
     PythonTests.spec
     GoTests.spec
     TypeInferenceTests.spec
+    EscapeAnalysisTests.spec
+    OwnershipInferenceTests.spec
+    SmartFallbackTests.spec
     CodeGenTests.spec
 
 ensureProgressFormat :: [String] -> [String]

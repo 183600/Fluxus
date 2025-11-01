@@ -110,7 +110,14 @@ test-suite fluxus-test
     Test.Fluxus.Parser.Python
     Test.Fluxus.Parser.Go
     Test.Fluxus.Analysis.TypeInference
+    Test.Fluxus.Analysis.EscapeAnalysis
+    Test.Fluxus.Analysis.OwnershipInference
+    Test.Fluxus.Analysis.SmartFallback
     Test.Fluxus.CodeGen.CPP
+    Test.Fluxus.CodeGen.CPP.Shared
+    Test.Fluxus.CodeGen.CPP.TypeMapping
+    Test.Fluxus.CodeGen.CPP.Python
+    Test.Fluxus.CodeGen.CPP.Go
   build-depends:
     base,
     containers,
