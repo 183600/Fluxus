@@ -11,6 +11,8 @@ module Fluxus.CodeGen.CPP
     CppCodeGen
   , CppGenState(..)
   , CppGenConfig(..)
+  , CppCodeGenResult(..)
+  , CppCodeGenFailure(..)
     -- * Main code generation functions
   , generateCpp
   , generateCppFromPython
@@ -53,6 +55,11 @@ import Fluxus.AST.Go
 import Fluxus.Utils.Pretty
 import Fluxus.Parser.Python.Lexer (runPythonLexer, PythonToken(..))
 import Fluxus.Parser.Python.Parser (parseExpression)
+import Fluxus.CodeGen.CPP.Diagnostics
+  ( DiagnosticSeverity(..)
+  , CppDiagnostic(..)
+  , CppCodeGenError(..)
+  )
 
 -- | C++ code generation configuration
 data CppGenConfig = CppGenConfig
@@ -64,6 +71,7 @@ data CppGenConfig = CppGenConfig
   , cgcEnableCoroutines  :: !Bool                       -- Enable C++20 coroutines
   , cgcNamespace         :: !Text                       -- Target namespace
   , cgcHeaderGuard       :: !Text                       -- Header guard prefix
+  , cgcStrictMode        :: !Bool                       -- Treat warnings as errors
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (Hashable, NFData)
 
@@ -75,12 +83,13 @@ data CppGenState = CppGenState
   , cgsTempVarCount    :: !Int                             -- Temporary variable counter
   , cgsSymbolTable     :: !(HashMap Text CppType)          -- Symbol to type mapping
   , cgsHoistedGlobals  :: ![Text]                          -- Hoisted module-level globals (in encounter order)
+  , cgsFatalErrors     :: ![CppCodeGenError]               -- Fatal issues encountered
   , cgsConfig          :: !CppGenConfig                    -- Configuration
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
 -- | Code generation monad
-type CppCodeGen = StateT CppGenState (Writer [Text])
+type CppCodeGen = StateT CppGenState (Writer [CppDiagnostic])
 
 -- | C++ compilation unit
 data CppUnit = CppUnit
@@ -224,6 +233,7 @@ defaultCppGenConfig = CppGenConfig
   , cgcEnableCoroutines = True
   , cgcNamespace = "hyperstatic"
   , cgcHeaderGuard = "HYPERSTATIC_GENERATED"
+  , cgcStrictMode = False
   }
 
 -- | Initial state
@@ -235,22 +245,81 @@ initialCppGenState config = CppGenState
   , cgsTempVarCount = 0
   , cgsSymbolTable = HM.empty
   , cgsHoistedGlobals = []
+  , cgsFatalErrors = []
   , cgsConfig = config
   }
 
 -- | Run code generation
-runCppCodeGen :: CppGenConfig -> CppCodeGen a -> (a, CppGenState)
-runCppCodeGen config action = 
-  let ((result, finalState), output) = runWriter (runStateT action (initialCppGenState config))
-  in (result, finalState)
+runCppCodeGen :: CppGenConfig -> CppCodeGen a -> (a, CppGenState, [CppDiagnostic])
+runCppCodeGen config action =
+  let ((result, finalState), diagnostics) = runWriter (runStateT action (initialCppGenState config))
+  in (result, finalState, diagnostics)
+
+-- | Successful code generation result bundle
+data CppCodeGenResult = CppCodeGenResult
+  { cgrUnit :: !CppUnit
+  , cgrDiagnostics :: ![CppDiagnostic]
+  } deriving stock (Eq, Show, Generic)
+    deriving anyclass (NFData)
+
+-- | Failure information produced when strict mode aborts generation
+data CppCodeGenFailure = CppCodeGenFailure
+  { cgfErrors :: ![CppCodeGenError]
+  , cgfDiagnostics :: ![CppDiagnostic]
+  } deriving stock (Eq, Show, Generic)
+    deriving anyclass (NFData)
 
 -- | Main entry point for C++ code generation
-generateCpp :: CppGenConfig -> Either PythonAST GoAST -> CppUnit
-generateCpp config ast = 
-  let (unit, _) = runCppCodeGen config $ case ast of
-        Left pyAst -> generateCppFromPython pyAst
-        Right goAst -> generateCppFromGo goAst
-  in unit
+generateCpp :: CppGenConfig -> Either PythonAST GoAST -> Either CppCodeGenFailure CppCodeGenResult
+generateCpp config ast =
+  let (unit, finalState, diagnostics) = runCppCodeGen config $
+        case ast of
+          Left pyAst -> generateCppFromPython pyAst
+          Right goAst -> generateCppFromGo goAst
+      fatalErrors = cgsFatalErrors finalState
+  in if null fatalErrors
+       then Right $ CppCodeGenResult unit diagnostics
+       else Left $ CppCodeGenFailure fatalErrors diagnostics
+
+-- | Diagnostic helpers -------------------------------------------------------
+emitDiagnostic :: DiagnosticSeverity -> Text -> CppCodeGen ()
+emitDiagnostic severity msg = tell [CppDiagnostic severity msg Nothing]
+
+emitInfo, emitWarning, emitError :: Text -> CppCodeGen ()
+emitInfo = emitDiagnostic SeverityInfo
+emitWarning = emitDiagnostic SeverityWarning
+emitError = emitDiagnostic SeverityError
+
+recordFatalError :: CppCodeGenError -> CppCodeGen ()
+recordFatalError err =
+  modify $ \s -> s { cgsFatalErrors = cgsFatalErrors s ++ [err] }
+
+reportNotImplemented :: Text -> CppCodeGen ()
+reportNotImplemented msg = do
+  strict <- gets (cgcStrictMode . cgsConfig)
+  if strict
+    then do
+      emitError msg
+      recordFatalError (CppNotImplemented msg)
+    else emitWarning msg
+
+reportUnsupported :: Text -> CppCodeGen ()
+reportUnsupported msg = do
+  strict <- gets (cgcStrictMode . cgsConfig)
+  if strict
+    then do
+      emitError msg
+      recordFatalError (CppUnsupported msg)
+    else emitWarning msg
+
+reportInternalError :: Text -> CppCodeGen ()
+reportInternalError msg = do
+  emitError msg
+  strict <- gets (cgcStrictMode . cgsConfig)
+  when strict $ recordFatalError (CppInternalError msg)
+
+cppNoop :: CppStmt
+cppNoop = CppStmtSeq []
 
 -- | Generate C++ from Python AST
 generateCppFromPython :: PythonAST -> CppCodeGen CppUnit
@@ -265,8 +334,10 @@ generateCppFromPython (PythonAST pyModule) = do
   -- Process module body sequentially, capturing declarations and runtime statements
   moduleStmtsCpp <- mapM (generatePythonStmt ScopeModule) (pyModuleBody pyModule)
   -- Filter out comment statements that don't generate actual code
-  let isActualStatement (CppComment _) = False
-      isActualStatement _ = True
+  let isActualStatement stmt = case stmt of
+        CppComment _ -> False
+        CppStmtSeq [] -> False
+        _ -> True
       actualStmts = filter isActualStatement moduleStmtsCpp
       nameBinding = CppDecl (CppVariable "__name__" (CppConst CppString) (Just (CppLiteral (CppStringLit "__main__"))))
       preludeStmts = if null actualStmts then [] else [nameBinding]
@@ -335,16 +406,16 @@ generateCppFromGo (GoAST goPackage) = do
   let packageName = (\(Identifier n) -> n) (goPackageName goPackage)
   
   -- Debug: Add comment showing package info
-  addComment $ "Generating C++ for Go package: " <> packageName
+  emitInfo $ "Generating C++ for Go package: " <> packageName
   
   -- Generate channel class implementation
   generateChannelClass
   
   -- Process all files in package
   let files = goPackageFiles goPackage
-  addComment $ "Found " <> T.pack (show (length files)) <> " files in package"
-  when (null files) $ do
-    addComment "No files found in package"
+  emitInfo $ "Found " <> T.pack (show (length files)) <> " files in package"
+  when (null files) $
+    reportUnsupported "No files found in package"
   
   mapM_ generateGoFile files
   
@@ -352,7 +423,7 @@ generateCppFromGo (GoAST goPackage) = do
   when (packageName == "main") $ do
     hasMain <- gets (any isMainFunction . cgsDeclarations)
     unless hasMain $ do
-      addComment "Generating fallback main function - Go parser not working properly"
+      reportUnsupported "Generating fallback main function - Go parser not working properly"
       addInclude "<iostream>"
       addDeclaration $ CppFunction "main" CppInt [] [CppReturn (Just (CppLiteral (CppIntLit 0)))]
   
@@ -384,10 +455,12 @@ generatePythonStmt scope (Located _ stmt) =
   case stmt of
     PyFuncDef funcDef -> do
       generatePythonFunction funcDef
-      return $ CppComment "Function definition processed"
+      emitInfo "Function definition processed"
+      return cppNoop
     PyClassDef classDef -> do
       generatePythonClass classDef
-      return $ CppComment "Class definition processed"
+      emitInfo "Class definition processed"
+      return cppNoop
     PyExprStmt expr -> do
       cppExpr <- generatePythonExpr expr
       return $ CppExprStmt cppExpr
@@ -395,9 +468,10 @@ generatePythonStmt scope (Located _ stmt) =
       case patterns of
         [Located _ (PatVar (Identifier varName))] ->
           handleSimpleAssignment scope varName expr exprVal
-        _ ->
+        _ -> do
           -- Multiple assignment - not fully implemented
-          return $ CppComment "Multiple assignment not implemented"
+          reportNotImplemented "Multiple assignment not implemented"
+          return cppNoop
     PyReturn mexpr -> do
       mcppExpr <- mapM generatePythonExpr mexpr
       return $ CppReturn mcppExpr
@@ -420,13 +494,16 @@ generatePythonStmt scope (Located _ stmt) =
         PyCall (Located _ (PyVar (Identifier "range"))) rangeArgs -> do
           mSpec <- parseRangeArgs rangeArgs
           case mSpec of
-            Nothing -> return $ CppComment "range() with unsupported arguments"
+            Nothing -> do
+              reportUnsupported "range() with unsupported arguments"
+              return cppNoop
             Just spec -> buildRangeLoop varAlreadyDeclared varName cppBody spec
         _ -> do
-          addComment "Only range() iteration is currently supported"
-          return $ CppComment "For loop not fully implemented"
-    _ ->
-      return $ CppComment $ "TODO: Implement Python statement: " <> T.pack (show stmt)
+          reportUnsupported "Only range() iteration is currently supported"
+          return cppNoop
+    _ -> do
+      reportNotImplemented $ "TODO: Implement Python statement: " <> T.pack (show stmt)
+      return cppNoop
   where
     handleSimpleAssignment :: PythonScope -> Text -> Located PythonExpr -> PythonExpr -> CppCodeGen CppStmt
     handleSimpleAssignment scope' varName locatedExpr exprVal = do
@@ -453,7 +530,8 @@ generatePythonStmt scope (Located _ stmt) =
               updateSymbolTable
               recordHoistedGlobal varName
               addDeclaration $ CppVariable varName vectorType (Just vectorExpr)
-              return $ CppComment $ "Initialized module-level list " <> varName
+              emitInfo $ "Initialized module-level list " <> varName
+              return cppNoop
         ScopeFunction ->
           if HM.member varName symtab
             then do
@@ -480,7 +558,8 @@ generatePythonStmt scope (Located _ stmt) =
               updateSymbolTableWith inferredType
               recordHoistedGlobal varName
               addDeclaration $ CppVariable varName inferredType (Just cppExpr)
-              return $ CppComment $ "Initialized module-level variable " <> varName
+              emitInfo $ "Initialized module-level variable " <> varName
+              return cppNoop
         ScopeFunction ->
           if HM.member varName symtab
             then do
@@ -553,8 +632,8 @@ generatePythonStmt scope (Located _ stmt) =
           iterInitExpr = if varAlreadyDeclared then startExpr else pythonVar
       case stepVal of
         Just 0 -> do
-          addComment "range() with step 0 is invalid"
-          return $ CppComment "range step 0 not supported"
+          reportInternalError "range() with step 0 is invalid"
+          return cppNoop
         Just n -> do
           let condition = if n > 0
                             then CppBinary "<" iterVar endExpr
@@ -693,7 +772,7 @@ generateFStringExpr :: Text -> CppCodeGen CppExpr
 generateFStringExpr raw = do
   segments <- case splitFStringSegments raw of
     Left err -> do
-      addComment $ "Failed to parse f-string: " <> err
+      reportInternalError $ "Failed to parse f-string: " <> err
       return [FStringLiteral raw]
     Right segs -> return segs
   compiled <- mapM compileSegment segments
@@ -711,7 +790,7 @@ generateFStringExpr raw = do
     compileSegment (FStringExpression exprTxt) =
       case parseInlinePythonExpr exprTxt of
         Left err -> do
-          addComment $ "Failed to parse f-string expression: " <> err
+          reportInternalError $ "Failed to parse f-string expression: " <> err
           return $ CppLiteral (CppStringLit ("{" <> exprTxt <> "}"))
         Right parsed -> generatePythonExpr parsed
 
@@ -771,7 +850,7 @@ generatePythonExpr (Located _ expr) = case expr of
         -- Chain with && operators
         return $ foldl1 (\acc comp -> CppBinary "&&" acc comp) comparisons
       _ -> do
-        addComment $ "Invalid comparison expression"
+        reportInternalError "Invalid comparison expression"
         return $ CppLiteral $ CppBoolLit False
   PySubscript obj sliceExpr -> do
     cppObj <- generatePythonExpr obj
@@ -780,7 +859,7 @@ generatePythonExpr (Located _ expr) = case expr of
         cppIdx <- generatePythonExpr idx
         return $ CppIndex cppObj cppIdx
       _ -> do
-        addComment "Unsupported slice expression"
+        reportUnsupported "Unsupported slice expression"
         return $ CppLiteral (CppIntLit 0)
   PyAttribute obj (Identifier member) -> do
     cppObj <- generatePythonExpr obj
@@ -814,7 +893,7 @@ generatePythonExpr (Located _ expr) = case expr of
     (_, vectorExpr) <- generatePythonListLiteral exprs
     return vectorExpr
   _ -> do
-    addComment $ "TODO: Implement Python expression: " <> T.pack (show expr)
+    reportNotImplemented $ "TODO: Implement Python expression: " <> T.pack (show expr)
     return $ CppLiteral $ CppIntLit 0
 
 -- | Materialize a Python list literal into a C++ vector expression
@@ -911,11 +990,11 @@ promoteNumericType t1 t2
 generateGoFile :: GoFile -> CppCodeGen ()
 generateGoFile goFile = do
   let decls = goFileDecls goFile
-  addComment $ "Processing Go file with " <> T.pack (show (length decls)) <> " declarations"
+  emitInfo $ "Processing Go file with " <> T.pack (show (length decls)) <> " declarations"
   
   -- Fallback: if no declarations found, add a comment
-  when (null decls) $ do
-    addComment "No declarations found in Go file - parser may need to be fixed"
+  when (null decls) $
+    reportUnsupported "No declarations found in Go file - parser may need to be fixed"
   
   mapM_ generateGoDecl decls
 
@@ -923,16 +1002,16 @@ generateGoFile goFile = do
 generateGoDecl :: Located GoDecl -> CppCodeGen ()
 generateGoDecl (Located _ decl) = case decl of
   GoFuncDecl func -> do
-    addComment $ "Generating function: " <> maybe "anonymous" (\(Identifier n) -> n) (goFuncName func)
+    emitInfo $ "Generating function: " <> maybe "anonymous" (\(Identifier n) -> n) (goFuncName func)
     generateGoFunction func
   GoTypeDecl name typeExpr -> do
-    addComment $ "Generating type declaration: " <> (\(Identifier n) -> n) name
+    emitInfo $ "Generating type declaration: " <> (\(Identifier n) -> n) name
     cppType <- generateGoType typeExpr
     addDeclaration $ CppTypedef ((\(Identifier n) -> n) name) cppType
   GoVarDecl vars -> do
-    addComment $ "Generating variable declaration(s)"
+    emitInfo "Generating variable declaration(s)"
     mapM_ generateGoVariable vars
-  _ -> addComment $ "TODO: Implement Go declaration: " <> T.pack (show decl)
+  _ -> reportNotImplemented $ "TODO: Implement Go declaration: " <> T.pack (show decl)
 
 -- | Generate C++ functions from Python
 generatePythonFunction :: PythonFuncDef -> CppCodeGen ()
@@ -1153,8 +1232,8 @@ generateGoStmt (Located _ stmt) = case stmt of
     -- Handle variable definition: x, y := a, b
     if length identifiers /= length exprs
       then do
-        addComment $ "Mismatched variable definition arity"
-        return $ CppComment "Unsupported variable definition"
+        reportUnsupported "Mismatched variable definition arity"
+        return cppNoop
       else do
         cppExprs <- mapM generateGoExpr exprs
         let stmts = zipWith defineBinding identifiers cppExprs
@@ -1173,8 +1252,8 @@ generateGoStmt (Located _ stmt) = case stmt of
       _ ->
         if length leftExprs /= length rightExprs
           then do
-            addComment $ "Mismatched assignment arity"
-            return $ CppComment "Multiple assignment"
+            reportUnsupported "Mismatched assignment arity"
+            return cppNoop
           else do
             prepResults <- mapM prepareAssignment (zip leftExprs rightExprs)
             let evalStmts = map fst prepResults
@@ -1186,8 +1265,8 @@ generateGoStmt (Located _ stmt) = case stmt of
     let op = if isIncrement then "++" else "--"
     return $ CppExprStmt $ CppUnary op cppExpr
   _ -> do
-    addComment $ "TODO: Implement Go statement: " <> T.pack (show stmt)
-    return $ CppComment $ "Unimplemented Go statement"
+    reportNotImplemented $ "TODO: Implement Go statement: " <> T.pack (show stmt)
+    return cppNoop
   where
     wrapStmts :: [CppStmt] -> CppStmt
     wrapStmts [] = CppStmtSeq []
@@ -1225,7 +1304,7 @@ generateGoForInit stmt@(Located _ inner) = case inner of
   GoIncDec _ _ -> Just <$> generateGoStmt stmt
   GoEmpty -> return Nothing
   _ -> do
-    addComment $ "Unsupported for-loop initializer: " <> T.pack (show inner)
+    reportUnsupported $ "Unsupported for-loop initializer: " <> T.pack (show inner)
     return Nothing
 
 generateGoForPost :: Located GoStmt -> CppCodeGen (Maybe CppExpr)
@@ -1241,7 +1320,7 @@ generateGoForPost (Located _ inner) = case inner of
   GoExprStmt expr -> Just <$> generateGoExpr expr
   GoEmpty -> return Nothing
   _ -> do
-    addComment $ "Unsupported for-loop post statement: " <> T.pack (show inner)
+    reportUnsupported $ "Unsupported for-loop post statement: " <> T.pack (show inner)
     return Nothing
 
 -- | Generate expressions from Go
@@ -1294,7 +1373,7 @@ generateGoExpr (Located _ expr) = case expr of
     cppExpr <- generateGoExpr expr
     return $ CppCall (CppMember cppExpr "receive") []
   _ -> do
-    addComment $ "TODO: Implement Go expression: " <> T.pack (show expr)
+    reportNotImplemented $ "TODO: Implement Go expression: " <> T.pack (show expr)
     return $ CppLiteral $ CppIntLit 0
 
 -- | Convert Go format string to C++ output
@@ -1490,7 +1569,7 @@ addStatement stmt = do
   return ()
 
 addComment :: Text -> CppCodeGen ()
-addComment comment = addDeclaration $ CppCommentDecl comment
+addComment = emitInfo
 
 recordHoistedGlobal :: Text -> CppCodeGen ()
 recordHoistedGlobal name =
@@ -1515,11 +1594,11 @@ generateTempVar = do
 -- | Placeholder implementations for complex functions
 generatePythonInteropBindings :: Text -> CppCodeGen ()
 generatePythonInteropBindings moduleName = 
-  addComment $ "Python interop bindings for module: " <> moduleName
+  emitInfo $ "Python interop bindings for module: " <> moduleName
 
 generateGoInteropBindings :: Text -> CppCodeGen ()
 generateGoInteropBindings packageName = 
-  addComment $ "Go interop bindings for package: " <> packageName
+  emitInfo $ "Go interop bindings for package: " <> packageName
 
 mapPythonParameter :: Located PythonParameter -> CppCodeGen CppParam
 mapPythonParameter (Located _ param) = case param of
@@ -1576,7 +1655,7 @@ generatePythonAssignment :: Located PythonPattern -> CppExpr -> CppCodeGen ()
 generatePythonAssignment (Located _ pattern) cppExpr = case pattern of
   PatVar (Identifier name) -> do
     addDeclaration $ CppVariable name CppAuto (Just cppExpr)
-  _ -> addComment "TODO: Complex pattern assignment"
+  _ -> reportNotImplemented "TODO: Complex pattern assignment"
 
 generatePythonClassMember :: Located PythonStmt -> CppCodeGen CppDecl
 generatePythonClassMember _ = return $ CppVariable "member" CppInt Nothing  -- Simplified
