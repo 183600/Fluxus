@@ -28,7 +28,7 @@ main = do
             
             putStrLn "=== Parser Output ==="
             case runGoParser "simple_test.go" tokens of
-                Left err -> putStrLn $ "Parser error: " ++ show err
+                Left err -> putStrLn $ "Parser error: " ++ T.unpack (peMessage err) ++ " at " ++ show (peLocation err)
                 Right ast -> do
                     putStrLn $ "Package name: " ++ show (goPackageName (goPackage ast))
                     putStrLn $ "File count: " ++ show (length (goPackageFiles (goPackage ast)))

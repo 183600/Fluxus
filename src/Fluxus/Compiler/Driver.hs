@@ -104,7 +104,7 @@ import Fluxus.Optimization.Devirtualization
 import Fluxus.Parser.Python.Lexer (runPythonLexer)
 import Fluxus.Parser.Python.Parser (runPythonParser)
 import Fluxus.Parser.Go.Lexer (runGoLexer)
-import Fluxus.Parser.Go.Parser (runGoParser)
+import Fluxus.Parser.Go.Parser (runGoParser, GoParseError(..))
 import Fluxus.CodeGen.CPP
   ( CppUnit(..), CppDecl(..), CppStmt(..), CppExpr(..), CppType(..)
   , CppLiteral(..), CppParam(..), CppCase(..), CppGenConfig(..)
@@ -495,7 +495,7 @@ parseStage inputFile = do
       
       -- Parse Go
       case runGoParser (T.pack inputFile) tokens of
-        Left err -> throwError $ ParseError (T.pack $ show err) (SourceSpan (T.pack inputFile) (SourcePos 0 0) (SourcePos 0 0))
+        Left err -> throwError $ ParseError (peMessage err) (peLocation err)
         Right ast -> return $ Right ast
 
 -- | Type inference stage

@@ -52,6 +52,10 @@ library
   other-modules:
     Fluxus.Internal.Types
     Fluxus.Internal.Monad
+    Fluxus.Parser.Go.Parser.Common
+    Fluxus.Parser.Go.Parser.Declarations
+    Fluxus.Parser.Go.Parser.Expressions
+    Fluxus.Parser.Go.Parser.Statements
   build-depends:
     base >= 4.17 && < 5,
     containers >= 0.6.7,
