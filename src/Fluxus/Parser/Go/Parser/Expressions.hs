@@ -43,9 +43,10 @@ import Fluxus.AST.Go
   ( GoExpr(..)
   , GoLiteral(..)
   , GoField(..)
+  , GoMethod(..)
   , GoSliceExpr(..)
   , GoType(..)
-  , GoChanDirection(..)
+  , GoChannel(..)
   )
 import Fluxus.Parser.Go.Lexer
   ( GoDelimiter(..)
@@ -159,7 +160,7 @@ parseAtomExpr = do
       ]
 
 -- | Parse Go literals.
-parseGoLiteral :: Monad m => GoParser m GoExpr
+parseGoLiteral :: GoParser m GoExpr
 parseGoLiteral = do
   Located _ token <- MP.satisfy isLiteralToken
   case token of
@@ -181,7 +182,7 @@ parseGoLiteral = do
       _ -> False
 
 -- | Parse identifiers as expressions.
-parseGoIdentifierExpr :: Monad m => GoParser m GoExpr
+parseGoIdentifierExpr :: GoParser m GoExpr
 parseGoIdentifierExpr = GoIdent <$> parseGoIdentifier
 
 -- | Parse parenthesized expressions.
@@ -242,7 +243,7 @@ parseSlice = do
         }
   pure $ \expr -> located' $ GoSlice expr sliceExpr
 
-parseSelector :: Monad m => GoParser m (Located GoExpr -> Located GoExpr)
+parseSelector :: GoParser m (Located GoExpr -> Located GoExpr)
 parseSelector = do
   void $ goDelimiterP GoDelimDot
   field <- parseGoIdentifier
@@ -271,7 +272,7 @@ parseGoType = located $ MP.choice
   , parseBasicType
   ]
 
-parseBasicType :: Monad m => GoParser m GoType
+parseBasicType :: GoParser m GoType
 parseBasicType = GoBasicType <$> parseGoIdentifier
 
 parseArrayType :: Monad m => GoParser m GoType

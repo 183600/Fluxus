@@ -45,6 +45,7 @@ module Fluxus.Parser.Go.Parser
   ) where
 
 import Control.Monad (void)
+import Control.Monad.IO.Class (MonadIO)
 import Data.Bifunctor (first)
 import Data.Functor.Identity (Identity(..))
 import Data.List (partition)
@@ -55,7 +56,7 @@ import Data.Void (Void)
 import Text.Megaparsec (ParseErrorBundle(..), runParserT)
 import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Error (errorBundlePretty, errorOffset)
-import Control.Monad.Logger (LogLevel, LogSource, LogStr, runLoggingT, runNoLoggingT)
+import Control.Monad.Logger (LogLevel, LogSource, LogStr, Loc, runLoggingT)
 
 import Fluxus.AST.Common (SourceSpan, Located(..))
 import Fluxus.AST.Go
@@ -112,14 +113,16 @@ data GoParseError = GoParseError
 -- | Run the Go parser producing an AST.
 runGoParser :: Text -> [Located GoToken] -> Either GoParseError GoAST
 runGoParser filename tokens =
-  runIdentity . runNoLoggingT $
+  runIdentity $
     fmap (first (bundleToGoParseError filename tokens)) $
-      runParserT parseGo (T.unpack filename) tokens
+      runLoggingT
+        (runParserT parseGo (T.unpack filename) tokens)
+        (\_ _ _ _ -> pure ())
 
 -- | Run the Go parser with a custom logging function.
 runGoParserWithLogger
   :: Monad m
-  => (LogSource -> LogLevel -> LogStr -> m ())
+  => (Loc -> LogSource -> LogLevel -> LogStr -> m ())
   -> Text
   -> [Located GoToken]
   -> m (Either GoParseError GoAST)
@@ -128,11 +131,11 @@ runGoParserWithLogger logger filename tokens =
     runLoggingT (runParserT parseGo (T.unpack filename) tokens) logger
 
 -- | Main parser entry point.
-parseGo :: Monad m => GoParser m GoAST
+parseGo :: MonadIO m => GoParser m GoAST
 parseGo = GoAST <$> parsePackage
 
 -- | Parse a Go package (currently single file).
-parsePackage :: Monad m => GoParser m GoPackage
+parsePackage :: MonadIO m => GoParser m GoPackage
 parsePackage = do
   file <- parseFile
   pure GoPackage
@@ -141,7 +144,7 @@ parsePackage = do
     }
 
 -- | Parse a Go source file.
-parseFile :: Monad m => GoParser m GoFile
+parseFile :: MonadIO m => GoParser m GoFile
 parseFile = do
   skipCommentsAndNewlines
   void $ goKeywordP GoKwPackage
