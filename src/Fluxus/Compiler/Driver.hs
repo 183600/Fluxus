@@ -108,7 +108,13 @@ import Fluxus.Parser.Go.Parser (runGoParser, GoParseError(..))
 import Fluxus.CodeGen.CPP
   ( CppUnit(..), CppDecl(..), CppStmt(..), CppExpr(..), CppType(..)
   , CppLiteral(..), CppParam(..), CppCase(..), CppGenConfig(..)
+  , CppCodeGenResult(..), CppCodeGenFailure(..)
   , generateCpp
+  )
+import Fluxus.CodeGen.CPP.Diagnostics
+  ( DiagnosticSeverity(..)
+  , CppDiagnostic(..)
+  , renderCppCodeGenError
   )
 import Fluxus.Utils.Pretty
 
@@ -939,6 +945,9 @@ codeGenStage :: Either PythonAST GoAST -> CompilerM CppUnit
 codeGenStage ast = do
   config <- ask
   
+
+
+
   let cppConfig = CppGenConfig
         { cgcOptimizationLevel = fromEnum $ ccOptimizationLevel config
         , cgcEnableInterop = ccEnableInterop config
@@ -948,9 +957,30 @@ codeGenStage ast = do
         , cgcEnableCoroutines = ccCppStandard config >= "c++20"
         , cgcNamespace = "hyperstatic"
         , cgcHeaderGuard = "HYPERSTATIC_GENERATED"
+        , cgcStrictMode = ccStrictMode config
         }
-  
-  return $ generateCpp cppConfig ast
+
+  case generateCpp cppConfig ast of
+    Left failure -> do
+      mapM_ logDiagnostic (cgfDiagnostics failure)
+      let errText = case cgfErrors failure of
+            [] -> "Code generation aborted due to strict diagnostics"
+            errs -> T.intercalate "; " (map renderCppCodeGenError errs)
+      throwError $ CodeGenError errText
+    Right result -> do
+      mapM_ logDiagnostic (cgrDiagnostics result)
+      pure (cgrUnit result)
+  where
+    logDiagnostic :: CppDiagnostic -> CompilerM ()
+    logDiagnostic diag =
+      let baseMsg = diagMessage diag <> maybe "" (\ctx -> " (" <> ctx <> ")") (diagContext diag)
+          prefixedInfo tag msg = tag <> " " <> msg
+      in case diagSeverity diag of
+        SeverityInfo -> logInfo $ prefixedInfo "[codegen]" baseMsg
+        SeverityWarning -> logWarning $ prefixedInfo "[codegen-warning]" baseMsg
+        SeverityError -> logWarning $ prefixedInfo "[codegen-error]" baseMsg
+
+
 
 -- | Compile C++ file to object file
 compileCpp :: FilePath -> CompilerM FilePath
