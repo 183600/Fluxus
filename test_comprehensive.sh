@@ -4,6 +4,11 @@
 
 set -e  # Exit on any error
 
+ARTIFACT_DIR="dist/logs"
+RESULTS_FILE="$ARTIFACT_DIR/test_results.txt"
+
+mkdir -p "$ARTIFACT_DIR"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -275,10 +280,10 @@ main() {
         for result in "${TEST_RESULTS[@]}"; do
             echo "$result"
         done
-    } > test_results.txt
+    } > "$RESULTS_FILE"
     
     echo
-    echo "Detailed test results saved to: test_results.txt"
+    echo "Detailed test results saved to: $RESULTS_FILE"
     
     # Exit with appropriate code
     if [ $FAILED_TESTS -eq 0 ]; then
