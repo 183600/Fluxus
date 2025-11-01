@@ -32,13 +32,15 @@ module Fluxus.Compiler.Driver
   , showTargetPlatform
   ) where
 
-import Data.List (intercalate)
+import Data.List (intercalate, foldl')
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Except
 import Control.Monad.IO.Class
-import Control.Monad (when, unless)
-import Data.Maybe (fromMaybe)
+import Control.Monad (when, unless, forM_, foldM)
+import Data.Maybe (fromMaybe, maybeToList, catMaybes)
+import Data.Either (partitionEithers)
+import Data.Int (Int64)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
@@ -57,6 +59,48 @@ import Control.DeepSeq (NFData)
 import Fluxus.AST.Common
 import Fluxus.AST.Python
 import Fluxus.AST.Go
+import Fluxus.Analysis.TypeInference
+  ( TypeInferenceState(..)
+  , InferenceResult(..)
+  , runTypeInference
+  , inferType
+  , solveConstraints
+  , applySubstitution
+  )
+import Fluxus.Analysis.EscapeAnalysis
+  ( EscapeAnalysisState(..)
+  , runEscapeAnalysis
+  , optimizeMemoryAllocation
+  )
+import Fluxus.Analysis.ShapeAnalysis
+  ( ShapeAnalysisState(..)
+  , runShapeAnalysis
+  , analyzeShape
+  )
+import Fluxus.Analysis.OwnershipInference
+  ( OwnershipResult(..)
+  , OwnershipInferenceState(..)
+  , OwnershipStrategy(..)
+  , runOwnershipInference
+  , inferOwnership
+  )
+import Fluxus.Analysis.SmartFallback
+  ( runSmartFallback
+  , shouldFallbackToRuntime
+  , optimizeWithFallback
+  )
+import Fluxus.Optimization.Monomorphization
+  ( MonomorphizationResult(..)
+  , MonomorphizationState(..)
+  , runMonomorphization
+  , monomorphize
+  )
+import Fluxus.Optimization.Devirtualization
+  ( DevirtualizationResult(..)
+  , DevirtualizationState(..)
+  , runDevirtualization
+  , devirtualize
+  )
 import Fluxus.Parser.Python.Lexer (runPythonLexer)
 import Fluxus.Parser.Python.Parser (runPythonParser)
 import Fluxus.Parser.Go.Lexer (runGoLexer)
@@ -454,29 +498,441 @@ parseStage inputFile = do
         Left err -> throwError $ ParseError (T.pack $ show err) (SourceSpan (T.pack inputFile) (SourcePos 0 0) (SourcePos 0 0))
         Right ast -> return $ Right ast
 
--- | Type inference stage (placeholder)
+-- | Type inference stage
 typeInferenceStage :: Either PythonAST GoAST -> CompilerM (Either PythonAST GoAST)
 typeInferenceStage ast = do
   logInfo "Running type inference analysis"
-  -- TODO: Implement actual type inference
-  addWarning $ TypeWarning "Type inference not fully implemented" (SourceSpan "<system>" (SourcePos 0 0) (SourcePos 0 0))
-  return ast
+  let (commonExprs, extractionIssues) = collectCommonExpressions ast
+  forM_ extractionIssues $ \msg ->
+    addWarning $ TypeWarning msg systemSpan
+  when (null commonExprs) $ do
+    addWarning $ TypeWarning "No analyzable expressions found for type inference" systemSpan
+  if null commonExprs
+    then return ast
+    else do
+      envSnapshot <- gets csTypeEnvironment
+      let initialEnv = HM.fromList $ map (\(name, ty) -> (Identifier name, ty)) (HM.toList envSnapshot)
+      (successes, failures) <- foldM (inferExpression initialEnv) (0 :: Int, 0 :: Int) commonExprs
+      let total = successes + failures
+      logInfo $ "Type inference summary: " <> textShow successes <> "/" <> textShow total <> " expressions inferred"
+      when (failures > 0) $
+        addWarning $ TypeWarning ("Failed to infer types for " <> textShow failures <> " expressions") systemSpan
+      return ast
+  where
+    inferExpression env (okCount, errCount) expr = 
+      case runTypeInference env $ do
+        result <- inferType expr
+        solveConstraints
+        st <- get
+        let subst = substitutions st
+            finalType = applySubstitution subst (resultType result)
+        pure finalType
+      of
+        Left err -> do
+          addWarning $ TypeWarning ("Type inference failed: " <> err) systemSpan
+          recordOptimizationStat "type-inference.failure"
+          pure (okCount, errCount + 1)
+        Right inferredType -> do
+          let exprKey = renderCommonExpr expr
+          modify $ \s -> s { csTypeEnvironment = HM.insert exprKey inferredType (csTypeEnvironment s) }
+          recordOptimizationStat "type-inference.success"
+          logVerbose $ "Inferred type for " <> exprKey <> ": " <> renderType inferredType
+          pure (okCount + 1, errCount)
 
--- | Optimization stage (placeholder)
+-- | Optimization stage
 optimizationStage :: Either PythonAST GoAST -> CompilerM (Either PythonAST GoAST)
 optimizationStage ast = do
   config <- ask
   logInfo $ "Running optimizations at level " <> T.pack (show $ ccOptimizationLevel config)
-  
-  -- TODO: Implement actual optimizations
-  -- - Escape analysis
-  -- - Shape analysis
-  -- - Ownership inference
-  -- - Monomorphization
-  -- - Devirtualization
-  
-  addWarning $ OptimizationWarning "Optimization passes not fully implemented"
+  let (commonExprs, extractionIssues) = collectCommonExpressions ast
+  unless (null extractionIssues) $
+    logVerbose $ "Skipping " <> textShow (length extractionIssues) <> " expressions during optimization due to unsupported constructs"
+  when (null commonExprs) $ do
+    addWarning $ OptimizationWarning "No analyzable expressions found for optimization pipeline"
+  forM_ commonExprs $ \expr -> do
+    let exprLabel = renderCommonExpr expr
+    recordOptimizationStat "optimization.expressions"
+    let ((escapeOptimized, escapeHints), escapeState) = runEscapeAnalysis (optimizeMemoryAllocation expr)
+    recordOptimizationStat "optimization.escape"
+    forM_ escapeHints $ \hint ->
+      addWarning $ OptimizationWarning ("Escape analysis hint for " <> exprLabel <> ": " <> hint)
+    let heapEscapes = length (easHeapEscapes escapeState)
+    when (heapEscapes > 0) $
+      recordOptimizationStatN "optimization.escape.heap" heapEscapes
+    case runOwnershipInference (inferOwnership escapeOptimized) of
+      Left err -> addWarning $ OptimizationWarning ("Ownership inference failed for " <> exprLabel <> ": " <> err)
+      Right (ownershipResult, ownershipState) -> do
+        recordOptimizationStat "optimization.ownership"
+        let strategyTag = case orStrategy ownershipResult of
+              StackOwned -> "stack"
+              UniqueOwnership -> "unique"
+              SharedOwnership -> "shared"
+              BorrowedReference -> "borrowed"
+              MoveSemantics -> "move"
+              CopySemantics -> "copy"
+              WeakReference -> "weak"
+              CustomRAII -> "custom-raii"
+        recordOptimizationStat ("optimization.ownership." <> strategyTag)
+        forM_ (oisOptimizationHints ownershipState) $ \hint ->
+          addWarning $ OptimizationWarning ("Ownership hint for " <> exprLabel <> ": " <> hint)
+    case runShapeAnalysis (analyzeShape escapeOptimized) of
+      Left err -> addWarning $ OptimizationWarning ("Shape analysis failed for " <> exprLabel <> ": " <> err)
+      Right (_shapeInfo, shapeState) -> do
+        recordOptimizationStat "optimization.shape"
+        forM_ (sasOptimizations shapeState) $ \hint ->
+          addWarning $ OptimizationWarning ("Shape analysis suggestion for " <> exprLabel <> ": " <> hint)
+    let (fallbackRequired, _) = runSmartFallback (shouldFallbackToRuntime escapeOptimized)
+    when fallbackRequired $ do
+      recordOptimizationStat "optimization.fallback.runtime"
+      addWarning $ OptimizationWarning ("Runtime fallback recommended for " <> exprLabel)
+    let (fallbackExpr, _) = runSmartFallback (optimizeWithFallback escapeOptimized)
+    let (monoResult, monoState) = runMonomorphization (monomorphize fallbackExpr)
+    recordOptimizationStat "optimization.monomorphization"
+    when (not (null (mrOptimizations monoResult))) $
+      forM_ (mrOptimizations monoResult) $ \msg ->
+        addWarning $ OptimizationWarning ("Monomorphization note for " <> exprLabel <> ": " <> msg)
+    recordOptimizationStatN "optimization.specializations" (HM.size (msSpecializations monoState))
+    let (devirtResult, devirtState) = runDevirtualization (devirtualize (mrExpression monoResult))
+    recordOptimizationStat "optimization.devirtualization"
+    when (not (null (drOptimizations devirtResult))) $
+      forM_ (drOptimizations devirtResult) $ \msg ->
+        addWarning $ OptimizationWarning ("Devirtualization note for " <> exprLabel <> ": " <> msg)
+    let resolvedCount = HM.size (dsResolvedCalls devirtState)
+    when (resolvedCount > 0) $
+      recordOptimizationStatN "optimization.devirtualization.resolved" resolvedCount
+    when (drExpression devirtResult /= expr) $
+      recordOptimizationStat "optimization.expr.changed"
   return ast
+
+-- | Collect analyzable expressions that can be fed into the shared analysis passes.
+collectCommonExpressions :: Either PythonAST GoAST -> ([CommonExpr], [Text])
+collectCommonExpressions = \case
+  Left (PythonAST pyModule) ->
+    let pythonExprs = collectPythonExpressions pyModule
+        (issues, commons) = partitionEithers (map pythonExprToCommon pythonExprs)
+    in (commons, issues)
+  Right (GoAST goPackage) ->
+    let goExprs = collectGoExpressions goPackage
+        (issues, commons) = partitionEithers (map goExprToCommon goExprs)
+    in (commons, issues)
+
+collectPythonExpressions :: PythonModule -> [Located PythonExpr]
+collectPythonExpressions pyModule =
+  concatMap collectPythonStmt (pyModuleBody pyModule)
+
+collectPythonStmt :: Located PythonStmt -> [Located PythonExpr]
+collectPythonStmt (Located _ stmt) = case stmt of
+  PyExprStmt expr -> [expr]
+  PyAssign _ value -> [value]
+  PyAugAssign _ _ value -> [value]
+  PyAnnAssign _ _ maybeValue -> maybeToList maybeValue
+  PyReturn maybeExpr -> maybeToList maybeExpr
+  PyYield maybeExpr -> maybeToList maybeExpr
+  PyYieldFrom expr -> [expr]
+  PyDel exprs -> exprs
+  PyAssert expr maybeMsg -> expr : maybeToList maybeMsg
+  PyIf cond body orelse -> cond : collectNested body ++ collectNested orelse
+  PyWhile cond body orelse -> cond : collectNested body ++ collectNested orelse
+  PyFor _ iter body orelse -> iter : collectNested body ++ collectNested orelse
+  PyAsyncFor _ iter body orelse -> iter : collectNested body ++ collectNested orelse
+  PyWith items body -> concatMap collectPythonWithItem items ++ collectNested body
+  PyAsyncWith items body -> concatMap collectPythonWithItem items ++ collectNested body
+  PyTry body excepts orelse finally ->
+    collectNested body ++ concatMap collectPythonExcept excepts ++ collectNested orelse ++ collectNested finally
+  PyRaise maybeExc maybeFrom -> catMaybes [maybeExc, maybeFrom]
+  PyFuncDef func -> collectPythonFunc func
+  PyAsyncFuncDef func -> collectPythonFunc func
+  PyClassDef cls -> collectPythonClass cls
+  PyImport _ -> []
+  PyGlobal _ -> []
+  PyNonlocal _ -> []
+  PyPass -> []
+  PyBreak -> []
+  PyContinue -> []
+  where
+    collectNested = concatMap collectPythonStmt
+
+collectPythonWithItem :: Located PythonWithItem -> [Located PythonExpr]
+collectPythonWithItem (Located _ item) = [pyWithContext item]
+
+collectPythonExcept :: Located PythonExcept -> [Located PythonExpr]
+collectPythonExcept (Located _ except) =
+  maybeToList (pyExceptType except) ++ concatMap collectPythonStmt (pyExceptBody except)
+
+collectPythonFunc :: PythonFuncDef -> [Located PythonExpr]
+collectPythonFunc func =
+  concat
+    [ concatMap collectPythonDecorator (pyFuncDecorators func)
+    , concatMap collectPythonParam (pyFuncParams func)
+    , concatMap collectPythonStmt (pyFuncBody func)
+    ]
+
+collectPythonDecorator :: Located PythonDecorator -> [Located PythonExpr]
+collectPythonDecorator (Located _ deco) =
+  pyDecoratorName deco : concatMap collectPythonArgument (pyDecoratorArgs deco)
+
+collectPythonArgument :: Located PythonArgument -> [Located PythonExpr]
+collectPythonArgument (Located _ arg) = case arg of
+  ArgPositional expr -> [expr]
+  ArgKeyword _ expr -> [expr]
+  ArgStarred expr -> [expr]
+  ArgKwStarred expr -> [expr]
+
+collectPythonParam :: Located PythonParameter -> [Located PythonExpr]
+collectPythonParam (Located _ param) = case param of
+  ParamNormal _ _ maybeDefault -> maybeToList maybeDefault
+  ParamVarArgs _ _ -> []
+  ParamKwArgs _ _ -> []
+  ParamKwOnly _ _ maybeDefault -> maybeToList maybeDefault
+
+collectPythonClass :: PythonClassDef -> [Located PythonExpr]
+collectPythonClass cls =
+  concat
+    [ concatMap collectPythonDecorator (pyClassDecorators cls)
+    , pyClassBases cls
+    , map snd (pyClassKeywords cls)
+    , concatMap collectPythonStmt (pyClassBody cls)
+    ]
+
+collectGoExpressions :: GoPackage -> [Located GoExpr]
+collectGoExpressions goPackage =
+  concatMap collectGoFile (goPackageFiles goPackage)
+
+collectGoFile :: GoFile -> [Located GoExpr]
+collectGoFile goFile = concatMap collectGoDecl (goFileDecls goFile)
+
+collectGoDecl :: Located GoDecl -> [Located GoExpr]
+collectGoDecl (Located _ decl) = case decl of
+  GoImportDecl _ -> []
+  GoConstDecl entries -> [expr | (_, _, expr) <- entries]
+  GoTypeDecl _ _ -> []
+  GoVarDecl entries -> catMaybes [expr | (_, _, expr) <- entries]
+  GoFuncDecl func -> collectGoFunction func
+  GoMethodDecl _ func -> collectGoFunction func
+
+collectGoFunction :: GoFunction -> [Located GoExpr]
+collectGoFunction func = collectGoStmtMaybe (goFuncBody func)
+
+collectGoStmtMaybe :: Maybe (Located GoStmt) -> [Located GoExpr]
+collectGoStmtMaybe = maybe [] collectGoStmt
+
+collectGoStmt :: Located GoStmt -> [Located GoExpr]
+collectGoStmt (Located _ stmt) = case stmt of
+  GoExprStmt expr -> [expr]
+  GoAssign lhs rhs -> lhs ++ rhs
+  GoDefine _ rhs -> rhs
+  GoIncDec expr _ -> [expr]
+  GoSend chanExpr valueExpr -> [chanExpr, valueExpr]
+  GoReturn exprs -> exprs
+  GoBreak _ -> []
+  GoContinue _ -> []
+  GoGoto _ -> []
+  GoFallthrough -> []
+  GoEmpty -> []
+  GoBlock stmts -> concatMap collectGoStmt stmts
+  GoIf initStmt cond thenStmt elseStmt ->
+    collectGoStmtMaybe initStmt ++ [cond] ++ collectGoStmt thenStmt ++ collectGoStmtMaybe elseStmt
+  GoSwitch initStmt maybeExpr cases ->
+    collectGoStmtMaybe initStmt ++ maybeToList maybeExpr ++ concatMap collectGoStmt cases
+  GoTypeSwitch initStmt clause cases ->
+    collectGoStmtMaybe initStmt ++ collectGoTypeSwitchClause clause ++ concatMap collectGoStmt cases
+  GoFor clause body -> collectGoForClause clause ++ collectGoStmt body
+  GoRange clause body -> collectGoRangeClause clause ++ collectGoStmt body
+  GoSelect clauses -> concatMap collectGoCommClause clauses
+  GoDefer expr -> [expr]
+  GoGo expr -> [expr]
+  GoCase exprs stmts -> exprs ++ concatMap collectGoStmt stmts
+  GoDefault stmts -> concatMap collectGoStmt stmts
+  GoCommCase maybeStmt stmts -> collectGoStmtMaybe maybeStmt ++ concatMap collectGoStmt stmts
+  GoCommDefault stmts -> concatMap collectGoStmt stmts
+  GoLabeled _ inner -> collectGoStmt inner
+
+collectGoTypeSwitchClause :: GoTypeSwitchClause -> [Located GoExpr]
+collectGoTypeSwitchClause clause = [goTypeSwitchExpr clause]
+
+collectGoForClause :: Maybe GoForClause -> [Located GoExpr]
+collectGoForClause Nothing = []
+collectGoForClause (Just clause) =
+  collectGoStmtMaybe (goForInit clause) ++ maybeToList (goForCond clause) ++ collectGoStmtMaybe (goForPost clause)
+
+collectGoRangeClause :: GoRangeClause -> [Located GoExpr]
+collectGoRangeClause clause = [goRangeExpr clause]
+
+collectGoCommClause :: Located GoCommClause -> [Located GoExpr]
+collectGoCommClause (Located _ clause) =
+  collectGoStmtMaybe (goCommStmt clause) ++ concatMap collectGoStmt (goCommBody clause)
+
+pythonExprToCommon :: Located PythonExpr -> Either Text CommonExpr
+pythonExprToCommon located@(Located span expr) = case expr of
+  PyLiteral lit -> CELiteral <$> pythonLiteralToLiteral span lit
+  PyVar ident -> Right $ CEVar ident
+  PyConst qn -> Right $ CEVar (qnName qn)
+  PyBinaryOp op left right -> do
+    left' <- pythonExprToLocatedCommon left
+    right' <- pythonExprToLocatedCommon right
+    pure $ CEBinaryOp op left' right'
+  PyUnaryOp op operand -> do
+    operand' <- pythonExprToLocatedCommon operand
+    pure $ CEUnaryOp op operand'
+  PyComparison [op] (left:right:[]) -> do
+    left' <- pythonExprToLocatedCommon left
+    right' <- pythonExprToLocatedCommon right
+    pure $ CEComparison op left' right'
+  PyComparison _ _ -> Left $ "Unsupported chained comparison at " <> formatSpan span
+  PyBoolOp op operands -> do
+    locatedOperands <- traverse pythonExprToLocatedCommon operands
+    case locatedOperands of
+      [] -> Left $ "Empty boolean operation at " <> formatSpan span
+      (firstOperand:restOperands) ->
+        let combined = foldl'
+              (\acc next -> Located (mergeSpans (locSpan acc) (locSpan next)) (CEBinaryOp op acc next))
+              firstOperand
+              restOperands
+        in pure $ locValue combined
+  PySubscript value sliceNode -> do
+    value' <- pythonExprToLocatedCommon value
+    case sliceNode of
+      SliceIndex idx -> do
+        idx' <- pythonExprToLocatedCommon idx
+        pure $ CEIndex value' idx'
+      SliceSlice start end step -> case step of
+        Just _ -> Left $ "Slice step is not supported in common expression lowering at " <> formatSpan span
+        Nothing -> do
+          start' <- traverse pythonExprToLocatedCommon start
+          end' <- traverse pythonExprToLocatedCommon end
+          pure $ CESlice value' start' end'
+      SliceExtSlice _ -> Left $ "Extended slicing is not supported at " <> formatSpan span
+  PyCall func args -> do
+    func' <- pythonExprToLocatedCommon func
+    args' <- traverse pythonArgumentToCommon args
+    pure $ CECall func' args'
+  PyAttribute obj attr -> do
+    obj' <- pythonExprToLocatedCommon obj
+    pure $ CEAttribute obj' attr
+  PySlice _ _ _ -> Left $ "Standalone slice expressions are not supported at " <> formatSpan span
+  PyList _ -> Left $ "List literals are not supported at " <> formatSpan span
+  PyTuple _ -> Left $ "Tuple literals are not supported at " <> formatSpan span
+  PySet _ -> Left $ "Set literals are not supported at " <> formatSpan span
+  PyDict _ -> Left $ "Dictionary literals are not supported at " <> formatSpan span
+  PyListComp _ _ -> Left $ "List comprehensions are not supported at " <> formatSpan span
+  PySetComp _ _ -> Left $ "Set comprehensions are not supported at " <> formatSpan span
+  PyDictComp _ _ _ -> Left $ "Dict comprehensions are not supported at " <> formatSpan span
+  PyGenComp _ _ -> Left $ "Generator expressions are not supported at " <> formatSpan span
+  PyLambda _ _ -> Left $ "Lambda expressions are not supported at " <> formatSpan span
+  PyIfExp{} -> Left $ "Conditional expressions are not supported at " <> formatSpan span
+  PyStarred{} -> Left $ "Starred expressions are not supported at " <> formatSpan span
+  PyNamedExpr{} -> Left $ "Walrus operator expressions are not supported at " <> formatSpan span
+  PyAwait{} -> Left $ "Await expressions are not supported at " <> formatSpan span
+  PyAsyncCall{} -> Left $ "Async call expressions are not supported at " <> formatSpan span
+  PyJoinedStr{} -> Left $ "Formatted string expressions are not supported at " <> formatSpan span
+  PyFormatSpec{} -> Left $ "Format specifier expressions are not supported at " <> formatSpan span
+
+pythonExprToLocatedCommon :: Located PythonExpr -> Either Text (Located CommonExpr)
+pythonExprToLocatedCommon located@(Located span _) = do
+  converted <- pythonExprToCommon located
+  pure $ Located span converted
+
+pythonLiteralToLiteral :: SourceSpan -> PythonLiteral -> Either Text Literal
+pythonLiteralToLiteral span = \case
+  PyInt n -> Right $ LInt (fromIntegral n :: Int64)
+  PyFloat f -> Right $ LFloat f
+  PyString s -> Right $ LString s
+  PyBytes b -> Right $ LBytes b
+  PyBool b -> Right $ LBool b
+  PyNone -> Right LNone
+  PyEllipsis -> Left $ "Ellipsis literal is not supported at " <> formatSpan span
+  PyComplex _ _ -> Left $ "Complex literals are not supported at " <> formatSpan span
+
+pythonArgumentToCommon :: Located PythonArgument -> Either Text (Located CommonExpr)
+pythonArgumentToCommon argLocated@(Located span arg) = case arg of
+  ArgPositional expr -> pythonExprToLocatedCommon expr
+  ArgKeyword _ expr -> pythonExprToLocatedCommon expr
+  ArgStarred _ -> Left $ "Starred positional arguments are not supported at " <> formatSpan span
+  ArgKwStarred _ -> Left $ "Starred keyword arguments are not supported at " <> formatSpan span
+
+goExprToCommon :: Located GoExpr -> Either Text CommonExpr
+goExprToCommon located@(Located span expr) = case expr of
+  GoLiteral lit -> CELiteral <$> goLiteralToLiteral span lit
+  GoIdent ident -> Right $ CEVar ident
+  GoQualifiedIdent pkg ident ->
+    let pkgVar = Located span (CEVar pkg)
+    in Right $ CEAttribute pkgVar ident
+  GoBinaryOp op left right -> do
+    left' <- goExprToLocatedCommon left
+    right' <- goExprToLocatedCommon right
+    pure $ CEBinaryOp op left' right'
+  GoUnaryOp op operand -> do
+    operand' <- goExprToLocatedCommon operand
+    pure $ CEUnaryOp op operand'
+  GoComparison op left right -> do
+    left' <- goExprToLocatedCommon left
+    right' <- goExprToLocatedCommon right
+    pure $ CEComparison op left' right'
+  GoCall func args -> do
+    func' <- goExprToLocatedCommon func
+    args' <- traverse goExprToLocatedCommon args
+    pure $ CECall func' args'
+  GoIndex container indexExpr -> do
+    container' <- goExprToLocatedCommon container
+    index' <- goExprToLocatedCommon indexExpr
+    pure $ CEIndex container' index'
+  GoSlice container sliceExpr -> do
+    container' <- goExprToLocatedCommon container
+    case goSliceMax sliceExpr of
+      Just _ -> Left $ "Three-index slices are not supported at " <> formatSpan span
+      Nothing -> do
+        low' <- traverse goExprToLocatedCommon (goSliceLow sliceExpr)
+        high' <- traverse goExprToLocatedCommon (goSliceHigh sliceExpr)
+        pure $ CESlice container' low' high'
+  GoSelector obj ident -> do
+    obj' <- goExprToLocatedCommon obj
+    pure $ CEAttribute obj' ident
+  GoTypeConversion _ _ -> Left $ "Type conversions are not supported at " <> formatSpan span
+  GoCompositeLit{} -> Left $ "Composite literals are not supported at " <> formatSpan span
+  GoArrayLit{} -> Left $ "Array literals are not supported at " <> formatSpan span
+  GoSliceLit{} -> Left $ "Slice literals are not supported at " <> formatSpan span
+  GoMapLit{} -> Left $ "Map literals are not supported at " <> formatSpan span
+  GoStructLit{} -> Left $ "Struct literals are not supported at " <> formatSpan span
+  GoAddress{} -> Left $ "Address-of expressions are not supported at " <> formatSpan span
+  GoDeref{} -> Left $ "Pointer dereference expressions are not supported at " <> formatSpan span
+  GoReceive{} -> Left $ "Channel receive expressions are not supported at " <> formatSpan span
+  GoTypeAssert{} -> Left $ "Type assertions are not supported at " <> formatSpan span
+  GoFuncLit{} -> Left $ "Function literals are not supported at " <> formatSpan span
+
+goExprToLocatedCommon :: Located GoExpr -> Either Text (Located CommonExpr)
+goExprToLocatedCommon located@(Located span _) = do
+  converted <- goExprToCommon located
+  pure $ Located span converted
+
+goLiteralToLiteral :: SourceSpan -> GoLiteral -> Either Text Literal
+goLiteralToLiteral span = \case
+  GoInt n -> Right $ LInt (fromIntegral n :: Int64)
+  GoFloat f -> Right $ LFloat f
+  GoImag _ -> Left $ "Imaginary literals are not supported at " <> formatSpan span
+  GoRune c -> Right $ LChar c
+  GoString s -> Right $ LString s
+  GoRawString s -> Right $ LString s
+  GoBool b -> Right $ LBool b
+  GoNil -> Right LNone
+
+mergeSpans :: SourceSpan -> SourceSpan -> SourceSpan
+mergeSpans (SourceSpan file start _) (SourceSpan _ _ end) = SourceSpan file start end
+
+formatSpan :: SourceSpan -> Text
+formatSpan (SourceSpan file start _) =
+  file <> ":" <> textShow (posLine start) <> ":" <> textShow (posColumn start)
+
+systemSpan :: SourceSpan
+systemSpan = SourceSpan (T.pack "<system>") (SourcePos 0 0) (SourcePos 0 0)
+
+textShow :: Show a => a -> Text
+textShow = T.pack . show
+
+renderType :: Type -> Text
+renderType = textShow
+
+renderCommonExpr :: CommonExpr -> Text
+renderCommonExpr = textShow
 
 -- | Code generation stage
 codeGenStage :: Either PythonAST GoAST -> CompilerM CppUnit
@@ -589,6 +1045,15 @@ incrementProcessedFiles =
 addIntermediateFile :: FilePath -> CompilerM ()
 addIntermediateFile file = 
   modify $ \s -> s { csIntermediateFiles = file : csIntermediateFiles s }
+
+recordOptimizationStat :: Text -> CompilerM ()
+recordOptimizationStat key = recordOptimizationStatN key 1
+
+recordOptimizationStatN :: Text -> Int -> CompilerM ()
+recordOptimizationStatN key delta =
+  modify $ \s ->
+    let updatedStats = HM.insertWith (+) key delta (csOptimizationStats s)
+    in s { csOptimizationStats = updatedStats }
 
 addWarning :: CompilerWarning -> CompilerM ()
 addWarning warning = do
