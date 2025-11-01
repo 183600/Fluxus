@@ -1,5 +1,16 @@
-dist
+# Build output directories
+dist/
 dist-*
+tmp/
+
+# Generated logs and temporary files (root-level)
+/*.log
+/*.out
+/*.tmp
+/*_output.txt
+/*_log.txt
+
+# Haskell build artifacts
 cabal-dev
 *.o
 *.hi

@@ -1,2 +1,0 @@
-All test running disabled by --no-run-tests flag. To mute this message in future, set
-notify-if-no-run-tests: false in Stack's configuration.
