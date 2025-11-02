@@ -843,6 +843,7 @@ pythonLiteralToLiteral span = \case
   PyInt n -> Right $ LInt (fromIntegral n :: Int64)
   PyFloat f -> Right $ LFloat f
   PyString s -> Right $ LString s
+  PyFString _ _ -> Left $ "F-string literals are not supported at " <> formatSpan span
   PyBytes b -> Right $ LBytes b
   PyBool b -> Right $ LBool b
   PyNone -> Right LNone

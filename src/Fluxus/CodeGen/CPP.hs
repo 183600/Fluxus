@@ -327,6 +327,7 @@ generateCppFromPython (PythonAST pyModule) = do
   -- Add basic C++ includes
   addInclude "<iostream>"
   addInclude "<string>"
+  ensurePythonHelpers
   
   -- Generate module namespace (reserved for future use)
   let _moduleName = maybe "main" (\(ModuleName n) -> n) (pyModuleName pyModule)
@@ -815,6 +816,10 @@ generatePythonExpr (Located _ expr) = case expr of
       OpPow -> do
         addInclude "<cmath>"
         return $ CppCall (CppVar "std::pow") [cppLeft, cppRight]
+      OpDiv -> do
+        let leftDiv = promoteToTrueDivOperand cppLeft
+            rightDiv = promoteToTrueDivOperand cppRight
+        return $ CppBinary "/" leftDiv rightDiv
       _ -> do
         let cppOp = mapPythonBinaryOp op
         return $ CppBinary cppOp cppLeft cppRight
@@ -864,31 +869,35 @@ generatePythonExpr (Located _ expr) = case expr of
   PyAttribute obj (Identifier member) -> do
     cppObj <- generatePythonExpr obj
     return $ CppMember cppObj member
-  PyCall func args -> do
-    cppFunc <- generatePythonExpr func
-    cppArgs <- mapM generatePythonArgument args
-    -- Handle special functions
+  PyCall func args ->
     case func of
       Located _ (PyVar (Identifier "print")) -> do
-        -- Convert print to std::cout
         addInclude "<iostream>"
-        case cppArgs of
+        formattedArgs <- mapM formatPrintArgument args
+        case formattedArgs of
           [] -> return $ CppBinary "<<" (CppVar "std::cout") (CppVar "std::endl")
           [arg] -> return $ CppBinary "<<" (CppBinary "<<" (CppVar "std::cout") arg) (CppVar "std::endl")
-          args -> do
-            -- Chain multiple << operators for multiple arguments
-            let chainedOutput = foldl (\acc arg -> CppBinary "<<" (CppBinary "<<" acc arg) (CppLiteral (CppStringLit " "))) (CppVar "std::cout") (init args)
-            return $ CppBinary "<<" (CppBinary "<<" chainedOutput (last args)) (CppVar "std::endl")
+          manyArgs -> do
+            let chainedOutput =
+                  foldl
+                    (\acc expr -> CppBinary "<<" (CppBinary "<<" acc expr) (CppLiteral (CppStringLit " ")))
+                    (CppVar "std::cout")
+                    (init manyArgs)
+            return $ CppBinary "<<" (CppBinary "<<" chainedOutput (last manyArgs)) (CppVar "std::endl")
       Located _ (PyVar (Identifier "len")) -> do
+        cppArgs <- mapM generatePythonArgument args
         case cppArgs of
           [arg0] -> return $ CppCall (CppMember arg0 "size") []
           _      -> return $ CppLiteral (CppIntLit 0)
       Located _ (PyVar (Identifier "range")) -> do
-        -- Handle range() function calls
+        cppArgs <- mapM generatePythonArgument args
         case cppArgs of
           [CppLiteral (CppIntLit n)] -> return $ CppCall (CppVar "range") [CppLiteral (CppIntLit n)]
           _ -> return $ CppCall (CppVar "range") cppArgs
-      _ -> return $ CppCall cppFunc cppArgs
+      _ -> do
+        cppFunc <- generatePythonExpr func
+        cppArgs <- mapM generatePythonArgument args
+        return $ CppCall cppFunc cppArgs
   PyList exprs -> do
     (_, vectorExpr) <- generatePythonListLiteral exprs
     return vectorExpr
@@ -985,6 +994,97 @@ promoteNumericType t1 t2
   | otherwise = CppLongLong
   where
     floatingTypes = [CppFloat, CppDouble, CppLongDouble]
+
+-- | Promote an operand to double for Python's true division
+promoteToTrueDivOperand :: CppExpr -> CppExpr
+promoteToTrueDivOperand expr = case expr of
+  CppLiteral (CppIntLit n) -> CppLiteral (CppFloatLit (fromIntegral n))
+  _ -> CppCast CppDouble expr
+
+-- | Format an argument for printing, converting Python bool values to "True"/"False"
+formatPrintArgument :: Located PythonArgument -> CppCodeGen CppExpr
+formatPrintArgument (Located _ argument) =
+  case argument of
+    ArgPositional expr -> formatExpr expr
+    ArgKeyword _ expr -> formatExpr expr
+    ArgStarred expr -> generatePythonExpr expr
+    ArgKwStarred expr -> generatePythonExpr expr
+  where
+    formatExpr :: Located PythonExpr -> CppCodeGen CppExpr
+    formatExpr locatedExpr = do
+      cppExpr <- generatePythonExpr locatedExpr
+      case locValue locatedExpr of
+        PyBinaryOp OpDiv _ _ -> pure (wrapFloatForPrint cppExpr)
+        _ ->
+          case inferPythonExprCppTypeLocated locatedExpr of
+            Just CppBool -> pure (wrapBoolForPrint cppExpr)
+            Just t | isFloatingCppType t -> pure (wrapFloatForPrint cppExpr)
+            _ -> pure cppExpr
+
+-- | Wrap a boolean expression to print as "True" or "False"
+wrapBoolForPrint :: CppExpr -> CppExpr
+wrapBoolForPrint boolExpr =
+  CppCall (CppVar boolToStringHelperName) [boolExpr]
+
+boolToStringHelperName :: Text
+boolToStringHelperName = "py_bool_to_string"
+
+-- | Check if a C++ type is a floating-point type
+isFloatingCppType :: CppType -> Bool
+isFloatingCppType = \case
+  CppFloat -> True
+  CppDouble -> True
+  CppLongDouble -> True
+  _ -> False
+
+-- | Wrap a floating-point expression for Python-style printing
+wrapFloatForPrint :: CppExpr -> CppExpr
+wrapFloatForPrint floatExpr =
+  CppCall (CppVar floatToStringHelperName) [floatExpr]
+
+floatToStringHelperName :: Text
+floatToStringHelperName = "py_float_to_string"
+
+-- | Ensure Python helper functions are added
+ensurePythonHelpers :: CppCodeGen ()
+ensurePythonHelpers = do
+  ensureHelper boolToStringHelperName boolHelperDecl
+  addInclude "<sstream>"
+  ensureHelper floatToStringHelperName floatHelperDecl
+  where
+    ensureHelper name decl = do
+      existing <- gets cgsDeclarations
+      unless (any (isHelper name) existing) $ addDeclaration decl
+    isHelper targetName (CppFunction name _ _ _) = name == targetName
+    isHelper _ _ = False
+
+    boolHelperDecl =
+      CppFunction boolToStringHelperName CppString
+        [CppParam "value" CppBool Nothing]
+        [ CppIf (CppVar "value")
+            [CppReturn (Just (CppLiteral (CppStringLit "True")))]
+            [CppReturn (Just (CppLiteral (CppStringLit "False")))]
+        ]
+
+    floatHelperDecl =
+      let resultVar = CppVar "result"
+          findWith lit = CppCall (CppMember resultVar "find") [CppLiteral (CppStringLit lit)]
+          npos = CppVar "std::string::npos"
+          dotMissing = CppBinary "==" (findWith ".") npos
+          lowerEMissing = CppBinary "==" (findWith "e") npos
+          upperEMissing = CppBinary "==" (findWith "E") npos
+          exponentMissing = CppBinary "&&" lowerEMissing upperEMissing
+          appendStmt = CppExprStmt (CppCall (CppMember resultVar "append") [CppLiteral (CppStringLit ".0")])
+      in CppFunction floatToStringHelperName CppString
+          [CppParam "value" CppDouble Nothing]
+          [ CppDecl (CppVariable "oss" (CppClassType "std::ostringstream" []) Nothing)
+          , CppExprStmt (CppBinary "<<" (CppVar "oss") (CppVar "value"))
+          , CppDecl (CppVariable "result" CppString (Just (CppCall (CppMember (CppVar "oss") "str") [])))
+          , CppIf (CppBinary "&&" dotMissing exponentMissing)
+              [appendStmt]
+              []
+          , CppReturn (Just resultVar)
+          ]
 
 -- | Generate C++ from Go files
 generateGoFile :: GoFile -> CppCodeGen ()
