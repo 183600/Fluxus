@@ -15,6 +15,7 @@ module Fluxus.CodeGen.CPP
   , CppCodeGenFailure(..)
     -- * Main code generation functions
   , generateCpp
+  , generateCppWithAnnotations
   , generateCppFromPython
   , generateCppFromGo
     -- * C++ AST types
@@ -85,6 +86,7 @@ data CppGenState = CppGenState
   , cgsHoistedGlobals  :: ![Text]                          -- Hoisted module-level globals (in encounter order)
   , cgsFatalErrors     :: ![CppCodeGenError]               -- Fatal issues encountered
   , cgsConfig          :: !CppGenConfig                    -- Configuration
+  , cgsAnalysisAnnotations :: !AnalysisAnnotations         -- Analysis results from compiler passes
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
@@ -247,13 +249,19 @@ initialCppGenState config = CppGenState
   , cgsHoistedGlobals = []
   , cgsFatalErrors = []
   , cgsConfig = config
+  , cgsAnalysisAnnotations = emptyAnnotations
   }
+
+-- | Run code generation with external annotations
+runCppCodeGenWithAnnotations :: CppGenConfig -> AnalysisAnnotations -> CppCodeGen a -> (a, CppGenState, [CppDiagnostic])
+runCppCodeGenWithAnnotations config annotations action =
+  let initialState = (initialCppGenState config) { cgsAnalysisAnnotations = annotations }
+      ((result, finalState), diagnostics) = runWriter (runStateT action initialState)
+  in (result, finalState, diagnostics)
 
 -- | Run code generation
 runCppCodeGen :: CppGenConfig -> CppCodeGen a -> (a, CppGenState, [CppDiagnostic])
-runCppCodeGen config action =
-  let ((result, finalState), diagnostics) = runWriter (runStateT action (initialCppGenState config))
-  in (result, finalState, diagnostics)
+runCppCodeGen config = runCppCodeGenWithAnnotations config emptyAnnotations
 
 -- | Successful code generation result bundle
 data CppCodeGenResult = CppCodeGenResult
@@ -272,7 +280,12 @@ data CppCodeGenFailure = CppCodeGenFailure
 -- | Main entry point for C++ code generation
 generateCpp :: CppGenConfig -> Either PythonAST GoAST -> Either CppCodeGenFailure CppCodeGenResult
 generateCpp config ast =
-  let (unit, finalState, diagnostics) = runCppCodeGen config $
+  generateCppWithAnnotations config emptyAnnotations ast
+
+-- | Code generation that consumes upstream analysis annotations
+generateCppWithAnnotations :: CppGenConfig -> AnalysisAnnotations -> Either PythonAST GoAST -> Either CppCodeGenFailure CppCodeGenResult
+generateCppWithAnnotations config annotations ast =
+  let (unit, finalState, diagnostics) = runCppCodeGenWithAnnotations config annotations $
         case ast of
           Left pyAst -> generateCppFromPython pyAst
           Right goAst -> generateCppFromGo goAst
@@ -1587,6 +1600,43 @@ mapGoTypeToCpp = \case
 
 mapCommonTypeToCpp :: Type -> CppType
 mapCommonTypeToCpp = mapPythonTypeToCpp  -- Reuse Python mapping
+
+-- | Lookup analysis annotations and use them to refine the C++ type
+lookupAndApplyAnnotations :: CommonExpr -> CppType -> CppCodeGen CppType
+lookupAndApplyAnnotations expr defaultType = do
+  annotations <- gets cgsAnalysisAnnotations
+  let exprKey = renderCommonExpr expr
+  case lookupAnnotations exprKey annotations of
+    Nothing -> return defaultType
+    Just anns -> do
+      case (eaInferredType anns, eaOwnership anns) of
+        (Just inferredType, Just ownership) -> do
+          let refinedType = mapCommonTypeToCpp inferredType
+          when (not (null (eaOptimizationNotes anns))) $
+            emitInfo $ "Applying analysis annotations to expression with notes: " <> T.intercalate ", " (eaOptimizationNotes anns)
+          return $ applyOwnershipToType ownership refinedType
+        (Just inferredType, Nothing) ->
+          return $ mapCommonTypeToCpp inferredType
+        (Nothing, Just ownership) ->
+          return $ applyOwnershipToType ownership defaultType
+        (Nothing, Nothing) ->
+          return defaultType
+  where
+    applyOwnershipToType :: OwnershipInfo -> CppType -> CppType
+    applyOwnershipToType ownership cppType =
+      case memLocation ownership of
+        Stack -> cppType
+        Heap ->
+          if ownsMemory ownership
+            then if canMove ownership
+              then CppUniquePtr cppType
+              else CppSharedPtr cppType
+            else CppPointer cppType
+        Global -> cppType
+        Unknown -> cppType
+
+renderCommonExpr :: CommonExpr -> Text
+renderCommonExpr expr = T.pack (show expr)
 
 -- | Literal mapping
 mapPythonLiteral :: PythonLiteral -> CppLiteral
