@@ -233,7 +233,7 @@ defaultCppGenConfig = CppGenConfig
   , cgcEnableCoroutines = True
   , cgcNamespace = "hyperstatic"
   , cgcHeaderGuard = "HYPERSTATIC_GENERATED"
-  , cgcStrictMode = False
+  , cgcStrictMode = True
   }
 
 -- | Initial state
@@ -311,6 +311,16 @@ reportUnsupported msg = do
       emitError msg
       recordFatalError (CppUnsupported msg)
     else emitWarning msg
+
+reportFatalNotImplemented :: Text -> CppCodeGen ()
+reportFatalNotImplemented msg = do
+  emitError msg
+  recordFatalError (CppNotImplemented msg)
+
+reportFatalUnsupported :: Text -> CppCodeGen ()
+reportFatalUnsupported msg = do
+  emitError msg
+  recordFatalError (CppUnsupported msg)
 
 reportInternalError :: Text -> CppCodeGen ()
 reportInternalError msg = do
@@ -470,8 +480,8 @@ generatePythonStmt scope (Located _ stmt) =
         [Located _ (PatVar (Identifier varName))] ->
           handleSimpleAssignment scope varName expr exprVal
         _ -> do
-          -- Multiple assignment - not fully implemented
-          reportNotImplemented "Multiple assignment not implemented"
+          let msg = "Multiple assignment not implemented"
+          reportFatalNotImplemented msg
           return cppNoop
     PyReturn mexpr -> do
       mcppExpr <- mapM generatePythonExpr mexpr
@@ -496,14 +506,49 @@ generatePythonStmt scope (Located _ stmt) =
           mSpec <- parseRangeArgs rangeArgs
           case mSpec of
             Nothing -> do
-              reportUnsupported "range() with unsupported arguments"
+              let msg = "range() with unsupported arguments"
+              reportFatalUnsupported msg
               return cppNoop
             Just spec -> buildRangeLoop varAlreadyDeclared varName cppBody spec
         _ -> do
-          reportUnsupported "Only range() iteration is currently supported"
+          let msg = "Only range() iteration is currently supported"
+          reportFatalUnsupported msg
           return cppNoop
+    PyWith _ _ -> do
+      let msg = "Python 'with' statement not implemented"
+      reportFatalNotImplemented msg
+      return cppNoop
+    PyTry _ _ _ _ -> do
+      let msg = "Python 'try' statement not implemented"
+      reportFatalNotImplemented msg
+      return cppNoop
+    PyAsyncWith _ _ -> do
+      let msg = "Python 'async with' statement not implemented"
+      reportFatalNotImplemented msg
+      return cppNoop
+    PyAsyncFor _ _ _ _ -> do
+      let msg = "Python 'async for' statement not implemented"
+      reportFatalNotImplemented msg
+      return cppNoop
+    PyAsyncFuncDef _ -> do
+      let msg = "Python async function definition not implemented"
+      reportFatalNotImplemented msg
+      return cppNoop
+    PyRaise _ _ -> do
+      let msg = "Python 'raise' statement not implemented"
+      reportFatalNotImplemented msg
+      return cppNoop
+    PyYield _ -> do
+      let msg = "Python 'yield' statement not implemented"
+      reportFatalNotImplemented msg
+      return cppNoop
+    PyYieldFrom _ -> do
+      let msg = "Python 'yield from' statement not implemented"
+      reportFatalNotImplemented msg
+      return cppNoop
     _ -> do
-      reportNotImplemented $ "TODO: Implement Python statement: " <> T.pack (show stmt)
+      let msg = "Python statement not implemented: " <> T.pack (show stmt)
+      reportFatalNotImplemented msg
       return cppNoop
   where
     handleSimpleAssignment :: PythonScope -> Text -> Located PythonExpr -> PythonExpr -> CppCodeGen CppStmt
@@ -1111,7 +1156,9 @@ generateGoDecl (Located _ decl) = case decl of
   GoVarDecl vars -> do
     emitInfo "Generating variable declaration(s)"
     mapM_ generateGoVariable vars
-  _ -> reportNotImplemented $ "TODO: Implement Go declaration: " <> T.pack (show decl)
+  _ -> do
+    let msg = "Go declaration not implemented: " <> T.pack (show decl)
+    reportFatalNotImplemented msg
 
 -- | Generate C++ functions from Python
 generatePythonFunction :: PythonFuncDef -> CppCodeGen ()
@@ -1473,7 +1520,8 @@ generateGoExpr (Located _ expr) = case expr of
     cppExpr <- generateGoExpr expr
     return $ CppCall (CppMember cppExpr "receive") []
   _ -> do
-    reportNotImplemented $ "TODO: Implement Go expression: " <> T.pack (show expr)
+    let msg = "Go expression not implemented: " <> T.pack (show expr)
+    reportFatalNotImplemented msg
     return $ CppLiteral $ CppIntLit 0
 
 -- | Convert Go format string to C++ output
