@@ -13,11 +13,12 @@ module Fluxus.Parser.Go.Parser.Declarations
 
 import Control.Applicative (optional, many)
 import Control.Monad (void)
+import Control.Monad.IO.Class (MonadIO)
 import Data.Functor (($>))
 import Data.Maybe (fromMaybe, isJust)
 import qualified Text.Megaparsec as MP
 
-import Fluxus.AST.Common (Located(..))
+import Fluxus.AST.Common (Located(..), Identifier(..))
 import Fluxus.AST.Go
   ( GoDecl(..)
   , GoFunction(..)
@@ -52,7 +53,7 @@ import Fluxus.Parser.Go.Parser.Expressions
 import Fluxus.Parser.Go.Parser.Statements (parseBlockStmt)
 
 -- | Parse top-level declarations.
-parseDeclaration :: Monad m => GoParser m (Located GoDecl)
+parseDeclaration :: MonadIO m => GoParser m (Located GoDecl)
 parseDeclaration = located $ MP.choice
   [ MP.try parseFuncDecl
   , MP.try parseTypeDecl
@@ -62,7 +63,7 @@ parseDeclaration = located $ MP.choice
   ]
 
 -- | Parse function declarations and methods.
-parseFuncDecl :: Monad m => GoParser m GoDecl
+parseFuncDecl :: MonadIO m => GoParser m GoDecl
 parseFuncDecl = do
   logDebug "parseFuncDecl: entering"
   void $ goKeywordP GoKwFunc
@@ -163,7 +164,7 @@ parseImportDeclStmt :: Monad m => GoParser m GoDecl
 parseImportDeclStmt = GoImportDecl <$> parseImportDecl
 
 -- | Parse import declarations.
-parseImportDecl :: Monad m => GoParser m [Located GoImport]
+parseImportDecl :: GoParser m [Located GoImport]
 parseImportDecl = do
   void $ goKeywordP GoKwImport
   skipCommentsAndNewlines

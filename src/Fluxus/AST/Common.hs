@@ -224,7 +224,7 @@ data CommonExpr
   | CEIndex !(Located CommonExpr) !(Located CommonExpr)
   | CESlice !(Located CommonExpr) !(Maybe (Located CommonExpr)) !(Maybe (Located CommonExpr))
   | CEAttribute !(Located CommonExpr) !Identifier
-  deriving stock (Eq, Show, Generic)
+  deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (NFData)
 
 instance Hashable CommonExpr

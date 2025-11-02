@@ -27,20 +27,18 @@ module Fluxus.Parser.Go.Parser.Statements
 
 import Control.Applicative (optional, many)
 import Control.Monad (void)
+import Control.Monad.IO.Class (MonadIO)
 import Data.Functor (($>))
 import qualified Data.Text as T
 import Text.Megaparsec (anySingle, lookAhead)
 import qualified Text.Megaparsec as MP
-import Text.Megaparsec.Error (errorBundlePretty)
 
 import Fluxus.AST.Common (Located(..), BinaryOp(..))
 import Fluxus.AST.Go
   ( GoStmt(..)
   , GoRangeClause(..)
   , GoForClause(..)
-  , GoCaseClause(..)
   , GoCommClause(..)
-  , GoBinaryOp(..)
   , GoExpr(..)
   )
 import Fluxus.Parser.Go.Lexer
@@ -68,7 +66,7 @@ import Fluxus.Parser.Go.Parser.Expressions
   )
 
 -- | Parse Go statements.
-parseStatement :: Monad m => GoParser m (Located GoStmt)
+parseStatement :: MonadIO m => GoParser m (Located GoStmt)
 parseStatement = located $ MP.choice
   [ MP.try parseReturnStmt
   , MP.try parseBreakStmt
@@ -172,7 +170,7 @@ parseSendStmt = do
   value <- parseExpression
   pure $ GoSend channel value
 
-parseIfStmt :: Monad m => GoParser m GoStmt
+parseIfStmt :: MonadIO m => GoParser m GoStmt
 parseIfStmt = do
   void $ goKeywordP GoKwIf
   simpleStmt <- optional $ MP.try $ do
@@ -189,7 +187,7 @@ parseIfStmt = do
       ]
   pure $ GoIf simpleStmt condition thenBody elseBody
 
-parseForStmt :: Monad m => GoParser m GoStmt
+parseForStmt :: MonadIO m => GoParser m GoStmt
 parseForStmt = do
   void $ goKeywordP GoKwFor
   MP.choice
@@ -240,7 +238,7 @@ parseForStmt = do
       body <- located parseBlockStmt'
       pure $ GoFor Nothing body
 
-parseSwitchStmt :: Monad m => GoParser m GoStmt
+parseSwitchStmt :: MonadIO m => GoParser m GoStmt
 parseSwitchStmt = do
   void $ goKeywordP GoKwSwitch
   simpleStmt <- optional $ MP.try $ do
@@ -267,7 +265,7 @@ parseSwitchStmt = do
           pure $ GoDefault stmts
       ]
 
-parseSelectStmt :: Monad m => GoParser m GoStmt
+parseSelectStmt :: MonadIO m => GoParser m GoStmt
 parseSelectStmt = do
   void $ goKeywordP GoKwSelect
   void $ goDelimiterP GoDelimLeftBrace
@@ -289,10 +287,10 @@ parseSelectStmt = do
           pure $ GoCommClause Nothing stmts
       ]
 
-parseBlockStmt :: Monad m => GoParser m (Located GoStmt)
+parseBlockStmt :: MonadIO m => GoParser m (Located GoStmt)
 parseBlockStmt = located parseBlockStmt'
 
-parseBlockStmt' :: Monad m => GoParser m GoStmt
+parseBlockStmt' :: MonadIO m => GoParser m GoStmt
 parseBlockStmt' = do
   logDebug "parseBlockStmt': entering"
   void $ goDelimiterP GoDelimLeftBrace
@@ -305,38 +303,38 @@ parseBlockStmt' = do
   logDebug "parseBlockStmt': exiting"
   pure $ GoBlock stmts
 
-parseReturnStmt :: Monad m => GoParser m GoStmt
+parseReturnStmt :: MonadIO m => GoParser m GoStmt
 parseReturnStmt = do
   void $ goKeywordP GoKwReturn
   result <- MP.observing (MP.try parseExpressionList)
   exprs <- case result of
     Left err -> do
-      logDebug $ "parseReturnStmt: failed to parse expressions: " <> T.pack (errorBundlePretty err)
+      logDebug $ "parseReturnStmt: failed to parse expressions: " <> textShow err
       pure []
     Right es -> do
       logDebug $ "parseReturnStmt: parsed expressions count = " <> textShow (length es)
       pure es
   pure $ GoReturn exprs
 
-parseBreakStmt :: Monad m => GoParser m GoStmt
+parseBreakStmt :: GoParser m GoStmt
 parseBreakStmt = do
   void $ goKeywordP GoKwBreak
   label <- optional parseGoIdentifier
   pure $ GoBreak label
 
-parseContinueStmt :: Monad m => GoParser m GoStmt
+parseContinueStmt :: GoParser m GoStmt
 parseContinueStmt = do
   void $ goKeywordP GoKwContinue
   label <- optional parseGoIdentifier
   pure $ GoContinue label
 
-parseGotoStmt :: Monad m => GoParser m GoStmt
+parseGotoStmt :: GoParser m GoStmt
 parseGotoStmt = do
   void $ goKeywordP GoKwGoto
   label <- parseGoIdentifier
   pure $ GoGoto label
 
-parseFallthroughStmt :: Monad m => GoParser m GoStmt
+parseFallthroughStmt :: GoParser m GoStmt
 parseFallthroughStmt = goKeywordP GoKwFallthrough $> GoFallthrough
 
 parseDeferStmt :: Monad m => GoParser m GoStmt
@@ -351,5 +349,5 @@ parseGoStmt = do
   expr <- parseExpression
   pure $ GoGo expr
 
-parseEmptyStmt :: Monad m => GoParser m GoStmt
+parseEmptyStmt :: GoParser m GoStmt
 parseEmptyStmt = goDelimiterP GoDelimSemicolon $> GoEmpty

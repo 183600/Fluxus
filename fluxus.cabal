@@ -39,9 +39,11 @@ library
     Fluxus.Analysis.EscapeAnalysis
     Fluxus.Analysis.ShapeAnalysis
     Fluxus.Analysis.OwnershipInference
+    Fluxus.Analysis.SmartFallback
     Fluxus.Optimization.Monomorphization
     Fluxus.Optimization.Devirtualization
     Fluxus.CodeGen.CPP
+    Fluxus.CodeGen.CPP.Diagnostics
     Fluxus.CodeGen.Go
     Fluxus.Runtime.Python
     Fluxus.Runtime.Go

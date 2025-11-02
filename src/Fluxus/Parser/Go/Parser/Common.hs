@@ -24,6 +24,7 @@ module Fluxus.Parser.Go.Parser.Common
   ) where
 
 import Control.Monad (void)
+import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Logger (LoggingT, logDebugNS)
 import Control.Monad.Trans.Class (lift)
 import Data.Text (Text)
@@ -53,11 +54,11 @@ parserLogSource :: Text
 parserLogSource = "fluxus.go.parser"
 
 -- | Emit a debug log message within the Go parser.
-logDebug :: Monad m => Text -> GoParser m ()
+logDebug :: MonadIO m => Text -> GoParser m ()
 logDebug msg = lift (logDebugNS parserLogSource msg)
 
 -- | Left-associative chain combinator.
-chainl1 :: Monad m => GoParser m a -> GoParser m (a -> a -> a) -> GoParser m a
+chainl1 :: GoParser m a -> GoParser m (a -> a -> a) -> GoParser m a
 chainl1 p op = do
   x <- p
   rest x
@@ -101,7 +102,7 @@ spanAtOffset fallback tokens offset =
         [] -> defaultSpan fallback
 
 -- | Decorate a parser result with source span information.
-located :: Monad m => GoParser m a -> GoParser m (Located a)
+located :: GoParser m a -> GoParser m (Located a)
 located parser = do
   before <- getInput
   result <- parser
@@ -120,44 +121,44 @@ located' :: a -> Located a
 located' = noLoc
 
 -- | Match a keyword token.
-goKeywordP :: Monad m => GoKeyword -> GoParser m ()
+goKeywordP :: GoKeyword -> GoParser m ()
 goKeywordP kw = void $ satisfy $ \case
   Located _ (GoTokenKeyword kw') -> kw == kw'
   _ -> False
 
 -- | Match an operator token.
-goOperatorP :: Monad m => GoOperator -> GoParser m ()
+goOperatorP :: GoOperator -> GoParser m ()
 goOperatorP op = void $ satisfy $ \case
   Located _ (GoTokenOperator op') -> op == op'
   _ -> False
 
 -- | Match a delimiter token.
-goDelimiterP :: Monad m => GoDelimiter -> GoParser m ()
+goDelimiterP :: GoDelimiter -> GoParser m ()
 goDelimiterP delim = void $ satisfy $ \case
   Located _ (GoTokenDelimiter delim') -> delim == delim'
   _ -> False
 
 -- | Skip newline tokens.
-skipNewlines :: Monad m => GoParser m ()
+skipNewlines :: GoParser m ()
 skipNewlines = void $ MP.many $ satisfy $ \case
   Located _ GoTokenNewline -> True
   _ -> False
 
 -- | Skip comment tokens.
-skipComments :: Monad m => GoParser m ()
+skipComments :: GoParser m ()
 skipComments = void $ MP.many $ satisfy $ \case
   Located _ (GoTokenComment _) -> True
   _ -> False
 
 -- | Skip comments and newlines.
-skipCommentsAndNewlines :: Monad m => GoParser m ()
+skipCommentsAndNewlines :: GoParser m ()
 skipCommentsAndNewlines = void $ MP.many $ satisfy $ \case
   Located _ GoTokenNewline -> True
   Located _ (GoTokenComment _) -> True
   _ -> False
 
 -- | Parse a Go identifier token.
-parseGoIdentifier :: Monad m => GoParser m Identifier
+parseGoIdentifier :: GoParser m Identifier
 parseGoIdentifier = do
   Located _ token <- satisfy $ \case
     Located _ (GoTokenIdent _) -> True
@@ -167,7 +168,7 @@ parseGoIdentifier = do
     _ -> fail "Expected identifier"
 
 -- | Parse a Go string or raw string literal.
-parseGoString :: Monad m => GoParser m Text
+parseGoString :: GoParser m Text
 parseGoString = do
   Located _ token <- satisfy $ \case
     Located _ (GoTokenString _) -> True
@@ -179,7 +180,7 @@ parseGoString = do
     _ -> fail "Expected string"
 
 -- | Parse a comma-separated list of identifiers.
-parseIdentifierList :: Monad m => GoParser m [Identifier]
+parseIdentifierList :: GoParser m [Identifier]
 parseIdentifierList = parseGoIdentifier `MP.sepBy1` goDelimiterP GoDelimComma
 
 -- | Show a value as text.
