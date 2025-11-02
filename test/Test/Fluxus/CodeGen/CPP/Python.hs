@@ -57,18 +57,22 @@ expressionGenerationSpec = describe "Expression generation" $ do
               , pyModuleImports = []
               , pyModuleBody = moduleBody
               }
-        unit = generateCpp Shared.testCppConfig (Left pythonAst)
+        result = generateCpp Shared.testCppConfig (Left pythonAst)
         isTotalVar decl = case decl of
           CppVariable name _ _ -> name == "total"
           _ -> False
-    case find isTotalVar (cppDeclarations unit) of
-      Just (CppVariable _ _ (Just initializer)) ->
-        initializer `shouldBe`
-          CppBinary "+"
-            (CppLiteral (CppIntLit 1))
-            (CppLiteral (CppIntLit 2))
-      _ ->
-        expectationFailure "Expected hoisted declaration for variable 'total'"
+    case result of
+      Right res ->
+        case find isTotalVar (cppDeclarations (cgrUnit res)) of
+          Just (CppVariable _ _ (Just initializer)) ->
+            initializer `shouldBe`
+              CppBinary "+"
+                (CppLiteral (CppIntLit 1))
+                (CppLiteral (CppIntLit 2))
+          _ ->
+            expectationFailure "Expected hoisted declaration for variable 'total'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
 
   it "turns Python print into std::cout streaming" $ do
     let moduleBody =
@@ -90,19 +94,23 @@ expressionGenerationSpec = describe "Expression generation" $ do
               , pyModuleImports = []
               , pyModuleBody = moduleBody
               }
-        unit = generateCpp Shared.testCppConfig (Left pythonAst)
-    case find Shared.isMainFunction (cppDeclarations unit) of
-      Just (CppFunction _ _ _ body) ->
-        case listToMaybe [expr | CppExprStmt expr <- body] of
-          Just expr ->
-            expr `shouldBe`
-              CppBinary "<<"
-                (CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit "hello")))
-                (CppVar "std::endl")
-          Nothing ->
-            expectationFailure "Expected print statement in generated main body"
-      _ ->
-        expectationFailure "Expected generated main function"
+        result = generateCpp Shared.testCppConfig (Left pythonAst)
+    case result of
+      Right res ->
+        case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
+          Just (CppFunction _ _ _ body) ->
+            case listToMaybe [expr | CppExprStmt expr <- body] of
+              Just expr ->
+                expr `shouldBe`
+                  CppBinary "<<"
+                    (CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit "hello")))
+                    (CppVar "std::endl")
+              Nothing ->
+                expectationFailure "Expected print statement in generated main body"
+          _ ->
+            expectationFailure "Expected generated main function"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
 
 statementGenerationSpec :: Spec
 statementGenerationSpec = describe "Statement generation" $ do
@@ -141,24 +149,28 @@ statementGenerationSpec = describe "Statement generation" $ do
               , pyModuleImports = []
               , pyModuleBody = moduleBody
               }
-        unit = generateCpp Shared.testCppConfig (Left pythonAst)
-    case find Shared.isMainFunction (cppDeclarations unit) of
-      Just (CppFunction _ _ _ body) ->
-        case listToMaybe [(cond, thenStmts, elseStmts) | CppIf cond thenStmts elseStmts <- body] of
-          Just (cond, thenStmts, elseStmts) -> do
-            cond `shouldBe` CppLiteral (CppBoolLit True)
-            let expectedStream text =
-                  CppBinary "<<"
-                    (CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit text)))
-                    (CppVar "std::endl")
-            listToMaybe [expr | CppExprStmt expr <- thenStmts]
-              `shouldBe` Just (expectedStream "then")
-            listToMaybe [expr | CppExprStmt expr <- elseStmts]
-              `shouldBe` Just (expectedStream "else")
-          Nothing ->
-            expectationFailure "Expected an if statement in generated main body"
-      _ ->
-        expectationFailure "Expected generated main function"
+        result = generateCpp Shared.testCppConfig (Left pythonAst)
+    case result of
+      Right res ->
+        case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
+          Just (CppFunction _ _ _ body) ->
+            case listToMaybe [(cond, thenStmts, elseStmts) | CppIf cond thenStmts elseStmts <- body] of
+              Just (cond, thenStmts, elseStmts) -> do
+                cond `shouldBe` CppLiteral (CppBoolLit True)
+                let expectedStream text =
+                      CppBinary "<<"
+                        (CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit text)))
+                        (CppVar "std::endl")
+                listToMaybe [expr | CppExprStmt expr <- thenStmts]
+                  `shouldBe` Just (expectedStream "then")
+                listToMaybe [expr | CppExprStmt expr <- elseStmts]
+                  `shouldBe` Just (expectedStream "else")
+              Nothing ->
+                expectationFailure "Expected an if statement in generated main body"
+          _ ->
+            expectationFailure "Expected generated main function"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
 
   it "emits CppWhile nodes for Python while loops" $ do
     let moduleBody =
@@ -204,25 +216,29 @@ statementGenerationSpec = describe "Statement generation" $ do
               , pyModuleImports = []
               , pyModuleBody = moduleBody
               }
-        unit = generateCpp Shared.testCppConfig (Left pythonAst)
-    case find Shared.isMainFunction (cppDeclarations unit) of
-      Just (CppFunction _ _ _ body) ->
-        case listToMaybe [(cond, loopStmts) | CppWhile cond loopStmts <- body] of
-          Just (cond, loopStmts) -> do
-            cond `shouldBe`
-              CppBinary "<" (CppVar "n") (CppLiteral (CppIntLit 3))
-            let hasIncrement = any incrementsN loopStmts
-                incrementsN stmt =
-                  case stmt of
-                    CppExprStmt (CppBinary "=" (CppVar "n") (CppBinary "+" (CppVar "n") (CppLiteral (CppIntLit 1)))) -> True
-                    CppStmtSeq inner -> any incrementsN inner
-                    CppBlock inner -> any incrementsN inner
-                    _ -> False
-            hasIncrement `shouldBe` True
-          Nothing ->
-            expectationFailure "Expected a while loop in generated main body"
-      _ ->
-        expectationFailure "Expected generated main function"
+        result = generateCpp Shared.testCppConfig (Left pythonAst)
+    case result of
+      Right res ->
+        case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
+          Just (CppFunction _ _ _ body) ->
+            case listToMaybe [(cond, loopStmts) | CppWhile cond loopStmts <- body] of
+              Just (cond, loopStmts) -> do
+                cond `shouldBe`
+                  CppBinary "<" (CppVar "n") (CppLiteral (CppIntLit 3))
+                let hasIncrement = any incrementsN loopStmts
+                    incrementsN stmt =
+                      case stmt of
+                        CppExprStmt (CppBinary "=" (CppVar "n") (CppBinary "+" (CppVar "n") (CppLiteral (CppIntLit 1)))) -> True
+                        CppStmtSeq inner -> any incrementsN inner
+                        CppBlock inner -> any incrementsN inner
+                        _ -> False
+                hasIncrement `shouldBe` True
+              Nothing ->
+                expectationFailure "Expected a while loop in generated main body"
+          _ ->
+            expectationFailure "Expected generated main function"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
 
 declarationGenerationSpec :: Spec
 declarationGenerationSpec = describe "Declaration generation" $ do
@@ -259,22 +275,26 @@ declarationGenerationSpec = describe "Declaration generation" $ do
               , pyModuleImports = []
               , pyModuleBody = [noLoc (PyFuncDef funcDef)]
               }
-        unit = generateCpp Shared.testCppConfig (Left pythonAst)
+        result = generateCpp Shared.testCppConfig (Left pythonAst)
         isAdd decl = case decl of
           CppFunction name _ _ _ -> name == "add"
           _ -> False
-    case find isAdd (cppDeclarations unit) of
-      Just (CppFunction _ returnType params body) -> do
-        returnType `shouldBe` CppAuto
-        params `shouldBe`
-          [ CppParam "x" CppAuto Nothing
-          , CppParam "y" CppAuto Nothing
-          ]
-        listToMaybe [expr | CppReturn (Just expr) <- body]
-          `shouldBe`
-            Just (CppBinary "+" (CppVar "x") (CppVar "y"))
-      _ ->
-        expectationFailure "Expected generated declaration for function 'add'"
+    case result of
+      Right res ->
+        case find isAdd (cppDeclarations (cgrUnit res)) of
+          Just (CppFunction _ returnType params body) -> do
+            returnType `shouldBe` CppAuto
+            params `shouldBe`
+              [ CppParam "x" CppAuto Nothing
+              , CppParam "y" CppAuto Nothing
+              ]
+            listToMaybe [expr | CppReturn (Just expr) <- body]
+              `shouldBe`
+                Just (CppBinary "+" (CppVar "x") (CppVar "y"))
+          _ ->
+            expectationFailure "Expected generated declaration for function 'add'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
 
   it "emits CppClass declarations for Python classes" $ do
     let classDef = PythonClassDef
@@ -293,33 +313,41 @@ declarationGenerationSpec = describe "Declaration generation" $ do
               , pyModuleImports = []
               , pyModuleBody = [noLoc (PyClassDef classDef)]
               }
-        unit = generateCpp Shared.testCppConfig (Left pythonAst)
+        result = generateCpp Shared.testCppConfig (Left pythonAst)
         isSample decl = case decl of
           CppClass name _ _ -> name == "Sample"
           _ -> False
-    case find isSample (cppDeclarations unit) of
-      Just (CppClass _ bases members) -> do
-        bases `shouldBe` []
-        members `shouldBe` []
-      _ ->
-        expectationFailure "Expected generated declaration for class 'Sample'"
+    case result of
+      Right res ->
+        case find isSample (cppDeclarations (cgrUnit res)) of
+          Just (CppClass _ bases members) -> do
+            bases `shouldBe` []
+            members `shouldBe` []
+          _ ->
+            expectationFailure "Expected generated declaration for class 'Sample'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
 
 pythonGlobalSpec :: Spec
 pythonGlobalSpec = describe "Python module handling" $ do
   it "hoists module-level assignments to global declarations" $ do
-    let unit = generateCpp Shared.testCppConfig (Left pythonAst)
-        decls = cppDeclarations unit
-    case decls of
-      (CppVariable name _ _) : rest -> do
-        name `shouldBe` "x"
-        case find Shared.isFooFunction rest of
-          Just _ -> pure ()
-          Nothing -> expectationFailure "Expected foo function declaration"
-        case find Shared.isMainFunction rest of
-          Just (CppFunction _ _ _ body) ->
-            any (declaresVar "x") body `shouldBe` False
-          _ -> expectationFailure "Expected generated main function"
-      _ -> expectationFailure "Expected module-level variable declaration"
+    let result = generateCpp Shared.testCppConfig (Left pythonAst)
+    case result of
+      Right res ->
+        let decls = cppDeclarations (cgrUnit res) in
+        case decls of
+          (CppVariable name _ _) : rest -> do
+            name `shouldBe` "x"
+            case find Shared.isFooFunction rest of
+              Just _ -> pure ()
+              Nothing -> expectationFailure "Expected foo function declaration"
+            case find Shared.isMainFunction rest of
+              Just (CppFunction _ _ _ body) ->
+                any (declaresVar "x") body `shouldBe` False
+              _ -> expectationFailure "Expected generated main function"
+          _ -> expectationFailure "Expected module-level variable declaration"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
   where
     pythonAst = PythonAST PythonModule
       { pyModuleName = Just (ModuleName "sample")
