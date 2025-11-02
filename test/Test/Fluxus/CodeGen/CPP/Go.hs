@@ -36,31 +36,37 @@ spec = describe "Go code generation" $ do
 goPrintingSpec :: Spec
 goPrintingSpec = describe "fmt translation" $ do
   it "translates fmt.Println into std::cout stream chain" $ do
-    let unit = generateCpp Shared.testCppConfig (Right Shared.goPrintlnAst)
-        includes = cppIncludes unit
-    ("<iostream>" `elem` includes) `shouldBe` True
-    case find Shared.isMainFunction (cppDeclarations unit) of
-      Just (CppFunction _ _ _ body) ->
-        case listToMaybe body of
-          Just (CppExprStmt expr) -> do
-            Shared.isStreamFromCout expr `shouldBe` True
-            Shared.containsStdEndl expr `shouldBe` True
-            Shared.containsCoutCall expr `shouldBe` False
-          _ -> expectationFailure "expected fmt.Println to produce expression statement"
-      _ -> expectationFailure "expected generated main function"
+    case generateCpp Shared.testCppConfig (Right Shared.goPrintlnAst) of
+      Right res -> do
+        let unit = cgrUnit res
+            includes = cppIncludes unit
+        ("<iostream>" `elem` includes) `shouldBe` True
+        case find Shared.isMainFunction (cppDeclarations unit) of
+          Just (CppFunction _ _ _ body) ->
+            case listToMaybe body of
+              Just (CppExprStmt expr) -> do
+                Shared.isStreamFromCout expr `shouldBe` True
+                Shared.containsStdEndl expr `shouldBe` True
+                Shared.containsCoutCall expr `shouldBe` False
+              _ -> expectationFailure "expected fmt.Println to produce expression statement"
+          _ -> expectationFailure "expected generated main function"
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
 
   it "translates fmt.Printf into std::printf call" $ do
-    let unit = generateCpp Shared.testCppConfig (Right Shared.goPrintfAst)
-        includes = cppIncludes unit
-    ("<cstdio>" `elem` includes) `shouldBe` True
-    case find Shared.isMainFunction (cppDeclarations unit) of
-      Just (CppFunction _ _ _ body) ->
-        case listToMaybe body of
-          Just (CppExprStmt expr) -> do
-            Shared.isStdPrintfCall expr `shouldBe` True
-            Shared.containsCoutCall expr `shouldBe` False
-          _ -> expectationFailure "expected fmt.Printf to produce expression statement"
-      _ -> expectationFailure "expected generated main function"
+    case generateCpp Shared.testCppConfig (Right Shared.goPrintfAst) of
+      Right res -> do
+        let unit = cgrUnit res
+            includes = cppIncludes unit
+        ("<cstdio>" `elem` includes) `shouldBe` True
+        case find Shared.isMainFunction (cppDeclarations unit) of
+          Just (CppFunction _ _ _ body) ->
+            case listToMaybe body of
+              Just (CppExprStmt expr) -> do
+                Shared.isStdPrintfCall expr `shouldBe` True
+                Shared.containsCoutCall expr `shouldBe` False
+              _ -> expectationFailure "expected fmt.Printf to produce expression statement"
+          _ -> expectationFailure "expected generated main function"
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
 
 goRuntimeSpec :: Spec
 goRuntimeSpec = describe "Go end-to-end compilation" $ do
@@ -78,7 +84,7 @@ goRuntimeSpec = describe "Go end-to-end compilation" $ do
 
 helperSpec :: Spec
 helperSpec = describe "helper utilities" $
-  prop "indentLines adds four spaces to every line" $ \(xs :: [String]) ->
+  prop "indentLines adds four spaces to every line" $ \xs ->
     let actual = Shared.indentLines xs
         prefixes = map (take 4) actual
         stripped = map (drop 4) actual
