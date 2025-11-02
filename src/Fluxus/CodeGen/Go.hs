@@ -20,6 +20,9 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
+import Data.List (foldl')
+import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
+import Control.Applicative ((<|>))
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 
@@ -107,6 +110,13 @@ generateStatement config stmt = case stmt of
             goType = inferGoType value
         in ["var " <> name <> " " <> goType <> " = " <> goValue]
       _ -> []
+  
+  PyAnnAssign (Located _ (PatVar (Identifier name))) typeExpr maybeValue ->
+    let goType = pythonTypeToGo (locatedValue typeExpr)
+        assignment = case maybeValue of
+                       Just (Located _ value) -> " = " <> generateExpression config value
+                       Nothing -> ""
+    in ["var " <> name <> " " <> goType <> assignment]
       
   PyIf (Located _ cond) thenBody elseBody ->
     let goCond = generateExpression config cond
@@ -143,25 +153,41 @@ generateFunctionDef config funcDef =
       params = map (generateParameter config) (pyFuncParams funcDef)
       paramStr = if null params then "" else T.intercalate ", " params
       body = concatMap (\(Located _ stmt) -> generateStatement config stmt) (pyFuncBody funcDef)
-      returnType = if funcName == "main" then "int" else "int"
-  in ["func " <> funcName <> "(" <> paramStr <> ") " <> returnType <> " {"] ++
+      returnType = case pyFuncReturns funcDef of
+                     Just locTypeExpr -> pythonTypeToGo (locatedValue locTypeExpr)
+                     Nothing -> if funcName == "main" then "int" else inferReturnTypeFromBody (pyFuncBody funcDef)
+      funcSignature = "func " <> funcName <> "(" <> paramStr <> ")" <> formatReturnType returnType
+  in [funcSignature <> " {"] ++
      map ("\t" <>) body ++
      (if funcName == "main" && not (hasReturnStatement (pyFuncBody funcDef)) then ["\treturn 0"] else []) ++
      ["}"]
   where
+    formatReturnType t
+      | T.null t = ""
+      | otherwise = " " <> t
     hasReturnStatement stmts = any isReturnStmt stmts
     isReturnStmt (Located _ (PyReturn _)) = True
     isReturnStmt _ = False
 
 -- | Generate parameter
 generateParameter :: GoGenConfig -> Located PythonParameter -> Text
-generateParameter config (Located _ param) = case param of
-  ParamNormal (Identifier name) typeAnn _ ->
-    let paramType = case typeAnn of
-                      Just _ -> "int"
-                      Nothing -> "int"
+generateParameter _ (Located _ param) = case param of
+  ParamNormal (Identifier name) typeAnn defaultExpr ->
+    let typeFromAnnotation = pythonTypeToGo . locatedValue <$> typeAnn
+        typeFromDefault = pythonTypeToGoLiteral <$> defaultExpr
+        paramType = fromMaybe "interface{}" (typeFromAnnotation <|> typeFromDefault)
     in name <> " " <> paramType
-  _ -> "_ int"
+  ParamVarArgs (Identifier name) typeAnn ->
+    let baseType = fromMaybe "interface{}" (pythonTypeToGo . locatedValue <$> typeAnn)
+    in name <> " ..." <> baseType
+  ParamKwArgs (Identifier name) typeAnn ->
+    let valueType = fromMaybe "interface{}" (pythonTypeToGo . locatedValue <$> typeAnn)
+    in name <> " map[string]" <> valueType
+  ParamKwOnly (Identifier name) typeAnn defaultExpr ->
+    let typeFromAnnotation = pythonTypeToGo . locatedValue <$> typeAnn
+        typeFromDefault = pythonTypeToGoLiteral <$> defaultExpr
+        paramType = fromMaybe "interface{}" (typeFromAnnotation <|> typeFromDefault)
+    in name <> " " <> paramType
 
 -- | Generate expression
 generateExpression :: GoGenConfig -> PythonExpr -> Text
@@ -225,9 +251,123 @@ generateExpression config expr = case expr of
     
   PyList elements ->
     let elemExprs = map (\(Located _ elem) -> generateExpression config elem) elements
-    in "[]int{" <> T.intercalate ", " elemExprs <> "}"
+        elemType = inferElementType elements
+    in "[]" <> elemType <> "{" <> T.intercalate ", " elemExprs <> "}"
     
   _ -> "0"
+
+-- | Extract text from Identifier
+identifierText :: Identifier -> Text
+identifierText (Identifier t) = t
+
+-- | Convert a simple Python type name into its Go equivalent
+goTypeFromSimpleName :: Text -> Text
+goTypeFromSimpleName name =
+  let lower = T.toLower name
+  in case lower of
+       "int" -> "int"
+       "int8" -> "int8"
+       "int16" -> "int16"
+       "int32" -> "int32"
+       "int64" -> "int64"
+       "uint" -> "uint"
+       "uint8" -> "uint8"
+       "uint16" -> "uint16"
+       "uint32" -> "uint32"
+       "uint64" -> "uint64"
+       "float" -> "float64"
+       "float32" -> "float32"
+       "float64" -> "float64"
+       "complex" -> "complex128"
+       "complex64" -> "complex64"
+       "complex128" -> "complex128"
+       "bool" -> "bool"
+       "true" -> "bool"
+       "false" -> "bool"
+       "str" -> "string"
+       "string" -> "string"
+       "bytes" -> "[]byte"
+       "bytearray" -> "[]byte"
+       "any" -> "interface{}"
+       "object" -> "interface{}"
+       "none" -> "interface{}"
+       "list" -> "[]interface{}"
+       "tuple" -> "[]interface{}"
+       "sequence" -> "[]interface{}"
+       "set" -> "map[interface{}]struct{}"
+       "dict" -> "map[interface{}]interface{}"
+       "mapping" -> "map[interface{}]interface{}"
+       _ -> name
+
+-- | Infer element type for list/tuple/set literals
+inferElementType :: [Located PythonExpr] -> Text
+inferElementType [] = "interface{}"
+inferElementType (x:xs) =
+  foldl' combineGoTypes (inferGoType (locatedValue x)) (map (inferGoType . locatedValue) xs)
+
+-- | Infer key type for dict literals
+inferDictKeyType :: [(Located PythonExpr, Located PythonExpr)] -> Text
+inferDictKeyType [] = "interface{}"
+inferDictKeyType ((k, _):rest) =
+  foldl' combineGoTypes (inferGoType (locatedValue k)) (map (inferGoType . locatedValue . fst) rest)
+
+-- | Infer value type for dict literals
+inferDictValueType :: [(Located PythonExpr, Located PythonExpr)] -> Text
+inferDictValueType [] = "interface{}"
+inferDictValueType ((_, v):rest) =
+  foldl' combineGoTypes (inferGoType (locatedValue v)) (map (inferGoType . locatedValue . snd) rest)
+
+-- | Combine two Go types, picking a compatible supertype if possible
+combineGoTypes :: Text -> Text -> Text
+combineGoTypes a b
+  | T.null a = b
+  | T.null b = a
+  | a == b = a
+  | isNumericType a && isNumericType b = promoteNumericTypes a b
+  | isStringType a && isStringType b = "string"
+  | isBoolType a && isBoolType b = "bool"
+  | isListType a && isListType b = "[]" <> combineGoTypes (stripListPrefix a) (stripListPrefix b)
+  | isMapType a && isMapType b =
+      let (ka, va) = splitMapType a
+          (kb, vb) = splitMapType b
+      in "map[" <> combineGoTypes ka kb <> "]" <> combineGoTypes va vb
+  | otherwise = "interface{}"
+
+-- | Helpers for working with Go type strings
+isNumericType :: Text -> Bool
+isNumericType t = isIntegralType t || isFloatType t || isComplexType t
+  where
+    isIntegralType v = T.isPrefixOf "int" v || T.isPrefixOf "uint" v
+    isFloatType v = T.isPrefixOf "float" v
+    isComplexType v = T.isPrefixOf "complex" v
+
+isStringType :: Text -> Bool
+isStringType t = t == "string"
+
+isBoolType :: Text -> Bool
+isBoolType t = t == "bool"
+
+isListType :: Text -> Bool
+isListType t = "[]" `T.isPrefixOf` t
+
+stripListPrefix :: Text -> Text
+stripListPrefix t
+  | isListType t = T.drop 2 t
+  | otherwise = "interface{}"
+
+isMapType :: Text -> Bool
+isMapType t = "map[" `T.isPrefixOf` t
+
+splitMapType :: Text -> (Text, Text)
+splitMapType t
+  | isMapType t =
+      let inner = T.drop 4 t
+          (keyPart, rest) = T.breakOn "]" inner
+          valuePart = T.drop 1 rest
+          keyType = if T.null keyPart then "interface{}" else keyPart
+          valueType = if T.null valuePart then "interface{}" else valuePart
+      in (keyType, valueType)
+  | otherwise = ("interface{}", "interface{}")
 
 -- | Infer Go type from Python expression
 inferGoType :: PythonExpr -> Text
@@ -242,10 +382,155 @@ inferGoType expr = case expr of
     PyFString _ _ -> "string"
     PyBytes _ -> "[]byte"
     PyEllipsis -> "interface{}"
-  PyVar _ -> "int"  -- Default fallback
-  PyList [] -> "[]int"
-  PyList _ -> "[]int"
-  _ -> "int"
+  PyConst qn -> goTypeFromSimpleName (identifierText (qnName qn))
+  PyVar _ -> "interface{}"
+  PyList elements -> "[]" <> inferElementType elements
+  PyTuple elements -> "[]" <> inferElementType elements
+  PySet elements -> "map[" <> inferElementType elements <> "]struct{}"
+  PyDict pairs -> "map[" <> inferDictKeyType pairs <> "]" <> inferDictValueType pairs
+  PyBinaryOp op left right -> inferBinaryOpType op (locatedValue left) (locatedValue right)
+  PyUnaryOp op (Located _ operand) -> case op of
+    OpNot -> "bool"
+    _ -> inferGoType operand
+  PyBoolOp _ _ -> "bool"
+  PyComparison _ _ -> "bool"
+  PyIfExp _ thenExpr elseExpr -> combineGoTypes (inferGoType (locatedValue thenExpr)) (inferGoType (locatedValue elseExpr))
+  PyCall (Located _ func) _ -> inferCallReturnType func
+  PyNamedExpr _ (Located _ valueExpr) -> inferGoType valueExpr
+  PyAttribute {} -> "interface{}"
+  PySubscript (Located _ container) _ ->
+    let containerType = inferGoType container
+    in if isListType containerType
+       then stripListPrefix containerType
+       else if isMapType containerType
+            then snd (splitMapType containerType)
+            else "interface{}"
+  PyAwait (Located _ awaited) -> inferGoType awaited
+  PyJoinedStr _ -> "string"
+  PyFormatSpec _ -> "string"
+  PyListComp _ _ -> "[]interface{}"
+  PySetComp _ _ -> "map[interface{}]struct{}"
+  PyDictComp _ _ _ -> "map[interface{}]interface{}"
+  PyGenComp _ _ -> "[]interface{}"
+  _ -> "interface{}"
+
+-- | Infer return type from binary operation
+inferBinaryOpType :: BinaryOp -> PythonExpr -> PythonExpr -> Text
+inferBinaryOpType op left right = case op of
+  OpAdd -> promoteNumericTypes (inferGoType left) (inferGoType right)
+  OpSub -> promoteNumericTypes (inferGoType left) (inferGoType right)
+  OpMul -> promoteNumericTypes (inferGoType left) (inferGoType right)
+  OpDiv -> promoteNumericTypes (inferGoType left) (inferGoType right)
+  OpMod -> promoteNumericTypes (inferGoType left) (inferGoType right)
+  OpPow -> promoteNumericTypes (inferGoType left) (inferGoType right)
+  OpFloorDiv -> "int"
+  OpBitAnd -> "int"
+  OpBitOr -> "int"
+  OpBitXor -> "int"
+  OpShiftL -> "int"
+  OpShiftR -> "int"
+  OpAnd -> "bool"
+  OpOr -> "bool"
+  OpConcat -> "string"
+  OpIn -> "bool"
+  OpNotIn -> "bool"
+
+-- | Promote numeric types for binary operations
+promoteNumericTypes :: Text -> Text -> Text
+promoteNumericTypes t1 t2
+  | t1 == "float64" || t2 == "float64" = "float64"
+  | t1 == "float32" || t2 == "float32" = "float32"
+  | t1 == "complex128" || t2 == "complex128" = "complex128"
+  | t1 == "int64" || t2 == "int64" = "int64"
+  | t1 == "int32" || t2 == "int32" = "int32"
+  | t1 == "int" || t2 == "int" = "int"
+  | otherwise = "interface{}"
+
+-- | Infer return type from function call
+inferCallReturnType :: PythonExpr -> Text
+inferCallReturnType expr = case expr of
+  PyVar (Identifier "range") -> "[]int"
+  PyVar (Identifier "len") -> "int"
+  PyVar (Identifier "str") -> "string"
+  PyVar (Identifier "int") -> "int"
+  PyVar (Identifier "float") -> "float64"
+  PyVar (Identifier "bool") -> "bool"
+  PyVar (Identifier "list") -> "[]interface{}"
+  PyVar (Identifier "dict") -> "map[interface{}]interface{}"
+  PyVar (Identifier "set") -> "map[interface{}]bool"
+  _ -> "interface{}"
+
+-- | Convert Python type annotation to Go type
+pythonTypeToGo :: PythonTypeExpr -> Text
+pythonTypeToGo typeExpr = case typeExpr of
+  TypeName qn -> qualifiedNameToGo qn
+  TypeVar tv -> tv
+  TypeSubscript (Located _ base) args -> case base of
+    TypeName qn -> case qualifiedNameToGo qn of
+      "List" -> case args of
+        [Located _ arg] -> "[]" <> pythonTypeToGo arg
+        _ -> "[]interface{}"
+      "Dict" -> case args of
+        [Located _ k, Located _ v] -> "map[" <> pythonTypeToGo k <> "]" <> pythonTypeToGo v
+        _ -> "map[interface{}]interface{}"
+      "Set" -> case args of
+        [Located _ arg] -> "map[" <> pythonTypeToGo arg <> "]bool"
+        _ -> "map[interface{}]bool"
+      "Tuple" -> "[]interface{}"
+      "Optional" -> case args of
+        [Located _ arg] -> "*" <> pythonTypeToGo arg
+        _ -> "interface{}"
+      _ -> "interface{}"
+    _ -> "interface{}"
+  TypeTuple types ->
+    if null types
+    then "[]interface{}"
+    else "[]interface{}"
+  TypeUnion types -> "interface{}"
+  TypeOptional (Located _ t) -> "*" <> pythonTypeToGo t
+  TypeCallable _ (Located _ ret) -> "func() " <> pythonTypeToGo ret
+  TypeLiteral _ -> "interface{}"
+
+-- | Convert qualified name to Go type
+qualifiedNameToGo :: QualifiedName -> Text
+qualifiedNameToGo qn =
+  let Identifier name = qnName qn
+  in case name of
+    "int" -> "int"
+    "float" -> "float64"
+    "str" -> "string"
+    "bool" -> "bool"
+    "bytes" -> "[]byte"
+    "None" -> "interface{}"
+    "Any" -> "interface{}"
+    "list" -> "[]interface{}"
+    "dict" -> "map[interface{}]interface{}"
+    "set" -> "map[interface{}]bool"
+    "tuple" -> "[]interface{}"
+    "List" -> "[]interface{}"
+    "Dict" -> "map[interface{}]interface{}"
+    "Set" -> "map[interface{}]bool"
+    "Tuple" -> "[]interface{}"
+    "Optional" -> "interface{}"
+    _ -> name
+
+-- | Infer Go type from Python expression literal (for default parameter values)
+pythonTypeToGoLiteral :: Located PythonExpr -> Text
+pythonTypeToGoLiteral (Located _ expr) = inferGoType expr
+
+-- | Infer return type from function body by looking at return statements
+inferReturnTypeFromBody :: [Located PythonStmt] -> Text
+inferReturnTypeFromBody stmts =
+  let returnTypes = mapMaybe extractReturnType stmts
+  in case returnTypes of
+    [] -> ""
+    (t:_) -> t
+  where
+    extractReturnType :: Located PythonStmt -> Maybe Text
+    extractReturnType (Located _ stmt) = case stmt of
+      PyReturn (Just (Located _ expr)) -> Just (inferGoType expr)
+      PyReturn Nothing -> Just ""
+      _ -> Nothing
 
 -- | Handle range calls in for loops
 handleRangeLoop :: Text -> Text -> [Text] -> [Text]
