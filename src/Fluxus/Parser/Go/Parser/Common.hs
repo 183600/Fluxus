@@ -24,8 +24,7 @@ module Fluxus.Parser.Go.Parser.Common
   ) where
 
 import Control.Monad (void)
-import Control.Monad.IO.Class (MonadIO)
-import Control.Monad.Logger (LoggingT, logDebugNS)
+import Control.Monad.Logger (MonadLogger, logDebugNS)
 import Control.Monad.Trans.Class (lift)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -48,13 +47,13 @@ import Fluxus.Parser.Go.Lexer
   )
 
 -- | Parser monad for Go parsing with logging support.
-type GoParser m = ParsecT Void [Located GoToken] (LoggingT m)
+type GoParser m = ParsecT Void [Located GoToken] m
 
 parserLogSource :: Text
 parserLogSource = "fluxus.go.parser"
 
 -- | Emit a debug log message within the Go parser.
-logDebug :: MonadIO m => Text -> GoParser m ()
+logDebug :: MonadLogger m => Text -> GoParser m ()
 logDebug msg = lift (logDebugNS parserLogSource msg)
 
 -- | Left-associative chain combinator.

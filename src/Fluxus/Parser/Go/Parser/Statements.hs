@@ -27,7 +27,7 @@ module Fluxus.Parser.Go.Parser.Statements
 
 import Control.Applicative (optional, many)
 import Control.Monad (void)
-import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.Logger (MonadLogger)
 import Data.Functor (($>))
 import qualified Data.Text as T
 import Text.Megaparsec (anySingle, lookAhead)
@@ -66,7 +66,7 @@ import Fluxus.Parser.Go.Parser.Expressions
   )
 
 -- | Parse Go statements.
-parseStatement :: MonadIO m => GoParser m (Located GoStmt)
+parseStatement :: MonadLogger m => GoParser m (Located GoStmt)
 parseStatement = located $ MP.choice
   [ MP.try parseReturnStmt
   , MP.try parseBreakStmt
@@ -170,7 +170,7 @@ parseSendStmt = do
   value <- parseExpression
   pure $ GoSend channel value
 
-parseIfStmt :: MonadIO m => GoParser m GoStmt
+parseIfStmt :: MonadLogger m => GoParser m GoStmt
 parseIfStmt = do
   void $ goKeywordP GoKwIf
   simpleStmt <- optional $ MP.try $ do
@@ -187,7 +187,7 @@ parseIfStmt = do
       ]
   pure $ GoIf simpleStmt condition thenBody elseBody
 
-parseForStmt :: MonadIO m => GoParser m GoStmt
+parseForStmt :: MonadLogger m => GoParser m GoStmt
 parseForStmt = do
   void $ goKeywordP GoKwFor
   MP.choice
@@ -238,7 +238,7 @@ parseForStmt = do
       body <- located parseBlockStmt'
       pure $ GoFor Nothing body
 
-parseSwitchStmt :: MonadIO m => GoParser m GoStmt
+parseSwitchStmt :: MonadLogger m => GoParser m GoStmt
 parseSwitchStmt = do
   void $ goKeywordP GoKwSwitch
   simpleStmt <- optional $ MP.try $ do
@@ -265,7 +265,7 @@ parseSwitchStmt = do
           pure $ GoDefault stmts
       ]
 
-parseSelectStmt :: MonadIO m => GoParser m GoStmt
+parseSelectStmt :: MonadLogger m => GoParser m GoStmt
 parseSelectStmt = do
   void $ goKeywordP GoKwSelect
   void $ goDelimiterP GoDelimLeftBrace
@@ -287,10 +287,10 @@ parseSelectStmt = do
           pure $ GoCommClause Nothing stmts
       ]
 
-parseBlockStmt :: MonadIO m => GoParser m (Located GoStmt)
+parseBlockStmt :: MonadLogger m => GoParser m (Located GoStmt)
 parseBlockStmt = located parseBlockStmt'
 
-parseBlockStmt' :: MonadIO m => GoParser m GoStmt
+parseBlockStmt' :: MonadLogger m => GoParser m GoStmt
 parseBlockStmt' = do
   logDebug "parseBlockStmt': entering"
   void $ goDelimiterP GoDelimLeftBrace
@@ -303,7 +303,7 @@ parseBlockStmt' = do
   logDebug "parseBlockStmt': exiting"
   pure $ GoBlock stmts
 
-parseReturnStmt :: MonadIO m => GoParser m GoStmt
+parseReturnStmt :: MonadLogger m => GoParser m GoStmt
 parseReturnStmt = do
   void $ goKeywordP GoKwReturn
   result <- MP.observing (MP.try parseExpressionList)
