@@ -797,7 +797,7 @@ pythonExprToCommon located@(Located span expr) = case expr of
         in pure $ locValue combined
   PySubscript value sliceNode -> do
     value' <- pythonExprToLocatedCommon value
-    case sliceNode of
+    case locValue sliceNode of
       SliceIndex idx -> do
         idx' <- pythonExprToLocatedCommon idx
         pure $ CEIndex value' idx'

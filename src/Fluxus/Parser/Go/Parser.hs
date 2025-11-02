@@ -2,6 +2,8 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 -- | Go parser that converts tokens to AST
 module Fluxus.Parser.Go.Parser
@@ -45,7 +47,6 @@ module Fluxus.Parser.Go.Parser
   ) where
 
 import Control.Monad (void)
-import Control.Monad.IO.Class (MonadIO)
 import Data.Bifunctor (first)
 import Data.Functor.Identity (Identity(..))
 import Data.List (partition)
@@ -53,19 +54,20 @@ import qualified Data.List.NonEmpty as NE
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
-import Text.Megaparsec (ParseErrorBundle(..), runParserT)
 import qualified Text.Megaparsec as MP
-import Text.Megaparsec.Error (errorBundlePretty, errorOffset)
-import Control.Monad.Logger (LogLevel, LogSource, LogStr, Loc, runLoggingT)
+import Text.Megaparsec (ParseErrorBundle(..), runParserT, VisualStream(..), TraversableStream(..), PosState(..))
+import Text.Megaparsec.Error (errorOffset, errorBundlePretty)
+import qualified Text.Megaparsec.Pos as MPP
+import Control.Monad.Logger (MonadLogger, LogLevel, LogSource, LogStr, Loc, runLoggingT, LoggingT, runNoLoggingT, NoLoggingT)
 
-import Fluxus.AST.Common (SourceSpan, Located(..))
+import Fluxus.AST.Common (SourceSpan(..), SourcePos(..), Located(..))
 import Fluxus.AST.Go
   ( GoAST(..)
   , GoPackage(..)
   , GoFile(..)
   , GoDecl(..)
   )
-import Fluxus.Parser.Go.Lexer (GoKeyword(..), GoToken)
+import Fluxus.Parser.Go.Lexer (GoKeyword(..), GoToken(..), GoOperator(..), GoDelimiter(..))
 import Fluxus.Parser.Go.Parser.Common
   ( GoParser
   , logDebug
@@ -110,32 +112,86 @@ data GoParseError = GoParseError
   , peLocation :: !SourceSpan
   } deriving stock (Eq, Show)
 
+-- | VisualStream instance for token stream
+instance VisualStream [Located GoToken] where
+  showTokens _ ts = unwords . NE.toList $ fmap (T.unpack . showGoToken . locValue) ts
+
+-- | TraversableStream instance for token stream
+instance TraversableStream [Located GoToken] where
+  reachOffset offset posState =
+    let (pre, post) = splitAt offset (pstateInput posState)
+        newPos = case (post, pre) of
+          (Located span _ : _, _) -> toSourcePosStart span
+          ([], Located span _ : _) -> toSourcePosEnd span
+          _ -> pstateSourcePos posState
+        ctx = case post of
+          (Located _ tok : _) -> Just (T.unpack (showGoToken tok))
+          [] -> Just "<eof>"
+    in ( ctx
+       , posState
+           { pstateInput = post
+           , pstateOffset = offset
+           , pstateSourcePos = newPos
+           }
+       )
+
+-- | Convert our SourcePos to Megaparsec SourcePos (start position)
+toSourcePosStart :: SourceSpan -> MPP.SourcePos
+toSourcePosStart (SourceSpan fn (SourcePos line col) _) =
+  MPP.SourcePos (T.unpack fn) (MPP.mkPos (line + 1)) (MPP.mkPos (col + 1))
+
+-- | Convert our SourcePos to Megaparsec SourcePos (end position)
+toSourcePosEnd :: SourceSpan -> MPP.SourcePos
+toSourcePosEnd (SourceSpan fn _ (SourcePos line col)) =
+  MPP.SourcePos (T.unpack fn) (MPP.mkPos (line + 1)) (MPP.mkPos (col + 1))
+
+-- | Show a token as text for error messages
+showGoToken :: GoToken -> Text
+showGoToken tok = case tok of
+  GoTokenKeyword kw -> T.pack (show kw)
+  GoTokenIdent name -> name
+  GoTokenInt n -> n
+  GoTokenFloat d -> d
+  GoTokenImag i -> i
+  GoTokenString s -> "\"" <> s <> "\""
+  GoTokenRawString s -> "`" <> s <> "`"
+  GoTokenRune c -> "'" <> T.singleton c <> "'"
+  GoTokenOperator op -> T.pack (show op)
+  GoTokenDelimiter delim -> T.pack (show delim)
+  GoTokenComment _ -> "/* comment */"
+  GoTokenNewline -> "\\n"
+  GoTokenEOF -> "<EOF>"
+  GoTokenError e -> "<ERROR:" <> e <> ">"
+
 -- | Run the Go parser producing an AST.
 runGoParser :: Text -> [Located GoToken] -> Either GoParseError GoAST
 runGoParser filename tokens =
   runIdentity $
-    fmap (first (bundleToGoParseError filename tokens)) $
-      runLoggingT
-        (runParserT parseGo (T.unpack filename) tokens)
-        (\_ _ _ _ -> pure ())
+    runNoLoggingT parser
+  where
+    parser :: NoLoggingT Identity (Either GoParseError GoAST)
+    parser =
+      fmap (first (bundleToGoParseError filename tokens)) $
+        runParserT parseGo (T.unpack filename) tokens
 
 -- | Run the Go parser with a custom logging function.
 runGoParserWithLogger
-  :: Monad m
-  => (Loc -> LogSource -> LogLevel -> LogStr -> m ())
+  :: (Loc -> LogSource -> LogLevel -> LogStr -> IO ())
   -> Text
   -> [Located GoToken]
-  -> m (Either GoParseError GoAST)
+  -> IO (Either GoParseError GoAST)
 runGoParserWithLogger logger filename tokens =
   fmap (first (bundleToGoParseError filename tokens)) $
-    runLoggingT (runParserT parseGo (T.unpack filename) tokens) logger
+    runLoggingT
+      (runParserT parseGo (T.unpack filename) tokens :: LoggingT IO (Either (ParseErrorBundle [Located GoToken] Void) GoAST))
+      logger
 
 -- | Main parser entry point.
-parseGo :: MonadIO m => GoParser m GoAST
+parseGo :: MonadLogger m => GoParser m GoAST
 parseGo = GoAST <$> parsePackage
 
 -- | Parse a Go package (currently single file).
-parsePackage :: MonadIO m => GoParser m GoPackage
+parsePackage :: MonadLogger m => GoParser m GoPackage
 parsePackage = do
   file <- parseFile
   pure GoPackage
@@ -144,7 +200,7 @@ parsePackage = do
     }
 
 -- | Parse a Go source file.
-parseFile :: MonadIO m => GoParser m GoFile
+parseFile :: MonadLogger m => GoParser m GoFile
 parseFile = do
   skipCommentsAndNewlines
   void $ goKeywordP GoKwPackage
