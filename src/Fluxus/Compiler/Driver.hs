@@ -69,7 +69,9 @@ import Fluxus.Analysis.TypeInference
   )
 import Fluxus.Analysis.EscapeAnalysis
   ( EscapeAnalysisState(..)
+  , EscapeResult(..)
   , runEscapeAnalysis
+  , analyzeEscape
   , optimizeMemoryAllocation
   )
 import Fluxus.Analysis.ShapeAnalysis
@@ -109,7 +111,7 @@ import Fluxus.CodeGen.CPP
   ( CppUnit(..), CppDecl(..), CppStmt(..), CppExpr(..), CppType(..)
   , CppLiteral(..), CppParam(..), CppCase(..), CppGenConfig(..)
   , CppCodeGenResult(..), CppCodeGenFailure(..)
-  , generateCpp
+  , generateCppWithAnnotations
   )
 import Fluxus.CodeGen.CPP.Diagnostics
   ( DiagnosticSeverity(..)
@@ -281,6 +283,7 @@ data CompilerState = CompilerState
   , csTypeEnvironment  :: !(HashMap Text Type)
   , csOptimizationStats :: !(HashMap Text Int)
   , csIntermediateFiles :: ![FilePath]
+  , csAnalysisAnnotations :: !AnalysisAnnotations
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
@@ -325,6 +328,7 @@ initialCompilerState startTime = CompilerState
   , csTypeEnvironment = HM.empty
   , csOptimizationStats = HM.empty
   , csIntermediateFiles = []
+  , csAnalysisAnnotations = emptyAnnotations
   }
 
 -- | Run the compiler with configuration
@@ -541,6 +545,13 @@ typeInferenceStage ast = do
         Right inferredType -> do
           let exprKey = renderCommonExpr expr
           modify $ \s -> s { csTypeEnvironment = HM.insert exprKey inferredType (csTypeEnvironment s) }
+          let annotation = ExprAnnotations
+                { eaInferredType = Just inferredType
+                , eaOwnership = Nothing
+                , eaEscapeInfo = Nothing
+                , eaOptimizationNotes = []
+                }
+          modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprKey annotation (csAnalysisAnnotations s) }
           recordOptimizationStat "type-inference.success"
           logVerbose $ "Inferred type for " <> exprKey <> ": " <> renderType inferredType
           pure (okCount + 1, errCount)
@@ -559,6 +570,16 @@ optimizationStage ast = do
     let exprLabel = renderCommonExpr expr
     recordOptimizationStat "optimization.expressions"
     let ((escapeOptimized, escapeHints), escapeState) = runEscapeAnalysis (optimizeMemoryAllocation expr)
+        (escapeResult, _) = runEscapeAnalysis (analyzeEscape expr)
+        escapeInfo = erEscapeInfo escapeResult
+        memLoc = erMemoryLocation escapeResult
+        baseAnnotation = ExprAnnotations
+          { eaInferredType = Nothing
+          , eaOwnership = Nothing
+          , eaEscapeInfo = Just escapeInfo
+          , eaOptimizationNotes = escapeHints
+          }
+    modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel baseAnnotation (csAnalysisAnnotations s) }
     recordOptimizationStat "optimization.escape"
     forM_ escapeHints $ \hint ->
       addWarning $ OptimizationWarning ("Escape analysis hint for " <> exprLabel <> ": " <> hint)
@@ -569,7 +590,8 @@ optimizationStage ast = do
       Left err -> addWarning $ OptimizationWarning ("Ownership inference failed for " <> exprLabel <> ": " <> err)
       Right (ownershipResult, ownershipState) -> do
         recordOptimizationStat "optimization.ownership"
-        let strategyTag = case orStrategy ownershipResult of
+        let strategy = orStrategy ownershipResult
+            strategyTag = case strategy of
               StackOwned -> "stack"
               UniqueOwnership -> "unique"
               SharedOwnership -> "shared"
@@ -578,6 +600,20 @@ optimizationStage ast = do
               CopySemantics -> "copy"
               WeakReference -> "weak"
               CustomRAII -> "custom-raii"
+            ownershipInfo = OwnershipInfo
+              { ownsMemory = strategy `elem` [StackOwned, UniqueOwnership]
+              , canMove = strategy `elem` [MoveSemantics, UniqueOwnership]
+              , refCount = Nothing
+              , escapes = escapeInfo
+              , memLocation = memLoc
+              }
+            ownershipAnnotation = ExprAnnotations
+              { eaInferredType = Nothing
+              , eaOwnership = Just ownershipInfo
+              , eaEscapeInfo = Just escapeInfo
+              , eaOptimizationNotes = oisOptimizationHints ownershipState
+              }
+        modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel ownershipAnnotation (csAnalysisAnnotations s) }
         recordOptimizationStat ("optimization.ownership." <> strategyTag)
         forM_ (oisOptimizationHints ownershipState) $ \hint ->
           addWarning $ OptimizationWarning ("Ownership hint for " <> exprLabel <> ": " <> hint)
@@ -585,23 +621,54 @@ optimizationStage ast = do
       Left err -> addWarning $ OptimizationWarning ("Shape analysis failed for " <> exprLabel <> ": " <> err)
       Right (_shapeInfo, shapeState) -> do
         recordOptimizationStat "optimization.shape"
-        forM_ (sasOptimizations shapeState) $ \hint ->
+        let shapeHints = sasOptimizations shapeState
+            shapeAnnotation = ExprAnnotations
+              { eaInferredType = Nothing
+              , eaOwnership = Nothing
+              , eaEscapeInfo = Nothing
+              , eaOptimizationNotes = shapeHints
+              }
+        modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel shapeAnnotation (csAnalysisAnnotations s) }
+        forM_ shapeHints $ \hint ->
           addWarning $ OptimizationWarning ("Shape analysis suggestion for " <> exprLabel <> ": " <> hint)
     let (fallbackRequired, _) = runSmartFallback (shouldFallbackToRuntime escapeOptimized)
     when fallbackRequired $ do
       recordOptimizationStat "optimization.fallback.runtime"
+      let fallbackAnnotation = ExprAnnotations
+            { eaInferredType = Nothing
+            , eaOwnership = Nothing
+            , eaEscapeInfo = Nothing
+            , eaOptimizationNotes = ["Runtime fallback recommended"]
+            }
+      modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel fallbackAnnotation (csAnalysisAnnotations s) }
       addWarning $ OptimizationWarning ("Runtime fallback recommended for " <> exprLabel)
     let (fallbackExpr, _) = runSmartFallback (optimizeWithFallback escapeOptimized)
     let (monoResult, monoState) = runMonomorphization (monomorphize fallbackExpr)
     recordOptimizationStat "optimization.monomorphization"
-    when (not (null (mrOptimizations monoResult))) $
-      forM_ (mrOptimizations monoResult) $ \msg ->
+    when (not (null (mrOptimizations monoResult))) $ do
+      let monoHints = mrOptimizations monoResult
+          monoAnnotation = ExprAnnotations
+            { eaInferredType = Nothing
+            , eaOwnership = Nothing
+            , eaEscapeInfo = Nothing
+            , eaOptimizationNotes = monoHints
+            }
+      modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel monoAnnotation (csAnalysisAnnotations s) }
+      forM_ monoHints $ \msg ->
         addWarning $ OptimizationWarning ("Monomorphization note for " <> exprLabel <> ": " <> msg)
     recordOptimizationStatN "optimization.specializations" (HM.size (msSpecializations monoState))
     let (devirtResult, devirtState) = runDevirtualization (devirtualize (mrExpression monoResult))
     recordOptimizationStat "optimization.devirtualization"
-    when (not (null (drOptimizations devirtResult))) $
-      forM_ (drOptimizations devirtResult) $ \msg ->
+    when (not (null (drOptimizations devirtResult))) $ do
+      let devirtHints = drOptimizations devirtResult
+          devirtAnnotation = ExprAnnotations
+            { eaInferredType = Nothing
+            , eaOwnership = Nothing
+            , eaEscapeInfo = Nothing
+            , eaOptimizationNotes = devirtHints
+            }
+      modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel devirtAnnotation (csAnalysisAnnotations s) }
+      forM_ devirtHints $ \msg ->
         addWarning $ OptimizationWarning ("Devirtualization note for " <> exprLabel <> ": " <> msg)
     let resolvedCount = HM.size (dsResolvedCalls devirtState)
     when (resolvedCount > 0) $
@@ -945,9 +1012,9 @@ renderCommonExpr = textShow
 codeGenStage :: Either PythonAST GoAST -> CompilerM CppUnit
 codeGenStage ast = do
   config <- ask
+  annotations <- gets csAnalysisAnnotations
   
-
-
+  logInfo $ "Code generation with " <> textShow (HM.size (unAnalysisAnnotations annotations)) <> " analysis annotations"
 
   let cppConfig = CppGenConfig
         { cgcOptimizationLevel = fromEnum $ ccOptimizationLevel config
@@ -961,7 +1028,7 @@ codeGenStage ast = do
         , cgcStrictMode = ccStrictMode config
         }
 
-  case generateCpp cppConfig ast of
+  case generateCppWithAnnotations cppConfig annotations ast of
     Left failure -> do
       mapM_ logDiagnostic (cgfDiagnostics failure)
       let errText = case cgfErrors failure of

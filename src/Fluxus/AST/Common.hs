@@ -35,15 +35,24 @@ module Fluxus.AST.Common
   , OwnershipInfo(..)
   , MemoryLocation(..)
   , EscapeInfo(..)
+    -- * Analysis annotations
+  , ExprAnnotations(..)
+  , AnalysisAnnotations(..)
+  , emptyAnnotations
+  , lookupAnnotations
+  , insertAnnotations
   ) where
 
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Int (Int64)
 import Data.Word (Word64)
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as HM
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
+import Control.Applicative ((<|>))
 
 -- | Source position information (line, column)
 data SourcePos = SourcePos
@@ -257,3 +266,38 @@ data EscapeInfo
   | EscapeUnknown                       -- Cannot analyze escape behavior
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
   deriving anyclass (Hashable, NFData)
+
+-- | Aggregated annotations for a lowered expression coming from analysis passes.
+data ExprAnnotations = ExprAnnotations
+  { eaInferredType      :: !(Maybe Type)
+  , eaOwnership         :: !(Maybe OwnershipInfo)
+  , eaEscapeInfo        :: !(Maybe EscapeInfo)
+  , eaOptimizationNotes :: ![Text]
+  } deriving stock (Eq, Show, Generic)
+    deriving anyclass (Hashable, NFData)
+
+-- | Global analysis annotations keyed by a stable expression fingerprint.
+newtype AnalysisAnnotations = AnalysisAnnotations
+  { unAnalysisAnnotations :: HashMap Text ExprAnnotations
+  } deriving stock (Eq, Show, Generic)
+    deriving newtype (Hashable, NFData)
+
+-- | Empty annotations payload.
+emptyAnnotations :: AnalysisAnnotations
+emptyAnnotations = AnalysisAnnotations HM.empty
+
+-- | Lookup annotations by key.
+lookupAnnotations :: Text -> AnalysisAnnotations -> Maybe ExprAnnotations
+lookupAnnotations key (AnalysisAnnotations mapping) = HM.lookup key mapping
+
+-- | Insert or merge annotations for a key.
+insertAnnotations :: Text -> ExprAnnotations -> AnalysisAnnotations -> AnalysisAnnotations
+insertAnnotations key anns (AnalysisAnnotations mapping) =
+  AnalysisAnnotations $ HM.insertWith merge key anns mapping
+  where
+    merge new old = ExprAnnotations
+      { eaInferredType = eaInferredType new <|> eaInferredType old
+      , eaOwnership = eaOwnership new <|> eaOwnership old
+      , eaEscapeInfo = eaEscapeInfo new <|> eaEscapeInfo old
+      , eaOptimizationNotes = eaOptimizationNotes old ++ eaOptimizationNotes new
+      }
