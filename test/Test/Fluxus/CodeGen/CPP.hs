@@ -5,6 +5,7 @@ import Test.Hspec
 import qualified Test.Fluxus.CodeGen.CPP.TypeMapping as TypeMapping
 import qualified Test.Fluxus.CodeGen.CPP.Python as Python
 import qualified Test.Fluxus.CodeGen.CPP.Go as Go
+import qualified Test.Fluxus.CodeGen.CPP.UnsupportedConstructs as Unsupported
 
 spec :: Spec
 spec =
@@ -12,3 +13,4 @@ spec =
     TypeMapping.spec
     Python.spec
     Go.spec
+    Unsupported.spec
