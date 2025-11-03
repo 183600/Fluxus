@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Fluxus.Analysis.CommonExprLowering
   ( collectCommonExpressions
