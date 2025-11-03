@@ -192,6 +192,8 @@ printUsage = do
   putStrLn "  --work-dir DIR        Work directory for intermediate files"
   putStrLn "  --keep-intermediates  Keep intermediate files"
   putStrLn "  --clean-intermediates Remove intermediate files (default)"
+  putStrLn "  --skip-compiler-check Skip probing for the configured C++ compiler during setup"
+  putStrLn "  --require-compiler-check Ensure the compiler is probed during setup (default)"
   putStrLn "  --strict              Treat warnings as errors (default)"
   putStrLn "  --no-strict           Allow warnings"
   putStrLn ""

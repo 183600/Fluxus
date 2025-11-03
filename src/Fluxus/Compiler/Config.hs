@@ -34,9 +34,8 @@ import Data.Yaml (decodeFileEither)
 import System.Environment (lookupEnv)
 import System.FilePath
 import System.Directory
-import System.Process (readProcessWithExitCode)
-import System.Exit
-import Control.Monad (unless)
+import Control.Monad (unless, when)
+import Data.Char (toLower)
 import Control.Monad.IO.Class
 import Control.Applicative ((<|>))
 import Data.Maybe (fromMaybe)
@@ -115,6 +114,9 @@ parseCommandLineArgs args = parseArgs defaultConfig args
       
       "--keep-intermediates" -> parseArgs (config { ccKeepIntermediates = True }) rest
       "--clean-intermediates" -> parseArgs (config { ccKeepIntermediates = False }) rest
+      
+      "--skip-compiler-check" -> parseArgs (config { ccSkipCompilerCheck = True }) rest
+      "--require-compiler-check" -> parseArgs (config { ccSkipCompilerCheck = False }) rest
       
       "-v" -> parseArgs (config { ccVerboseLevel = ccVerboseLevel config + 1 }) rest
       "--verbose" -> parseArgs (config { ccVerboseLevel = ccVerboseLevel config + 1 }) rest
@@ -203,6 +205,7 @@ mergeConfigs base override = CompilerConfig
   , ccStrictMode = ccStrictMode override
   , ccEnableAnalysis = ccEnableAnalysis override
   , ccStopAtCodegen = ccStopAtCodegen override
+  , ccSkipCompilerCheck = ccSkipCompilerCheck override
   }
 
 -- | Apply environment variable overrides
@@ -213,17 +216,33 @@ applyEnvironmentOverrides config = do
   cppStd <- lookupEnv "FLUXUS_CPP_STD"
   verboseLevel <- lookupEnv "FLUXUS_VERBOSE"
   enableInterop <- lookupEnv "FLUXUS_INTEROP"
+  skipCompilerCheck <- lookupEnv "FLUXUS_SKIP_COMPILER_CHECK"
   
   return config
     { ccCppCompiler = maybe (ccCppCompiler config) T.pack cppCompiler
     , ccCppStandard = maybe (ccCppStandard config) T.pack cppStd
     , ccVerboseLevel = maybe (ccVerboseLevel config) (fromMaybe 0 . readMaybe) verboseLevel
-    , ccEnableInterop = maybe (ccEnableInterop config) (== "1") enableInterop
+    , ccEnableInterop = parseBoolOverride (ccEnableInterop config) enableInterop
+    , ccSkipCompilerCheck = parseBoolOverride (ccSkipCompilerCheck config) skipCompilerCheck
     }
   where
     readMaybe s = case reads s of
       [(x, "")] -> Just x
       _ -> Nothing
+    parseBoolOverride current envValue =
+      maybe current interpret envValue
+      where
+        interpret value =
+          case map toLower value of
+            "1" -> True
+            "true" -> True
+            "yes" -> True
+            "on" -> True
+            "0" -> False
+            "false" -> False
+            "no" -> False
+            "off" -> False
+            _ -> current
 
 -- | Validate configuration file syntax
 validateConfigFile :: FilePath -> IO (Either String ())
@@ -236,31 +255,39 @@ validateConfigFile configFile = do
 -- | Check if system meets requirements for compilation
 checkSystemRequirements :: CompilerConfig -> IO (Either String ())
 checkSystemRequirements config = do
-  -- Check C++ compiler
-  compilerExists <- doesFileExist (T.unpack $ ccCppCompiler config)
-  if compilerExists
-    then do
-      -- Check include paths
+  let skipCompilerCheck = ccSkipCompilerCheck config
+      stopAtCodegen = ccStopAtCodegen config
+      shouldCheckCompiler = not skipCompilerCheck && not stopAtCodegen
+  
+  when skipCompilerCheck $
+    putStrLn "Warning: Skipping C++ compiler requirement check (ccSkipCompilerCheck enabled)"
+  when (stopAtCodegen && not skipCompilerCheck) $
+    putStrLn "Skipping C++ compiler requirement check because stop-at-codegen is enabled"
+  
+  compilerCheckResult <-
+    if shouldCheckCompiler
+      then do
+        maybeCompiler <- locateCompiler (T.unpack $ ccCppCompiler config)
+        pure $ case maybeCompiler of
+          Nothing -> Left $ "C++ compiler not found: " ++ T.unpack (ccCppCompiler config) ++ " (use --skip-compiler-check to bypass detection)"
+          Just _ -> Right ()
+      else pure (Right ())
+  
+  case compilerCheckResult of
+    Left err -> pure $ Left err
+    Right () -> do
       mapM_ checkIncludePath (ccIncludePaths config)
-      -- Check library paths
       mapM_ checkLibraryPath (ccLibraryPaths config)
-      return $ Right ()
-    else do
-      -- Try to find in PATH
-      which <- readProcessWithExitCode "which" [T.unpack $ ccCppCompiler config] ""
-      case which of
-        (ExitSuccess, _, _) -> do
-          -- Check include paths
-          mapM_ checkIncludePath (ccIncludePaths config)
-          -- Check library paths
-          mapM_ checkLibraryPath (ccLibraryPaths config)
-          return $ Right ()
-        _ -> return $ Left $ "C++ compiler not found: " ++ T.unpack (ccCppCompiler config)
+      pure $ Right ()
   where
+    locateCompiler compilerBinary = do
+      directExists <- doesFileExist compilerBinary
+      if directExists
+        then pure (Just compilerBinary)
+        else findExecutable compilerBinary
     checkIncludePath path = do
       exists <- doesDirectoryExist path
       unless exists $ putStrLn $ "Warning: Include path does not exist: " ++ path
-    
     checkLibraryPath path = do
       exists <- doesDirectoryExist path
       unless exists $ putStrLn $ "Warning: Library path does not exist: " ++ path
@@ -312,6 +339,7 @@ configToArgs config = concat
   , if ccEnableParallel config then ["--enable-parallel"] else ["--disable-parallel"]
   , if ccStrictMode config then ["--strict"] else ["--no-strict"]
   , if ccKeepIntermediates config then ["--keep-intermediates"] else ["--clean-intermediates"]
+  , if ccSkipCompilerCheck config then ["--skip-compiler-check"] else ["--require-compiler-check"]
   , replicate (ccVerboseLevel config) "-v"
   , maybe [] (\path -> ["-o", path]) (ccOutputPath config)
   , maybe [] (\dir -> ["--work-dir", dir]) (ccWorkDirectory config)
@@ -344,6 +372,7 @@ printConfig config = do
   putStrLn $ "Work Directory: " ++ maybe "<temp>" id (ccWorkDirectory config)
   putStrLn $ "Keep Intermediates: " ++ show (ccKeepIntermediates config)
   putStrLn $ "Strict Mode: " ++ show (ccStrictMode config)
+  putStrLn $ "Skip Compiler Check: " ++ show (ccSkipCompilerCheck config)
   putStrLn $ "Static Analysis: " ++ show (ccEnableAnalysis config)
   putStrLn "=============================================="
 
