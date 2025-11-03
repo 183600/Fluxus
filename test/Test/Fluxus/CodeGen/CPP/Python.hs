@@ -8,6 +8,7 @@ import Data.Maybe (listToMaybe)
 import qualified Data.Text as T
 import Fluxus.AST.Common
 import Fluxus.AST.Python
+import Fluxus.Analysis.CommonExprLowering (pythonExprToCommon, renderCommonExpr)
 import Fluxus.CodeGen.CPP
 import Fluxus.Compiler.Driver
   ( CompilerConfig(..)
@@ -39,6 +40,7 @@ typeMappingIndependentSpecs = do
   statementGenerationSpec
   declarationGenerationSpec
   pythonGlobalSpec
+  analysisFeedbackSpec
 
 expressionGenerationSpec :: Spec
 expressionGenerationSpec = describe "Expression generation" $ do
@@ -378,7 +380,88 @@ pythonGlobalSpec = describe "Python module handling" $ do
       CppBlock stmts -> any (declaresVar target) stmts
       _ -> False
 
--- Runtime compilation specs ---------------------------------------------------
+    analysisFeedbackSpec :: Spec
+    analysisFeedbackSpec = describe "Analysis annotation integration" $ do
+    it "refines module-level variable declarations using analysis annotations" $ do
+    let callExpr = noLoc (PyCall (noLoc (PyVar (Identifier "factory"))) [])
+        assignment = noLoc (PyAssign [noLoc (PatVar (Identifier "value"))] callExpr)
+        pythonAst = PythonAST PythonModule
+          { pyModuleName = Nothing
+          , pyModuleDoc = Nothing
+          , pyModuleImports = []
+          , pyModuleBody = [assignment]
+          }
+        annotations = annotationsFor callExpr
+    case generateCppWithAnnotations Shared.testCppConfig annotations (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+            isValueDecl decl = case decl of
+              CppVariable name _ _ -> name == "value"
+              _ -> False
+        case find isValueDecl decls of
+          Just (CppVariable _ varType (Just initializer)) -> do
+            varType `shouldBe` CppUniquePtr CppString
+            initializer `shouldBe` CppCall (CppVar "factory") []
+          _ -> expectationFailure "Expected annotated variable declaration for 'value'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+    it "refines function return types using analysis annotations" $ do
+    let callExpr = noLoc (PyCall (noLoc (PyVar (Identifier "factory"))) [])
+        funcDef = PythonFuncDef
+          { pyFuncName = Identifier "make"
+          , pyFuncDecorators = []
+          , pyFuncParams = []
+          , pyFuncReturns = Nothing
+          , pyFuncBody = [noLoc (PyReturn (Just callExpr))]
+          , pyFuncDoc = Nothing
+          , pyFuncIsAsync = False
+          }
+        pythonAst = PythonAST PythonModule
+          { pyModuleName = Nothing
+          , pyModuleDoc = Nothing
+          , pyModuleImports = []
+          , pyModuleBody = [noLoc (PyFuncDef funcDef)]
+          }
+        annotations = annotationsFor callExpr
+    case generateCppWithAnnotations Shared.testCppConfig annotations (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+            isMake decl = case decl of
+              CppFunction name _ _ _ -> name == "make"
+              _ -> False
+        case find isMake decls of
+          Just (CppFunction _ retType _ body) -> do
+            retType `shouldBe` CppUniquePtr CppString
+            listToMaybe [expr | CppReturn (Just expr) <- body]
+              `shouldBe` Just (CppCall (CppVar "factory") [])
+          _ -> expectationFailure "Expected annotated function 'make'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+    where
+    annotationsFor expr =
+      case pythonExprToCommon expr of
+        Left err -> error ("Failed to lower expression: " <> T.unpack err)
+        Right common ->
+          insertAnnotations (renderCommonExpr common) exprAnnotation emptyAnnotations
+
+    exprAnnotation =
+      ExprAnnotations
+        { eaInferredType = Just (TOwned TString)
+        , eaOwnership = Just ownershipInfo
+        , eaEscapeInfo = Just EscapeToHeap
+        , eaOptimizationNotes = ["factory result escapes to heap"]
+        }
+
+    ownershipInfo =
+      OwnershipInfo
+        { ownsMemory = True
+        , canMove = True
+        , refCount = Just 1
+        , escapes = EscapeToHeap
+        , memLocation = Heap
+        }
+
+    -- Runtime compilation specs ---------------------------------------------------
 
 pythonRuntimeSpec :: Spec
 pythonRuntimeSpec = describe "Python end-to-end compilation" $ do
