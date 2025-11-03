@@ -35,6 +35,7 @@ library
     Fluxus.Parser.Python.Parser
     Fluxus.Parser.Go.Lexer
     Fluxus.Parser.Go.Parser
+    Fluxus.Analysis.CommonExprLowering
     Fluxus.Analysis.TypeInference
     Fluxus.Analysis.EscapeAnalysis
     Fluxus.Analysis.ShapeAnalysis
@@ -118,6 +119,7 @@ test-suite fluxus-test
     Test.Fluxus.CodeGen.CPP
     Test.Fluxus.CodeGen.CPP.Shared
     Test.Fluxus.CodeGen.CPP.TypeMapping
+    Test.Fluxus.CodeGen.CPP.UnsupportedConstructs
     Test.Fluxus.CodeGen.CPP.Python
     Test.Fluxus.CodeGen.CPP.Go
     Test.Fluxus.Compiler.DriverSpec

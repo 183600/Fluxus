@@ -26,7 +26,8 @@ import Control.Applicative ((<|>))
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 
-import Fluxus.AST.Common
+import Fluxus.AST.Common hiding (TypeVar)
+import qualified Fluxus.AST.Common as Common (TypeVar(..))
 import Fluxus.AST.Python
 import Fluxus.Analysis.CommonExprLowering (pythonExprToCommon, renderCommonExpr)
 
@@ -373,7 +374,7 @@ mapCommonTypeToGo = \case
   TEnum qn _ -> qualifiedNameToText qn
   TInterface qn _ -> qualifiedNameToText qn
   TUnion _ -> "interface{}"
-  TVar (TypeVar name) -> name
+  TVar (Common.TypeVar name) -> name
   TGeneric qn _ -> qualifiedNameToText qn
   TForall _ _ t -> mapCommonTypeToGo t
   TOwned t -> let mapped = mapCommonTypeToGo t in if T.null mapped then "interface{}" else "*" <> mapped
