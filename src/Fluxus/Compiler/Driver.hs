@@ -171,6 +171,7 @@ data CompilerConfig = CompilerConfig
   , ccStrictMode        :: !Bool            -- Treat warnings as errors
   , ccEnableAnalysis    :: !Bool            -- Enable static analysis
   , ccStopAtCodegen     :: !Bool            -- Stop after generating C++ source
+  , ccSkipCompilerCheck :: !Bool            -- Skip verifying the C++ compiler during setup
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
@@ -204,6 +205,8 @@ instance ToJSON CompilerConfig where
     , "keep_intermediates" .= ccKeepIntermediates config
     , "strict_mode" .= ccStrictMode config
     , "enable_analysis" .= ccEnableAnalysis config
+    , "stop_at_codegen" .= ccStopAtCodegen config
+    , "skip_compiler_check" .= ccSkipCompilerCheck config
     ]
 
 instance FromJSON CompilerConfig where
@@ -252,6 +255,7 @@ instance FromJSON CompilerConfig where
       <*> o .:? "strict_mode" .!= True
       <*> o .:? "enable_analysis" .!= True
       <*> o .:? "stop_at_codegen" .!= False
+      <*> o .:? "skip_compiler_check" .!= False
 
 -- | Compiler errors
 data CompilerError
@@ -317,6 +321,7 @@ defaultConfig = CompilerConfig
   , ccStrictMode = True
   , ccEnableAnalysis = True
   , ccStopAtCodegen = False
+  , ccSkipCompilerCheck = False
   }
 
 -- | Initial compiler state
@@ -373,16 +378,27 @@ setupCompilerEnvironment = do
         liftIO $ createDirectoryIfMissing True workDir
         logInfo $ "Created work directory: " <> T.pack workDir
   
-  -- Verify C++ compiler availability
-  compilerExists <- liftIO $ do
-    result <- readProcessWithExitCode (T.unpack $ ccCppCompiler config) ["--version"] ""
-    case result of
-      (ExitSuccess, _, _) -> return True
-      _ -> return False
-  
-  unless compilerExists $ 
-    throwError $ ConfigurationError $ "C++ compiler not found: " <> ccCppCompiler config
-  
+  let skipCheck = ccSkipCompilerCheck config
+      stopAtCodegen = ccStopAtCodegen config
+
+  case () of
+    _ | skipCheck ->
+          logInfo "Skipping C++ compiler availability check (ccSkipCompilerCheck enabled)"
+      | stopAtCodegen ->
+          logInfo "Skipping C++ compiler availability check because stop-at-codegen is enabled"
+      | otherwise -> do
+          detectedPath <- liftIO $ do
+            let compilerBinary = T.unpack (ccCppCompiler config)
+            directExists <- doesFileExist compilerBinary
+            if directExists
+              then pure (Just compilerBinary)
+              else findExecutable compilerBinary
+          case detectedPath of
+            Nothing ->
+              throwError $ ConfigurationError $ "C++ compiler not found: " <> ccCppCompiler config <> " (enable ccSkipCompilerCheck to bypass detection)"
+            Just path ->
+              logVerbose $ "Detected C++ compiler at " <> T.pack path
+
   logInfo "Compiler environment setup completed"
 
 -- | Compile a single file
