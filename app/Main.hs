@@ -52,6 +52,9 @@ runCompilerMain config args = do
     printUsage
     exitFailure
   
+  when (ccSourceLanguage config == Go || any (".go" `isSuffixOf`) inputFiles) $
+    hPutStrLn stderr "Warning: Go backend is experimental and type inference remains limited; complex constructs may degrade to interface{}."
+  
   -- Check system requirements
   sysCheckResult <- checkSystemRequirements config
   case sysCheckResult of
@@ -154,7 +157,7 @@ printUsage = do
   putStrLn ""
   putStrLn "Source Language Options:"
   putStrLn "  --python              Compile Python source (default)"
-  putStrLn "  --go                  Compile Go source"
+  putStrLn "  --go                  Compile Go source (experimental)"
   putStrLn ""
   putStrLn "Optimization Options:"
   putStrLn "  -O0                   No optimization (fast compilation)"
