@@ -53,6 +53,11 @@ import qualified Text.Megaparsec as MP
 import Fluxus.AST.Common
 import Fluxus.AST.Python
 import Fluxus.AST.Go
+import Fluxus.Analysis.CommonExprLowering
+  ( pythonExprToCommon
+  , goExprToCommon
+  , renderCommonExpr
+  )
 import Fluxus.Utils.Pretty
 import Fluxus.Parser.Python.Lexer (runPythonLexer, PythonToken(..))
 import Fluxus.Parser.Python.Parser (parseExpression)
@@ -603,30 +608,31 @@ generatePythonStmt scope (Located _ stmt) =
     handleRegularAssignment :: PythonScope -> HashMap Text CppType -> Text -> Located PythonExpr -> CppCodeGen CppStmt
     handleRegularAssignment scope' symtab varName locatedExpr = do
       cppExpr <- generatePythonExpr locatedExpr
-      let inferredType = fromMaybe CppAuto (inferPythonExprCppTypeLocated locatedExpr)
-          updateSymbolTableWith t = modify $ \s -> s { cgsSymbolTable = HM.insert varName t (cgsSymbolTable s) }
+      let defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated locatedExpr)
+      refinedType <- refinePythonExprType ("assignment to " <> varName) locatedExpr defaultType
+      let updateSymbolTableWith t = modify $ \s -> s { cgsSymbolTable = HM.insert varName t (cgsSymbolTable s) }
           assignmentStmt = CppExprStmt (CppBinary "=" (CppVar varName) cppExpr)
           declarationStmt t = CppDecl (CppVariable varName t (Just cppExpr))
       case scope' of
         ScopeModule ->
           if HM.member varName symtab
             then do
-              updateSymbolTableWith inferredType
+              updateSymbolTableWith refinedType
               return assignmentStmt
             else do
-              updateSymbolTableWith inferredType
+              updateSymbolTableWith refinedType
               recordHoistedGlobal varName
-              addDeclaration $ CppVariable varName inferredType (Just cppExpr)
+              addDeclaration $ CppVariable varName refinedType (Just cppExpr)
               emitInfo $ "Initialized module-level variable " <> varName
               return cppNoop
         ScopeFunction ->
           if HM.member varName symtab
             then do
-              updateSymbolTableWith inferredType
+              updateSymbolTableWith refinedType
               return assignmentStmt
             else do
-              updateSymbolTableWith inferredType
-              return $ declarationStmt inferredType
+              updateSymbolTableWith refinedType
+              return $ declarationStmt refinedType
 
     parseRangeArgs :: [Located PythonArgument] -> CppCodeGen (Maybe RangeSpec)
     parseRangeArgs args = case traverse extractPositional args of
@@ -1186,7 +1192,7 @@ generatePythonFunction funcDef = do
     Just typeExpr -> mapPythonType typeExpr
     Nothing
       | funcName == "main" -> return CppInt
-      | otherwise -> inferFunctionReturnType (pyFuncBody funcDef)
+      | otherwise -> inferFunctionReturnType funcName (pyFuncBody funcDef)
   
   -- Generate function body
   bodyStmts <- mapM (generatePythonStmt ScopeFunction) (pyFuncBody funcDef)
@@ -1199,15 +1205,15 @@ generatePythonFunction funcDef = do
   addDeclaration $ CppFunction funcName returnType cppParams finalBodyStmts
 
 -- | Infer the appropriate C++ return type for a Python function when no annotation is provided
-inferFunctionReturnType :: [Located PythonStmt] -> CppCodeGen CppType
-inferFunctionReturnType body = do
+inferFunctionReturnType :: Text -> [Located PythonStmt] -> CppCodeGen CppType
+inferFunctionReturnType funcName body = do
   let returnExprs = collectReturnExprs body
   if null returnExprs
     then return CppVoid
     else do
-      let inferredTypes = map inferPythonExprCppTypeLocated returnExprs
-          knownTypes = catMaybes inferredTypes
-          hasUnknown = length knownTypes /= length returnExprs
+      refinedTypes <- mapM resolveReturnType returnExprs
+      let knownTypes = filter (/= CppAuto) refinedTypes
+          hasUnknown = length knownTypes /= length refinedTypes
           combinedType = case knownTypes of
             [] -> Nothing
             (t:ts) -> foldM unifyElementType t ts
@@ -1223,6 +1229,12 @@ inferFunctionReturnType body = do
             multiple -> do
               addInclude "<variant>"
               return (CppVariant multiple)
+  where
+    resolveReturnType :: Located PythonExpr -> CppCodeGen CppType
+    resolveReturnType expr = do
+      let defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated expr)
+          context = "return from " <> funcName
+      refinePythonExprType context expr defaultType
 
 -- | Collect return expressions that yield values from a list of Python statements
 collectReturnExprs :: [Located PythonStmt] -> [Located PythonExpr]
@@ -1396,8 +1408,8 @@ generateGoStmt (Located _ stmt) = case stmt of
         return cppNoop
       else do
         cppExprs <- mapM generateGoExpr exprs
-        let stmts = zipWith defineBinding identifiers cppExprs
-        return $ wrapStmts stmts
+        decls <- mapM defineBinding (zip3 identifiers exprs cppExprs)
+        return $ wrapStmts decls
   GoAssign leftExprs rightExprs -> do
     -- Handle assignment: x, y = a, b
     case (leftExprs, rightExprs) of
@@ -1433,10 +1445,12 @@ generateGoStmt (Located _ stmt) = case stmt of
     wrapStmts [single] = single
     wrapStmts stmts = CppStmtSeq stmts
 
-    defineBinding :: Identifier -> CppExpr -> CppStmt
-    defineBinding (Identifier name) expr
-      | name == "_" = CppExprStmt expr
-      | otherwise    = CppDecl $ CppVariable name CppAuto (Just expr)
+    defineBinding :: (Identifier, Located GoExpr, CppExpr) -> CppCodeGen CppStmt
+    defineBinding (Identifier name, locatedExpr, expr)
+      | name == "_" = return $ CppExprStmt expr
+      | otherwise = do
+          refinedType <- refineGoExprType ("definition of " <> name) locatedExpr CppAuto
+          return $ CppDecl $ CppVariable name refinedType (Just expr)
 
     prepareAssignment :: (Located GoExpr, Located GoExpr) -> CppCodeGen (CppStmt, Maybe (Located GoExpr, CppExpr))
     prepareAssignment (leftExpr, rightExpr) = do
@@ -1446,8 +1460,9 @@ generateGoStmt (Located _ stmt) = case stmt of
           return (CppExprStmt rhsCpp, Nothing)
         _ -> do
           tempName <- generateTempVar
+          refinedType <- refineGoExprType ("temporary binding " <> tempName) rightExpr CppAuto
           let tempVar = CppVar tempName
-              declStmt = CppDecl (CppVariable tempName CppAuto (Just rhsCpp))
+              declStmt = CppDecl (CppVariable tempName refinedType (Just rhsCpp))
           return (declStmt, Just (leftExpr, tempVar))
 
     buildAssignment :: (Located GoExpr, CppExpr) -> CppCodeGen CppStmt
@@ -1601,42 +1616,66 @@ mapGoTypeToCpp = \case
 mapCommonTypeToCpp :: Type -> CppType
 mapCommonTypeToCpp = mapPythonTypeToCpp  -- Reuse Python mapping
 
--- | Lookup analysis annotations and use them to refine the C++ type
-lookupAndApplyAnnotations :: CommonExpr -> CppType -> CppCodeGen CppType
-lookupAndApplyAnnotations expr defaultType = do
+lookupExprAnnotations :: CommonExpr -> CppCodeGen (Maybe ExprAnnotations)
+lookupExprAnnotations expr = do
   annotations <- gets cgsAnalysisAnnotations
   let exprKey = renderCommonExpr expr
-  case lookupAnnotations exprKey annotations of
-    Nothing -> return defaultType
-    Just anns -> do
-      case (eaInferredType anns, eaOwnership anns) of
-        (Just inferredType, Just ownership) -> do
-          let refinedType = mapCommonTypeToCpp inferredType
-          when (not (null (eaOptimizationNotes anns))) $
-            emitInfo $ "Applying analysis annotations to expression with notes: " <> T.intercalate ", " (eaOptimizationNotes anns)
-          return $ applyOwnershipToType ownership refinedType
-        (Just inferredType, Nothing) ->
-          return $ mapCommonTypeToCpp inferredType
-        (Nothing, Just ownership) ->
-          return $ applyOwnershipToType ownership defaultType
-        (Nothing, Nothing) ->
-          return defaultType
-  where
-    applyOwnershipToType :: OwnershipInfo -> CppType -> CppType
-    applyOwnershipToType ownership cppType =
-      case memLocation ownership of
-        Stack -> cppType
-        Heap ->
-          if ownsMemory ownership
-            then if canMove ownership
-              then CppUniquePtr cppType
-              else CppSharedPtr cppType
-            else CppPointer cppType
-        Global -> cppType
-        Unknown -> cppType
+  return $ lookupAnnotations exprKey annotations
 
-renderCommonExpr :: CommonExpr -> Text
-renderCommonExpr expr = T.pack (show expr)
+applyOwnershipToType :: OwnershipInfo -> CppType -> CppType
+applyOwnershipToType ownership cppType =
+  case memLocation ownership of
+    Stack -> cppType
+    Heap ->
+      if ownsMemory ownership
+        then if canMove ownership
+          then CppUniquePtr cppType
+          else CppSharedPtr cppType
+        else CppPointer cppType
+    Global -> cppType
+    Unknown -> cppType
+
+applyExprAnnotations :: CppType -> ExprAnnotations -> (CppType, Bool)
+applyExprAnnotations defaultType anns =
+  let typeFromAnalysis = fmap mapCommonTypeToCpp (eaInferredType anns)
+      baseType = fromMaybe defaultType typeFromAnalysis
+      withOwnership = maybe baseType (`applyOwnershipToType` baseType) (eaOwnership anns)
+      typeChanged = maybe False (/= defaultType) typeFromAnalysis
+      ownershipChanged = maybe False (\info -> applyOwnershipToType info baseType /= baseType) (eaOwnership anns)
+  in (withOwnership, typeChanged || ownershipChanged)
+
+-- | Lookup analysis annotations and use them to refine the C++ type
+lookupAndApplyAnnotations :: Text -> CommonExpr -> CppType -> CppCodeGen CppType
+lookupAndApplyAnnotations context expr defaultType = do
+  mAnns <- lookupExprAnnotations expr
+  let exprKey = renderCommonExpr expr
+  case mAnns of
+    Nothing -> do
+      emitInfo $ context <> ": no analysis annotations for expression " <> exprKey
+      return defaultType
+    Just anns -> do
+      let (refinedType, changed) = applyExprAnnotations defaultType anns
+      when changed $
+        emitInfo $ context <> ": refined type for " <> exprKey <> " -> " <> T.pack (show refinedType)
+      when (not (null (eaOptimizationNotes anns))) $
+        emitInfo $ context <> ": analysis notes - " <> T.intercalate ", " (eaOptimizationNotes anns)
+      return refinedType
+
+refinePythonExprType :: Text -> Located PythonExpr -> CppType -> CppCodeGen CppType
+refinePythonExprType context locatedExpr defaultType =
+  case pythonExprToCommon locatedExpr of
+    Left err -> do
+      emitInfo $ context <> ": unable to fingerprint expression for annotations - " <> err
+      return defaultType
+    Right common -> lookupAndApplyAnnotations context common defaultType
+
+refineGoExprType :: Text -> Located GoExpr -> CppType -> CppCodeGen CppType
+refineGoExprType context locatedExpr defaultType =
+  case goExprToCommon locatedExpr of
+    Left err -> do
+      emitInfo $ context <> ": unable to fingerprint expression for annotations - " <> err
+      return defaultType
+    Right common -> lookupAndApplyAnnotations context common defaultType
 
 -- | Literal mapping
 mapPythonLiteral :: PythonLiteral -> CppLiteral
@@ -1894,12 +1933,13 @@ generatePythonClassMember _ = return $ CppVariable "member" CppInt Nothing  -- S
 
 generateGoVariable :: (Identifier, Maybe (Located GoType), Maybe (Located GoExpr)) -> CppCodeGen ()
 generateGoVariable (Identifier name, mtype, mexpr) = do
-  cppType <- case mtype of
+  baseType <- case mtype of
     Just typeExpr -> generateGoType typeExpr
     Nothing -> return CppAuto
-  cppExpr <- case mexpr of
-    Just expr -> do
-      e <- generateGoExpr expr
-      return $ Just e
-    Nothing -> return Nothing
-  addDeclaration $ CppVariable name cppType cppExpr
+  case mexpr of
+    Just locatedExpr -> do
+      cppExpr <- generateGoExpr locatedExpr
+      refinedType <- refineGoExprType ("variable " <> name) locatedExpr baseType
+      addDeclaration $ CppVariable name refinedType (Just cppExpr)
+    Nothing ->
+      addDeclaration $ CppVariable name baseType Nothing
