@@ -1760,6 +1760,40 @@ addInclude inc = do
 addDeclaration :: CppDecl -> CppCodeGen ()
 addDeclaration decl = modify $ \s -> s { cgsDeclarations = decl : cgsDeclarations s }
 
+ensureHelperFunction :: Text -> CppDecl -> CppCodeGen ()
+ensureHelperFunction helperName decl = do
+  existingDecls <- gets cgsDeclarations
+  let alreadyDefined = any matches existingDecls
+  unless alreadyDefined $
+    addDeclaration decl
+  where
+    matches :: CppDecl -> Bool
+    matches (CppFunction name _ _ _) = name == helperName
+    matches _ = False
+
+runtimeAbortHelperName :: Text
+runtimeAbortHelperName = "fluxus_runtime_abort"
+
+ensureRuntimeAbortHelper :: CppCodeGen ()
+ensureRuntimeAbortHelper = do
+  addInclude "<stdexcept>"
+  ensureHelperFunction runtimeAbortHelperName runtimeAbortHelperDecl
+  where
+    runtimeAbortHelperDecl =
+      CppFunction runtimeAbortHelperName CppVoid
+        [CppParam "message" (CppPointer (CppConst CppChar)) Nothing]
+        [CppThrow (Just (CppCall (CppVar "std::runtime_error") [CppVar "message"]))]
+
+runtimeAbortCall :: Text -> CppCodeGen CppExpr
+runtimeAbortCall message = do
+  ensureRuntimeAbortHelper
+  return $ CppCall (CppVar runtimeAbortHelperName) [CppLiteral (CppStringLit message)]
+
+runtimeAbortStmt :: Text -> CppCodeGen CppStmt
+runtimeAbortStmt message = do
+  expr <- runtimeAbortCall message
+  return $ CppExprStmt expr
+
 addStatement :: CppStmt -> CppCodeGen ()
 addStatement stmt = do
   -- For now, we'll ignore isolated statements since we don't have a proper context

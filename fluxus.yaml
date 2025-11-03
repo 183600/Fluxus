@@ -25,7 +25,7 @@ verbose_level: 1
 
 # Build settings
 keep_intermediates: false
-strict_mode: false
+strict_mode: true
 
 # Paths
 include_paths:
