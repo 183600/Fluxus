@@ -8,26 +8,27 @@
 module Fluxus.CodeGen.Go
   ( -- * Code generation functions
     generateGoFromPython
+  , generateGoFromPythonWithAnnotations
   , generateGoCode
+  , generateGoCodeWithAnnotations
     -- * Configuration
   , GoGenConfig(..)
   , defaultGoConfig
   ) where
 
--- import Control.Monad.State  -- unused
--- import Control.Monad.Writer  -- unused
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.List (foldl')
-import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import Control.Applicative ((<|>))
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 
 import Fluxus.AST.Common
 import Fluxus.AST.Python
+import Fluxus.Analysis.CommonExprLowering (pythonExprToCommon, renderCommonExpr)
 
 -- | Go code generation configuration
 data GoGenConfig = GoGenConfig
@@ -36,6 +37,12 @@ data GoGenConfig = GoGenConfig
   , ggcImportMap   :: !(HashMap Text Text)
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
+
+-- | Runtime environment for Go code generation
+data GoGenEnv = GoGenEnv
+  { ggeConfig       :: !GoGenConfig
+  , ggeAnnotations  :: !AnalysisAnnotations
+  }
 
 -- | Default configuration
 defaultGoConfig :: Text -> GoGenConfig
@@ -48,35 +55,42 @@ defaultGoConfig pkgName = GoGenConfig
       ]
   }
 
--- | Generate Go code from Python AST
-generateGoFromPython :: PythonAST -> GoGenConfig -> Text
-generateGoFromPython (PythonAST module_) config =
-  let (header, body) = generateModule module_ config
+-- | Generate Go code from Python AST with optional annotations
+generateGoFromPythonWithAnnotations :: AnalysisAnnotations -> PythonAST -> GoGenConfig -> Text
+generateGoFromPythonWithAnnotations annotations (PythonAST module_) config =
+  let env = GoGenEnv config annotations
+      (header, body) = generateModule env module_
   in header <> "\n" <> body
 
--- | Generate module header
-_generateModuleHeader :: GoGenConfig -> Text
-_generateModuleHeader config =
-  T.unlines
-    [ "package " <> ggcPackageName config
-    , ""
-    , "import ("
-    , "\t\"fmt\""
-    , ")"
-    , ""
-    ]
+-- | Generate Go code from Python AST without annotations
+generateGoFromPython :: PythonAST -> GoGenConfig -> Text
+generateGoFromPython ast config =
+  generateGoFromPythonWithAnnotations emptyAnnotations ast config
+
+-- | Generate Go code as text with annotations
+generateGoCodeWithAnnotations :: AnalysisAnnotations -> PythonAST -> GoGenConfig -> Text
+generateGoCodeWithAnnotations annotations ast config =
+  let env = GoGenEnv config annotations
+      (header, body) = generateModule env (pyModule ast)
+  in header <> "\n" <> body
+
+-- | Generate Go code as text without annotations
+generateGoCode :: PythonAST -> GoGenConfig -> Text
+generateGoCode ast config =
+  generateGoCodeWithAnnotations emptyAnnotations ast config
 
 -- | Generate complete module
-generateModule :: PythonModule -> GoGenConfig -> (Text, Text)
-generateModule pyModule config =
-  let imports = generateImports pyModule config
-      decls = generateDeclarations pyModule config
+generateModule :: GoGenEnv -> PythonModule -> (Text, Text)
+generateModule env pyModule =
+  let imports = generateImports env pyModule
+      decls = generateDeclarations env pyModule
   in (imports, decls)
 
 -- | Generate imports
-generateImports :: PythonModule -> GoGenConfig -> Text
-generateImports _pyModule config =
-  let header = "package " <> ggcPackageName config
+generateImports :: GoGenEnv -> PythonModule -> Text
+generateImports env _pyModule =
+  let config = ggeConfig env
+      header = "package " <> ggcPackageName config
       imports = case ggcEnableFmt config of
                   True -> ["\t\"fmt\""]
                   False -> []
@@ -85,96 +99,96 @@ generateImports _pyModule config =
      else T.unlines (header : "" : "import (" : imports ++ [")"])
 
 -- | Generate all declarations
-generateDeclarations :: PythonModule -> GoGenConfig -> Text
-generateDeclarations pyModule config =
-  let stmts = concatMap (generateStatement config . locatedValue) (pyModuleBody pyModule)
+generateDeclarations :: GoGenEnv -> PythonModule -> Text
+generateDeclarations env pyModule =
+  let stmts = concatMap (generateStatement env . locatedValue) (pyModuleBody pyModule)
   in T.unlines stmts
 
--- | Generate Go code as text
-generateGoCode :: PythonAST -> GoGenConfig -> Text
-generateGoCode ast config =
-  let (header, body) = generateModule (pyModule ast) config
-  in header <> "\n" <> body
-
 -- | Generate statement
-generateStatement :: GoGenConfig -> PythonStmt -> [Text]
-generateStatement config stmt = case stmt of
-  PyExprStmt (Located _ expr) ->
-    let goExpr = generateExpression config expr
+generateStatement :: GoGenEnv -> PythonStmt -> [Text]
+generateStatement env stmt = case stmt of
+  PyExprStmt exprLoc ->
+    let goExpr = generateExpression env exprLoc
     in [goExpr]
-    
-  PyAssign targets (Located _ value) ->
+
+  PyAssign targets valueLoc ->
     case targets of
       [Located _ (PatVar (Identifier name))] ->
-        let goValue = generateExpression config value
-            goType = inferGoType value
+        let goValue = generateExpression env valueLoc
+            goType = inferGoType env valueLoc
         in ["var " <> name <> " " <> goType <> " = " <> goValue]
       _ -> []
-  
+
   PyAnnAssign (Located _ (PatVar (Identifier name))) typeExpr maybeValue ->
     let goType = pythonTypeToGo (locatedValue typeExpr)
         assignment = case maybeValue of
-                       Just (Located _ value) -> " = " <> generateExpression config value
+                       Just value -> " = " <> generateExpression env value
                        Nothing -> ""
     in ["var " <> name <> " " <> goType <> assignment]
-      
-  PyIf (Located _ cond) thenBody elseBody ->
-    let goCond = generateExpression config cond
-        goThen = concatMap (\(Located _ stmt) -> generateStatement config stmt) thenBody
+
+  PyIf cond thenBody elseBody ->
+    let goCond = generateExpression env cond
+        goThen = concatMap (generateStatement env . locatedValue) thenBody
         goElse = case elseBody of
                   [] -> []
-                  body -> concatMap (\(Located _ stmt) -> generateStatement config stmt) body
+                  body -> concatMap (generateStatement env . locatedValue) body
     in ["if " <> goCond <> " {"] ++
        map ("\t" <>) goThen ++
        ["}"] ++
        (if null goElse then [] else ["else {"] ++ map ("\t" <>) goElse ++ ["}"])
-    
-  PyFor (Located _ (PatVar (Identifier varName))) (Located _ iterExpr) body elseBody ->
-    let goIter = generateExpression config iterExpr
-        goBody = concatMap (\(Located _ stmt) -> generateStatement config stmt) body
+
+  PyFor (Located _ (PatVar (Identifier varName))) iterExpr body elseBody ->
+    let goIter = generateExpression env iterExpr
+        goBody = concatMap (generateStatement env . locatedValue) body
         rangeHandled = handleRangeLoop varName goIter goBody
     in rangeHandled
-    
+
   PyFuncDef funcDef ->
-    generateFunctionDef config funcDef
-    
-  PyReturn (Just (Located _ expr)) ->
-    let goExpr = generateExpression config expr
+    generateFunctionDef env funcDef
+
+  PyReturn (Just exprLoc) ->
+    let goExpr = generateExpression env exprLoc
     in ["return " <> goExpr]
   PyReturn Nothing ->
     ["return"]
-    
+
   _ -> []
 
 -- | Generate function definition
-generateFunctionDef :: GoGenConfig -> PythonFuncDef -> [Text]
-generateFunctionDef config funcDef =
+generateFunctionDef :: GoGenEnv -> PythonFuncDef -> [Text]
+generateFunctionDef env funcDef =
   let Identifier funcName = pyFuncName funcDef
-      params = map (generateParameter config) (pyFuncParams funcDef)
+      params = map (generateParameter env) (pyFuncParams funcDef)
       paramStr = if null params then "" else T.intercalate ", " params
-      body = concatMap (\(Located _ stmt) -> generateStatement config stmt) (pyFuncBody funcDef)
+      body = concatMap (generateStatement env . locatedValue) (pyFuncBody funcDef)
       returnType = case pyFuncReturns funcDef of
                      Just locTypeExpr -> pythonTypeToGo (locatedValue locTypeExpr)
-                     Nothing -> if funcName == "main" then "int" else inferReturnTypeFromBody (pyFuncBody funcDef)
+                     Nothing ->
+                       if funcName == "main"
+                         then "int"
+                         else inferReturnTypeFromBody env (pyFuncBody funcDef)
       funcSignature = "func " <> funcName <> "(" <> paramStr <> ")" <> formatReturnType returnType
+      mainReturn = if funcName == "main" && not (hasReturnStatement (pyFuncBody funcDef))
+                     then ["\treturn 0"]
+                     else []
   in [funcSignature <> " {"] ++
      map ("\t" <>) body ++
-     (if funcName == "main" && not (hasReturnStatement (pyFuncBody funcDef)) then ["\treturn 0"] else []) ++
+     mainReturn ++
      ["}"]
   where
     formatReturnType t
       | T.null t = ""
       | otherwise = " " <> t
-    hasReturnStatement stmts = any isReturnStmt stmts
+    hasReturnStatement = any isReturnStmt
     isReturnStmt (Located _ (PyReturn _)) = True
     isReturnStmt _ = False
 
 -- | Generate parameter
-generateParameter :: GoGenConfig -> Located PythonParameter -> Text
-generateParameter _ (Located _ param) = case param of
+generateParameter :: GoGenEnv -> Located PythonParameter -> Text
+generateParameter env (Located _ param) = case param of
   ParamNormal (Identifier name) typeAnn defaultExpr ->
     let typeFromAnnotation = pythonTypeToGo . locatedValue <$> typeAnn
-        typeFromDefault = pythonTypeToGoLiteral <$> defaultExpr
+        typeFromDefault = pythonTypeToGoLiteral env <$> defaultExpr
         paramType = fromMaybe "interface{}" (typeFromAnnotation <|> typeFromDefault)
     in name <> " " <> paramType
   ParamVarArgs (Identifier name) typeAnn ->
@@ -185,15 +199,15 @@ generateParameter _ (Located _ param) = case param of
     in name <> " map[string]" <> valueType
   ParamKwOnly (Identifier name) typeAnn defaultExpr ->
     let typeFromAnnotation = pythonTypeToGo . locatedValue <$> typeAnn
-        typeFromDefault = pythonTypeToGoLiteral <$> defaultExpr
+        typeFromDefault = pythonTypeToGoLiteral env <$> defaultExpr
         paramType = fromMaybe "interface{}" (typeFromAnnotation <|> typeFromDefault)
     in name <> " " <> paramType
 
 -- | Generate expression
-generateExpression :: GoGenConfig -> PythonExpr -> Text
-generateExpression config expr = case expr of
+generateExpression :: GoGenEnv -> Located PythonExpr -> Text
+generateExpression env (Located _ expr) = case expr of
   PyVar (Identifier name) -> name
-    
+
   PyLiteral lit -> case lit of
     PyInt n -> T.pack (show n)
     PyFloat d -> T.pack (show d)
@@ -204,10 +218,10 @@ generateExpression config expr = case expr of
     PyFString _ _ -> "\"\"" -- F-strings should be handled separately
     PyBytes _ -> "[]byte{}" -- Byte literals
     PyEllipsis -> "nil" -- Ellipsis not directly supported in Go
-    
+
   PyBinaryOp op left right ->
-    let leftExpr = generateExpression config (locatedValue left)
-        rightExpr = generateExpression config (locatedValue right)
+    let leftExpr = generateExpression env left
+        rightExpr = generateExpression env right
         goOp = case op of
                  OpAdd -> "+"
                  OpSub -> "-"
@@ -216,44 +230,58 @@ generateExpression config expr = case expr of
                  OpMod -> "%"
                  _ -> "+"
     in "(" <> leftExpr <> " " <> goOp <> " " <> rightExpr <> ")"
-    
-  PyUnaryOp op (Located _ operand) ->
-    let operandExpr = generateExpression config operand
+
+  PyUnaryOp op operand ->
+    let operandExpr = generateExpression env operand
         goOp = case op of
                  OpNegate -> "-"
                  OpPositive -> "+"
                  _ -> "-"
     in goOp <> operandExpr
-    
-  PyCall (Located _ func) args ->
-    let funcExpr = generateExpression config func
+
+  PyCall func args ->
+    let funcExpr = generateExpression env func
         argExprs = map extractArg args
         argStr = T.intercalate ", " argExprs
         extractArg (Located _ arg) = case arg of
-          ArgPositional a -> generateExpression config (locatedValue a)
-          ArgKeyword _ a -> generateExpression config (locatedValue a)
-          ArgStarred a -> generateExpression config (locatedValue a)
-          ArgKwStarred a -> generateExpression config (locatedValue a)
+          ArgPositional a -> generateExpression env a
+          ArgKeyword _ a -> generateExpression env a
+          ArgStarred a -> generateExpression env a
+          ArgKwStarred a -> generateExpression env a
     in case funcExpr of
          "print" -> case argExprs of
-                      [] -> "fmt.Println()"
-                      [arg] | T.all (\c -> c >= '0' && c <= '9') arg -> "fmt.Println(" <> arg <> ")"
-                      [arg] | T.head arg == '"' -> "fmt.Println(" <> arg <> ")"
-                      [arg] -> "fmt.Println(" <> arg <> ")"
-                      _ -> "fmt.Println(" <> argStr <> ")"
+                       [] -> "fmt.Println()"
+                       [arg] | T.all (\c -> c >= '0' && c <= '9') arg -> "fmt.Println(" <> arg <> ")"
+                       [arg] | not (T.null arg) && T.head arg == '"' -> "fmt.Println(" <> arg <> ")"
+                       [arg] -> "fmt.Println(" <> arg <> ")"
+                       _ -> "fmt.Println(" <> argStr <> ")"
          "println" -> "fmt.Println(" <> argStr <> ")"
          _ -> funcExpr <> "(" <> argStr <> ")"
-    
-  PySubscript (Located _ expr) (Located _ (SliceIndex index)) ->
-    let exprStr = generateExpression config expr
-        indexStr = generateExpression config (locatedValue index)
+
+  PySubscript exprLoc (Located _ (SliceIndex index)) ->
+    let exprStr = generateExpression env exprLoc
+        indexStr = generateExpression env index
     in exprStr <> "[" <> indexStr <> "]"
-    
+
   PyList elements ->
-    let elemExprs = map (\(Located _ elem) -> generateExpression config elem) elements
-        elemType = inferElementType elements
+    let elemExprs = map (generateExpression env) elements
+        elemType = inferElementType env elements
     in "[]" <> elemType <> "{" <> T.intercalate ", " elemExprs <> "}"
-    
+
+  PyTuple elements ->
+    let elemExprs = map (generateExpression env) elements
+    in "[]interface{}{" <> T.intercalate ", " elemExprs <> "}"
+
+  PySet elements ->
+    let setType = inferElementType env elements
+    in "map[" <> setType <> "]struct{}{}"
+
+  PyDict pairs ->
+    let keyType = inferDictKeyType env pairs
+        valueType = inferDictValueType env pairs
+        entries = map (\(k, v) -> generateExpression env k <> ": " <> generateExpression env v) pairs
+    in "map[" <> keyType <> "]" <> valueType <> "{" <> T.intercalate ", " entries <> "}"
+
   _ -> "0"
 
 -- | Extract text from Identifier
@@ -299,23 +327,86 @@ goTypeFromSimpleName name =
        "mapping" -> "map[interface{}]interface{}"
        _ -> name
 
+-- | Map unified analysis types to Go
+mapCommonTypeToGo :: Type -> Text
+mapCommonTypeToGo = \case
+  TInt bits -> case bits of
+    8 -> "int8"
+    16 -> "int16"
+    32 -> "int32"
+    64 -> "int64"
+    _ -> "int"
+  TUInt bits -> case bits of
+    8 -> "uint8"
+    16 -> "uint16"
+    32 -> "uint32"
+    64 -> "uint64"
+    _ -> "uint"
+  TFloat bits -> case bits of
+    32 -> "float32"
+    64 -> "float64"
+    _ -> "float64"
+  TBool -> "bool"
+  TString -> "string"
+  TBytes -> "[]byte"
+  TChar -> "rune"
+  TVoid -> ""
+  TAny -> "interface{}"
+  TList t -> "[]" <> mapCommonTypeToGo t
+  TTuple _ -> "[]interface{}"
+  TDict k v -> "map[" <> mapCommonTypeToGo k <> "]" <> mapCommonTypeToGo v
+  TSet t -> "map[" <> mapCommonTypeToGo t <> "]struct{}"
+  TOptional t -> let mapped = mapCommonTypeToGo t in if T.null mapped then "interface{}" else "*" <> mapped
+  TFunction args ret ->
+    let argTypes = T.intercalate ", " (map mapCommonTypeToGo args)
+        retType = mapCommonTypeToGo ret
+        retPart = if T.null retType then "" else " " <> retType
+    in "func(" <> argTypes <> ")" <> retPart
+  TMethod recv args ret ->
+    let recvType = mapCommonTypeToGo recv
+        argTypes = T.intercalate ", " (map mapCommonTypeToGo args)
+        argsWithRecv = T.intercalate ", " (filter (not . T.null) (recvType : if T.null argTypes then [] else [argTypes]))
+        retType = mapCommonTypeToGo ret
+        retPart = if T.null retType then "" else " " <> retType
+    in "func(" <> argsWithRecv <> ")" <> retPart
+  TStruct qn _ -> qualifiedNameToText qn
+  TEnum qn _ -> qualifiedNameToText qn
+  TInterface qn _ -> qualifiedNameToText qn
+  TUnion _ -> "interface{}"
+  TVar (TypeVar name) -> name
+  TGeneric qn _ -> qualifiedNameToText qn
+  TForall _ _ t -> mapCommonTypeToGo t
+  TOwned t -> let mapped = mapCommonTypeToGo t in if T.null mapped then "interface{}" else "*" <> mapped
+  TShared t -> let mapped = mapCommonTypeToGo t in if T.null mapped then "interface{}" else "*" <> mapped
+  TBorrowed t -> let mapped = mapCommonTypeToGo t in if T.null mapped then "interface{}" else "*" <> mapped
+  TMutable t -> let mapped = mapCommonTypeToGo t in if T.null mapped then "interface{}" else "*" <> mapped
+  TError _ -> "interface{}"
+  TInfer _ -> "interface{}"
+
+-- | Helper to render qualified names
+qualifiedNameToText :: QualifiedName -> Text
+qualifiedNameToText (QualifiedName modules (Identifier name)) =
+  case modules of
+    [] -> name
+    xs -> T.intercalate "." (map (\(ModuleName m) -> m) xs) <> "." <> name
+
 -- | Infer element type for list/tuple/set literals
-inferElementType :: [Located PythonExpr] -> Text
-inferElementType [] = "interface{}"
-inferElementType (x:xs) =
-  foldl' combineGoTypes (inferGoType (locatedValue x)) (map (inferGoType . locatedValue) xs)
+inferElementType :: GoGenEnv -> [Located PythonExpr] -> Text
+inferElementType _ [] = "interface{}"
+inferElementType env (x:xs) =
+  foldl' combineGoTypes (inferGoType env x) (map (inferGoType env) xs)
 
 -- | Infer key type for dict literals
-inferDictKeyType :: [(Located PythonExpr, Located PythonExpr)] -> Text
-inferDictKeyType [] = "interface{}"
-inferDictKeyType ((k, _):rest) =
-  foldl' combineGoTypes (inferGoType (locatedValue k)) (map (inferGoType . locatedValue . fst) rest)
+inferDictKeyType :: GoGenEnv -> [(Located PythonExpr, Located PythonExpr)] -> Text
+inferDictKeyType _ [] = "interface{}"
+inferDictKeyType env ((k, _):rest) =
+  foldl' combineGoTypes (inferGoType env k) (map (inferGoType env . fst) rest)
 
 -- | Infer value type for dict literals
-inferDictValueType :: [(Located PythonExpr, Located PythonExpr)] -> Text
-inferDictValueType [] = "interface{}"
-inferDictValueType ((_, v):rest) =
-  foldl' combineGoTypes (inferGoType (locatedValue v)) (map (inferGoType . locatedValue . snd) rest)
+inferDictValueType :: GoGenEnv -> [(Located PythonExpr, Located PythonExpr)] -> Text
+inferDictValueType _ [] = "interface{}"
+inferDictValueType env ((_, v):rest) =
+  foldl' combineGoTypes (inferGoType env v) (map (inferGoType env . snd) rest)
 
 -- | Combine two Go types, picking a compatible supertype if possible
 combineGoTypes :: Text -> Text -> Text
@@ -369,9 +460,25 @@ splitMapType t
       in (keyType, valueType)
   | otherwise = ("interface{}", "interface{}")
 
--- | Infer Go type from Python expression
-inferGoType :: PythonExpr -> Text
-inferGoType expr = case expr of
+-- | Attempt to refine type from analysis annotations
+inferGoTypeFromAnnotations :: GoGenEnv -> Located PythonExpr -> Maybe Text
+inferGoTypeFromAnnotations env exprLoc = do
+  common <- either (const Nothing) Just (pythonExprToCommon exprLoc)
+  let key = renderCommonExpr common
+  anns <- lookupAnnotations key (ggeAnnotations env)
+  inferred <- eaInferredType anns
+  let mapped = mapCommonTypeToGo inferred
+  if T.null mapped then Nothing else Just mapped
+
+-- | Infer Go type from Python expression with analysis fallback
+inferGoType :: GoGenEnv -> Located PythonExpr -> Text
+inferGoType env exprLoc =
+  fromMaybe (inferGoTypeHeuristic env (locValue exprLoc))
+            (inferGoTypeFromAnnotations env exprLoc)
+
+-- | Heuristic Go type inference when analysis is unavailable
+inferGoTypeHeuristic :: GoGenEnv -> PythonExpr -> Text
+inferGoTypeHeuristic env expr = case expr of
   PyLiteral lit -> case lit of
     PyInt _ -> "int"
     PyFloat _ -> "float64"
@@ -384,28 +491,28 @@ inferGoType expr = case expr of
     PyEllipsis -> "interface{}"
   PyConst qn -> goTypeFromSimpleName (identifierText (qnName qn))
   PyVar _ -> "interface{}"
-  PyList elements -> "[]" <> inferElementType elements
-  PyTuple elements -> "[]" <> inferElementType elements
-  PySet elements -> "map[" <> inferElementType elements <> "]struct{}"
-  PyDict pairs -> "map[" <> inferDictKeyType pairs <> "]" <> inferDictValueType pairs
-  PyBinaryOp op left right -> inferBinaryOpType op (locatedValue left) (locatedValue right)
-  PyUnaryOp op (Located _ operand) -> case op of
+  PyList elements -> "[]" <> inferElementType env elements
+  PyTuple elements -> "[]" <> inferElementType env elements
+  PySet elements -> "map[" <> inferElementType env elements <> "]struct{}"
+  PyDict pairs -> "map[" <> inferDictKeyType env pairs <> "]" <> inferDictValueType env pairs
+  PyBinaryOp op left right -> inferBinaryOpType env op left right
+  PyUnaryOp op operand -> case op of
     OpNot -> "bool"
-    _ -> inferGoType operand
+    _ -> inferGoType env operand
   PyBoolOp _ _ -> "bool"
   PyComparison _ _ -> "bool"
-  PyIfExp _ thenExpr elseExpr -> combineGoTypes (inferGoType (locatedValue thenExpr)) (inferGoType (locatedValue elseExpr))
-  PyCall (Located _ func) _ -> inferCallReturnType func
-  PyNamedExpr _ (Located _ valueExpr) -> inferGoType valueExpr
+  PyIfExp _ thenExpr elseExpr -> combineGoTypes (inferGoType env thenExpr) (inferGoType env elseExpr)
+  PyCall func _ -> inferCallReturnType env (locValue func)
+  PyNamedExpr _ valueExpr -> inferGoType env valueExpr
   PyAttribute {} -> "interface{}"
-  PySubscript (Located _ container) _ ->
-    let containerType = inferGoType container
+  PySubscript container _ ->
+    let containerType = inferGoType env container
     in if isListType containerType
-       then stripListPrefix containerType
-       else if isMapType containerType
-            then snd (splitMapType containerType)
-            else "interface{}"
-  PyAwait (Located _ awaited) -> inferGoType awaited
+         then stripListPrefix containerType
+         else if isMapType containerType
+                then snd (splitMapType containerType)
+                else "interface{}"
+  PyAwait awaited -> inferGoType env awaited
   PyJoinedStr _ -> "string"
   PyFormatSpec _ -> "string"
   PyListComp _ _ -> "[]interface{}"
@@ -415,14 +522,14 @@ inferGoType expr = case expr of
   _ -> "interface{}"
 
 -- | Infer return type from binary operation
-inferBinaryOpType :: BinaryOp -> PythonExpr -> PythonExpr -> Text
-inferBinaryOpType op left right = case op of
-  OpAdd -> promoteNumericTypes (inferGoType left) (inferGoType right)
-  OpSub -> promoteNumericTypes (inferGoType left) (inferGoType right)
-  OpMul -> promoteNumericTypes (inferGoType left) (inferGoType right)
-  OpDiv -> promoteNumericTypes (inferGoType left) (inferGoType right)
-  OpMod -> promoteNumericTypes (inferGoType left) (inferGoType right)
-  OpPow -> promoteNumericTypes (inferGoType left) (inferGoType right)
+inferBinaryOpType :: GoGenEnv -> BinaryOp -> Located PythonExpr -> Located PythonExpr -> Text
+inferBinaryOpType env op left right = case op of
+  OpAdd -> promoteNumericTypes (inferGoType env left) (inferGoType env right)
+  OpSub -> promoteNumericTypes (inferGoType env left) (inferGoType env right)
+  OpMul -> promoteNumericTypes (inferGoType env left) (inferGoType env right)
+  OpDiv -> promoteNumericTypes (inferGoType env left) (inferGoType env right)
+  OpMod -> promoteNumericTypes (inferGoType env left) (inferGoType env right)
+  OpPow -> promoteNumericTypes (inferGoType env left) (inferGoType env right)
   OpFloorDiv -> "int"
   OpBitAnd -> "int"
   OpBitOr -> "int"
@@ -446,9 +553,9 @@ promoteNumericTypes t1 t2
   | t1 == "int" || t2 == "int" = "int"
   | otherwise = "interface{}"
 
--- | Infer return type from function call
-inferCallReturnType :: PythonExpr -> Text
-inferCallReturnType expr = case expr of
+-- | Infer return type from function call (heuristic fallback)
+inferCallReturnType :: GoGenEnv -> PythonExpr -> Text
+inferCallReturnType env expr = case expr of
   PyVar (Identifier "range") -> "[]int"
   PyVar (Identifier "len") -> "int"
   PyVar (Identifier "str") -> "string"
@@ -458,14 +565,17 @@ inferCallReturnType expr = case expr of
   PyVar (Identifier "list") -> "[]interface{}"
   PyVar (Identifier "dict") -> "map[interface{}]interface{}"
   PyVar (Identifier "set") -> "map[interface{}]bool"
-  _ -> "interface{}"
+  _ ->
+    case inferGoTypeFromAnnotations env (noLoc expr) of
+      Just annotated -> annotated
+      Nothing -> "interface{}"
 
 -- | Convert Python type annotation to Go type
 pythonTypeToGo :: PythonTypeExpr -> Text
 pythonTypeToGo typeExpr = case typeExpr of
   TypeName qn -> qualifiedNameToGo qn
   TypeVar tv -> tv
-  TypeSubscript (Located _ base) args -> case base of
+  TypeSubscript base args -> case locatedValue base of
     TypeName qn -> case qualifiedNameToGo qn of
       "List" -> case args of
         [Located _ arg] -> "[]" <> pythonTypeToGo arg
@@ -486,9 +596,13 @@ pythonTypeToGo typeExpr = case typeExpr of
     if null types
     then "[]interface{}"
     else "[]interface{}"
-  TypeUnion types -> "interface{}"
+  TypeUnion _ -> "interface{}"
   TypeOptional (Located _ t) -> "*" <> pythonTypeToGo t
-  TypeCallable _ (Located _ ret) -> "func() " <> pythonTypeToGo ret
+  TypeCallable params (Located _ ret) ->
+    let paramTypes = T.intercalate ", " (map pythonTypeToGo (map locatedValue params))
+        retType = pythonTypeToGo ret
+        retPart = if T.null retType then "" else " " <> retType
+    in "func(" <> paramTypes <> ")" <> retPart
   TypeLiteral _ -> "interface{}"
 
 -- | Convert qualified name to Go type
@@ -515,12 +629,12 @@ qualifiedNameToGo qn =
     _ -> name
 
 -- | Infer Go type from Python expression literal (for default parameter values)
-pythonTypeToGoLiteral :: Located PythonExpr -> Text
-pythonTypeToGoLiteral (Located _ expr) = inferGoType expr
+pythonTypeToGoLiteral :: GoGenEnv -> Located PythonExpr -> Text
+pythonTypeToGoLiteral env exprLoc = inferGoType env exprLoc
 
 -- | Infer return type from function body by looking at return statements
-inferReturnTypeFromBody :: [Located PythonStmt] -> Text
-inferReturnTypeFromBody stmts =
+inferReturnTypeFromBody :: GoGenEnv -> [Located PythonStmt] -> Text
+inferReturnTypeFromBody env stmts =
   let returnTypes = mapMaybe extractReturnType stmts
   in case returnTypes of
     [] -> ""
@@ -528,7 +642,7 @@ inferReturnTypeFromBody stmts =
   where
     extractReturnType :: Located PythonStmt -> Maybe Text
     extractReturnType (Located _ stmt) = case stmt of
-      PyReturn (Just (Located _ expr)) -> Just (inferGoType expr)
+      PyReturn (Just exprLoc) -> Just (inferGoType env exprLoc)
       PyReturn Nothing -> Just ""
       _ -> Nothing
 
@@ -540,7 +654,7 @@ handleRangeLoop varName rangeCall body =
     Nothing -> ["for " <> varName <> " := range " <> rangeCall <> " {"] ++ map ("\t" <>) body ++ ["}"]
   where
     parseRangeCall :: Text -> Maybe Text
-    parseRangeCall call = 
+    parseRangeCall call =
       if "range(" `T.isPrefixOf` call && ")" `T.isSuffixOf` call
       then Just $ T.take (T.length call - 7) (T.drop 6 call)
       else Nothing
