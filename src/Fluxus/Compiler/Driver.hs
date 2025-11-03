@@ -245,7 +245,7 @@ instance FromJSON CompilerConfig where
       <*> o .:? "verbose_level" .!= 1
       <*> o .:? "work_directory"
       <*> o .:? "keep_intermediates" .!= False
-      <*> o .:? "strict_mode" .!= False
+      <*> o .:? "strict_mode" .!= True
       <*> o .:? "enable_analysis" .!= True
       <*> o .:? "stop_at_codegen" .!= False
 
@@ -310,7 +310,7 @@ defaultConfig = CompilerConfig
   , ccVerboseLevel = 1
   , ccWorkDirectory = Nothing
   , ccKeepIntermediates = False
-  , ccStrictMode = False
+  , ccStrictMode = True
   , ccEnableAnalysis = True
   , ccStopAtCodegen = False
   }
