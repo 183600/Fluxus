@@ -1623,17 +1623,29 @@ lookupExprAnnotations expr = do
   return $ lookupAnnotations exprKey annotations
 
 applyOwnershipToType :: OwnershipInfo -> CppType -> CppType
-applyOwnershipToType ownership cppType =
-  case memLocation ownership of
-    Stack -> cppType
-    Heap ->
-      if ownsMemory ownership
-        then if canMove ownership
-          then CppUniquePtr cppType
-          else CppSharedPtr cppType
-        else CppPointer cppType
-    Global -> cppType
-    Unknown -> cppType
+applyOwnershipToType ownership cppType
+  | cppType == CppAuto = cppType
+  | otherwise =
+      case memLocation ownership of
+        Stack -> cppType
+        Heap ->
+          if ownsMemory ownership
+            then if canMove ownership
+              then ensureUniquePtr cppType
+              else ensureSharedPtr cppType
+            else ensurePointer cppType
+        Global -> cppType
+        Unknown -> cppType
+  where
+    ensureUniquePtr t = case t of
+      CppUniquePtr _ -> t
+      _ -> CppUniquePtr t
+    ensureSharedPtr t = case t of
+      CppSharedPtr _ -> t
+      _ -> CppSharedPtr t
+    ensurePointer t = case t of
+      CppPointer _ -> t
+      _ -> CppPointer t
 
 applyExprAnnotations :: CppType -> ExprAnnotations -> (CppType, Bool)
 applyExprAnnotations defaultType anns =

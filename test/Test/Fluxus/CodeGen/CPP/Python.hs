@@ -380,9 +380,33 @@ pythonGlobalSpec = describe "Python module handling" $ do
       CppBlock stmts -> any (declaresVar target) stmts
       _ -> False
 
-    analysisFeedbackSpec :: Spec
-    analysisFeedbackSpec = describe "Analysis annotation integration" $ do
-    it "refines module-level variable declarations using analysis annotations" $ do
+
+analysisFeedbackSpec :: Spec
+analysisFeedbackSpec = describe "Analysis annotation integration" $ do
+  let annotationsFor expr =
+        case pythonExprToCommon expr of
+          Left err -> error ("Failed to lower expression: " <> T.unpack err)
+          Right common ->
+            insertAnnotations (renderCommonExpr common) exprAnnotation emptyAnnotations
+
+      exprAnnotation =
+        ExprAnnotations
+          { eaInferredType = Just (TOwned TString)
+          , eaOwnership = Just ownershipInfo
+          , eaEscapeInfo = Just EscapeToHeap
+          , eaOptimizationNotes = ["factory result escapes to heap"]
+          }
+
+      ownershipInfo =
+        OwnershipInfo
+          { ownsMemory = True
+          , canMove = True
+          , refCount = Just 1
+          , escapes = EscapeToHeap
+          , memLocation = Heap
+          }
+
+  it "refines module-level variable declarations using analysis annotations" $ do
     let callExpr = noLoc (PyCall (noLoc (PyVar (Identifier "factory"))) [])
         assignment = noLoc (PyAssign [noLoc (PatVar (Identifier "value"))] callExpr)
         pythonAst = PythonAST PythonModule
@@ -405,7 +429,8 @@ pythonGlobalSpec = describe "Python module handling" $ do
           _ -> expectationFailure "Expected annotated variable declaration for 'value'"
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
-    it "refines function return types using analysis annotations" $ do
+
+  it "refines function return types using analysis annotations" $ do
     let callExpr = noLoc (PyCall (noLoc (PyVar (Identifier "factory"))) [])
         funcDef = PythonFuncDef
           { pyFuncName = Identifier "make"
@@ -437,31 +462,8 @@ pythonGlobalSpec = describe "Python module handling" $ do
           _ -> expectationFailure "Expected annotated function 'make'"
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
-    where
-    annotationsFor expr =
-      case pythonExprToCommon expr of
-        Left err -> error ("Failed to lower expression: " <> T.unpack err)
-        Right common ->
-          insertAnnotations (renderCommonExpr common) exprAnnotation emptyAnnotations
 
-    exprAnnotation =
-      ExprAnnotations
-        { eaInferredType = Just (TOwned TString)
-        , eaOwnership = Just ownershipInfo
-        , eaEscapeInfo = Just EscapeToHeap
-        , eaOptimizationNotes = ["factory result escapes to heap"]
-        }
-
-    ownershipInfo =
-      OwnershipInfo
-        { ownsMemory = True
-        , canMove = True
-        , refCount = Just 1
-        , escapes = EscapeToHeap
-        , memLocation = Heap
-        }
-
-    -- Runtime compilation specs ---------------------------------------------------
+-- Runtime compilation specs ---------------------------------------------------
 
 pythonRuntimeSpec :: Spec
 pythonRuntimeSpec = describe "Python end-to-end compilation" $ do
