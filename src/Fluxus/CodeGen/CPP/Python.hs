@@ -19,7 +19,7 @@ import qualified Text.Megaparsec as MP
 
 import Fluxus.AST.Common
 import Fluxus.AST.Python
-import Fluxus.Analysis.CommonExprLowering (pythonExprToCommon, renderCommonExpr)
+import Fluxus.Analysis.CommonExprLowering (pythonExprToCommon, renderCommonExpr, formatSpan)
 import Fluxus.CodeGen.CPP.AST
 import Fluxus.CodeGen.CPP.Monad
 import Fluxus.CodeGen.CPP.Shared
@@ -108,7 +108,7 @@ data PythonScope
 
 -- | Generate C++ from Python statements
 generatePythonStmt :: PythonScope -> Located PythonStmt -> CppCodeGen CppStmt
-generatePythonStmt scope (Located _ stmt) =
+generatePythonStmt scope (Located span stmt) =
   case stmt of
     PyFuncDef funcDef -> do
       generatePythonFunction funcDef
@@ -160,43 +160,63 @@ generatePythonStmt scope (Located _ stmt) =
           let msg = "Only range() iteration is currently supported"
           reportFatalUnsupported msg
           return cppNoop
-    PyWith _ _ -> do
-      let msg = "Python 'with' statement not implemented"
-      reportFatalNotImplemented msg
+    PyWith _ _ ->
+      runtimeFallbackStmt span "Python 'with' statement requires runtime fallback"
+    PyTry _ _ _ _ ->
+      runtimeFallbackStmt span "Python 'try' statement requires runtime fallback"
+    PyAsyncWith _ _ ->
+      runtimeFallbackStmt span "Python 'async with' statement requires runtime fallback"
+    PyAsyncFor _ _ _ _ ->
+      runtimeFallbackStmt span "Python 'async for' statement requires runtime fallback"
+    PyAsyncFuncDef funcDef -> do
+      generateAsyncFunctionFallback span funcDef
       return cppNoop
-    PyTry _ _ _ _ -> do
-      let msg = "Python 'try' statement not implemented"
-      reportFatalNotImplemented msg
-      return cppNoop
-    PyAsyncWith _ _ -> do
-      let msg = "Python 'async with' statement not implemented"
-      reportFatalNotImplemented msg
-      return cppNoop
-    PyAsyncFor _ _ _ _ -> do
-      let msg = "Python 'async for' statement not implemented"
-      reportFatalNotImplemented msg
-      return cppNoop
-    PyAsyncFuncDef _ -> do
-      let msg = "Python async function definition not implemented"
-      reportFatalNotImplemented msg
-      return cppNoop
-    PyRaise _ _ -> do
-      let msg = "Python 'raise' statement not implemented"
-      reportFatalNotImplemented msg
-      return cppNoop
-    PyYield _ -> do
-      let msg = "Python 'yield' statement not implemented"
-      reportFatalNotImplemented msg
-      return cppNoop
-    PyYieldFrom _ -> do
-      let msg = "Python 'yield from' statement not implemented"
-      reportFatalNotImplemented msg
-      return cppNoop
+    PyRaise _ _ ->
+      runtimeFallbackStmt span "Python 'raise' statement requires runtime fallback"
+    PyYield _ ->
+      runtimeFallbackStmt span "Python 'yield' expression requires runtime fallback"
+    PyYieldFrom _ ->
+      runtimeFallbackStmt span "Python 'yield from' expression requires runtime fallback"
     _ -> do
       let msg = "Python statement not implemented: " <> T.pack (show stmt)
       reportFatalNotImplemented msg
       return cppNoop
   where
+    runtimeFallbackMessage :: SourceSpan -> Text -> CppCodeGen Text
+    runtimeFallbackMessage loc baseMessage = do
+      let message = baseMessage <> " at " <> formatSpan loc <> " (runtime fallback)"
+      strict <- gets (cgcStrictMode . cgsConfig)
+      if strict
+        then emitWarning message
+        else reportNotImplemented message
+      pure message
+
+    runtimeFallbackStmt :: SourceSpan -> Text -> CppCodeGen CppStmt
+    runtimeFallbackStmt loc baseMessage = do
+      message <- runtimeFallbackMessage loc baseMessage
+      abortStmt <- runtimeAbortStmt message
+      pure $ CppStmtSeq
+        [ CppComment ("runtime fallback: " <> baseMessage)
+        , abortStmt
+        ]
+
+    generateAsyncFunctionFallback :: SourceSpan -> PythonFuncDef -> CppCodeGen ()
+    generateAsyncFunctionFallback loc funcDef = do
+      let funcName = (\(Identifier n) -> n) (pyFuncName funcDef)
+          baseMessage = "Python async function '" <> funcName <> "' requires runtime fallback"
+      message <- runtimeFallbackMessage loc baseMessage
+      cppParams <- mapM mapPythonParameter (pyFuncParams funcDef)
+      returnType <- case pyFuncReturns funcDef of
+        Just typeExpr -> mapPythonType typeExpr
+        Nothing -> pure CppAuto
+      abortStmt <- runtimeAbortStmt message
+      let body =
+            [ CppComment ("runtime fallback: async function '" <> funcName <> "'")
+            , abortStmt
+            ]
+      addDeclaration $ CppFunction funcName returnType cppParams body
+      emitInfo $ "Generated fallback stub for async function " <> funcName
+
     handleSimpleAssignment :: PythonScope -> Text -> Located PythonExpr -> PythonExpr -> CppCodeGen CppStmt
     handleSimpleAssignment scope' varName locatedExpr exprVal = do
       symtab <- gets cgsSymbolTable
@@ -920,6 +940,9 @@ mapPythonBinaryOp = \case
 generatePythonInteropBindings :: Text -> CppCodeGen ()
 generatePythonInteropBindings moduleName =
   emitInfo $ "Python interop bindings for module: " <> moduleName
+
+mapPythonType :: Located PythonTypeExpr -> CppCodeGen CppType
+mapPythonType (Located _ _) = pure CppAuto
 
 mapPythonParameter :: Located PythonParameter -> CppCodeGen CppParam
 mapPythonParameter (Located _ param) = case param of
