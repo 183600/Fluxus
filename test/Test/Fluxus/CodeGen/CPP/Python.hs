@@ -10,6 +10,7 @@ import Fluxus.AST.Common
 import Fluxus.AST.Python
 import Fluxus.Analysis.CommonExprLowering (pythonExprToCommon, renderCommonExpr)
 import Fluxus.CodeGen.CPP
+import Fluxus.CodeGen.CPP.Diagnostics (CppDiagnostic(..), DiagnosticSeverity(..))
 import Fluxus.Compiler.Driver
   ( CompilerConfig(..)
   , SourceLanguage(..)
@@ -38,6 +39,7 @@ typeMappingIndependentSpecs :: Spec
 typeMappingIndependentSpecs = do
   expressionGenerationSpec
   statementGenerationSpec
+  fallbackHandlingSpec
   declarationGenerationSpec
   pythonGlobalSpec
   analysisFeedbackSpec
@@ -241,6 +243,153 @@ statementGenerationSpec = describe "Statement generation" $ do
             expectationFailure "Expected generated main function"
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
+
+fallbackHandlingSpec :: Spec
+fallbackHandlingSpec = describe "Runtime fallback handling" $ do
+  it "injects runtime fallback for with statements even in strict mode" $ do
+    let withItem = PythonWithItem
+          { pyWithContext = noLoc (PyCall (noLoc (PyVar (Identifier "make_resource"))) [])
+          , pyWithVar = Just (noLoc (PatVar (Identifier "resource")))
+          }
+        bodyStmt = noLoc
+          ( PyExprStmt
+              ( noLoc
+                  ( PyCall
+                      (noLoc (PyVar (Identifier "use")))
+                      [ noLoc (ArgPositional (noLoc (PyVar (Identifier "resource")))) ]
+                  )
+              )
+          )
+        moduleBody = [noLoc (PyWith [noLoc withItem] [bodyStmt])]
+        pythonAst = PythonAST PythonModule
+          { pyModuleName = Nothing
+          , pyModuleDoc = Nothing
+          , pyModuleImports = []
+          , pyModuleBody = moduleBody
+          }
+        strictConfig = Shared.testCppConfig { cgcStrictMode = True }
+    case generateCpp strictConfig (Left pythonAst) of
+      Right res -> do
+        let warnings = filter ((== SeverityWarning) . diagSeverity) (cgrDiagnostics res)
+        warnings `shouldSatisfy`
+          any (T.isInfixOf "'with' statement" . diagMessage)
+        case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
+          Just (CppFunction _ _ _ body) ->
+            containsRuntimeAbort body `shouldBe` True
+          _ -> expectationFailure "Expected generated main function"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  it "reports runtime fallback for try statements" $ do
+    let exceptBlock = PythonExcept
+          { pyExceptType = Just (noLoc (PyVar (Identifier "Exception")))
+          , pyExceptName = Just (Identifier "exc")
+          , pyExceptBody = [noLoc PyPass]
+          }
+        tryStmt = noLoc (PyTry [noLoc PyPass] [noLoc exceptBlock] [] [])
+        pythonAst = PythonAST PythonModule
+          { pyModuleName = Nothing
+          , pyModuleDoc = Nothing
+          , pyModuleImports = []
+          , pyModuleBody = [tryStmt]
+          }
+        strictConfig = Shared.testCppConfig { cgcStrictMode = True }
+    case generateCpp strictConfig (Left pythonAst) of
+      Right res -> do
+        let warnings = filter ((== SeverityWarning) . diagSeverity) (cgrDiagnostics res)
+        warnings `shouldSatisfy`
+          any (T.isInfixOf "'try' statement" . diagMessage)
+        case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
+          Just (CppFunction _ _ _ body) ->
+            containsRuntimeAbort body `shouldBe` True
+          _ -> expectationFailure "Expected generated main function"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  it "reports runtime fallback for raise statements" $ do
+    let raiseStmt = noLoc
+          ( PyRaise
+              ( Just
+                  ( noLoc
+                      ( PyCall
+                          (noLoc (PyVar (Identifier "ValueError")))
+                          [ noLoc (ArgPositional (noLoc (PyLiteral (PyString "boom")))) ]
+                      )
+                  )
+              )
+              Nothing
+          )
+        pythonAst = PythonAST PythonModule
+          { pyModuleName = Nothing
+          , pyModuleDoc = Nothing
+          , pyModuleImports = []
+          , pyModuleBody = [raiseStmt]
+          }
+        strictConfig = Shared.testCppConfig { cgcStrictMode = True }
+    case generateCpp strictConfig (Left pythonAst) of
+      Right res -> do
+        let warnings = filter ((== SeverityWarning) . diagSeverity) (cgrDiagnostics res)
+        warnings `shouldSatisfy`
+          any (T.isInfixOf "'raise' statement" . diagMessage)
+        case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
+          Just (CppFunction _ _ _ body) ->
+            containsRuntimeAbort body `shouldBe` True
+          _ -> expectationFailure "Expected generated main function"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  it "generates runtime fallback stub for async functions" $ do
+    let asyncFunc = PythonFuncDef
+          { pyFuncName = Identifier "worker"
+          , pyFuncDecorators = []
+          , pyFuncParams = []
+          , pyFuncReturns = Nothing
+          , pyFuncBody = [noLoc PyPass]
+          , pyFuncDoc = Nothing
+          , pyFuncIsAsync = True
+          }
+        moduleBody = [noLoc (PyAsyncFuncDef asyncFunc)]
+        pythonAst = PythonAST PythonModule
+          { pyModuleName = Nothing
+          , pyModuleDoc = Nothing
+          , pyModuleImports = []
+          , pyModuleBody = moduleBody
+          }
+        strictConfig = Shared.testCppConfig { cgcStrictMode = True }
+    case generateCpp strictConfig (Left pythonAst) of
+      Right res -> do
+        let warnings = filter ((== SeverityWarning) . diagSeverity) (cgrDiagnostics res)
+        warnings `shouldSatisfy`
+          any (T.isInfixOf "async function" . diagMessage)
+        let decls = cppDeclarations (cgrUnit res)
+            isWorker decl = case decl of
+              CppFunction name _ _ body | name == "worker" -> containsRuntimeAbort body
+              _ -> False
+        decls `shouldSatisfy` any isWorker
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+  where
+    containsRuntimeAbort :: [CppStmt] -> Bool
+    containsRuntimeAbort = any stmtHasRuntimeAbort
+
+    stmtHasRuntimeAbort :: CppStmt -> Bool
+    stmtHasRuntimeAbort stmt =
+      case stmt of
+        CppExprStmt (CppCall (CppVar "fluxus_runtime_abort") _) -> True
+        CppStmtSeq stmts -> any stmtHasRuntimeAbort stmts
+        CppBlock stmts -> any stmtHasRuntimeAbort stmts
+        CppIf _ thenStmts elseStmts -> any stmtHasRuntimeAbort (thenStmts ++ elseStmts)
+        CppWhile _ body -> any stmtHasRuntimeAbort body
+        CppFor mInit _ _ body ->
+          maybe False stmtHasRuntimeAbort mInit || any stmtHasRuntimeAbort body
+        CppTry tryStmts catches finallyStmts ->
+          any stmtHasRuntimeAbort tryStmts
+            || any catchHasRuntimeAbort catches
+            || any stmtHasRuntimeAbort finallyStmts
+        _ -> False
+
+    catchHasRuntimeAbort :: CppCatch -> Bool
+    catchHasRuntimeAbort (CppCatch _ _ body) = any stmtHasRuntimeAbort body
 
 declarationGenerationSpec :: Spec
 declarationGenerationSpec = describe "Declaration generation" $ do
