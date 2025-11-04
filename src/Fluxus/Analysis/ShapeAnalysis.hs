@@ -204,6 +204,128 @@ analyzeShape (CESlice container start end) = do
 analyzeShape (CEAttribute obj attr) = do
   objShape <- analyzeShape (locatedValue obj)
   return $ extractFieldShape objShape attr
+analyzeShape (CEList elems) = analyzeListShape elems
+analyzeShape (CETuple elems) = analyzeTupleShape elems
+analyzeShape (CESet elems) = analyzeSetShape elems
+analyzeShape (CEDict pairs) = analyzeDictLiteralShape pairs
+analyzeShape (CEConditional test thenExpr elseExpr) = do
+  _ <- analyzeShape (locatedValue test)
+  thenShape <- analyzeShape (locatedValue thenExpr)
+  elseShape <- analyzeShape (locatedValue elseExpr)
+  return $ mergeShapes thenShape elseShape
+analyzeShape (CEListComp value clauses) = analyzeComprehensionShape value clauses SequentialAccess
+analyzeShape (CESetComp value clauses) = analyzeComprehensionShape value clauses RandomAccess
+analyzeShape (CEDictComp key value clauses) = do
+  keyShape <- analyzeComprehensionShape key clauses RandomAccess
+  valueShape <- analyzeComprehensionShape value clauses RandomAccess
+  return $ mergeShapes keyShape valueShape
+analyzeShape (CEGeneratorComp value clauses) = analyzeComprehensionShape value clauses SequentialAccess
+
+analyzeListShape :: [Located CommonExpr] -> ShapeAnalysisM ShapeInfo
+analyzeListShape elems = do
+  elementShapes <- mapM (analyzeShape . locatedValue) elems
+  let candidateTypes = catMaybes (map siElementType elementShapes)
+      inferredElementType = case candidateTypes of
+        [] -> Nothing
+        (t:ts) | all (== t) ts -> Just t
+        _ -> Nothing
+      homogeneous = null candidateTypes || maybe False (const True) inferredElementType
+  return ShapeInfo
+    { siDimensions = Vector.singleton (length elems)
+    , siIsKnown = True
+    , siElementType = inferredElementType
+    , siFieldTypes = HashMap.empty
+    , siSize = Nothing
+    , siAlignment = Nothing
+    , siIsHomogeneous = homogeneous
+    , siAccessPattern = SequentialAccess
+    }
+
+analyzeTupleShape :: [Located CommonExpr] -> ShapeAnalysisM ShapeInfo
+analyzeTupleShape elems = do
+  elementShapes <- mapM (analyzeShape . locatedValue) elems
+  let candidateTypes = catMaybes (map siElementType elementShapes)
+      homogeneous = null candidateTypes || allSame candidateTypes
+  return ShapeInfo
+    { siDimensions = Vector.singleton (length elems)
+    , siIsKnown = True
+    , siElementType = Nothing
+    , siFieldTypes = HashMap.empty
+    , siSize = Nothing
+    , siAlignment = Nothing
+    , siIsHomogeneous = homogeneous
+    , siAccessPattern = RandomAccess
+    }
+
+analyzeSetShape :: [Located CommonExpr] -> ShapeAnalysisM ShapeInfo
+analyzeSetShape elems = do
+  elementShapes <- mapM (analyzeShape . locatedValue) elems
+  let candidateTypes = catMaybes (map siElementType elementShapes)
+      inferredElementType = case candidateTypes of
+        [] -> Nothing
+        (t:ts) | all (== t) ts -> Just t
+        _ -> Nothing
+      homogeneous = null candidateTypes || maybe False (const True) inferredElementType
+  return ShapeInfo
+    { siDimensions = Vector.singleton (length elems)
+    , siIsKnown = True
+    , siElementType = inferredElementType
+    , siFieldTypes = HashMap.empty
+    , siSize = Nothing
+    , siAlignment = Nothing
+    , siIsHomogeneous = homogeneous
+    , siAccessPattern = RandomAccess
+    }
+
+analyzeDictLiteralShape :: [(Located CommonExpr, Located CommonExpr)] -> ShapeAnalysisM ShapeInfo
+analyzeDictLiteralShape pairs = do
+  _ <- mapM (analyzeShape . locatedValue . fst) pairs
+  valueShapes <- mapM (analyzeShape . locatedValue . snd) pairs
+  let valueTypes = catMaybes (map siElementType valueShapes)
+      inferredValueType = case valueTypes of
+        [] -> Nothing
+        (t:ts) | all (== t) ts -> Just t
+        _ -> Nothing
+      homogeneous = null valueTypes || maybe False (const True) inferredValueType
+  return ShapeInfo
+    { siDimensions = Vector.singleton (length pairs)
+    , siIsKnown = True
+    , siElementType = inferredValueType
+    , siFieldTypes = HashMap.empty
+    , siSize = Nothing
+    , siAlignment = Nothing
+    , siIsHomogeneous = homogeneous
+    , siAccessPattern = RandomAccess
+    }
+
+mergeShapes :: ShapeInfo -> ShapeInfo -> ShapeInfo
+mergeShapes a b = ShapeInfo
+  { siDimensions = if siDimensions a == siDimensions b then siDimensions a else Vector.singleton (-1)
+  , siIsKnown = siIsKnown a && siIsKnown b
+  , siElementType = case (siElementType a, siElementType b) of
+      (Just t1, Just t2) | t1 == t2 -> Just t1
+      _ -> Nothing
+  , siFieldTypes = HashMap.union (siFieldTypes a) (siFieldTypes b)
+  , siSize = Nothing
+  , siAlignment = Nothing
+  , siIsHomogeneous = siIsHomogeneous a && siIsHomogeneous b
+  , siAccessPattern = if siAccessPattern a == siAccessPattern b then siAccessPattern a else UnknownAccess
+  }
+
+analyzeComprehensionShape :: Located CommonExpr -> [CommonCompClause] -> AccessPattern -> ShapeAnalysisM ShapeInfo
+analyzeComprehensionShape value clauses accessPattern = do
+  mapM_ analyzeClause clauses
+  valueShape <- analyzeShape (locatedValue value)
+  return valueShape
+    { siDimensions = Vector.singleton (-1)
+    , siIsKnown = False
+    , siAccessPattern = accessPattern
+    }
+  where
+    analyzeClause clause = do
+      _ <- analyzeShape (locatedValue (cccIter clause))
+      mapM_ (analyzeShape . locatedValue) (cccFilters clause)
+      return ()
 
 -- | Infer shape from type information
 inferShape :: Type -> ShapeInfo

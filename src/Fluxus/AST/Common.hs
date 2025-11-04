@@ -31,6 +31,7 @@ module Fluxus.AST.Common
   , ComparisonOp(..)
     -- * Common expression patterns
   , CommonExpr(..)
+  , CommonCompClause(..)
     -- * Ownership and memory semantics
   , OwnershipInfo(..)
   , MemoryLocation(..)
@@ -233,8 +234,26 @@ data CommonExpr
   | CEIndex !(Located CommonExpr) !(Located CommonExpr)
   | CESlice !(Located CommonExpr) !(Maybe (Located CommonExpr)) !(Maybe (Located CommonExpr))
   | CEAttribute !(Located CommonExpr) !Identifier
+  | CEList ![Located CommonExpr]
+  | CETuple ![Located CommonExpr]
+  | CESet ![Located CommonExpr]
+  | CEDict ![(Located CommonExpr, Located CommonExpr)]
+  | CEConditional !(Located CommonExpr) !(Located CommonExpr) !(Located CommonExpr)
+  | CEListComp !(Located CommonExpr) ![CommonCompClause]
+  | CESetComp !(Located CommonExpr) ![CommonCompClause]
+  | CEDictComp !(Located CommonExpr) !(Located CommonExpr) ![CommonCompClause]
+  | CEGeneratorComp !(Located CommonExpr) ![CommonCompClause]
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (NFData)
+
+-- | Normalized comprehension clause used during common expression lowering.
+data CommonCompClause = CommonCompClause
+  { cccBindings :: ![Identifier]
+  , cccIter :: !(Located CommonExpr)
+  , cccFilters :: ![Located CommonExpr]
+  , cccIsAsync :: !Bool
+  } deriving stock (Eq, Ord, Show, Generic)
+    deriving anyclass (Hashable, NFData)
 
 instance Hashable CommonExpr
 

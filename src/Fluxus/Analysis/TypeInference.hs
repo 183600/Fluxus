@@ -26,6 +26,7 @@ module Fluxus.Analysis.TypeInference
 import Fluxus.AST.Common
 import Control.Monad.State
 import Control.Monad.Except
+import Control.Monad (foldM)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
@@ -171,10 +172,125 @@ inferExpr (CESlice container start end) = do
     Nothing -> return ()
   -- Slice result has same type as container
   return containerType
-inferExpr (CEAttribute obj attr) = do
-  objType <- inferExpr (locatedValue obj)
+inferExpr (CEAttribute obj _) = do
+  _ <- inferExpr (locatedValue obj)
   -- For now, return Any for attribute access (could be improved with struct/class analysis)
   return TAny
+inferExpr (CEList elems) = do
+  elemType <- inferSequenceElementType elems
+  return $ TList elemType
+inferExpr (CETuple elems) = TTuple <$> mapM (inferExpr . locatedValue) elems
+inferExpr (CESet elems) = do
+  elemType <- inferSequenceElementType elems
+  return $ TSet elemType
+inferExpr (CEDict pairs) = inferDictLiteral pairs
+inferExpr (CEConditional test thenExpr elseExpr) = do
+  testType <- inferExpr (locatedValue test)
+  addConstraint testType TBool
+  thenType <- inferExpr (locatedValue thenExpr)
+  elseType <- inferExpr (locatedValue elseExpr)
+  addConstraint thenType elseType
+  return thenType
+inferExpr (CEListComp value clauses) =
+  withScope $ do
+    mapM_ registerCompClause clauses
+    elemType <- inferExpr (locatedValue value)
+    return $ TList elemType
+inferExpr (CESetComp value clauses) =
+  withScope $ do
+    mapM_ registerCompClause clauses
+    elemType <- inferExpr (locatedValue value)
+    return $ TSet elemType
+inferExpr (CEDictComp key value clauses) =
+  withScope $ do
+    mapM_ registerCompClause clauses
+    keyType <- inferExpr (locatedValue key)
+    valueType <- inferExpr (locatedValue value)
+    return $ TDict keyType valueType
+inferExpr (CEGeneratorComp value clauses) =
+  withScope $ do
+    mapM_ registerCompClause clauses
+    elemType <- inferExpr (locatedValue value)
+    return $ TList elemType
+
+withScope :: TypeInferenceM a -> TypeInferenceM a
+withScope action = do
+  _pushScope
+  result <- action
+  _popScope
+  return result
+
+registerCompClause :: CommonCompClause -> TypeInferenceM ()
+registerCompClause clause = do
+  iterType <- inferExpr (locatedValue (cccIter clause))
+  bindingTypes <- mapM bindFreshVar (cccBindings clause)
+  linkBindings iterType bindingTypes
+  mapM_ (\flt -> do
+    filterType <- inferExpr (locatedValue flt)
+    addConstraint filterType TBool) (cccFilters clause)
+
+bindFreshVar :: Identifier -> TypeInferenceM Type
+bindFreshVar ident = do
+  ty <- freshTypeVar
+  bindVarType ident ty
+  return ty
+
+linkBindings :: Type -> [Type] -> TypeInferenceM ()
+linkBindings iterType bindings = case iterType of
+  TList elemType -> linkElement elemType bindings
+  TSet elemType -> linkElement elemType bindings
+  TString -> linkElement TChar bindings
+  TDict keyType valueType -> case bindings of
+    [single] -> addConstraint single (TTuple [keyType, valueType])
+    [first, second] -> addConstraint first keyType >> addConstraint second valueType
+    _ -> return ()
+  TTuple tupleTypes
+    | length bindings == length tupleTypes ->
+        mapM_ (uncurry addConstraint) (zip bindings tupleTypes)
+  _ -> return ()
+
+linkElement :: Type -> [Type] -> TypeInferenceM ()
+linkElement _ [] = return ()
+linkElement elemType [single] = addConstraint single elemType
+linkElement (TTuple tupleTypes) bindings
+  | length bindings == length tupleTypes =
+      mapM_ (uncurry addConstraint) (zip bindings tupleTypes)
+linkElement _ _ = return ()
+
+inferSequenceElementType :: [Located CommonExpr] -> TypeInferenceM Type
+inferSequenceElementType [] = freshTypeVar
+inferSequenceElementType (x:xs) = do
+  firstType <- inferExpr (locatedValue x)
+  foldM
+    (\current exprLoc -> do
+       nextType <- inferExpr (locatedValue exprLoc)
+       addConstraint current nextType
+       return current)
+    firstType
+    xs
+
+inferDictLiteral :: [(Located CommonExpr, Located CommonExpr)] -> TypeInferenceM Type
+inferDictLiteral [] = do
+  keyType <- freshTypeVar
+  valueType <- freshTypeVar
+  return $ TDict keyType valueType
+inferDictLiteral (firstPair:rest) = do
+  (keyType, valueType) <- inferPair firstPair
+  _ <- foldM
+    (\(kt, vt) (nextKey, nextValue) -> do
+       nextKeyType <- inferExpr (locatedValue nextKey)
+       nextValueType <- inferExpr (locatedValue nextValue)
+       addConstraint nextKeyType kt
+       addConstraint nextValueType vt
+       return (kt, vt))
+    (keyType, valueType)
+    rest
+  return $ TDict keyType valueType
+  where
+    inferPair (k, v) = do
+      kt <- inferExpr (locatedValue k)
+      vt <- inferExpr (locatedValue v)
+      return (kt, vt)
 
 -- | Infer type of literals
 inferLiteral :: Literal -> TypeInferenceM Type

@@ -32,7 +32,7 @@ module Fluxus.Compiler.Driver
   , showTargetPlatform
   ) where
 
-import Data.List (intercalate, foldl')
+import Data.List (intercalate, foldl', partition)
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Except
@@ -93,6 +93,9 @@ import Fluxus.Analysis.SmartFallback
   )
 import Fluxus.Analysis.CommonExprLowering
   ( collectCommonExpressions
+  , LoweringIssue(..)
+  , renderLoweringIssue
+  , isUnsupportedIssue
   , renderCommonExpr
   )
 import Fluxus.Optimization.Monomorphization
@@ -533,10 +536,21 @@ typeInferenceStage :: Either PythonAST GoAST -> CompilerM (Either PythonAST GoAS
 typeInferenceStage ast = do
   logInfo "Running type inference analysis"
   let (commonExprs, extractionIssues) = collectCommonExpressions ast
-  forM_ extractionIssues $ \msg ->
-    addWarning $ TypeWarning msg systemSpan
-  when (null commonExprs) $ do
-    addWarning $ TypeWarning "No analyzable expressions found for type inference" systemSpan
+      (unsupportedIssues, failureIssues) = partition isUnsupportedIssue extractionIssues
+  forM_ failureIssues $ \issue ->
+    addWarning $ TypeWarning (renderLoweringIssue issue) systemSpan
+  unless (null unsupportedIssues) $ do
+    let preview = take 3 unsupportedIssues
+        summary = "Static analysis skipped " <> textShow (length unsupportedIssues) <> " expressions (unsupported lowering cases)"
+        detail = T.intercalate "; " (map renderLoweringIssue preview)
+        suffix = if length unsupportedIssues > length preview
+          then " (+ " <> textShow (length unsupportedIssues - length preview) <> " more)"
+          else ""
+    logVerbose $ summary <> ": " <> detail <> suffix
+  when (null commonExprs) $
+    if null failureIssues
+      then logInfo "No analyzable expressions found for type inference (encountered constructs are currently unsupported)"
+      else addWarning $ TypeWarning "No analyzable expressions found for type inference due to lowering failures" systemSpan
   if null commonExprs
     then return ast
     else do
@@ -582,10 +596,21 @@ optimizationStage ast = do
   config <- ask
   logInfo $ "Running optimizations at level " <> T.pack (show $ ccOptimizationLevel config)
   let (commonExprs, extractionIssues) = collectCommonExpressions ast
-  unless (null extractionIssues) $
-    logVerbose $ "Skipping " <> textShow (length extractionIssues) <> " expressions during optimization due to unsupported constructs"
-  when (null commonExprs) $ do
-    addWarning $ OptimizationWarning "No analyzable expressions found for optimization pipeline"
+      (unsupportedIssues, failureIssues) = partition isUnsupportedIssue extractionIssues
+  forM_ failureIssues $ \issue ->
+    addWarning $ OptimizationWarning (renderLoweringIssue issue)
+  unless (null unsupportedIssues) $ do
+    let preview = take 3 unsupportedIssues
+        summary = "Skipping " <> textShow (length unsupportedIssues) <> " expressions during optimization (unsupported lowering cases)"
+        detail = T.intercalate "; " (map renderLoweringIssue preview)
+        suffix = if length unsupportedIssues > length preview
+          then " (+ " <> textShow (length unsupportedIssues - length preview) <> " more)"
+          else ""
+    logVerbose $ summary <> ": " <> detail <> suffix
+  when (null commonExprs) $
+    if null failureIssues
+      then logInfo "No analyzable expressions found for optimization pipeline (encountered constructs are currently unsupported)"
+      else addWarning $ OptimizationWarning "No analyzable expressions found for optimization pipeline due to lowering failures"
   forM_ commonExprs $ \expr -> do
     let exprLabel = renderCommonExpr expr
     recordOptimizationStat "optimization.expressions"
