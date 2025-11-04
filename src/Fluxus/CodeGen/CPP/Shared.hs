@@ -20,7 +20,7 @@ module Fluxus.CodeGen.CPP.Shared
   ) where
 
 import Control.Monad (when)
-import Control.Monad.State (gets)
+import Control.Monad.State (gets, modify)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -113,7 +113,10 @@ lookupAndApplyAnnotations context exprKey defaultType = do
   mAnns <- lookupExprAnnotations exprKey
   case mAnns of
     Nothing -> do
-      emitInfo $ context <> ": no analysis annotations for expression " <> exprKey
+      alreadyLogged <- gets cgsLoggedAnnotationMiss
+      when (not alreadyLogged) $ do
+        emitInfo $ context <> ": no analysis annotations for expression " <> exprKey
+        modify $ \s -> s { cgsLoggedAnnotationMiss = True }
       pure defaultType
     Just anns -> do
       let (refinedType, changed) = applyExprAnnotations defaultType anns
