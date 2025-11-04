@@ -43,6 +43,25 @@ spec = describe "Type Inference" $ do
         Left err ->
           expectationFailure $ "expected inference to succeed, but got: " <> T.unpack err
 
+    it "infers element types for list literals" $ do
+      let expr = CEList [noLoc (CELiteral (LInt 1)), noLoc (CELiteral (LInt 2))]
+      case runTypeInference HashMap.empty (inferType expr) of
+        Right inference -> resultType inference `shouldBe` TList (TInt 32)
+        Left err -> expectationFailure $ "expected inference to succeed, but got: " <> T.unpack err
+
+    it "infers element types for simple list comprehensions" $ do
+      let env = HashMap.singleton (Identifier "xs") (TList (TInt 32))
+          clause = CommonCompClause
+            { cccBindings = [Identifier "x"]
+            , cccIter = noLoc (CEVar (Identifier "xs"))
+            , cccFilters = []
+            , cccIsAsync = False
+            }
+          expr = CEListComp (noLoc (CEVar (Identifier "x"))) [clause]
+      case runTypeInference env (inferType expr) of
+        Right inference -> resultType inference `shouldBe` TList (TInt 32)
+        Left err -> expectationFailure $ "expected inference to succeed, but got: " <> T.unpack err
+
   describe "solveConstraints" $ do
     it "detects incompatible arithmetic operands" $ do
       let expr = CEBinaryOp OpAdd (noLoc (CELiteral (LInt 1))) (noLoc (CELiteral (LString "oops")))

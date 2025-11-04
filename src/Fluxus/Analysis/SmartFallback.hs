@@ -145,6 +145,43 @@ analyzeDynamism (CEAttribute obj _) = do
   objDynamism <- analyzeDynamism (locatedValue obj)
   -- Attribute access is potentially dynamic
   return $ max SemiDynamic objDynamism
+analyzeDynamism (CEList elems) = do
+  elementLevels <- mapM (analyzeDynamism . locatedValue) elems
+  return $ maximum (FullyStatic : elementLevels)
+analyzeDynamism (CETuple elems) = do
+  elementLevels <- mapM (analyzeDynamism . locatedValue) elems
+  return $ maximum (FullyStatic : elementLevels)
+analyzeDynamism (CESet elems) = do
+  elementLevels <- mapM (analyzeDynamism . locatedValue) elems
+  return $ maximum (MostlyStatic : elementLevels)
+analyzeDynamism (CEDict pairs) = do
+  keyLevels <- mapM (analyzeDynamism . locatedValue . fst) pairs
+  valueLevels <- mapM (analyzeDynamism . locatedValue . snd) pairs
+  return $ maximum (MostlyStatic : keyLevels ++ valueLevels)
+analyzeDynamism (CEConditional test thenExpr elseExpr) = do
+  testLevel <- analyzeDynamism (locatedValue test)
+  thenLevel <- analyzeDynamism (locatedValue thenExpr)
+  elseLevel <- analyzeDynamism (locatedValue elseExpr)
+  return $ maximum [testLevel, thenLevel, elseLevel]
+analyzeDynamism (CEListComp value clauses) = analyzeComprehensionDynamism value clauses
+analyzeDynamism (CESetComp value clauses) = analyzeComprehensionDynamism value clauses
+analyzeDynamism (CEDictComp key value clauses) = do
+  keyLevel <- analyzeComprehensionDynamism key clauses
+  valueLevel <- analyzeComprehensionDynamism value clauses
+  return $ max keyLevel valueLevel
+analyzeDynamism (CEGeneratorComp value clauses) = analyzeComprehensionDynamism value clauses
+
+analyzeComprehensionDynamism :: Located CommonExpr -> [CommonCompClause] -> SmartFallbackM DynamismLevel
+analyzeComprehensionDynamism value clauses = do
+  clauseLevels <- mapM analyzeClause clauses
+  valueLevel <- analyzeDynamism (locatedValue value)
+  let baseLevel = maximum (SemiDynamic : clauseLevels)
+  return $ max baseLevel valueLevel
+  where
+    analyzeClause clause = do
+      iterLevel <- analyzeDynamism (locatedValue (cccIter clause))
+      filterLevels <- mapM (analyzeDynamism . locatedValue) (cccFilters clause)
+      return $ maximum (iterLevel : filterLevels)
 
 -- | Determine if code should fallback to runtime execution
 shouldFallbackToRuntime :: CommonExpr -> SmartFallbackM Bool

@@ -194,6 +194,46 @@ analyzeExpression (CEAttribute obj _) = do
   objEscape <- analyzeExpression (locatedValue obj)
   -- Attribute access inherits escape behavior of the object
   return objEscape
+analyzeExpression (CEList elems) = do
+  elementEscapes <- mapM (analyzeExpression . locatedValue) elems
+  return $ maxEscape elementEscapes
+analyzeExpression (CETuple elems) = do
+  elementEscapes <- mapM (analyzeExpression . locatedValue) elems
+  return $ maxEscape elementEscapes
+analyzeExpression (CESet elems) = do
+  elementEscapes <- mapM (analyzeExpression . locatedValue) elems
+  return $ maxEscape elementEscapes
+analyzeExpression (CEDict pairs) = do
+  keyEscapes <- mapM (analyzeExpression . locatedValue . fst) pairs
+  valueEscapes <- mapM (analyzeExpression . locatedValue . snd) pairs
+  return $ maxEscape (keyEscapes ++ valueEscapes)
+analyzeExpression (CEConditional test thenExpr elseExpr) = do
+  _ <- analyzeExpression (locatedValue test)
+  thenEscape <- analyzeExpression (locatedValue thenExpr)
+  elseEscape <- analyzeExpression (locatedValue elseExpr)
+  return $ max thenEscape elseEscape
+analyzeExpression (CEListComp value clauses) = analyzeComprehension value clauses
+analyzeExpression (CESetComp value clauses) = analyzeComprehension value clauses
+analyzeExpression (CEDictComp key value clauses) = do
+  keyEscape <- analyzeComprehension key clauses
+  valueEscape <- analyzeComprehension value clauses
+  return $ max keyEscape valueEscape
+analyzeExpression (CEGeneratorComp value clauses) = analyzeComprehension value clauses
+
+maxEscape :: [EscapeInfo] -> EscapeInfo
+maxEscape [] = NoEscape
+maxEscape infos = foldr max NoEscape infos
+
+analyzeComprehension :: Located CommonExpr -> [CommonCompClause] -> EscapeAnalysisM EscapeInfo
+analyzeComprehension value clauses = do
+  clauseEscapes <- mapM analyzeClause clauses
+  valueEscape <- analyzeExpression (locatedValue value)
+  return $ maxEscape (valueEscape : clauseEscapes)
+  where
+    analyzeClause clause = do
+      iterEscape <- analyzeExpression (locatedValue (cccIter clause))
+      filterEscapes <- mapM (analyzeExpression . locatedValue) (cccFilters clause)
+      return $ maxEscape (iterEscape : filterEscapes)
 
 -- | Analyze function and track parameter escape behavior
 analyzeFunction :: Identifier -> [Identifier] -> [CommonExpr] -> CommonExpr -> EscapeAnalysisM ()

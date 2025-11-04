@@ -284,6 +284,77 @@ analyzeExpression (CEAttribute obj _) = do
     , escapes = escapes objOwnership
     , memLocation = memLocation objOwnership
     }
+analyzeExpression (CEList elems) = do
+  elementOwnerships <- mapM (analyzeExpression . locatedValue) elems
+  return $ heapOwned (aggregateEscapes elementOwnerships)
+analyzeExpression (CETuple elems) = do
+  elementOwnerships <- mapM (analyzeExpression . locatedValue) elems
+  let tupleInfo = heapOwned (aggregateEscapes elementOwnerships)
+  return tupleInfo { memLocation = Stack }
+analyzeExpression (CESet elems) = do
+  elementOwnerships <- mapM (analyzeExpression . locatedValue) elems
+  return $ heapOwned (aggregateEscapes elementOwnerships)
+analyzeExpression (CEDict pairs) = do
+  keyOwnerships <- mapM (analyzeExpression . locatedValue . fst) pairs
+  valueOwnerships <- mapM (analyzeExpression . locatedValue . snd) pairs
+  return $ heapOwned (aggregateEscapes (keyOwnerships ++ valueOwnerships))
+analyzeExpression (CEConditional test thenExpr elseExpr) = do
+  _ <- analyzeExpression (locatedValue test)
+  thenOwnership <- analyzeExpression (locatedValue thenExpr)
+  elseOwnership <- analyzeExpression (locatedValue elseExpr)
+  return $ mergeOwnership thenOwnership elseOwnership
+analyzeExpression (CEListComp value clauses) = analyzeComprehensionOwnership value clauses
+analyzeExpression (CESetComp value clauses) = analyzeComprehensionOwnership value clauses
+analyzeExpression (CEDictComp key value clauses) = do
+  keyOwnership <- analyzeComprehensionOwnership key clauses
+  valueOwnership <- analyzeComprehensionOwnership value clauses
+  return $ mergeOwnership keyOwnership valueOwnership
+analyzeExpression (CEGeneratorComp value clauses) = analyzeComprehensionOwnership value clauses
+
+aggregateEscapes :: [OwnershipInfo] -> EscapeInfo
+aggregateEscapes [] = NoEscape
+aggregateEscapes infos = foldr (max . escapes) NoEscape infos
+
+heapOwned :: EscapeInfo -> OwnershipInfo
+heapOwned escapeInfo = OwnershipInfo
+  { ownsMemory = True
+  , canMove = True
+  , refCount = Just 1
+  , escapes = escapeInfo
+  , memLocation = Heap
+  }
+
+mergeOwnership :: OwnershipInfo -> OwnershipInfo -> OwnershipInfo
+mergeOwnership a b = OwnershipInfo
+  { ownsMemory = ownsMemory a || ownsMemory b
+  , canMove = canMove a && canMove b
+  , refCount = Nothing
+  , escapes = max (escapes a) (escapes b)
+  , memLocation = combineMem (memLocation a) (memLocation b)
+  }
+
+combineMem :: MemoryLocation -> MemoryLocation -> MemoryLocation
+combineMem Heap _ = Heap
+combineMem _ Heap = Heap
+combineMem Global _ = Global
+combineMem _ Global = Global
+combineMem Unknown _ = Unknown
+combineMem _ Unknown = Unknown
+combineMem Stack Stack = Stack
+combineMem Stack other = other
+combineMem other Stack = other
+
+analyzeComprehensionOwnership :: Located CommonExpr -> [CommonCompClause] -> OwnershipInferenceM OwnershipInfo
+analyzeComprehensionOwnership value clauses = do
+  clauseEscapes <- mapM analyzeClause clauses
+  valueOwnership <- analyzeExpression (locatedValue value)
+  let totalEscape = max (escapes valueOwnership) (maximum (NoEscape : clauseEscapes))
+  return $ heapOwned totalEscape
+  where
+    analyzeClause clause = do
+      iterOwnership <- analyzeExpression (locatedValue (cccIter clause))
+      filterOwnerships <- mapM (analyzeExpression . locatedValue) (cccFilters clause)
+      return $ aggregateEscapes (iterOwnership : filterOwnerships)
 
 -- | Analyze function and track ownership patterns
 analyzeFunction :: Identifier -> [Identifier] -> [CommonExpr] -> CommonExpr -> OwnershipInferenceM ()
