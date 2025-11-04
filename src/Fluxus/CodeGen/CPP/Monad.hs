@@ -101,6 +101,7 @@ data CppGenState = CppGenState
   , cgsFatalErrors         :: ![CppCodeGenError]
   , cgsConfig              :: !CppGenConfig
   , cgsAnalysisAnnotations :: !AnalysisAnnotations
+  , cgsLoggedAnnotationMiss :: !Bool
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
@@ -146,6 +147,7 @@ initialCppGenState config = CppGenState
   , cgsFatalErrors = []
   , cgsConfig = config
   , cgsAnalysisAnnotations = emptyAnnotations
+  , cgsLoggedAnnotationMiss = False
   }
 
 runCppCodeGenWithAnnotations :: CppGenConfig -> AnalysisAnnotations -> CppCodeGen a -> (a, CppGenState, [CppDiagnostic])
