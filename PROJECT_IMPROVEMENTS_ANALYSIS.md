@@ -36,6 +36,38 @@
   2. 将公共 helper 提升到 `Fluxus.CodeGen.CPP.Shared`，避免跨语言逻辑交叉污染。
   3. 拆分后为每个模块编写针对性的 hspec 测试，确保重构安全；同时更新 `fluxus.cabal` 暴露子模块。
 
+### 4. C++ 代码生成存在双轨实现，未完成的模块化版本与现行实现并存
+- **观测**：在 `src/Fluxus/CodeGen/CPP.hs`（~L70-L225、~L352+）中仍保留完整的 AST、状态机与 Python/Go 代码生成实现；与此同时仓库新增了 `Fluxus.CodeGen.CPP.AST`、`Fluxus.CodeGen.CPP.Monad`、`Fluxus.CodeGen.CPP.Shared`、`Fluxus.CodeGen.CPP.Python`、`Fluxus.CodeGen.CPP.Go` 等模块（位于 `src/Fluxus/CodeGen/CPP/*.hs`），内容与旧实现大量重复，但 `fluxus.cabal` 的 `library` 段仍只暴露 `Fluxus.CodeGen.CPP`，编译驱动与 CLI 依旧引用单文件版本。
+- **风险**：
+  - 修复 bug 或扩展特性时需要在两套文件中手动同步，极易出现漂移，例如注解 API 已在双版本中出现签名不一致（旧版 `lookupAndApplyAnnotations` 接受 `CommonExpr`，新版 `Shared.lookupAndApplyAnnotations` 仅接受字符串 key）。
+  - 测试套件（例如 `test/Test/Fluxus/CodeGen/CPP/Python.hs`）导入的是旧模块，模块化版本缺少任何覆盖，随着时间推移会彻底腐化。
+  - Cabal 未列出子模块意味着模块化版本甚至不会被编译，隐藏的 bit-rot 一旦正式切换就会集中爆发。
+- **建议**：
+  1. 尽快完成模块化重构：让 `Fluxus.CodeGen.CPP` 简化为 re-export，真正复用 `CPP.AST/Monad/Shared/...`。
+  2. 调整 `fluxus.cabal` 的 `exposed-modules`/`other-modules`，确保新模块参与编译与测试。
+  3. 删除或退役遗留实现，避免维护两份近 2k 行的大文件。
+
+### 5. CommonExpr 降级支持面覆盖度严重不足
+- **观测**：`Fluxus.Analysis.CommonExprLowering.pythonExprToCommon`（~L187-L245）对列表、字典、推导式、lambda、条件表达式等常见语法直接返回 `Left`；`goExprToCommon`（~L275-L323）同样拒绝结构体/切片/映射字面量。结果是 `collectCommonExpressions` 在稍复杂的源码上几乎总是返回空列表，`typeInferenceStage`（`Fluxus.Compiler.Driver`, ~L535-L577）只能发出 `TypeWarning` 并放弃填充 `csAnalysisAnnotations`。
+- **风险**：
+  - 类型/逃逸/所有权分析在真实代码上完全不起作用，后续优化与代码生成都只能依赖启发式，从而与文档承诺产生巨大落差。
+  - 当返回空结果时仍会记录大量噪声 warning，用户难以区分真实问题与能力缺失。
+- **建议**：
+  1. 至少为字面量容器、条件表达式、简单推导式等高频语法补齐 lowering，实现基础的 `CommonExpr` 指纹。
+  2. 对暂时无法覆盖的语法，提供更清晰的分级日志（区分“尚未支持”与“分析失败”），并在文档/CLI 中标明当前覆盖范围。
+  3. 为新增 lowering case 添加针对性的 hspec 测试，避免回归。
+
+### 6. 严格模式下大量常规 Python 语句直接触发致命错误
+- **观测**：`generatePythonStmt`（`Fluxus.CodeGen.CPP.Python`, ~L163-L199）对 `with`、`try/except`、`raise`、`yield`、`async` 等语句一律调用 `reportFatalNotImplemented`；`Fluxus.Compiler.Driver.defaultConfig` (~L303-L325) 默认启用 `ccStrictMode = True`，意味着这些语法会立即升级为 `CppNotImplemented` 并终止编译。
+- **风险**：
+  - README 在“核心特性”部分宣称“Python 词法分析器和语法分析器支持完整的 Python 3.x 语法”，与实际行为矛盾，容易引发用户信任危机。
+  - 实际项目中极难避免上述语法，编译器在默认配置下几乎不可用。
+- **建议**：
+  1. 优先为 `with`、`try/except`、`raise` 等核心控制流提供最小可行编译路径（即便是回退到 runtime stub 也能保持语义）。
+  2. 在能力缺口尚未补齐前，默认降级为带提示的 runtime fallback，而不是直接终止编译；文档中明确列出受限语法。
+  3. 补充端到端测试覆盖这些语法，确保未来迭代不会再次回退。
+
 ## 其他观察
 - `Fluxus.CodeGen.Go` 仍大量依赖字符串拼接推断类型，任何复杂语法都会退化为 `interface{}` 或字面量值，可考虑利用 `AnalysisAnnotations` 或直接重用 Python → C++ 的类型映射，至少在 CLI 中标明该后端仍属实验状态。
 - `setupCompilerEnvironment` 在运行时直接调用外部 C++ 编译器检测（`readProcessWithExitCode clang++ --version`），在 CI 或未安装 clang 的环境中会即时失败；可以考虑改成延迟检测或提供可配置的跳过选项。
+- `lookupAndApplyAnnotations` 在 `Fluxus.CodeGen.CPP`（~L1660-L1673）为每个未命中注解的表达式记录 `SeverityInfo`，即便是普通赋值/常量也会输出 “no analysis annotations…”；在分析尚未覆盖主流语法的情况下，这条日志会淹没更重要的诊断，建议将其降到高 verbosity 或至少在首次 miss 时才提示。
