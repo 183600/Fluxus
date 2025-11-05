@@ -447,6 +447,100 @@ declarationGenerationSpec = describe "Declaration generation" $ do
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
+  it "honors Python type annotations for parameters and returns" $ do
+    let intType = noLoc (TypeName (QualifiedName [] (Identifier "int")))
+        listIntType =
+          noLoc
+            ( TypeSubscript
+                (noLoc (TypeName (QualifiedName [] (Identifier "list"))))
+                [intType]
+            )
+        optionalIntType =
+          noLoc
+            ( TypeUnion
+                [ intType
+                , noLoc (TypeName (QualifiedName [] (Identifier "None")))
+                ]
+            )
+        funcDef = PythonFuncDef
+          { pyFuncName = Identifier "process"
+          , pyFuncDecorators = []
+          , pyFuncParams =
+              [ noLoc (ParamNormal (Identifier "value") (Just intType) Nothing)
+              , noLoc (ParamNormal (Identifier "items") (Just listIntType) Nothing)
+              ]
+          , pyFuncReturns = Just optionalIntType
+          , pyFuncBody =
+              [ noLoc
+                  ( PyReturn
+                      (Just (noLoc (PyVar (Identifier "value"))))
+                  )
+              ]
+          , pyFuncDoc = Nothing
+          , pyFuncIsAsync = False
+          }
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [noLoc (PyFuncDef funcDef)]
+              }
+        isProcess decl = case decl of
+          CppFunction name _ _ _ -> name == "process"
+          _ -> False
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res ->
+        case find isProcess (cppDeclarations (cgrUnit res)) of
+          Just (CppFunction _ returnType params _) -> do
+            returnType `shouldBe` CppOptional CppLongLong
+            params `shouldBe`
+              [ CppParam "value" CppLongLong Nothing
+              , CppParam "items" (CppVector CppLongLong) Nothing
+              ]
+          _ ->
+            expectationFailure "Expected generated function 'process'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  it "reports std::any fallback for unsupported annotations" $ do
+    let typeVarT = noLoc (TypeVar "T")
+        funcDef = PythonFuncDef
+          { pyFuncName = Identifier "wrap"
+          , pyFuncDecorators = []
+          , pyFuncParams =
+              [ noLoc (ParamNormal (Identifier "payload") (Just typeVarT) Nothing) ]
+          , pyFuncReturns = Nothing
+          , pyFuncBody = [noLoc (PyReturn Nothing)]
+          , pyFuncDoc = Nothing
+          , pyFuncIsAsync = False
+          }
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [noLoc (PyFuncDef funcDef)]
+              }
+        isWrap decl = case decl of
+          CppFunction name _ _ _ -> name == "wrap"
+          _ -> False
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        case find isWrap (cppDeclarations (cgrUnit res)) of
+          Just (CppFunction _ _ params _) ->
+            params `shouldBe` [CppParam "payload" (CppClassType "std::any" []) Nothing]
+          _ ->
+            expectationFailure "Expected generated function 'wrap'"
+        let warnings =
+              filter ((== SeverityWarning) . diagSeverity) (cgrDiagnostics res)
+        warnings `shouldSatisfy`
+          any (T.isInfixOf "std::any" . diagMessage)
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
   it "emits CppClass declarations for Python classes" $ do
     let classDef = PythonClassDef
           { pyClassName = Identifier "Sample"
