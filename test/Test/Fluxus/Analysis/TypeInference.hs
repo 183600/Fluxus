@@ -34,7 +34,7 @@ spec = describe "Type Inference" $ do
           expr = CECall (noLoc (CEVar (Identifier "is_positive"))) [noLoc (CELiteral (LInt 1))]
       case runTypeInference env (inferType expr) of
         Right inference -> do
-          resultType inference `shouldBe` TVar (TypeVar "t0")
+          resultType inference `shouldBe` TBool
           resultConstraints inference `shouldBe`
             [ ( TFunction [TInt 32] TBool
               , TFunction [TInt 32] (TVar (TypeVar "t0"))

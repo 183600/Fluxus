@@ -187,8 +187,8 @@ generatePythonStmt scope (Located span stmt) =
       let message = baseMessage <> " at " <> formatSpan loc <> " (runtime fallback)"
       strict <- gets (cgcStrictMode . cgsConfig)
       if strict
-        then emitWarning message
-        else reportNotImplemented message
+        then reportFatalNotImplemented message
+        else emitWarning message
       pure message
 
     runtimeFallbackStmt :: SourceSpan -> Text -> CppCodeGen CppStmt

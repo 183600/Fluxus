@@ -110,9 +110,11 @@ _popScope = do
 inferType :: CommonExpr -> TypeInferenceM InferenceResult
 inferType expr = do
   t <- inferExpr expr
-  constraintsList <- gets constraints
-  substitutionsList <- gets substitutions
-  return $ InferenceResult t constraintsList substitutionsList
+  rawConstraints <- gets constraints
+  solveConstraints
+  subst <- gets substitutions
+  let finalType = applySubstitution subst t
+  return $ InferenceResult finalType rawConstraints subst
 
 -- | Infer type of expressions
 inferExpr :: CommonExpr -> TypeInferenceM Type
@@ -502,15 +504,39 @@ applySubstitution subst = go
 -- | Solve constraints and update substitutions
 solveConstraints :: TypeInferenceM ()
 solveConstraints = do
-  constraints <- gets constraints
-  mapM_ solveConstraint constraints
+  pending <- gets constraints
+  modify $ \s -> s { constraints = [] }
+  process pending
   where
-    solveConstraint (t1, t2) = do
-      result <- unify t1 t2
-      case result of
-        Right newConstraints -> do
-          modify $ \s -> s { constraints = newConstraints ++ constraints s }
-        Left err -> throwError $ "Failed to solve constraint: " <> err
+    process [] = pure ()
+    process ((t1, t2):rest) = do
+      subst <- gets substitutions
+      let t1' = applySubstitution subst t1
+          t2' = applySubstitution subst t2
+      if t1' == t2'
+        then process rest
+        else case (t1', t2') of
+          (TVar var, ty) -> assign var ty rest
+          (ty, TVar var) -> assign var ty rest
+          _ -> do
+            result <- unify t1' t2'
+            case result of
+              Right newConstraints -> process (newConstraints ++ rest)
+              Left err -> throwError $ "Failed to solve constraint: " <> err
+
+    assign var ty rest = do
+      subst <- gets substitutions
+      let ty' = applySubstitution subst ty
+          newSub = HashMap.singleton var ty'
+          composed = composeSubstitution newSub subst
+          rest' = map (applyPair newSub) rest
+      modify $ \s -> s { substitutions = composed }
+      process rest'
+
+    applyPair sub (a, b) = (applySubstitution sub a, applySubstitution sub b)
+
+    composeSubstitution new old =
+      HashMap.union new (HashMap.map (applySubstitution new) old)
 
 -- | Instantiate a polymorphic type with fresh type variables
 instantiate :: Type -> TypeInferenceM Type

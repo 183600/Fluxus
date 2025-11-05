@@ -80,13 +80,69 @@ applyOwnershipToType ownership cppType =
   case memLocation ownership of
     Stack -> cppType
     Heap ->
-      if ownsMemory ownership
-        then if canMove ownership
-          then CppUniquePtr cppType
-          else CppSharedPtr cppType
-        else CppPointer cppType
+      let baseType = dropRefQualifiers cppType
+          prefersValue = prefersValueSemantics (stripConst baseType)
+          pointerLike = isPointerLike cppType
+      in if ownsMemory ownership
+           then if pointerLike
+                  then cppType
+                  else if canMove ownership
+                         then CppUniquePtr baseType
+                         else CppSharedPtr baseType
+           else if prefersValue || pointerLike
+                  then cppType
+                  else CppPointer baseType
     Global -> cppType
     Unknown -> cppType
+
+dropRefQualifiers :: CppType -> CppType
+dropRefQualifiers (CppReference inner) = dropRefQualifiers inner
+dropRefQualifiers (CppRvalueRef inner) = dropRefQualifiers inner
+dropRefQualifiers (CppConst inner) = CppConst (dropRefQualifiers inner)
+dropRefQualifiers other = other
+
+stripConst :: CppType -> CppType
+stripConst (CppConst inner) = stripConst inner
+stripConst other = other
+
+prefersValueSemantics :: CppType -> Bool
+prefersValueSemantics ty = case ty of
+  CppConst inner -> prefersValueSemantics inner
+  CppBool -> True
+  CppChar -> True
+  CppUChar -> True
+  CppShort -> True
+  CppUShort -> True
+  CppInt -> True
+  CppUInt -> True
+  CppLong -> True
+  CppULong -> True
+  CppLongLong -> True
+  CppULongLong -> True
+  CppFloat -> True
+  CppDouble -> True
+  CppLongDouble -> True
+  CppSizeT -> True
+  CppAuto -> True
+  CppString -> True
+  CppStdArray inner _ -> prefersValueSemantics inner
+  CppArray inner _ -> prefersValueSemantics inner
+  CppOptional inner -> prefersValueSemantics inner
+  CppVariant inners -> all prefersValueSemantics inners
+  CppPair a b -> prefersValueSemantics a && prefersValueSemantics b
+  CppTuple inners -> all prefersValueSemantics inners
+  CppFunctionType args ret -> all prefersValueSemantics args && prefersValueSemantics ret
+  _ -> False
+
+isPointerLike :: CppType -> Bool
+isPointerLike ty = case ty of
+  CppConst inner -> isPointerLike inner
+  CppPointer _ -> True
+  CppReference _ -> True
+  CppRvalueRef _ -> True
+  CppUniquePtr _ -> True
+  CppSharedPtr _ -> True
+  _ -> False
 
 applyExprAnnotations :: CppType -> ExprAnnotations -> (CppType, Bool)
 applyExprAnnotations defaultType anns =

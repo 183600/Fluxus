@@ -9,7 +9,7 @@ import Fluxus.AST.Common
 import Fluxus.AST.Python
 import Fluxus.AST.Go
 import Fluxus.CodeGen.CPP
-import Fluxus.CodeGen.CPP.Diagnostics (CppCodeGenError(..))
+import Fluxus.CodeGen.CPP.Diagnostics (CppCodeGenError(..), DiagnosticSeverity(..), diagMessage, diagSeverity)
 import Test.Hspec
 
 import qualified Test.Fluxus.CodeGen.CPP.Shared as Shared
@@ -54,7 +54,7 @@ strictModeTests = describe "Strict mode behavior" $ do
       Right _ ->
         expectationFailure "Expected compilation to fail in strict mode"
 
-  it "fails even when strict mode is disabled" $ do
+  it "falls back to runtime support when strict mode is disabled" $ do
     let withItem = PythonWithItem
           { pyWithContext = noLoc (PyVar (Identifier "resource"))
           , pyWithVar = Nothing
@@ -68,10 +68,12 @@ strictModeTests = describe "Strict mode behavior" $ do
           }
         result = generateCpp nonStrictConfig (Left pythonAst)
     case result of
+      Right res -> do
+        let warnings = filter ((== SeverityWarning) . diagSeverity) (cgrDiagnostics res)
+        warnings `shouldSatisfy`
+          any (T.isInfixOf "'with' statement" . diagMessage)
       Left failure ->
-        cgfErrors failure `shouldSatisfy` (not . null)
-      Right _ ->
-        expectationFailure "Expected compilation to fail even when strict mode is disabled"
+        expectationFailure $ "Expected runtime fallback in non-strict mode, but compilation failed: " <> show failure
 
   it "fails compilation on unsupported Python 'try' statement in strict mode" $ do
     let exceptClause = PythonExcept
