@@ -11,7 +11,7 @@ import Control.Monad.State (gets, modify)
 import Data.Bifunctor (first)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
-import Data.List (intercalate, nub)
+import Data.List (intercalate, nub, partition)
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -207,7 +207,10 @@ generatePythonStmt scope (Located span stmt) =
       message <- runtimeFallbackMessage loc baseMessage
       cppParams <- mapM mapPythonParameter (pyFuncParams funcDef)
       returnType <- case pyFuncReturns funcDef of
-        Just typeExpr -> mapPythonType typeExpr
+        Just typeExpr ->
+          if isNoneTypeExpr (locValue typeExpr)
+            then pure CppVoid
+            else mapPythonType typeExpr
         Nothing -> pure CppAuto
       abortStmt <- runtimeAbortStmt message
       let body =
@@ -808,7 +811,12 @@ generatePythonFunction funcDef = do
   
   -- Determine return type
   returnType <- case pyFuncReturns funcDef of
-    Just typeExpr -> mapPythonType typeExpr
+    Just typeExpr ->
+      if isNoneTypeExpr (locValue typeExpr)
+        then pure CppVoid
+        else do
+          annotatedType <- mapPythonType typeExpr
+          refineAnnotatedReturnType funcName annotatedType (pyFuncBody funcDef)
     Nothing
       | funcName == "main" -> return CppInt
       | otherwise -> inferFunctionReturnType funcName (pyFuncBody funcDef)
@@ -822,6 +830,22 @@ generatePythonFunction funcDef = do
                       else bodyStmts
   
   addDeclaration $ CppFunction funcName returnType cppParams finalBodyStmts
+
+refineAnnotatedReturnType :: Text -> CppType -> [Located PythonStmt] -> CppCodeGen CppType
+refineAnnotatedReturnType funcName annotatedType body
+  | annotatedType == CppVoid = pure CppVoid
+  | otherwise = do
+      let returnExprs = collectReturnExprs body
+      if null returnExprs
+        then pure annotatedType
+        else do
+          refinedTypes <-
+            mapM
+              (\expr -> refinePythonExprType ("annotated return from " <> funcName) expr annotatedType)
+              returnExprs
+          case nub refinedTypes of
+            [] -> pure annotatedType
+            (firstType:_) -> pure firstType
 
 -- | Infer the appropriate C++ return type for a Python function when no annotation is provided
 inferFunctionReturnType :: Text -> [Located PythonStmt] -> CppCodeGen CppType
@@ -943,17 +967,315 @@ generatePythonInteropBindings moduleName =
   emitInfo $ "Python interop bindings for module: " <> moduleName
 
 mapPythonType :: Located PythonTypeExpr -> CppCodeGen CppType
-mapPythonType (Located _ _) = pure CppAuto
+mapPythonType (Located span expr) =
+  case expr of
+    TypeName qn -> mapTypeName span qn
+    TypeVar name ->
+      fallbackToStdAny span expr ("type variable '" <> name <> "' is not supported in C++ generation")
+    TypeSubscript base args -> mapTypeSubscript span base args
+    TypeTuple elems -> mapTypeTuple span elems
+    TypeUnion members -> mapTypeUnion span members
+    TypeOptional inner -> mapTypeOptional span inner
+    TypeCallable args ret -> mapTypeCallable span args ret
+    TypeLiteral literalExpr -> mapTypeLiteral span literalExpr
+
+mapTypeName :: SourceSpan -> QualifiedName -> CppCodeGen CppType
+mapTypeName span qn = do
+  let canonical = canonicalQualifiedName qn
+      simple = T.toLower (identifierText (qnName qn))
+  case () of
+    _ | simple == "int" -> pure CppLongLong
+      | simple == "float" -> pure CppDouble
+      | simple == "bool" -> pure CppBool
+      | simple == "str" -> do
+          addInclude "<string>"
+          pure CppString
+      | simple == "bytes" -> do
+          addInclude "<string>"
+          pure CppString
+      | simple == "none" -> do
+          addInclude "<variant>"
+          pure stdMonostateType
+      | canonical == "typing.any" || simple == "any" -> do
+          addInclude "<any>"
+          pure stdAnyType
+      | canonical == "typing.noreturn" || canonical == "typing.never" -> pure CppVoid
+      | canonical == "builtins.object" || simple == "object" -> do
+          addInclude "<any>"
+          pure stdAnyType
+      | otherwise ->
+          pure (CppClassType (qualifiedNameToCpp qn) [])
+
+mapTypeSubscript :: SourceSpan -> Located PythonTypeExpr -> [Located PythonTypeExpr] -> CppCodeGen CppType
+mapTypeSubscript span base args =
+  case locValue base of
+    TypeName qn ->
+      let canonical = canonicalQualifiedName qn
+          simple = T.toLower (identifierText (qnName qn))
+      in case () of
+        _ | simple == "list" || canonical `elem` listNames -> mapList
+          | simple == "tuple" || canonical `elem` tupleNames -> mapTupleFromArgs
+          | simple == "set" || canonical `elem` setNames -> mapSet
+          | simple == "dict" || canonical `elem` dictNames -> mapDict
+          | simple == "optional" || canonical `elem` optionalNames -> mapOptionalFromArgs
+          | simple == "union" || canonical `elem` unionNames -> mapUnionFromArgs
+          | simple == "callable" || canonical `elem` callableNames -> mapCallableFromArgs
+          | simple == "annotated" || canonical `elem` annotatedNames -> mapAnnotated
+          | simple == "final" || canonical `elem` finalNames -> mapFinal
+          | otherwise -> mapGenericType qn
+    _ ->
+      fallbackToStdAny span (TypeSubscript base args) "uses an unsupported base expression"
+  where
+    listNames = ["typing.list", "builtins.list", "typing.sequence", "typing.mutablesequence"]
+    tupleNames = ["typing.tuple"]
+    setNames = ["typing.set", "typing.mutableset", "builtins.set", "typing.frozenset"]
+    dictNames = ["typing.dict", "typing.mapping", "typing.mutablemapping"]
+    optionalNames = ["typing.optional"]
+    unionNames = ["typing.union"]
+    callableNames = ["typing.callable"]
+    annotatedNames = ["typing.annotated"]
+    finalNames = ["typing.final"]
+
+    mapList = case args of
+      [elemExpr] -> do
+        elemType <- mapPythonType elemExpr
+        addInclude "<vector>"
+        pure $ CppVector elemType
+      [] -> do
+        addInclude "<vector>"
+        elemType <- ensureStdAny
+        emitWarning $
+          "Type constructor 'list' used without element type at "
+          <> formatSpan span <> "; assuming std::vector<std::any>"
+        pure $ CppVector elemType
+      _ -> do
+        addInclude "<vector>"
+        elemType <- ensureStdAny
+        emitWarning $
+          "Type constructor 'list' expects exactly one argument at "
+          <> formatSpan span <> "; using std::vector<std::any>"
+        pure $ CppVector elemType
+
+    mapTupleFromArgs = mapTypeTuple span args
+
+    mapSet = case args of
+      [elemExpr] -> do
+        elemType <- mapPythonType elemExpr
+        addInclude "<unordered_set>"
+        pure $ CppClassType "std::unordered_set" [elemType]
+      [] -> do
+        addInclude "<unordered_set>"
+        elemType <- ensureStdAny
+        emitWarning $
+          "Type constructor 'set' used without element type at "
+          <> formatSpan span <> "; assuming std::unordered_set<std::any>"
+        pure $ CppClassType "std::unordered_set" [elemType]
+      _ -> do
+        addInclude "<unordered_set>"
+        elemType <- ensureStdAny
+        emitWarning $
+          "Type constructor 'set' expects exactly one argument at "
+          <> formatSpan span <> "; using std::unordered_set<std::any>"
+        pure $ CppClassType "std::unordered_set" [elemType]
+
+    mapDict = case args of
+      [keyExpr, valueExpr] -> do
+        keyType <- mapPythonType keyExpr
+        valueType <- mapPythonType valueExpr
+        addInclude "<unordered_map>"
+        pure $ CppUnorderedMap keyType valueType
+      _ -> do
+        addInclude "<unordered_map>"
+        addInclude "<string>"
+        valueType <- ensureStdAny
+        emitWarning $
+          "Type constructor 'dict' expects two arguments at "
+          <> formatSpan span <> "; using std::unordered_map<std::string, std::any>"
+        pure $ CppUnorderedMap CppString valueType
+
+    mapOptionalFromArgs = case args of
+      [innerExpr] -> mapTypeOptional span innerExpr
+      _ -> fallbackToStdAny span (TypeSubscript base args) "expects exactly one type argument"
+
+    mapUnionFromArgs = mapTypeUnion span args
+
+    mapCallableFromArgs = mapTypeCallable span args
+
+    mapAnnotated = case args of
+      (primary:_) -> mapPythonType primary
+      _ -> fallbackToStdAny span (TypeSubscript base args) "expects at least one underlying type"
+
+    mapFinal = case args of
+      (primary:_) -> mapPythonType primary
+      _ -> fallbackToStdAny span (TypeSubscript base args) "expects a concrete type argument"
+
+    mapGenericType qn = do
+      argTypes <- mapM mapPythonType args
+      pure $ CppClassType (qualifiedNameToCpp qn) argTypes
+
+mapTypeTuple :: SourceSpan -> [Located PythonTypeExpr] -> CppCodeGen CppType
+mapTypeTuple span elems =
+  case elems of
+    [elemExpr, ellipsisExpr] | isEllipsisTypeExpr (locValue ellipsisExpr) -> do
+      elemType <- mapPythonType elemExpr
+      addInclude "<vector>"
+      pure $ CppVector elemType
+    _ -> do
+      tupleTypes <- mapM mapPythonType elems
+      addInclude "<tuple>"
+      pure $ CppTuple tupleTypes
+
+mapTypeUnion :: SourceSpan -> [Located PythonTypeExpr] -> CppCodeGen CppType
+mapTypeUnion span members = do
+  let (noneMembers, otherMembers) = partition (isNoneTypeExpr . locValue) members
+  mapped <- mapM mapPythonType otherMembers
+  let uniqueMapped = nub mapped
+  case (not (null noneMembers), uniqueMapped) of
+    (True, []) -> do
+      addInclude "<optional>"
+      addInclude "<variant>"
+      pure $ CppOptional stdMonostateType
+    (True, [single]) -> do
+      addInclude "<optional>"
+      pure $ CppOptional single
+    (True, more) -> do
+      addInclude "<optional>"
+      addInclude "<variant>"
+      pure $ CppOptional (CppVariant more)
+    (False, []) ->
+      fallbackToStdAny span (TypeUnion members) "did not provide any supported member types"
+    (False, [single]) -> pure single
+    (False, more) -> do
+      addInclude "<variant>"
+      pure $ CppVariant more
+
+mapTypeOptional :: SourceSpan -> Located PythonTypeExpr -> CppCodeGen CppType
+mapTypeOptional span inner = do
+  innerType <- mapPythonType inner
+  addInclude "<optional>"
+  pure $ CppOptional innerType
+
+mapTypeCallable :: SourceSpan -> [Located PythonTypeExpr] -> Located PythonTypeExpr -> CppCodeGen CppType
+mapTypeCallable _ args ret = do
+  argTypes <- case args of
+    [] -> pure []
+    [singleArg] -> callableArgList singleArg
+    _ -> mapM mapPythonType args
+  returnType <- mapPythonType ret
+  addInclude "<functional>"
+  pure $ CppClassType "std::function" [CppFunctionType argTypes returnType]
+  where
+    callableArgList argExpr =
+      case locValue argExpr of
+        TypeTuple tupleElems -> mapM mapPythonType tupleElems
+        _ | isEllipsisTypeExpr (locValue argExpr) -> pure []
+        _ -> (:[]) <$> mapPythonType argExpr
+
+mapTypeLiteral :: SourceSpan -> Located PythonExpr -> CppCodeGen CppType
+mapTypeLiteral span literalExpr =
+  case inferPythonExprCppTypeLocated literalExpr of
+    Just ty -> pure ty
+    Nothing -> fallbackToStdAny span (TypeLiteral literalExpr) "could not infer literal type"
 
 mapPythonParameter :: Located PythonParameter -> CppCodeGen CppParam
-mapPythonParameter (Located _ param) = case param of
-  ParamNormal (Identifier name) mtype mdefault -> do
-    cppType <- case mtype of
-      Just typeExpr -> mapPythonType typeExpr
-      Nothing -> pure CppAuto
-    cppDefault <- mapM generatePythonExpr mdefault
-    pure $ CppParam name cppType cppDefault
-  _ -> pure $ CppParam "param" CppAuto Nothing
+mapPythonParameter (Located _ param) =
+  case param of
+    ParamNormal (Identifier name) mtype mdefault -> do
+      baseType <- maybe (pure CppAuto) mapPythonType mtype
+      refinedType <- applyParameterAnnotations name baseType
+      cppDefault <- mapM generatePythonExpr mdefault
+      pure $ CppParam name refinedType cppDefault
+    ParamKwOnly (Identifier name) mtype mdefault -> do
+      baseType <- maybe (pure CppAuto) mapPythonType mtype
+      refinedType <- applyParameterAnnotations name baseType
+      cppDefault <- mapM generatePythonExpr mdefault
+      pure $ CppParam name refinedType cppDefault
+    ParamVarArgs (Identifier name) mtype -> do
+      elemType <- maybe ensureStdAny mapPythonType mtype
+      addInclude "<vector>"
+      let vectorType = CppVector elemType
+      refinedType <- applyParameterAnnotations name vectorType
+      pure $ CppParam name refinedType Nothing
+    ParamKwArgs (Identifier name) mtype -> do
+      valueType <- maybe ensureStdAny mapPythonType mtype
+      addInclude "<unordered_map>"
+      addInclude "<string>"
+      let mapType = CppUnorderedMap CppString valueType
+      refinedType <- applyParameterAnnotations name mapType
+      pure $ CppParam name refinedType Nothing
+
+applyParameterAnnotations :: Text -> CppType -> CppCodeGen CppType
+applyParameterAnnotations name baseType
+  | T.null name = pure baseType
+  | otherwise =
+      let exprKey = renderCommonExpr (CEVar (Identifier name))
+          context = "parameter " <> name
+      in lookupAndApplyAnnotations context exprKey baseType
+
+ensureStdAny :: CppCodeGen CppType
+ensureStdAny = do
+  addInclude "<any>"
+  pure stdAnyType
+
+stdAnyType :: CppType
+stdAnyType = CppClassType "std::any" []
+
+stdMonostateType :: CppType
+stdMonostateType = CppClassType "std::monostate" []
+
+qualifiedNameToText :: QualifiedName -> Text
+qualifiedNameToText qn =
+  let modules = map moduleNameText (qnModule qn)
+  in T.intercalate "." (modules ++ [identifierText (qnName qn)])
+
+qualifiedNameToCpp :: QualifiedName -> Text
+qualifiedNameToCpp qn =
+  let modules = map moduleNameText (qnModule qn)
+  in T.intercalate "::" (modules ++ [identifierText (qnName qn)])
+
+canonicalQualifiedName :: QualifiedName -> Text
+canonicalQualifiedName qn =
+  let modules = map (T.toLower . moduleNameText) (qnModule qn)
+  in T.intercalate "." (modules ++ [T.toLower (identifierText (qnName qn))])
+
+identifierText :: Identifier -> Text
+identifierText (Identifier txt) = txt
+
+moduleNameText :: ModuleName -> Text
+moduleNameText (ModuleName txt) = txt
+
+describeTypeExpr :: PythonTypeExpr -> Text
+describeTypeExpr = \case
+  TypeName qn -> qualifiedNameToText qn
+  TypeVar tv -> tv
+  other -> T.pack (show other)
+
+isNoneTypeExpr :: PythonTypeExpr -> Bool
+isNoneTypeExpr = \case
+  TypeName qn ->
+    let simple = T.toLower (identifierText (qnName qn))
+        canonical = canonicalQualifiedName qn
+    in simple == "none"
+       || canonical == "builtins.none"
+       || canonical == "typing.none"
+       || simple == "nonetype"
+  _ -> False
+
+isEllipsisTypeExpr :: PythonTypeExpr -> Bool
+isEllipsisTypeExpr = \case
+  TypeName qn ->
+    let nameTxt = identifierText (qnName qn)
+        lowered = T.toLower nameTxt
+    in nameTxt == "..." || lowered == "ellipsis"
+  _ -> False
+
+fallbackToStdAny :: SourceSpan -> PythonTypeExpr -> Text -> CppCodeGen CppType
+fallbackToStdAny span expr reason = do
+  addInclude "<any>"
+  emitWarning $
+    "Python type annotation '" <> describeTypeExpr expr <> "' at "
+    <> formatSpan span <> " " <> reason <> "; falling back to std::any"
+  pure stdAnyType
 
 generatePythonAssignment (Located _ pattern) cppExpr = case pattern of
   PatVar (Identifier name) -> do
