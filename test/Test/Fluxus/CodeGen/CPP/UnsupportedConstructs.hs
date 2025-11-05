@@ -2,6 +2,7 @@
 
 module Test.Fluxus.CodeGen.CPP.UnsupportedConstructs (spec) where
 
+import Data.List (find)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Fluxus.AST.Common
@@ -225,6 +226,64 @@ pythonUnsupportedTests = describe "Python unsupported constructs" $ do
         cgfErrors failure `shouldSatisfy` (not . null)
       Right _ ->
         expectationFailure "Expected compilation to fail for async for statement"
+
+  it "falls back to runtime abort for slicing in non-strict mode" $ do
+    let sliceExpr =
+          noLoc $
+            PySubscript
+              (noLoc (PyVar (Identifier "values")))
+              (noLoc (SliceSlice
+                       (Just (noLoc (PyLiteral (PyInt 1))))
+                       (Just (noLoc (PyLiteral (PyInt 3))))
+                       Nothing))
+        valuesList = map (noLoc . PyLiteral . PyInt) [1, 2, 3, 4]
+        moduleBody =
+          [ noLoc (PyAssign [noLoc (PatVar (Identifier "values"))] (noLoc (PyList valuesList)))
+          , noLoc (PyExprStmt sliceExpr)
+          ]
+        pythonAst = PythonAST PythonModule
+          { pyModuleName = Nothing
+          , pyModuleDoc = Nothing
+          , pyModuleImports = []
+          , pyModuleBody = moduleBody
+          }
+    case generateCpp nonStrictConfig (Left pythonAst) of
+      Left failure ->
+        expectationFailure $ "Code generation unexpectedly failed: " <> show failure
+      Right result -> do
+        let unit = cgrUnit result
+            decls = cppDeclarations unit
+
+            isRuntimeAbortHelper decl = case decl of
+              CppFunction name _ _ _ -> name == "fluxus_runtime_abort"
+              _ -> False
+
+            isMainFunctionDecl decl = case decl of
+              CppFunction "main" _ _ _ -> True
+              _ -> False
+
+            isSliceFallbackStmt stmt = case stmt of
+              CppExprStmt expr -> isSliceFallbackExpr expr
+              CppStmtSeq stmts -> any isSliceFallbackStmt stmts
+              CppBlock stmts -> any isSliceFallbackStmt stmts
+              _ -> False
+
+            isSliceFallbackExpr expr = case expr of
+              CppBinary "," lhs rhs ->
+                isAbortCall lhs && rhs == CppLiteral (CppIntLit 0)
+              _ -> False
+
+            isAbortCall expr = case expr of
+              CppCall (CppVar "fluxus_runtime_abort") [CppLiteral (CppStringLit msg)] ->
+                msg == "Python slicing is not supported in the C++ backend"
+              _ -> False
+
+        any isRuntimeAbortHelper decls `shouldBe` True
+        case find isMainFunctionDecl decls of
+          Just (CppFunction _ _ _ body) ->
+            any isSliceFallbackStmt body `shouldBe` True
+          _ ->
+            expectationFailure "Expected generated main function containing slice fallback statement"
 
 goUnsupportedTests :: Spec
 goUnsupportedTests = describe "Go unsupported constructs" $ do

@@ -39,8 +39,8 @@
 - **测试框架**：全面的单元测试覆盖
 
 ### ⚠️ 当前限制
-- 默认关闭严格模式（`ccStrictMode = False`），以便编译器在遇到尚未完全支持的 Python 控制流语句时不会直接终止。
-- `with`、`try/except`、`raise`、`yield` 及 `async` 相关语句目前会降级为运行时回退：代码生成阶段会发出警告并注入 `fluxus_runtime_abort` 调用，以确保编译流程不中断，同时提示需要完整语义的用户使用原生 Python 运行时。
+- 默认启用严格模式（`ccStrictMode = True`），确保遇到未实现的语义时立即报错；如需继续编译，可显式使用 `--no-strict`。
+- `with`、`try/except`、`raise`、`yield` 及 `async` 相关语句在非严格模式下会降级为运行时回退：代码生成阶段会发出警告并注入 `fluxus_runtime_abort` 调用，以避免静默语义丢失，并提示需要完整语义的用户使用原生 Python 运行时。
 
 ### 🔮 规划中的高级特性
 

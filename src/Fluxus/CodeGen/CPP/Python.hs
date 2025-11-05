@@ -577,7 +577,8 @@ generatePythonExpr (Located _ expr) = case expr of
         return $ CppIndex cppObj cppIdx
       _ -> do
         reportUnsupported "Unsupported slice expression"
-        return $ CppLiteral (CppIntLit 0)
+        abortExpr <- runtimeAbortCall "Python slicing is not supported in the C++ backend"
+        return $ CppBinary "," abortExpr (CppLiteral (CppIntLit 0))
   PyAttribute obj (Identifier member) -> do
     cppObj <- generatePythonExpr obj
     return $ CppMember cppObj member
