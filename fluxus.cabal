@@ -47,6 +47,7 @@ library
     Fluxus.CodeGen.CPP.AST
     Fluxus.CodeGen.CPP.Diagnostics
     Fluxus.CodeGen.CPP.Go
+    Fluxus.CodeGen.CPP.Go.TypeMapping
     Fluxus.CodeGen.CPP.Monad
     Fluxus.CodeGen.CPP.Python
     Fluxus.CodeGen.CPP.Shared

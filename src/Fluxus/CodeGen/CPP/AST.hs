@@ -117,6 +117,7 @@ data CppType
   | CppAuto
   | CppString
   | CppVector !CppType
+  | CppStdArray !CppType !Int
   | CppArray !CppType !Int
   | CppPointer !CppType
   | CppReference !CppType
@@ -126,9 +127,10 @@ data CppType
   | CppSizeT
   | CppFunctionType ![CppType] !CppType
   | CppClassType !Text ![CppType]
+  | CppStructLiteral ![(Text, CppType)]
   | CppTemplateType !Text ![CppType]
   | CppUniquePtr !CppType
-  | CppSharedPtr !CppType
+
   | CppOptional !CppType
   | CppVariant ![CppType]
   | CppPair !CppType !CppType
@@ -302,6 +304,7 @@ renderCppType ty = case ty of
   CppAuto -> "auto"
   CppString -> "std::string"
   CppVector inner -> "std::vector<" <> renderCppType inner <> ">"
+  CppStdArray inner n -> "std::array<" <> renderCppType inner <> ", " <> T.pack (show n) <> ">"
   CppArray inner n -> renderCppType inner <> "[" <> T.pack (show n) <> "]"
   CppPointer inner -> renderCppType inner <> "*"
   CppReference inner -> renderCppType inner <> "&"
@@ -313,6 +316,7 @@ renderCppType ty = case ty of
     let params = T.intercalate ", " (map renderCppType args)
     in renderCppType ret <> "(" <> params <> ")"
   CppClassType name args -> renderTemplate name args
+  CppStructLiteral fields -> renderStructLiteral fields
   CppTemplateType name args -> renderTemplate name args
   CppUniquePtr inner -> "std::unique_ptr<" <> renderCppType inner <> ">"
   CppSharedPtr inner -> "std::shared_ptr<" <> renderCppType inner <> ">"
@@ -427,6 +431,16 @@ renderTemplate name args =
   case args of
     [] -> name
     _  -> name <> "<" <> T.intercalate ", " (map renderCppType args) <> ">"
+
+renderStructLiteral :: [(Text, CppType)] -> Text
+renderStructLiteral fields =
+  case fields of
+    [] -> "struct { }"
+    _  -> "struct { " <> T.intercalate " " (map renderField fields) <> " }"
+  where
+    renderField (name, ty)
+      | T.null (T.strip name) = renderCppType ty <> ";"
+      | otherwise = renderCppType ty <> " " <> name <> ";"
 
 renderForInit :: CppStmt -> Text
 renderForInit stmt =
