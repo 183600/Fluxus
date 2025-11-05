@@ -2,6 +2,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 -- | Core C++ AST and lightweight pretty printer utilities used by the
 --   Fluxus code generator. The goal of this module is to provide a single
@@ -130,7 +131,7 @@ data CppType
   | CppStructLiteral ![(Text, CppType)]
   | CppTemplateType !Text ![CppType]
   | CppUniquePtr !CppType
-
+  | CppSharedPtr !CppType
   | CppOptional !CppType
   | CppVariant ![CppType]
   | CppPair !CppType !CppType

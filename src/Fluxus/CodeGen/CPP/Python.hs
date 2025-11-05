@@ -17,9 +17,9 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Text.Megaparsec as MP
 
-import Fluxus.AST.Common
+import Fluxus.AST.Common hiding (TypeVar)
 import Fluxus.AST.Python
-import Fluxus.Analysis.CommonExprLowering (pythonExprToCommon, renderCommonExpr, formatSpan)
+import Fluxus.Analysis.CommonExprLowering (pythonExprToCommon, renderCommonExpr, renderLoweringIssue, formatSpan)
 import Fluxus.CodeGen.CPP.AST
 import Fluxus.CodeGen.CPP.Monad
 import Fluxus.CodeGen.CPP.Shared
@@ -924,10 +924,11 @@ generatePythonClass classDef = do
 
 
 
+refinePythonExprType :: Text -> Located PythonExpr -> CppType -> CppCodeGen CppType
 refinePythonExprType context locatedExpr defaultType =
   case pythonExprToCommon locatedExpr of
     Left err -> do
-      emitInfo $ context <> ": unable to fingerprint expression for annotations - " <> err
+      emitInfo $ context <> ": unable to fingerprint expression for annotations - " <> renderLoweringIssue err
       pure defaultType
     Right common ->
       let exprKey = renderCommonExpr common
@@ -943,6 +944,7 @@ mapPythonLiteral = \case
   PyNone -> CppNullPtr
   _ -> CppIntLit 0
 
+mapPythonBinaryOp :: BinaryOp -> Text
 mapPythonBinaryOp = \case
   OpAdd -> "+"
   OpSub -> "-"
@@ -959,6 +961,17 @@ mapPythonBinaryOp = \case
   OpOr -> "||"
   OpConcat -> "+"
   _ -> "+"  -- Fallback
+
+mapComparisonOp :: ComparisonOp -> Text
+mapComparisonOp = \case
+  OpEq -> "=="
+  OpNe -> "!="
+  OpLt -> "<"
+  OpLe -> "<="
+  OpGt -> ">"
+  OpGe -> ">="
+  OpIs -> "=="
+  OpIsNot -> "!="
 
 generatePythonInteropBindings :: Text -> CppCodeGen ()
 generatePythonInteropBindings moduleName =
@@ -1097,7 +1110,13 @@ mapTypeSubscript span base args =
 
     mapUnionFromArgs = mapTypeUnion span args
 
-    mapCallableFromArgs = mapTypeCallable span args
+    mapCallableFromArgs =
+      case unsnoc args of
+        Just (paramArgs, retExpr) -> mapTypeCallable span paramArgs retExpr
+        Nothing -> fallbackToStdAny span (TypeSubscript base args) "expects argument list and return type"
+
+    unsnoc [] = Nothing
+    unsnoc xs = Just (init xs, last xs)
 
     mapAnnotated = case args of
       (primary:_) -> mapPythonType primary
@@ -1275,6 +1294,7 @@ fallbackToStdAny span expr reason = do
     <> formatSpan span <> " " <> reason <> "; falling back to std::any"
   pure stdAnyType
 
+generatePythonAssignment :: Located PythonPattern -> CppExpr -> CppCodeGen ()
 generatePythonAssignment (Located _ pattern) cppExpr = case pattern of
   PatVar (Identifier name) -> do
     addDeclaration $ CppVariable name CppAuto (Just cppExpr)
