@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Test.Fluxus.Analysis.CommonExprLowering (spec) where
 
 import Test.Hspec
