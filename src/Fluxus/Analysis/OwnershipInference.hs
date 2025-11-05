@@ -334,15 +334,15 @@ mergeOwnership a b = OwnershipInfo
   }
 
 combineMem :: MemoryLocation -> MemoryLocation -> MemoryLocation
+combineMem Stack Stack = Stack
+combineMem Stack other = other
+combineMem other Stack = other
 combineMem Heap _ = Heap
 combineMem _ Heap = Heap
 combineMem Global _ = Global
 combineMem _ Global = Global
 combineMem Unknown _ = Unknown
 combineMem _ Unknown = Unknown
-combineMem Stack Stack = Stack
-combineMem Stack other = other
-combineMem other Stack = other
 
 analyzeComprehensionOwnership :: Located CommonExpr -> [CommonCompClause] -> OwnershipInferenceM OwnershipInfo
 analyzeComprehensionOwnership value clauses = do

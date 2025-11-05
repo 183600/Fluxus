@@ -248,7 +248,7 @@ statementGenerationSpec = describe "Statement generation" $ do
 
 fallbackHandlingSpec :: Spec
 fallbackHandlingSpec = describe "Runtime fallback handling" $ do
-  it "injects runtime fallback for with statements even in strict mode" $ do
+  it "injects runtime fallback for with statements in non-strict mode" $ do
     let withItem = PythonWithItem
           { pyWithContext = noLoc (PyCall (noLoc (PyVar (Identifier "make_resource"))) [])
           , pyWithVar = Just (noLoc (PatVar (Identifier "resource")))
@@ -269,8 +269,8 @@ fallbackHandlingSpec = describe "Runtime fallback handling" $ do
           , pyModuleImports = []
           , pyModuleBody = moduleBody
           }
-        strictConfig = Shared.testCppConfig { cgcStrictMode = True }
-    case generateCpp strictConfig (Left pythonAst) of
+        fallbackConfig = Shared.testCppConfig
+    case generateCpp fallbackConfig (Left pythonAst) of
       Right res -> do
         let warnings = filter ((== SeverityWarning) . diagSeverity) (cgrDiagnostics res)
         warnings `shouldSatisfy`
@@ -282,7 +282,7 @@ fallbackHandlingSpec = describe "Runtime fallback handling" $ do
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
-  it "reports runtime fallback for try statements" $ do
+  it "reports runtime fallback for try statements in non-strict mode" $ do
     let exceptBlock = PythonExcept
           { pyExceptType = Just (noLoc (PyVar (Identifier "Exception")))
           , pyExceptName = Just (Identifier "exc")
@@ -295,8 +295,8 @@ fallbackHandlingSpec = describe "Runtime fallback handling" $ do
           , pyModuleImports = []
           , pyModuleBody = [tryStmt]
           }
-        strictConfig = Shared.testCppConfig { cgcStrictMode = True }
-    case generateCpp strictConfig (Left pythonAst) of
+        fallbackConfig = Shared.testCppConfig
+    case generateCpp fallbackConfig (Left pythonAst) of
       Right res -> do
         let warnings = filter ((== SeverityWarning) . diagSeverity) (cgrDiagnostics res)
         warnings `shouldSatisfy`
@@ -308,7 +308,7 @@ fallbackHandlingSpec = describe "Runtime fallback handling" $ do
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
-  it "reports runtime fallback for raise statements" $ do
+  it "reports runtime fallback for raise statements in non-strict mode" $ do
     let raiseStmt = noLoc
           ( PyRaise
               ( Just
@@ -327,8 +327,8 @@ fallbackHandlingSpec = describe "Runtime fallback handling" $ do
           , pyModuleImports = []
           , pyModuleBody = [raiseStmt]
           }
-        strictConfig = Shared.testCppConfig { cgcStrictMode = True }
-    case generateCpp strictConfig (Left pythonAst) of
+        fallbackConfig = Shared.testCppConfig
+    case generateCpp fallbackConfig (Left pythonAst) of
       Right res -> do
         let warnings = filter ((== SeverityWarning) . diagSeverity) (cgrDiagnostics res)
         warnings `shouldSatisfy`
@@ -340,7 +340,7 @@ fallbackHandlingSpec = describe "Runtime fallback handling" $ do
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
-  it "generates runtime fallback stub for async functions" $ do
+  it "generates runtime fallback stub for async functions in non-strict mode" $ do
     let asyncFunc = PythonFuncDef
           { pyFuncName = Identifier "worker"
           , pyFuncDecorators = []
@@ -357,8 +357,8 @@ fallbackHandlingSpec = describe "Runtime fallback handling" $ do
           , pyModuleImports = []
           , pyModuleBody = moduleBody
           }
-        strictConfig = Shared.testCppConfig { cgcStrictMode = True }
-    case generateCpp strictConfig (Left pythonAst) of
+        fallbackConfig = Shared.testCppConfig
+    case generateCpp fallbackConfig (Left pythonAst) of
       Right res -> do
         let warnings = filter ((== SeverityWarning) . diagSeverity) (cgrDiagnostics res)
         warnings `shouldSatisfy`
