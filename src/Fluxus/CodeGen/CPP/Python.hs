@@ -913,16 +913,14 @@ generatePythonClass :: PythonClassDef -> CppCodeGen ()
 generatePythonClass classDef = do
   let className = (\(Identifier n) -> n) (pyClassName classDef)
   
-  -- Map base classes
-  baseClasses <- mapM extractBaseClassName (pyClassBases classDef)
-  
-  -- Generate class members
-  members <- mapM generatePythonClassMember (pyClassBody classDef)
-  let memberDecls = members  -- members are already CppDecl
+  baseClasses <- fmap catMaybes $ mapM extractBaseClassName (pyClassBases classDef)
+  members <- fmap catMaybes $ mapM (generatePythonClassMember className) (pyClassBody classDef)
+  let memberDecls =
+        case members of
+          [] -> []
+          xs -> CppAccessSpec "public" : xs
   
   addDeclaration $ CppClass className baseClasses memberDecls
-  where
-    extractBaseClassName expr = return "BaseClass"  -- Simplified
 
 
 
@@ -1282,4 +1280,243 @@ generatePythonAssignment (Located _ pattern) cppExpr = case pattern of
     addDeclaration $ CppVariable name CppAuto (Just cppExpr)
   _ -> reportNotImplemented "TODO: Complex pattern assignment"
 
-generatePythonClassMember _ = return $ CppVariable "member" CppInt Nothing  -- Simplified
+generatePythonClassMember :: Text -> Located PythonStmt -> CppCodeGen (Maybe CppDecl)
+generatePythonClassMember className located@(Located span stmt) =
+  case stmt of
+    PyFuncDef funcDef
+      | pyFuncIsAsync funcDef ->
+          Just <$> generateClassMethodFallback className funcDef span "async methods are not supported"
+      | not (null (pyFuncDecorators funcDef)) ->
+          Just <$> generateClassMethodFallback className funcDef span "decorated methods are not yet supported"
+      | otherwise ->
+          Just <$> generateClassMethodDecl className funcDef
+    PyAsyncFuncDef funcDef ->
+      Just <$> generateClassMethodFallback className funcDef span "async methods are not supported"
+    PyAssign targets expr ->
+      case targets of
+        [Located _ (PatVar (Identifier name))] ->
+          Just <$> generateClassAttributeDecl className name expr
+        _ ->
+          classMemberUnsupported className span "assignment target is not supported"
+    PyAnnAssign target typeExpr mValue ->
+      case locValue target of
+        PatVar (Identifier name) ->
+          Just <$> generateAnnotatedClassAttributeDecl className name typeExpr mValue
+        _ ->
+          classMemberUnsupported className span "annotated assignment target is not supported"
+    PyExprStmt expr
+      | isDocstringExpr expr -> pure Nothing
+      | otherwise ->
+          classMemberUnsupported className span "expression statement is not supported at class scope"
+    PyPass ->
+      pure Nothing
+    _ ->
+      classMemberUnsupported className span ("statement '" <> T.pack (show stmt) <> "' is not supported at class scope")
+
+extractBaseClassName :: Located PythonExpr -> CppCodeGen (Maybe Text)
+extractBaseClassName (Located span expr) =
+  case expr of
+    PyVar (Identifier name) -> pure (Just name)
+    PyConst qn -> pure (Just (qualifiedNameToCpp qn))
+    PyAttribute base (Identifier attr) -> do
+      prefix <- extractBaseClassName base
+      pure $ fmap (<> "::" <> attr) prefix
+    PySubscript base _ ->
+      extractBaseClassName base
+    _ -> do
+      emitWarning $
+        "Unsupported class base expression '" <> T.pack (show expr) <> "' at "
+        <> formatSpan span <> "; skipping base"
+      pure Nothing
+
+generateClassMethodDecl :: Text -> PythonFuncDef -> CppCodeGen CppDecl
+generateClassMethodDecl className funcDef = do
+  let methodName = identifierText (pyFuncName funcDef)
+      (paramsWithoutSelf, hasSelf) = dropSelfParameter (pyFuncParams funcDef)
+  cppParams <- mapM mapPythonParameter paramsWithoutSelf
+  bodyStmts <- withFunctionScope $ do
+    registerParameters cppParams
+    mapM (generatePythonStmt ScopeFunction) (pyFuncBody funcDef)
+  let sanitizedBody = if hasSelf then replaceSelfWithThis bodyStmts else bodyStmts
+  case methodName of
+    "__init__" ->
+      pure $ CppConstructor className cppParams sanitizedBody
+    _ -> do
+      returnType <- resolveMethodReturnType methodName funcDef
+      pure $ CppMethod methodName returnType cppParams sanitizedBody False
+
+generateClassMethodFallback :: Text -> PythonFuncDef -> SourceSpan -> Text -> CppCodeGen CppDecl
+generateClassMethodFallback className funcDef span reason = do
+  let methodName = identifierText (pyFuncName funcDef)
+      (paramsWithoutSelf, _) = dropSelfParameter (pyFuncParams funcDef)
+      baseMessage = "Python class '" <> className <> "', method '" <> methodName <> "' " <> reason
+      fullMessage = baseMessage <> " at " <> formatSpan span <> " (runtime fallback)"
+  cppParams <- mapM mapPythonParameter paramsWithoutSelf
+  emitWarning fullMessage
+  abortStmt <- runtimeAbortStmt fullMessage
+  let body = [CppComment ("runtime fallback: " <> baseMessage), abortStmt]
+  case methodName of
+    "__init__" ->
+      pure $ CppConstructor className cppParams body
+    _ -> do
+      returnType <- resolveMethodReturnType methodName funcDef
+      pure $ CppMethod methodName returnType cppParams body False
+
+generateClassAttributeDecl :: Text -> Text -> Located PythonExpr -> CppCodeGen CppDecl
+generateClassAttributeDecl className name expr = do
+  cppExpr <- generatePythonExpr expr
+  let defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated expr)
+      context = className <> "." <> name <> " class attribute"
+  refinedType <- refinePythonExprType context expr defaultType
+  pure $ CppVariable name refinedType (Just cppExpr)
+
+generateAnnotatedClassAttributeDecl :: Text -> Text -> Located PythonTypeExpr -> Maybe (Located PythonExpr) -> CppCodeGen CppDecl
+generateAnnotatedClassAttributeDecl _ name typeExpr mValue = do
+  cppType <- mapPythonType typeExpr
+  cppValue <- mapM generatePythonExpr mValue
+  pure $ CppVariable name cppType cppValue
+
+classMemberUnsupported :: Text -> SourceSpan -> Text -> CppCodeGen (Maybe CppDecl)
+classMemberUnsupported className span reason = do
+  fallbackName <- generateTempVar
+  let methodName = "__fluxus_class_fallback_" <> fallbackName
+      baseMessage = "Python class '" <> className <> "': " <> reason
+      fullMessage = baseMessage <> " at " <> formatSpan span <> " (runtime fallback)"
+  emitWarning fullMessage
+  abortStmt <- runtimeAbortStmt fullMessage
+  let body = [CppComment baseMessage, abortStmt]
+  pure $ Just $ CppMethod methodName CppVoid [] body False
+
+dropSelfParameter :: [Located PythonParameter] -> ([Located PythonParameter], Bool)
+dropSelfParameter params =
+  case params of
+    (first:rest) ->
+      case locValue first of
+        ParamNormal (Identifier name) _ _ | name == "self" -> (rest, True)
+        _ -> (params, False)
+    [] -> ([], False)
+
+withFunctionScope :: CppCodeGen a -> CppCodeGen a
+withFunctionScope action = do
+  original <- gets cgsSymbolTable
+  result <- action
+  modify $ \s -> s { cgsSymbolTable = original }
+  pure result
+
+registerParameters :: [CppParam] -> CppCodeGen ()
+registerParameters =
+  mapM_ $ \(CppParam name ty _) ->
+    modify $ \s -> s { cgsSymbolTable = HM.insert name ty (cgsSymbolTable s) }
+
+resolveMethodReturnType :: Text -> PythonFuncDef -> CppCodeGen CppType
+resolveMethodReturnType methodName funcDef =
+  case pyFuncReturns funcDef of
+    Just typeExpr ->
+      if isNoneTypeExpr (locValue typeExpr)
+        then pure CppVoid
+        else do
+          annotatedType <- mapPythonType typeExpr
+          refineAnnotatedReturnType methodName annotatedType (pyFuncBody funcDef)
+    Nothing -> inferFunctionReturnType methodName (pyFuncBody funcDef)
+
+isDocstringExpr :: Located PythonExpr -> Bool
+isDocstringExpr (Located _ expr) =
+  case expr of
+    PyLiteral (PyString _) -> True
+    _ -> False
+
+replaceSelfWithThis :: [CppStmt] -> [CppStmt]
+replaceSelfWithThis = map replaceSelfStmt
+
+replaceSelfStmt :: CppStmt -> CppStmt
+replaceSelfStmt stmt =
+  case stmt of
+    CppExprStmt expr -> CppExprStmt (replaceSelfExpr expr)
+    CppReturn mexpr -> CppReturn (replaceSelfExpr <$> mexpr)
+    CppIf cond thenStmts elseStmts ->
+      CppIf (replaceSelfExpr cond) (map replaceSelfStmt thenStmts) (map replaceSelfStmt elseStmts)
+    CppWhile cond body ->
+      CppWhile (replaceSelfExpr cond) (map replaceSelfStmt body)
+    CppFor mInit mCond mPost body ->
+      CppFor (replaceSelfStmt <$> mInit) (replaceSelfExpr <$> mCond) (replaceSelfExpr <$> mPost) (map replaceSelfStmt body)
+    CppForRange var expr body ->
+      CppForRange var (replaceSelfExpr expr) (map replaceSelfStmt body)
+    CppSwitch expr cases ->
+      CppSwitch (replaceSelfExpr expr) (map replaceSelfCase cases)
+    CppTry tryStmts catches finallyStmts ->
+      CppTry (map replaceSelfStmt tryStmts) (map replaceSelfCatch catches) (map replaceSelfStmt finallyStmts)
+    CppStmtSeq stmts -> CppStmtSeq (map replaceSelfStmt stmts)
+    CppBlock stmts -> CppBlock (map replaceSelfStmt stmts)
+    CppDecl decl -> CppDecl (replaceSelfDecl decl)
+    CppThrow mexpr -> CppThrow (replaceSelfExpr <$> mexpr)
+    CppComment _ -> stmt
+    CppBreak -> stmt
+    CppContinue -> stmt
+
+replaceSelfCase :: CppCase -> CppCase
+replaceSelfCase caseNode =
+  case caseNode of
+    CppCase expr stmts -> CppCase (replaceSelfExpr expr) (map replaceSelfStmt stmts)
+    CppDefault stmts -> CppDefault (map replaceSelfStmt stmts)
+
+replaceSelfCatch :: CppCatch -> CppCatch
+replaceSelfCatch (CppCatch ty name stmts) =
+  CppCatch ty name (map replaceSelfStmt stmts)
+
+replaceSelfDecl :: CppDecl -> CppDecl
+replaceSelfDecl decl =
+  case decl of
+    CppVariable name ty initializer ->
+      CppVariable name ty (replaceSelfExpr <$> initializer)
+    CppFunction name ret params body ->
+      CppFunction name ret (map replaceSelfParam params) (map replaceSelfStmt body)
+    CppMethod name ret params body isVirtual ->
+      CppMethod name ret (map replaceSelfParam params) (map replaceSelfStmt body) isVirtual
+    CppConstructor name params body ->
+      CppConstructor name (map replaceSelfParam params) (map replaceSelfStmt body)
+    CppDestructor name body isVirtual ->
+      CppDestructor name (map replaceSelfStmt body) isVirtual
+    CppClass name bases members ->
+      CppClass name bases (map replaceSelfDecl members)
+    CppStruct name members ->
+      CppStruct name (map replaceSelfDecl members)
+    CppNamespace name members ->
+      CppNamespace name (map replaceSelfDecl members)
+    CppTemplate params inner ->
+      CppTemplate params (replaceSelfDecl inner)
+    CppExternC members ->
+      CppExternC (map replaceSelfDecl members)
+    CppAccessSpec _ -> decl
+    CppCommentDecl _ -> decl
+    CppUsing _ _ -> decl
+    CppTypedef _ _ -> decl
+    other -> other
+
+replaceSelfParam :: CppParam -> CppParam
+replaceSelfParam (CppParam name ty mDefault) =
+  CppParam name ty (replaceSelfExpr <$> mDefault)
+
+replaceSelfExpr :: CppExpr -> CppExpr
+replaceSelfExpr expr =
+  case expr of
+    CppVar name | name == "self" -> CppThis
+    CppVar _ -> expr
+    CppLiteral _ -> expr
+    CppBinary op lhs rhs -> CppBinary op (replaceSelfExpr lhs) (replaceSelfExpr rhs)
+    CppUnary op inner -> CppUnary op (replaceSelfExpr inner)
+    CppCall func args -> CppCall (replaceSelfExpr func) (map replaceSelfExpr args)
+    CppMember obj member -> CppMember (replaceSelfExpr obj) member
+    CppPointerMember obj member -> CppPointerMember (replaceSelfExpr obj) member
+    CppIndex arr idx -> CppIndex (replaceSelfExpr arr) (replaceSelfExpr idx)
+    CppCast ty inner -> CppCast ty (replaceSelfExpr inner)
+    CppSizeOf ty -> CppSizeOf ty
+    CppNew ty args -> CppNew ty (map replaceSelfExpr args)
+    CppDelete inner -> CppDelete (replaceSelfExpr inner)
+    CppThis -> CppThis
+    CppLambda params body -> CppLambda (map replaceSelfParam params) (map replaceSelfStmt body)
+    CppMove inner -> CppMove (replaceSelfExpr inner)
+    CppForward inner -> CppForward (replaceSelfExpr inner)
+    CppMakeUnique ty args -> CppMakeUnique ty (map replaceSelfExpr args)
+    CppMakeShared ty args -> CppMakeShared ty (map replaceSelfExpr args)
+    CppBracedInit ty exprs -> CppBracedInit ty (map replaceSelfExpr exprs)
+    _ -> expr
