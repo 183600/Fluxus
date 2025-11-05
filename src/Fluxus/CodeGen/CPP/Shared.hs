@@ -28,6 +28,7 @@ import qualified Data.Text as T
 import Fluxus.AST.Common
   ( ExprAnnotations(..)
   , OwnershipInfo(..)
+  , MemoryLocation(..)
   , Type(..)
   , lookupAnnotations
   )

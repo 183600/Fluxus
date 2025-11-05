@@ -12,7 +12,8 @@ import Data.Text (Text)
 import qualified Data.Text as T
 
 import Fluxus.AST.Go
-import Fluxus.Analysis.CommonExprLowering (goExprToCommon, renderCommonExpr)
+import Fluxus.AST.Common (BinaryOp(..), ComparisonOp(..), Identifier(..), Located(..), UnaryOp(..))
+import Fluxus.Analysis.CommonExprLowering (goExprToCommon, renderCommonExpr, renderLoweringIssue)
 import Fluxus.CodeGen.CPP.AST
   ( CppDecl(..)
   , CppExpr(..)
@@ -499,7 +500,7 @@ refineGoExprType :: Text -> Located GoExpr -> CppType -> CppCodeGen CppType
 refineGoExprType context locatedExpr defaultType =
   case goExprToCommon locatedExpr of
     Left err -> do
-      emitInfo $ context <> ": unable to fingerprint expression for annotations - " <> err
+      emitInfo $ context <> ": unable to fingerprint expression for annotations - " <> renderLoweringIssue err
       pure defaultType
     Right common ->
       let exprKey = renderCommonExpr common

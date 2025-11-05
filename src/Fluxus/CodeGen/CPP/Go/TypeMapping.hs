@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Fluxus.CodeGen.CPP.Go.TypeMapping
   ( mapGoTypeToCpp
@@ -162,7 +163,7 @@ mapGoStructType fields = CppStructLiteral (snd (foldl' accumulate (Set.empty, []
       in (accNames ++ [freshName], used')
 
 mapGoNamedType :: QualifiedName -> CppType
-mapGoNamedType = CppClassType . qualifiedNameToText
+mapGoNamedType name = CppClassType (qualifiedNameToText name) []
 
 mapGoGenericType :: QualifiedName -> [Located GoType] -> CppType
 mapGoGenericType name args =
