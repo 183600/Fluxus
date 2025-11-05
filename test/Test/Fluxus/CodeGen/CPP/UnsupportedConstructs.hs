@@ -3,13 +3,12 @@
 module Test.Fluxus.CodeGen.CPP.UnsupportedConstructs (spec) where
 
 import Data.List (find)
-import Data.Text (Text)
-import qualified Data.Text as T
+
 import Fluxus.AST.Common
 import Fluxus.AST.Python
 import Fluxus.AST.Go
 import Fluxus.CodeGen.CPP
-import Fluxus.CodeGen.CPP.Diagnostics (CppCodeGenError(..), DiagnosticSeverity(..), diagMessage, diagSeverity)
+import Fluxus.CodeGen.CPP.Diagnostics (CppCodeGenError(..))
 import Test.Hspec
 
 import qualified Test.Fluxus.CodeGen.CPP.Shared as Shared
@@ -30,9 +29,9 @@ nonStrictConfig = Shared.testCppConfig { cgcStrictMode = False }
 
 strictModeTests :: Spec
 strictModeTests = describe "Strict mode behavior" $ do
-  it "fails compilation on unsupported Python 'with' statement in strict mode" $ do
+  it "supports Python 'with' statements in strict mode" $ do
     let withItem = PythonWithItem
-          { pyWithContext = noLoc (PyCall (noLoc (PyVar (Identifier "open"))) 
+          { pyWithContext = noLoc (PyCall (noLoc (PyVar (Identifier "open")))
               [noLoc (ArgPositional (noLoc (PyLiteral (PyString "file.txt"))))])
           , pyWithVar = Just (noLoc (PatVar (Identifier "f")))
           }
@@ -43,39 +42,13 @@ strictModeTests = describe "Strict mode behavior" $ do
           , pyModuleImports = []
           , pyModuleBody = moduleBody
           }
-        result = generateCpp strictConfig (Left pythonAst)
-    case result of
+    case generateCpp strictConfig (Left pythonAst) of
+      Right _ -> pure ()
       Left failure ->
-        case cgfErrors failure of
-          [CppNotImplemented msg] -> 
-            msg `shouldSatisfy` T.isInfixOf "with"
-          errors ->
-            expectationFailure $ "Expected single CppNotImplemented error, got: " <> show errors
-      Right _ ->
-        expectationFailure "Expected compilation to fail in strict mode"
+        expectationFailure $ "Expected strict mode to support with statements, but compilation failed: " <> show failure
 
-  it "falls back to runtime support when strict mode is disabled" $ do
-    let withItem = PythonWithItem
-          { pyWithContext = noLoc (PyVar (Identifier "resource"))
-          , pyWithVar = Nothing
-          }
-        moduleBody = [noLoc (PyWith [noLoc withItem] [])]
-        pythonAst = PythonAST PythonModule
-          { pyModuleName = Nothing
-          , pyModuleDoc = Nothing
-          , pyModuleImports = []
-          , pyModuleBody = moduleBody
-          }
-        result = generateCpp nonStrictConfig (Left pythonAst)
-    case result of
-      Right res -> do
-        let warnings = filter ((== SeverityWarning) . diagSeverity) (cgrDiagnostics res)
-        warnings `shouldSatisfy`
-          any (T.isInfixOf "'with' statement" . diagMessage)
-      Left failure ->
-        expectationFailure $ "Expected runtime fallback in non-strict mode, but compilation failed: " <> show failure
 
-  it "fails compilation on unsupported Python 'try' statement in strict mode" $ do
+  it "supports Python try/except statements in strict mode" $ do
     let exceptClause = PythonExcept
           { pyExceptType = Nothing
           , pyExceptName = Nothing
@@ -88,16 +61,10 @@ strictModeTests = describe "Strict mode behavior" $ do
           , pyModuleImports = []
           , pyModuleBody = moduleBody
           }
-        result = generateCpp strictConfig (Left pythonAst)
-    case result of
+    case generateCpp strictConfig (Left pythonAst) of
+      Right _ -> pure ()
       Left failure ->
-        case cgfErrors failure of
-          [CppNotImplemented msg] -> 
-            msg `shouldSatisfy` T.isInfixOf "try"
-          errors ->
-            expectationFailure $ "Expected single CppNotImplemented error, got: " <> show errors
-      Right _ ->
-        expectationFailure "Expected compilation to fail in strict mode"
+        expectationFailure $ "Expected strict mode to support try statements, but compilation failed: " <> show failure
 
   it "fails compilation on unsupported multiple assignment in strict mode" $ do
     let moduleBody = [noLoc (PyAssign 

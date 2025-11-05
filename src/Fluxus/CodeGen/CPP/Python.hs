@@ -160,10 +160,10 @@ generatePythonStmt scope (Located span stmt) =
           let msg = "Only range() iteration is currently supported"
           reportFatalUnsupported msg
           return cppNoop
-    PyWith _ _ ->
-      runtimeFallbackStmt span "Python 'with' statement requires runtime fallback"
-    PyTry _ _ _ _ ->
-      runtimeFallbackStmt span "Python 'try' statement requires runtime fallback"
+    PyWith items bodyStmts ->
+      generatePythonWith scope span items bodyStmts
+    PyTry tryBody excepts elseStmts finallyStmts ->
+      generatePythonTry scope span tryBody excepts elseStmts finallyStmts
     PyAsyncWith _ _ ->
       runtimeFallbackStmt span "Python 'async with' statement requires runtime fallback"
     PyAsyncFor _ _ _ _ ->
@@ -383,6 +383,126 @@ generatePythonStmt scope (Located span stmt) =
           return $ case stmts of
             [single] -> single
             _ -> CppStmtSeq stmts
+
+generatePythonWith :: PythonScope -> SourceSpan -> [Located PythonWithItem] -> [Located PythonStmt] -> CppCodeGen CppStmt
+generatePythonWith scope _ items body = do
+  stmtSeq <- lowerWith items
+  case stmtSeq of
+    [single] -> pure single
+    _        -> pure (CppStmtSeq stmtSeq)
+  where
+    lowerWith [] = mapM (generatePythonStmt scope) body
+    lowerWith (Located itemSpan item : rest) = do
+      contextExpr <- generatePythonExpr (pyWithContext item)
+      contextVar <- generateTempVar
+      let contextDecl = CppDecl (CppVariable contextVar CppAuto (Just contextExpr))
+      enterStmts <- bindWithTarget itemSpan (pyWithVar item) contextVar
+      innerBody <- lowerWith rest
+      let exitCall =
+            CppExprStmt
+              (CppCall
+                 (CppMember (CppVar contextVar) "__exit__")
+                 [ CppLiteral CppNullPtr
+                 , CppLiteral CppNullPtr
+                 , CppLiteral CppNullPtr
+                 ])
+          tryStmt = CppTry innerBody [] [exitCall]
+      pure (contextDecl : enterStmts ++ [tryStmt])
+
+bindWithTarget :: SourceSpan -> Maybe (Located PythonPattern) -> Text -> CppCodeGen [CppStmt]
+bindWithTarget _ Nothing contextVar =
+  pure [CppExprStmt (CppCall (CppMember (CppVar contextVar) "__enter__") [])]
+bindWithTarget span (Just locatedPattern) contextVar = do
+  let enterCall = CppCall (CppMember (CppVar contextVar) "__enter__") []
+  case locValue locatedPattern of
+    PatVar (Identifier name) -> do
+      symtab <- gets cgsSymbolTable
+      if HM.member name symtab
+        then pure [CppExprStmt (CppBinary "=" (CppVar name) enterCall)]
+        else do
+          modify $ \s -> s { cgsSymbolTable = HM.insert name CppAuto (cgsSymbolTable s) }
+          pure [CppDecl (CppVariable name CppAuto (Just enterCall))]
+    _ -> do
+      reportFatalUnsupported $
+        "Python 'with' statement binding pattern at "
+        <> formatSpan span <> " is not supported"
+      pure [CppExprStmt enterCall]
+
+generatePythonTry :: PythonScope -> SourceSpan -> [Located PythonStmt] -> [Located PythonExcept] -> [Located PythonStmt] -> [Located PythonStmt] -> CppCodeGen CppStmt
+generatePythonTry scope _ tryStmts excepts elseStmts finallyStmts = do
+  tryBody <- mapM (generatePythonStmt scope) tryStmts
+  catches <- mapM (generateExceptHandler scope) excepts
+  elseBody <- mapM (generatePythonStmt scope) elseStmts
+  finallyBody <- mapM (generatePythonStmt scope) finallyStmts
+  (prefix, tryBody', finalBlock) <- prepareElseBlock elseBody tryBody finallyBody
+  let tryStmt = CppTry tryBody' catches finalBlock
+  pure $
+    case prefix of
+      [] -> tryStmt
+      _  -> CppStmtSeq (prefix ++ [tryStmt])
+
+prepareElseBlock :: [CppStmt] -> [CppStmt] -> [CppStmt] -> CppCodeGen ([CppStmt], [CppStmt], [CppStmt])
+prepareElseBlock elseBody tryBody finallyBody
+  | null elseBody = pure ([], tryBody, finallyBody)
+  | otherwise = do
+      successVar <- generateTempVar
+      let successDecl =
+            CppDecl (CppVariable successVar CppBool (Just (CppLiteral (CppBoolLit False))))
+          markSuccess =
+            CppExprStmt (CppBinary "=" (CppVar successVar) (CppLiteral (CppBoolLit True)))
+          tryBody' = tryBody ++ [markSuccess]
+          elseStmt = CppIf (CppVar successVar) elseBody []
+      pure ([successDecl], tryBody', elseStmt : finallyBody)
+
+generateExceptHandler :: PythonScope -> Located PythonExcept -> CppCodeGen CppCatch
+generateExceptHandler scope (Located span except) = do
+  catchType <- resolveExceptType span (pyExceptType except)
+  (catchVar, restoreAction) <- case pyExceptName except of
+    Just (Identifier name) -> do
+      current <- gets cgsSymbolTable
+      let previous = HM.lookup name current
+      modify $ \s -> s { cgsSymbolTable = HM.insert name CppAuto (cgsSymbolTable s) }
+      let restore table = case previous of
+            Just ty -> HM.insert name ty table
+            Nothing -> HM.delete name table
+      pure (name, Just restore)
+    Nothing -> do
+      tempName <- generateTempVar
+      pure (tempName, Nothing)
+  bodyStmts <- mapM (generatePythonStmt scope) (pyExceptBody except)
+  case restoreAction of
+    Just restore -> modify $ \s -> s { cgsSymbolTable = restore (cgsSymbolTable s) }
+    Nothing -> pure ()
+  pure $ CppCatch catchType catchVar bodyStmts
+
+resolveExceptType :: SourceSpan -> Maybe (Located PythonExpr) -> CppCodeGen CppType
+resolveExceptType span mTypeExpr = do
+  addInclude "<exception>"
+  let defaultType = CppClassType "std::exception" []
+  case mTypeExpr of
+    Nothing -> pure defaultType
+    Just locatedExpr ->
+      case exceptionTypeName locatedExpr of
+        Just name
+          | name `elem` ["Exception", "builtins::Exception", "BaseException", "builtins::BaseException"] ->
+              pure defaultType
+          | otherwise ->
+              pure (CppClassType name [])
+        Nothing -> do
+          emitWarning $
+            "Unsupported exception type in 'except' at "
+            <> formatSpan span <> "; defaulting to std::exception"
+          pure defaultType
+
+exceptionTypeName :: Located PythonExpr -> Maybe Text
+exceptionTypeName (Located _ expr) =
+  case expr of
+    PyVar (Identifier name) -> Just name
+    PyConst qn -> Just (qualifiedNameToCpp qn)
+    PyAttribute base (Identifier attr) -> do
+      prefix <- exceptionTypeName base
+      pure (prefix <> "::" <> attr)
+    _ -> Nothing
 
 -- | Generate C++ from Python expressions
 -- | Generate C++ expression from Python argument
