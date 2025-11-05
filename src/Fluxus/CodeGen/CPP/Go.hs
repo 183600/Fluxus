@@ -34,9 +34,12 @@ import Fluxus.CodeGen.CPP.Monad
   , reportNotImplemented
   , reportUnsupported
   )
+import Fluxus.CodeGen.CPP.Go.TypeMapping
+  ( collectCppTypeIncludes
+  , mapGoTypeToCpp
+  )
 import Fluxus.CodeGen.CPP.Shared
   ( lookupAndApplyAnnotations
-  , mapGoTypeToCpp
   , spaceSeparate
   , streamChain
   )
@@ -425,7 +428,10 @@ mapGoParameter field = do
       | otherwise = pure name
 
 generateGoType :: Located GoType -> CppCodeGen CppType
-generateGoType (Located _ goType) = pure $ mapGoTypeToCpp goType
+generateGoType (Located _ goType) = do
+  let cppType = mapGoTypeToCpp goType
+  mapM_ addInclude (collectCppTypeIncludes cppType)
+  pure cppType
 
 mapGoResults :: [GoField] -> CppCodeGen CppType
 mapGoResults [] = pure CppVoid

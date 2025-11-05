@@ -31,12 +31,12 @@ import Fluxus.AST.Common
   , Type(..)
   , lookupAnnotations
   )
-import Fluxus.AST.Go
 import Fluxus.CodeGen.CPP.AST
   ( CppExpr(..)
   , CppLiteral(..)
   , CppType(..)
   )
+import Fluxus.CodeGen.CPP.Go.TypeMapping (mapGoTypeToCpp)
 import Fluxus.CodeGen.CPP.Monad
   ( CppCodeGen
   , CppGenState(..)
@@ -61,18 +61,6 @@ mapPythonTypeToCpp = \case
   TVoid -> CppVoid
   _ -> CppAuto
 
-mapGoTypeToCpp :: GoType -> CppType
-mapGoTypeToCpp = \case
-  GoBasicType (Identifier "int") -> CppInt
-  GoBasicType (Identifier "float64") -> CppDouble
-  GoBasicType (Identifier "bool") -> CppBool
-  GoBasicType (Identifier "string") -> CppString
-  GoSliceType (Located _ elemType) -> CppVector (mapGoTypeToCpp elemType)
-  GoMapType (Located _ keyType) (Located _ valueType) ->
-    CppUnorderedMap (mapGoTypeToCpp keyType) (mapGoTypeToCpp valueType)
-  GoPointerType (Located _ baseType) -> CppPointer (mapGoTypeToCpp baseType)
-  GoChanType _ (Located _ elemType) -> CppTemplateType "Channel" [mapGoTypeToCpp elemType]
-  _ -> CppAuto
 
 mapCommonTypeToCpp :: Type -> CppType
 mapCommonTypeToCpp = mapPythonTypeToCpp
