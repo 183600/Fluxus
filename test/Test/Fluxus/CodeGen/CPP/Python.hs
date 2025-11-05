@@ -8,8 +8,10 @@ import Data.Maybe (listToMaybe)
 import qualified Data.Text as T
 import Fluxus.AST.Common
 import Fluxus.AST.Python
+import qualified Fluxus.AST.Python as Py
 import Fluxus.Analysis.CommonExprLowering (pythonExprToCommon, renderCommonExpr)
 import Fluxus.CodeGen.CPP
+import Fluxus.CodeGen.CPP.AST (CppCatch(..))
 import Fluxus.CodeGen.CPP.Diagnostics (CppDiagnostic(..), DiagnosticSeverity(..))
 import Fluxus.Compiler.Driver
   ( CompilerConfig(..)
@@ -505,7 +507,7 @@ declarationGenerationSpec = describe "Declaration generation" $ do
         expectationFailure $ "Code generation failed: " <> show failure
 
   it "reports std::any fallback for unsupported annotations" $ do
-    let typeVarT = noLoc (TypeVar "T")
+    let typeVarT = noLoc (Py.TypeVar "T")
         funcDef = PythonFuncDef
           { pyFuncName = Identifier "wrap"
           , pyFuncDecorators = []
@@ -738,7 +740,7 @@ analysisFeedbackSpec :: Spec
 analysisFeedbackSpec = describe "Analysis annotation integration" $ do
   let annotationsFor expr =
         case pythonExprToCommon expr of
-          Left err -> error ("Failed to lower expression: " <> T.unpack err)
+          Left err -> error ("Failed to lower expression: " <> show err)
           Right common ->
             insertAnnotations (renderCommonExpr common) exprAnnotation emptyAnnotations
 
