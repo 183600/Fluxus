@@ -573,6 +573,116 @@ declarationGenerationSpec = describe "Declaration generation" $ do
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
+  it "maps Python base classes to C++ inheritance list" $ do
+    let baseExpr =
+          noLoc
+            ( PyAttribute
+                (noLoc (PyVar (Identifier "parent")))
+                (Identifier "Base")
+            )
+        classDef = PythonClassDef
+          { pyClassName = Identifier "Child"
+          , pyClassDecorators = []
+          , pyClassBases = [baseExpr]
+          , pyClassKeywords = []
+          , pyClassBody = []
+          , pyClassDoc = Nothing
+          }
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [noLoc (PyClassDef classDef)]
+              }
+        isChild decl = case decl of
+          CppClass name _ _ -> name == "Child"
+          _ -> False
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res ->
+        case find isChild (cppDeclarations (cgrUnit res)) of
+          Just (CppClass _ bases members) -> do
+            bases `shouldBe` ["parent::Base"]
+            members `shouldBe` []
+          _ -> expectationFailure "Expected generated declaration for class 'Child'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  it "generates class attributes and instance methods" $ do
+    let attributeAssign =
+          noLoc
+            ( PyAssign
+                [noLoc (PatVar (Identifier "value"))]
+                (noLoc (PyLiteral (PyInt 10)))
+            )
+        methodDef = PythonFuncDef
+          { pyFuncName = Identifier "double"
+          , pyFuncDecorators = []
+          , pyFuncParams =
+              [ noLoc (ParamNormal (Identifier "self") Nothing Nothing)
+              , noLoc (ParamNormal (Identifier "amount") Nothing Nothing)
+              ]
+          , pyFuncReturns = Nothing
+          , pyFuncBody =
+              [ noLoc
+                  ( PyReturn
+                      ( Just
+                          ( noLoc
+                              ( PyBinaryOp OpMul
+                                  (noLoc (PyVar (Identifier "amount")))
+                                  (noLoc (PyLiteral (PyInt 2)))
+                              )
+                          )
+                      )
+                  )
+              ]
+          , pyFuncDoc = Nothing
+          , pyFuncIsAsync = False
+          }
+        classDef = PythonClassDef
+          { pyClassName = Identifier "Rich"
+          , pyClassDecorators = []
+          , pyClassBases = []
+          , pyClassKeywords = []
+          , pyClassBody = [attributeAssign, noLoc (PyFuncDef methodDef)]
+          , pyClassDoc = Nothing
+          }
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [noLoc (PyClassDef classDef)]
+              }
+        isRich decl = case decl of
+          CppClass name _ _ -> name == "Rich"
+          _ -> False
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res ->
+        case find isRich (cppDeclarations (cgrUnit res)) of
+          Just (CppClass _ bases members) -> do
+            bases `shouldBe` []
+            case members of
+              [ CppAccessSpec "public"
+                , CppVariable attrName attrType (Just initializer)
+                , CppMethod methodName returnType params body False
+                ] -> do
+                  attrName `shouldBe` "value"
+                  attrType `shouldBe` CppLongLong
+                  initializer `shouldBe` CppLiteral (CppIntLit 10)
+                  methodName `shouldBe` "double"
+                  returnType `shouldBe` CppAuto
+                  params `shouldBe` [CppParam "amount" CppAuto Nothing]
+                  listToMaybe [expr | CppReturn (Just expr) <- body]
+                    `shouldBe`
+                      Just (CppBinary "*" (CppVar "amount") (CppLiteral (CppIntLit 2)))
+              _ -> expectationFailure "Expected class members for attribute and method"
+          _ -> expectationFailure "Expected generated declaration for class 'Rich'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
 pythonGlobalSpec :: Spec
 pythonGlobalSpec = describe "Python module handling" $ do
   it "hoists module-level assignments to global declarations" $ do
