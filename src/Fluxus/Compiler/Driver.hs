@@ -38,6 +38,7 @@ import Control.Monad.State
 import Control.Monad.Except
 import Control.Monad.IO.Class
 import Control.Monad (when, unless, forM_, foldM)
+import Control.Exception (IOException, try)
 import Data.Maybe (fromMaybe, maybeToList, catMaybes)
 import Data.Either (partitionEithers)
 import Data.Int (Int64)
@@ -453,8 +454,13 @@ compileProject inputFiles = do
 parseStage :: FilePath -> CompilerM (Either PythonAST GoAST)
 parseStage inputFile = do
   config <- ask
-  content <- liftIO $ TIO.readFile inputFile
-  
+  contentResult <- liftIO $ (try (TIO.readFile inputFile) :: IO (Either IOException Text))
+  content <- case contentResult of
+    Left ioErr ->
+      throwError $ FileSystemError (textShow ioErr) inputFile
+    Right fileContent ->
+      return fileContent
+
   -- Detect language from file extension, with config as fallback
   let detectedLanguage = case takeExtension inputFile of
         ".py"  -> Python
