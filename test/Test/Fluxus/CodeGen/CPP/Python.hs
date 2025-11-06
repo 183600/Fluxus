@@ -11,7 +11,7 @@ import Fluxus.AST.Python
 import qualified Fluxus.AST.Python as Py
 import Fluxus.Analysis.CommonExprLowering (pythonExprToCommon, renderCommonExpr)
 import Fluxus.CodeGen.CPP
-import Fluxus.CodeGen.CPP.AST (CppCatch(..))
+import Fluxus.CodeGen.CPP.AST (CppCatch(..), CppType(..))
 import Fluxus.CodeGen.CPP.Diagnostics (CppDiagnostic(..), DiagnosticSeverity(..))
 import Fluxus.Compiler.Driver
   ( CompilerConfig(..)
@@ -246,67 +246,178 @@ statementGenerationSpec = describe "Statement generation" $ do
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
-fallbackHandlingSpec :: Spec
-fallbackHandlingSpec = describe "Runtime fallback handling" $ do
-  it "injects runtime fallback for with statements in non-strict mode" $ do
+  it "lowers Python with statements into try-finally blocks" $ do
     let withItem = PythonWithItem
           { pyWithContext = noLoc (PyCall (noLoc (PyVar (Identifier "make_resource"))) [])
           , pyWithVar = Just (noLoc (PatVar (Identifier "resource")))
           }
-        bodyStmt = noLoc
-          ( PyExprStmt
-              ( noLoc
-                  ( PyCall
-                      (noLoc (PyVar (Identifier "use")))
-                      [ noLoc (ArgPositional (noLoc (PyVar (Identifier "resource")))) ]
-                  )
-              )
-          )
+        bodyStmt =
+          noLoc
+            ( PyExprStmt
+                ( noLoc
+                    ( PyCall
+                        (noLoc (PyVar (Identifier "use")))
+                        [ noLoc (ArgPositional (noLoc (PyVar (Identifier "resource")))) ]
+                    )
+                )
+            )
         moduleBody = [noLoc (PyWith [noLoc withItem] [bodyStmt])]
-        pythonAst = PythonAST PythonModule
-          { pyModuleName = Nothing
-          , pyModuleDoc = Nothing
-          , pyModuleImports = []
-          , pyModuleBody = moduleBody
-          }
-        fallbackConfig = Shared.testCppConfig
-    case generateCpp fallbackConfig (Left pythonAst) of
-      Right res -> do
-        let warnings = filter ((== SeverityWarning) . diagSeverity) (cgrDiagnostics res)
-        warnings `shouldSatisfy`
-          any (T.isInfixOf "'with' statement" . diagMessage)
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = moduleBody
+              }
+        containsTry stmt = case stmt of
+          CppTry {} -> True
+          _ -> False
+        isEnterCall expr = case expr of
+          CppCall (CppMember _ "__enter__") [] -> True
+          _ -> False
+        declaresEnter stmt = case stmt of
+          CppDecl (CppVariable _ _ (Just initExpr)) -> isEnterCall initExpr
+          CppExprStmt (CppBinary "=" _ rhs) -> isEnterCall rhs
+          _ -> False
+        isExitCall stmt = case stmt of
+          CppExprStmt (CppCall (CppMember _ "__exit__") [CppLiteral CppNullPtr, CppLiteral CppNullPtr, CppLiteral CppNullPtr]) -> True
+          _ -> False
+        isUseCall stmt = case stmt of
+          CppExprStmt (CppCall (CppVar "use") [CppVar "resource"]) -> True
+          _ -> False
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res ->
         case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
           Just (CppFunction _ _ _ body) ->
-            containsRuntimeAbort body `shouldBe` True
-          _ -> expectationFailure "Expected generated main function"
+            case listToMaybe [stmts | CppStmtSeq stmts <- body, any containsTry stmts] of
+              Just stmts -> do
+                any declaresEnter stmts `shouldBe` True
+                case [ (tryBody, catches, finalStmts) | CppTry tryBody catches finalStmts <- stmts ] of
+                  [(tryBody, catches, finalStmts)] -> do
+                    catches `shouldBe` []
+                    finalStmts `shouldSatisfy`
+                      any isExitCall
+                    tryBody `shouldSatisfy`
+                      any isUseCall
+                  _ ->
+                    expectationFailure "Expected a single try block lowering for with statement"
+              Nothing ->
+                expectationFailure "Expected generated with lowering block"
+          _ ->
+            expectationFailure "Expected generated main function"
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
-  it "reports runtime fallback for try statements in non-strict mode" $ do
-    let exceptBlock = PythonExcept
-          { pyExceptType = Just (noLoc (PyVar (Identifier "Exception")))
-          , pyExceptName = Just (Identifier "exc")
-          , pyExceptBody = [noLoc PyPass]
-          }
-        tryStmt = noLoc (PyTry [noLoc PyPass] [noLoc exceptBlock] [] [])
-        pythonAst = PythonAST PythonModule
-          { pyModuleName = Nothing
-          , pyModuleDoc = Nothing
-          , pyModuleImports = []
-          , pyModuleBody = [tryStmt]
-          }
-        fallbackConfig = Shared.testCppConfig
-    case generateCpp fallbackConfig (Left pythonAst) of
-      Right res -> do
-        let warnings = filter ((== SeverityWarning) . diagSeverity) (cgrDiagnostics res)
-        warnings `shouldSatisfy`
-          any (T.isInfixOf "'try' statement" . diagMessage)
+  it "translates Python try/except/else/finally into structured CppTry nodes" $ do
+    let bodyPrint =
+          noLoc
+            ( PyExprStmt
+                ( noLoc
+                    ( PyCall
+                        (noLoc (PyVar (Identifier "print")))
+                        [ noLoc (ArgPositional (noLoc (PyLiteral (PyString "try branch")))) ]
+                    )
+                )
+            )
+        exceptPrint =
+          noLoc
+            ( PyExprStmt
+                ( noLoc
+                    ( PyCall
+                        (noLoc (PyVar (Identifier "print")))
+                        [ noLoc (ArgPositional (noLoc (PyLiteral (PyString "except branch")))) ]
+                    )
+                )
+            )
+        elsePrint =
+          noLoc
+            ( PyExprStmt
+                ( noLoc
+                    ( PyCall
+                        (noLoc (PyVar (Identifier "print")))
+                        [ noLoc (ArgPositional (noLoc (PyLiteral (PyString "else branch")))) ]
+                    )
+                )
+            )
+        finallyPrint =
+          noLoc
+            ( PyExprStmt
+                ( noLoc
+                    ( PyCall
+                        (noLoc (PyVar (Identifier "print")))
+                        [ noLoc (ArgPositional (noLoc (PyLiteral (PyString "finally branch")))) ]
+                    )
+                )
+            )
+        exceptBlock =
+          PythonExcept
+            { pyExceptType = Just (noLoc (PyVar (Identifier "Exception")))
+            , pyExceptName = Just (Identifier "exc")
+            , pyExceptBody = [exceptPrint]
+            }
+        tryStmt = noLoc (PyTry [bodyPrint] [noLoc exceptBlock] [elsePrint] [finallyPrint])
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [tryStmt]
+              }
+        expectedStream text =
+          CppBinary "<<"
+            (CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit text)))
+            (CppVar "std::endl")
+        isPrintOf text stmt = case stmt of
+          CppExprStmt expr -> expr == expectedStream text
+          _ -> False
+        isSuccessAssignment flag stmt = case stmt of
+          CppExprStmt (CppBinary "=" (CppVar name) (CppLiteral (CppBoolLit True))) -> name == flag
+          _ -> False
+        isTryStmt stmt = case stmt of
+          CppTry {} -> True
+          _ -> False
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res ->
         case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
           Just (CppFunction _ _ _ body) ->
-            containsRuntimeAbort body `shouldBe` True
-          _ -> expectationFailure "Expected generated main function"
+            case listToMaybe [stmts | CppStmtSeq stmts <- body, any isTryStmt stmts] of
+              Just stmts ->
+                case stmts of
+                  [CppDecl (CppVariable flagName CppBool (Just (CppLiteral (CppBoolLit False)))), CppTry tryBody catches finalStmts] -> do
+                    tryBody `shouldSatisfy`
+                      any (isPrintOf "try branch")
+                    tryBody `shouldSatisfy`
+                      any (isSuccessAssignment flagName)
+                    case catches of
+                      [CppCatch catchType catchVar catchBody] -> do
+                        catchType `shouldBe` CppClassType "std::exception" []
+                        catchVar `shouldBe` "exc"
+                        catchBody `shouldSatisfy`
+                          any (isPrintOf "except branch")
+                      _ ->
+                        expectationFailure "Expected single catch clause"
+                    case finalStmts of
+                      (CppIf (CppVar condVar) elseStmts [] : restFinal) -> do
+                        condVar `shouldBe` flagName
+                        elseStmts `shouldSatisfy`
+                          any (isPrintOf "else branch")
+                        restFinal `shouldSatisfy`
+                          any (isPrintOf "finally branch")
+                      _ ->
+                        expectationFailure "Expected else guard and finally statements"
+                  _ ->
+                    expectationFailure "Expected success flag declaration followed by try block"
+              Nothing ->
+                expectationFailure "Expected generated try block"
+          _ ->
+            expectationFailure "Expected generated main function"
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
+
+fallbackHandlingSpec :: Spec
+fallbackHandlingSpec = describe "Runtime fallback handling" $ do
 
   it "reports runtime fallback for raise statements in non-strict mode" $ do
     let raiseStmt = noLoc
