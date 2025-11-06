@@ -46,7 +46,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
-import Data.Aeson (ToJSON(..), FromJSON(..), (.=), (.:?), (.!=), withObject, object)
+import Data.Aeson (ToJSON(..), (.=), object)
 import Data.Time
 import System.FilePath
 import System.Directory
@@ -212,53 +212,6 @@ instance ToJSON CompilerConfig where
     , "skip_compiler_check" .= ccSkipCompilerCheck config
     ]
 
-instance FromJSON CompilerConfig where
-  parseJSON = withObject "CompilerConfig" $ \o -> do
-    sourceLang <- o .:? "source_language" .!= ("Python" :: String)
-    optLevel <- o .:? "optimization_level" .!= ("O2" :: String)
-    targetStr <- o .:? "target_platform" .!= ("linux-x86_64" :: String)
-
-    let parseSourceLanguage = \case
-          "Python" -> Python
-          "Go" -> Go
-          _ -> Python
-        parseOptLevel = \case
-          "O0" -> O0
-          "O1" -> O1
-          "O2" -> O2
-          "O3" -> O3
-          "Os" -> Os
-          _ -> O2
-        parseTargetPlatformStr = \case
-          "linux-x86_64" -> Just Linux_x86_64
-          "linux-arm64" -> Just Linux_ARM64
-          "darwin-x86_64" -> Just Darwin_x86_64
-          "darwin-arm64" -> Just Darwin_ARM64
-          "windows-x86_64" -> Just Windows_x86_64
-          _ -> Nothing
-
-    CompilerConfig
-      <$> pure (parseSourceLanguage sourceLang)
-      <*> pure (parseOptLevel optLevel)
-      <*> pure (fromMaybe Linux_x86_64 (parseTargetPlatformStr targetStr))
-      <*> o .:? "output_path"
-      <*> o .:? "enable_interop" .!= True
-      <*> o .:? "enable_debug_info" .!= False
-      <*> o .:? "enable_profiler" .!= False
-      <*> o .:? "enable_parallel" .!= True
-      <*> o .:? "max_concurrency" .!= 4
-      <*> o .:? "include_paths" .!= ["/usr/include", "/usr/local/include"]
-      <*> o .:? "library_paths" .!= ["/usr/lib", "/usr/local/lib"]
-      <*> o .:? "linked_libraries" .!= ["stdc++", "pthread"]
-      <*> o .:? "cpp_standard" .!= "c++20"
-      <*> o .:? "cpp_compiler" .!= "clang++"
-      <*> o .:? "verbose_level" .!= 1
-      <*> o .:? "work_directory"
-      <*> o .:? "keep_intermediates" .!= False
-      <*> o .:? "strict_mode" .!= True
-      <*> o .:? "enable_analysis" .!= True
-      <*> o .:? "stop_at_codegen" .!= False
-      <*> o .:? "skip_compiler_check" .!= False
 
 -- | Compiler errors
 data CompilerError
