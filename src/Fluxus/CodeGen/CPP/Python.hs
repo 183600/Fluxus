@@ -171,8 +171,8 @@ generatePythonStmt scope (Located span stmt) =
     PyAsyncFuncDef funcDef -> do
       generateAsyncFunctionFallback span funcDef
       return cppNoop
-    PyRaise _ _ ->
-      runtimeFallbackStmt span "Python 'raise' statement requires runtime fallback"
+    PyRaise excExpr causeExpr ->
+      generatePythonRaise span excExpr causeExpr
     PyYield _ ->
       runtimeFallbackStmt span "Python 'yield' expression requires runtime fallback"
     PyYieldFrom _ ->
@@ -383,6 +383,122 @@ generatePythonStmt scope (Located span stmt) =
           return $ case stmts of
             [single] -> single
             _ -> CppStmtSeq stmts
+
+generatePythonRaise :: SourceSpan -> Maybe (Located PythonExpr) -> Maybe (Located PythonExpr) -> CppCodeGen CppStmt
+generatePythonRaise _ Nothing _ = pure (CppThrow Nothing)
+generatePythonRaise _ (Just excExpr) mFrom = do
+  addInclude "<stdexcept>"
+  let normalizedCause =
+        case mFrom of
+          Just cause | isNoneExpr cause -> Nothing
+          other -> other
+  case extractExceptionDetails excExpr of
+    Just (typeName, mMessageExpr) -> do
+      messageText <- traverse renderExprAsString mMessageExpr
+      causeSummary <- traverse renderExceptionSummary normalizedCause
+      finalMessage <- buildExceptionMessage typeName messageText causeSummary
+      pure (CppThrow (Just (CppCall (CppVar "std::runtime_error") [finalMessage])))
+    Nothing -> do
+      cppExpr <- generatePythonExpr excExpr
+      pure (CppThrow (Just cppExpr))
+
+extractExceptionDetails :: Located PythonExpr -> Maybe (Text, Maybe (Located PythonExpr))
+extractExceptionDetails located@(Located _ expr) =
+  case expr of
+    PyCall callee args -> do
+      typeName <- exceptionTypeName callee
+      pure (typeName, firstPositional args)
+    _ ->
+      case exceptionTypeName located of
+        Just typeName -> Just (typeName, Nothing)
+        Nothing -> Nothing
+  where
+    firstPositional :: [Located PythonArgument] -> Maybe (Located PythonExpr)
+    firstPositional [] = Nothing
+    firstPositional (Located _ argument : rest) =
+      case argument of
+        ArgPositional inner -> Just inner
+        _ -> firstPositional rest
+
+renderExceptionSummary :: Located PythonExpr -> CppCodeGen CppExpr
+renderExceptionSummary expr =
+  case extractExceptionDetails expr of
+    Just (typeName, mMessage) -> do
+      messageText <- traverse renderExprAsString mMessage
+      buildExceptionMessage typeName messageText Nothing
+    Nothing ->
+      renderExprAsString expr
+
+buildExceptionMessage :: Text -> Maybe CppExpr -> Maybe CppExpr -> CppCodeGen CppExpr
+buildExceptionMessage typeName mMessage mCause = do
+  addInclude "<sstream>"
+  addInclude "<string>"
+  bufferName <- generateTempVar
+  let bufferVar = CppVar bufferName
+      bufferDecl = CppDecl (CppVariable bufferName (CppClassType "std::ostringstream" []) Nothing)
+      streamLiteral txt = CppExprStmt (CppBinary "<<" bufferVar (CppLiteral (CppStringLit txt)))
+      streamExpr expr = CppExprStmt (CppBinary "<<" bufferVar expr)
+      baseStmts = [bufferDecl, streamLiteral typeName]
+      messageStmts = maybe [] (\msg -> [streamLiteral ": ", streamExpr msg]) mMessage
+      causeStmts = maybe [] (\cause -> [streamLiteral " (caused by ", streamExpr cause, streamLiteral ")"]) mCause
+      finalStmt = CppReturn (Just (CppCall (CppMember bufferVar "str") []))
+  pure (CppCall (CppLambda [] (baseStmts ++ messageStmts ++ causeStmts ++ [finalStmt])) [])
+
+renderExprAsString :: Located PythonExpr -> CppCodeGen CppExpr
+renderExprAsString locatedExpr = do
+  addInclude "<string>"
+  cppExpr <- generatePythonExpr locatedExpr
+  let defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated locatedExpr)
+  refinedType <- refinePythonExprType "exception message" locatedExpr defaultType
+  let coreType = stripTypeQualifiers refinedType
+  case coreType of
+    CppString ->
+      pure (CppCall (CppVar "std::string") [cppExpr])
+    CppBool ->
+      pure (wrapBoolForPrint cppExpr)
+    CppPointer inner
+      | stripTypeQualifiers inner == CppChar ->
+          pure (CppCall (CppVar "std::string") [cppExpr])
+    _ | isFloatingType coreType ->
+          pure (wrapFloatForPrint cppExpr)
+      | isNumericType coreType -> do
+          addInclude "<string>"
+          pure (CppCall (CppVar "std::to_string") [cppExpr])
+      | otherwise ->
+          toStringViaStream cppExpr
+  where
+    isFloatingType ty =
+      case ty of
+        CppConst inner -> isFloatingType inner
+        CppReference inner -> isFloatingType inner
+        CppRvalueRef inner -> isFloatingType inner
+        CppVolatile inner -> isFloatingType inner
+        _ -> isFloatingCppType ty
+
+    toStringViaStream expr = do
+      addInclude "<sstream>"
+      tempName <- generateTempVar
+      let ossVar = CppVar tempName
+          ossDecl = CppDecl (CppVariable tempName (CppClassType "std::ostringstream" []) Nothing)
+          streamStmt = CppExprStmt (CppBinary "<<" ossVar expr)
+          returnStmt = CppReturn (Just (CppCall (CppMember ossVar "str") []))
+      pure (CppCall (CppLambda [] [ossDecl, streamStmt, returnStmt]) [])
+
+stripTypeQualifiers :: CppType -> CppType
+stripTypeQualifiers ty =
+  case ty of
+    CppConst inner -> stripTypeQualifiers inner
+    CppReference inner -> stripTypeQualifiers inner
+    CppRvalueRef inner -> stripTypeQualifiers inner
+    CppVolatile inner -> stripTypeQualifiers inner
+    _ -> ty
+
+isNoneExpr :: Located PythonExpr -> Bool
+isNoneExpr (Located _ expr) =
+  case expr of
+    PyConst (QualifiedName _ (Identifier name)) -> name == "None"
+    PyLiteral PyNone -> True
+    _ -> False
 
 generatePythonWith :: PythonScope -> SourceSpan -> [Located PythonWithItem] -> [Located PythonStmt] -> CppCodeGen CppStmt
 generatePythonWith scope _ items body = do

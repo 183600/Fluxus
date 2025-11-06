@@ -114,7 +114,7 @@ pythonUnsupportedTests = describe "Python unsupported constructs" $ do
       Right _ ->
         expectationFailure "Expected compilation to fail for async function"
 
-  it "reports error for raise statement" $ do
+  it "supports raise statements in strict mode" $ do
     let moduleBody = [noLoc (PyRaise Nothing Nothing)]
         pythonAst = PythonAST PythonModule
           { pyModuleName = Nothing
@@ -122,12 +122,10 @@ pythonUnsupportedTests = describe "Python unsupported constructs" $ do
           , pyModuleImports = []
           , pyModuleBody = moduleBody
           }
-        result = generateCpp strictConfig (Left pythonAst)
-    case result of
+    case generateCpp strictConfig (Left pythonAst) of
+      Right _ -> pure ()
       Left failure ->
-        cgfErrors failure `shouldSatisfy` (not . null)
-      Right _ ->
-        expectationFailure "Expected compilation to fail for raise statement"
+        expectationFailure $ "Expected raise statements to be supported, but compilation failed: " <> show failure
 
   it "reports error for yield statement" $ do
     let moduleBody = [noLoc (PyYield Nothing)]
