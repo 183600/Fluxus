@@ -129,6 +129,7 @@ test-suite fluxus-test
     Test.Fluxus.CodeGen.CPP.UnsupportedConstructs
     Test.Fluxus.CodeGen.CPP.Python
     Test.Fluxus.CodeGen.CPP.Go
+    Test.Fluxus.Compiler.ConfigSpec
     Test.Fluxus.Compiler.DriverSpec
   build-depends:
     base,

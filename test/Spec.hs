@@ -12,6 +12,7 @@ import qualified Test.Fluxus.Analysis.OwnershipInference as OwnershipInferenceTe
 import qualified Test.Fluxus.Analysis.SmartFallback as SmartFallbackTests
 import qualified Test.Fluxus.Analysis.CommonExprLowering as CommonExprLoweringTests
 import qualified Test.Fluxus.CodeGen.CPP as CodeGenTests
+import qualified Test.Fluxus.Compiler.ConfigSpec as ConfigTests
 import qualified Test.Fluxus.Compiler.DriverSpec as DriverTests
 
 main :: IO ()
@@ -31,6 +32,7 @@ fullSpec =
     SmartFallbackTests.spec
     CommonExprLoweringTests.spec
     CodeGenTests.spec
+    ConfigTests.spec
     DriverTests.spec
 
 ensureProgressFormat :: [String] -> [String]

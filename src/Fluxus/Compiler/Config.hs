@@ -9,7 +9,11 @@ module Fluxus.Compiler.Config
   ( -- * Configuration loading
     loadConfig
   , loadConfigFromFile
+    -- * Command line parsing
   , parseCommandLineArgs
+  , LoadConfigResult(..)
+  , CLICommand(..)
+  , fluxusVersionString
     -- * Configuration merging
   , mergeConfigs
   , applyEnvironmentOverrides
@@ -44,12 +48,28 @@ import GHC.Generics (Generic)
 
 import Fluxus.Compiler.Driver
 
+-- | Result of parsing command line arguments.
+data CLICommand
+  = CLICommandModify (CompilerConfig -> CompilerConfig)
+  | CLICommandShowHelp
+  | CLICommandShowVersion String
+
+-- | Result of loading configuration, including informational CLI actions.
+data LoadConfigResult
+  = LoadConfigSuccess CompilerConfig
+  | LoadConfigHelp
+  | LoadConfigVersion String
+  deriving (Eq, Show)
+
+fluxusVersionString :: String
+fluxusVersionString = "Fluxus Compiler v0.1.0"
+
 -- | Load configuration from multiple sources with precedence:
 -- 1. Command line arguments (highest)
 -- 2. Environment variables
 -- 3. Configuration file
 -- 4. Defaults (lowest)
-loadConfig :: [String] -> IO (Either String CompilerConfig)
+loadConfig :: [String] -> IO (Either String LoadConfigResult)
 loadConfig args = do
   -- Start with default config
   let baseConfig = defaultConfig
@@ -65,10 +85,13 @@ loadConfig args = do
   
   -- Apply command line arguments (highest priority)
   case parseCommandLineArgs args of
-    Left err -> return $ Left err
-    Right cliModifier -> do
+    Left err -> pure $ Left err
+    Right CLICommandShowHelp -> pure $ Right LoadConfigHelp
+    Right (CLICommandShowVersion versionText) ->
+      pure $ Right (LoadConfigVersion versionText)
+    Right (CLICommandModify cliModifier) -> do
       let finalConfig = cliModifier configWithEnv
-      return $ Right finalConfig
+      pure $ Right (LoadConfigSuccess finalConfig)
 
 -- | Load configuration from YAML file
 loadConfigFromFile :: FilePath -> IO (Either String CompilerConfig)
@@ -82,12 +105,15 @@ loadConfigFromFile configFile = do
         Left err -> return $ Left $ "Failed to parse config file: " ++ show err
         Right config -> return $ Right config
 
--- | Parse command line arguments to compiler configuration
-parseCommandLineArgs :: [String] -> Either String (CompilerConfig -> CompilerConfig)
-parseCommandLineArgs args = parseArgs args
+-- | Parse command line arguments to compiler configuration modifiers or
+-- informational CLI commands.
+parseCommandLineArgs :: [String] -> Either String CLICommand
+parseCommandLineArgs args = go id args
   where
-    parseArgs [] = Right id
-    parseArgs (arg:rest) = case arg of
+    go modifier [] = Right (CLICommandModify modifier)
+    go _ ("--help":_) = Right CLICommandShowHelp
+    go _ ("--version":_) = Right (CLICommandShowVersion fluxusVersionString)
+    go modifier (arg:rest) = case arg of
       "--python" -> set (\cfg -> cfg { ccSourceLanguage = Python }) rest
       "--go" -> set (\cfg -> cfg { ccSourceLanguage = Go }) rest
       
@@ -166,15 +192,11 @@ parseCommandLineArgs args = parseArgs args
           Nothing -> Left $ "Unknown target platform: " ++ target
         [] -> Left "Expected target platform after --target"
       
-      "--help" -> Left "Usage: fluxus [options] <input-files>"
-      "--version" -> Left "Fluxus Compiler v0.1.0"
-      
-      _ | "--" `isPrefixOf` arg -> Left $ "Unknown option: " ++ arg
-      _ -> parseArgs rest  -- Assume it's an input file
-    
-    set modify remaining = do
-      next <- parseArgs remaining
-      pure (next . modify)
+      _ | "--" `isPrefixOf` arg ->
+            Left $ "Unknown option: " ++ arg ++ ". Use --help to see available options."
+      _ -> go modifier rest  -- Assume it's an input file
+      where
+        set modifyFn remaining = go (modifyFn . modifier) remaining
 
 -- | Parse target platform from string
 parseTargetPlatform :: String -> Maybe TargetPlatform
