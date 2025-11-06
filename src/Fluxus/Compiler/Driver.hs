@@ -1010,6 +1010,7 @@ renderCppType = \case
   CppPointer cppType -> renderCppType cppType <> "*"
   CppReference cppType -> renderCppType cppType <> "&"
   CppVector elemType -> "std::vector<" <> renderCppType elemType <> ">"
+  CppStdArray elemType size -> "std::array<" <> renderCppType elemType <> ", " <> T.pack (show size) <> ">"
   CppUnorderedMap keyType valueType -> "std::unordered_map<" <> renderCppType keyType <> ", " <> renderCppType valueType <> ">"
   CppUniquePtr cppType -> "std::unique_ptr<" <> renderCppType cppType <> ">"
   CppSharedPtr cppType -> "std::shared_ptr<" <> renderCppType cppType <> ">"
@@ -1017,6 +1018,7 @@ renderCppType = \case
   CppTuple types -> "std::tuple<" <> T.intercalate ", " (map renderCppType types) <> ">"
   CppClassType name params -> name <> (if null params then "" else "<" <> T.intercalate ", " (map renderCppType params) <> ">")
   CppTemplateType name params -> name <> (if null params then "" else "<" <> T.intercalate ", " (map renderCppType params) <> ">")
+  CppStructLiteral fields -> renderStructLiteral fields
   CppSizeT -> "size_t"
   CppConst cppType -> "const " <> renderCppType cppType
   CppVolatile cppType -> "volatile " <> renderCppType cppType
@@ -1038,6 +1040,17 @@ renderCppType = \case
   CppULongLong -> "unsigned long long"
   CppFloat -> "float"
   CppLongDouble -> "long double"
+  where
+    renderStructLiteral :: [(Text, CppType)] -> Text
+    renderStructLiteral fields =
+      case fields of
+        [] -> "struct {}"
+        _  ->
+          let fieldDecls = map renderField fields
+          in "struct { " <> T.intercalate "; " fieldDecls <> "; }"
+
+    renderField :: (Text, CppType) -> Text
+    renderField (name, ty) = renderCppType ty <> " " <> name
 
 -- | Render C++ parameter
 renderCppParam :: CppParam -> Text

@@ -1,8 +1,12 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Fluxus.Parser.Go.Parser.Common
-  ( GoParser
+  ( GoTokenStream(..)
+  , GoParser
   , logDebug
   , chainl1
   , located
@@ -26,17 +30,31 @@ module Fluxus.Parser.Go.Parser.Common
 import Control.Monad (void)
 import Control.Monad.Logger (MonadLogger, logDebugNS)
 import Control.Monad.Trans.Class (lift)
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
+import Data.Proxy (Proxy(..))
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
-import Text.Megaparsec (ParsecT, getInput, satisfy)
+import Text.Megaparsec
+  ( ParsecT
+  , PosState(..)
+  , Stream(..)
+  , TraversableStream(..)
+  , VisualStream(..)
+  , getInput
+  , satisfy
+  )
 import qualified Text.Megaparsec as MP
+import qualified Text.Megaparsec.Pos as MPP
 
 import Fluxus.AST.Common
   ( Identifier(..)
   , Located(..)
   , SourcePos(..)
   , SourceSpan(..)
+  , locSpan
+  , locValue
   , noLoc
   )
 import Fluxus.Parser.Go.Lexer
@@ -46,17 +64,66 @@ import Fluxus.Parser.Go.Lexer
   , GoToken(..)
   )
 
--- | Parser monad for Go parsing with logging support.
-type GoParser m = ParsecT Void [Located GoToken] m
+newtype GoTokenStream = GoTokenStream { unGoTokenStream :: [Located GoToken] }
+  deriving stock (Eq, Show)
+
+type GoParser m = ParsecT Void GoTokenStream m
+
+listProxy :: Proxy [Located GoToken]
+listProxy = Proxy
+
+instance Stream GoTokenStream where
+  type Token GoTokenStream = Located GoToken
+  type Tokens GoTokenStream = [Located GoToken]
+
+  tokenToChunk _ = MP.tokenToChunk listProxy
+  tokensToChunk _ = MP.tokensToChunk listProxy
+  chunkToTokens _ = MP.chunkToTokens listProxy
+  chunkLength _ = MP.chunkLength listProxy
+  chunkEmpty _ = MP.chunkEmpty listProxy
+
+  take1_ (GoTokenStream xs) =
+    case MP.take1_ xs of
+      Nothing -> Nothing
+      Just (tok, rest) -> Just (tok, GoTokenStream rest)
+
+  takeN_ n (GoTokenStream xs) =
+    fmap (fmap GoTokenStream) (MP.takeN_ n xs)
+
+  takeWhile_ f (GoTokenStream xs) =
+    let (chunk, rest) = MP.takeWhile_ f xs
+    in (chunk, GoTokenStream rest)
+
+instance VisualStream GoTokenStream where
+  showTokens _ ts =
+    unwords . NE.toList $ fmap (T.unpack . showGoToken . locValue) ts
+  tokensLength _ = length
+
+instance TraversableStream GoTokenStream where
+  reachOffset offset posState =
+    let GoTokenStream input = pstateInput posState
+        (pre, post) = splitAt offset input
+        newPos = case (post, pre) of
+          (Located span _ : _, _) -> toSourcePosStart span
+          ([], Located span _ : _) -> toSourcePosEnd span
+          _ -> pstateSourcePos posState
+        ctx = case post of
+          (Located _ tok : _) -> Just (T.unpack (showGoToken tok))
+          [] -> Just "<eof>"
+        newState =
+          posState
+            { pstateInput = GoTokenStream post
+            , pstateOffset = offset
+            , pstateSourcePos = newPos
+            }
+    in (ctx, newState)
 
 parserLogSource :: Text
 parserLogSource = "fluxus.go.parser"
 
--- | Emit a debug log message within the Go parser.
 logDebug :: MonadLogger m => Text -> GoParser m ()
 logDebug msg = lift (logDebugNS parserLogSource msg)
 
--- | Left-associative chain combinator.
 chainl1 :: GoParser m a -> GoParser m (a -> a -> a) -> GoParser m a
 chainl1 p op = do
   x <- p
@@ -71,24 +138,20 @@ chainl1 p op = do
         Nothing -> pure x
         Just (f, y) -> rest (f x y)
 
--- | Merge two source spans into one encompassing span.
 mergeSpans :: SourceSpan -> SourceSpan -> SourceSpan
 mergeSpans (SourceSpan file start _) (SourceSpan _ _ end) = SourceSpan file start end
 
--- | Default zero-length span for a given file.
 defaultSpan :: Text -> SourceSpan
 defaultSpan file = SourceSpan file (SourcePos 0 0) (SourcePos 0 0)
 
 zeroWidthSpan :: SourceSpan -> SourceSpan
 zeroWidthSpan (SourceSpan file start _) = SourceSpan file start start
 
--- | Build a span covering all consumed tokens.
 spanFromTokens :: [Located a] -> SourceSpan
 spanFromTokens [] = defaultSpan "<unknown>"
 spanFromTokens tokens =
   mergeSpans (locSpan (head tokens)) (locSpan (last tokens))
 
--- | Compute a span for a parse error offset.
 spanAtOffset :: Text -> [Located a] -> Int -> SourceSpan
 spanAtOffset fallback tokens offset =
   case drop offset tokens of
@@ -100,12 +163,11 @@ spanAtOffset fallback tokens offset =
           in SourceSpan (spanFilename span) endPos endPos
         [] -> defaultSpan fallback
 
--- | Decorate a parser result with source span information.
 located :: GoParser m a -> GoParser m (Located a)
 located parser = do
-  before <- getInput
+  GoTokenStream before <- getInput
   result <- parser
-  after <- getInput
+  GoTokenStream after <- getInput
   let consumedCount = length before - length after
       (consumed, _) = splitAt consumedCount before
       spanLoc = case consumed of
@@ -115,48 +177,40 @@ located parser = do
         _  -> spanFromTokens consumed
   pure $ Located spanLoc result
 
--- | Create a value without precise location information.
 located' :: a -> Located a
 located' = noLoc
 
--- | Match a keyword token.
 goKeywordP :: GoKeyword -> GoParser m ()
 goKeywordP kw = void $ satisfy $ \case
   Located _ (GoTokenKeyword kw') -> kw == kw'
   _ -> False
 
--- | Match an operator token.
 goOperatorP :: GoOperator -> GoParser m ()
 goOperatorP op = void $ satisfy $ \case
   Located _ (GoTokenOperator op') -> op == op'
   _ -> False
 
--- | Match a delimiter token.
 goDelimiterP :: GoDelimiter -> GoParser m ()
 goDelimiterP delim = void $ satisfy $ \case
   Located _ (GoTokenDelimiter delim') -> delim == delim'
   _ -> False
 
--- | Skip newline tokens.
 skipNewlines :: GoParser m ()
 skipNewlines = void $ MP.many $ satisfy $ \case
   Located _ GoTokenNewline -> True
   _ -> False
 
--- | Skip comment tokens.
 skipComments :: GoParser m ()
 skipComments = void $ MP.many $ satisfy $ \case
   Located _ (GoTokenComment _) -> True
   _ -> False
 
--- | Skip comments and newlines.
 skipCommentsAndNewlines :: GoParser m ()
 skipCommentsAndNewlines = void $ MP.many $ satisfy $ \case
   Located _ GoTokenNewline -> True
   Located _ (GoTokenComment _) -> True
   _ -> False
 
--- | Parse a Go identifier token.
 parseGoIdentifier :: GoParser m Identifier
 parseGoIdentifier = do
   Located _ token <- satisfy $ \case
@@ -166,7 +220,6 @@ parseGoIdentifier = do
     GoTokenIdent text -> pure (Identifier text)
     _ -> fail "Expected identifier"
 
--- | Parse a Go string or raw string literal.
 parseGoString :: GoParser m Text
 parseGoString = do
   Located _ token <- satisfy $ \case
@@ -178,10 +231,33 @@ parseGoString = do
     GoTokenRawString text -> pure text
     _ -> fail "Expected string"
 
--- | Parse a comma-separated list of identifiers.
 parseIdentifierList :: GoParser m [Identifier]
 parseIdentifierList = parseGoIdentifier `MP.sepBy1` goDelimiterP GoDelimComma
 
--- | Show a value as text.
 textShow :: Show a => a -> Text
 textShow = T.pack . show
+
+toSourcePosStart :: SourceSpan -> MPP.SourcePos
+toSourcePosStart (SourceSpan fn (SourcePos line col) _) =
+  MPP.SourcePos (T.unpack fn) (MPP.mkPos (line + 1)) (MPP.mkPos (col + 1))
+
+toSourcePosEnd :: SourceSpan -> MPP.SourcePos
+toSourcePosEnd (SourceSpan fn _ (SourcePos line col)) =
+  MPP.SourcePos (T.unpack fn) (MPP.mkPos (line + 1)) (MPP.mkPos (col + 1))
+
+showGoToken :: GoToken -> Text
+showGoToken tok = case tok of
+  GoTokenKeyword kw -> T.pack (show kw)
+  GoTokenIdent name -> name
+  GoTokenInt n -> n
+  GoTokenFloat d -> d
+  GoTokenImag i -> i
+  GoTokenString s -> "\"" <> s <> "\""
+  GoTokenRawString s -> "`" <> s <> "`"
+  GoTokenRune c -> "'" <> T.singleton c <> "'"
+  GoTokenOperator op -> T.pack (show op)
+  GoTokenDelimiter delim -> T.pack (show delim)
+  GoTokenComment _ -> T.pack "/* comment */"
+  GoTokenNewline -> T.pack "\\n"
+  GoTokenEOF -> T.pack "<EOF>"
+  GoTokenError e -> T.pack "<ERROR:" <> e <> T.pack ">"

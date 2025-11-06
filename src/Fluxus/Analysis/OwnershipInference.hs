@@ -342,7 +342,6 @@ combineMem _ Heap = Heap
 combineMem Global _ = Global
 combineMem _ Global = Global
 combineMem Unknown _ = Unknown
-combineMem _ Unknown = Unknown
 
 analyzeComprehensionOwnership :: Located CommonExpr -> [CommonCompClause] -> OwnershipInferenceM OwnershipInfo
 analyzeComprehensionOwnership value clauses = do
