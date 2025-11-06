@@ -3,6 +3,7 @@
 module Test.Fluxus.CodeGen.CPP.UnsupportedConstructs (spec) where
 
 import Data.List (find)
+import qualified Data.Text as T
 
 import Fluxus.AST.Common
 import Fluxus.AST.Python

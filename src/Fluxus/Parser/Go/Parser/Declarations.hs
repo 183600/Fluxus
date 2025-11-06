@@ -160,7 +160,7 @@ parseConstDecl = do
       pure $ zipWith (\name val -> (name, typeExpr, val)) names values
 
 -- | Parse import declarations returning declaration nodes.
-parseImportDeclStmt :: Monad m => GoParser m GoDecl
+parseImportDeclStmt :: GoParser m GoDecl
 parseImportDeclStmt = GoImportDecl <$> parseImportDecl
 
 -- | Parse import declarations.

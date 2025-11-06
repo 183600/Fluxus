@@ -118,6 +118,7 @@ test-suite fluxus-test
   other-modules:
     Test.Fluxus.Parser.Python
     Test.Fluxus.Parser.Go
+    Test.Fluxus.Analysis.CommonExprLowering
     Test.Fluxus.Analysis.TypeInference
     Test.Fluxus.Analysis.EscapeAnalysis
     Test.Fluxus.Analysis.OwnershipInference

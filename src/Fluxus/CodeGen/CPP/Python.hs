@@ -1669,7 +1669,6 @@ replaceSelfDecl decl =
     CppCommentDecl _ -> decl
     CppUsing _ _ -> decl
     CppTypedef _ _ -> decl
-    other -> other
 
 replaceSelfParam :: CppParam -> CppParam
 replaceSelfParam (CppParam name ty mDefault) =
@@ -1698,4 +1697,3 @@ replaceSelfExpr expr =
     CppMakeUnique ty args -> CppMakeUnique ty (map replaceSelfExpr args)
     CppMakeShared ty args -> CppMakeShared ty (map replaceSelfExpr args)
     CppBracedInit ty exprs -> CppBracedInit ty (map replaceSelfExpr exprs)
-    _ -> expr

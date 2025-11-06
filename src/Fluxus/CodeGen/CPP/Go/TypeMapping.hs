@@ -44,8 +44,6 @@ mapGoTypeToCpp = \case
   GoGenericType name args -> mapGoGenericType name args
   GoTypeParam ident _ -> mapGoTypeParam ident
   GoEllipsisType inner -> CppVector (mapLocatedType inner)
-  -- Fallback for currently unsupported forms such as type switches or embedded unions
-  _ -> CppTemplateType "std::any" []
 
 -- | Collect standard library includes required for the given C++ type.
 collectCppTypeIncludes :: CppType -> [Text]
