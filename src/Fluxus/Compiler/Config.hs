@@ -66,8 +66,8 @@ loadConfig args = do
   -- Apply command line arguments (highest priority)
   case parseCommandLineArgs args of
     Left err -> return $ Left err
-    Right cliConfig -> do
-      let finalConfig = mergeConfigs configWithEnv cliConfig
+    Right cliModifier -> do
+      let finalConfig = cliModifier configWithEnv
       return $ Right finalConfig
 
 -- | Load configuration from YAML file
@@ -83,86 +83,86 @@ loadConfigFromFile configFile = do
         Right config -> return $ Right config
 
 -- | Parse command line arguments to compiler configuration
-parseCommandLineArgs :: [String] -> Either String CompilerConfig
-parseCommandLineArgs args = parseArgs defaultConfig args
+parseCommandLineArgs :: [String] -> Either String (CompilerConfig -> CompilerConfig)
+parseCommandLineArgs args = parseArgs args
   where
-    parseArgs config [] = Right config
-    parseArgs config (arg:rest) = case arg of
-      "--python" -> parseArgs (config { ccSourceLanguage = Python }) rest
-      "--go" -> parseArgs (config { ccSourceLanguage = Go }) rest
+    parseArgs [] = Right id
+    parseArgs (arg:rest) = case arg of
+      "--python" -> set (\cfg -> cfg { ccSourceLanguage = Python }) rest
+      "--go" -> set (\cfg -> cfg { ccSourceLanguage = Go }) rest
       
-      "-O0" -> parseArgs (config { ccOptimizationLevel = O0 }) rest
-      "-O1" -> parseArgs (config { ccOptimizationLevel = O1 }) rest
-      "-O2" -> parseArgs (config { ccOptimizationLevel = O2 }) rest
-      "-O3" -> parseArgs (config { ccOptimizationLevel = O3 }) rest
-      "-Os" -> parseArgs (config { ccOptimizationLevel = Os }) rest
+      "-O0" -> set (\cfg -> cfg { ccOptimizationLevel = O0 }) rest
+      "-O1" -> set (\cfg -> cfg { ccOptimizationLevel = O1 }) rest
+      "-O2" -> set (\cfg -> cfg { ccOptimizationLevel = O2 }) rest
+      "-O3" -> set (\cfg -> cfg { ccOptimizationLevel = O3 }) rest
+      "-Os" -> set (\cfg -> cfg { ccOptimizationLevel = Os }) rest
       
-      "--enable-interop" -> parseArgs (config { ccEnableInterop = True }) rest
-      "--disable-interop" -> parseArgs (config { ccEnableInterop = False }) rest
+      "--enable-interop" -> set (\cfg -> cfg { ccEnableInterop = True }) rest
+      "--disable-interop" -> set (\cfg -> cfg { ccEnableInterop = False }) rest
       
-      "--enable-debug" -> parseArgs (config { ccEnableDebugInfo = True }) rest
-      "--disable-debug" -> parseArgs (config { ccEnableDebugInfo = False }) rest
+      "--enable-debug" -> set (\cfg -> cfg { ccEnableDebugInfo = True }) rest
+      "--disable-debug" -> set (\cfg -> cfg { ccEnableDebugInfo = False }) rest
       
-      "--enable-profiler" -> parseArgs (config { ccEnableProfiler = True }) rest
-      "--disable-profiler" -> parseArgs (config { ccEnableProfiler = False }) rest
+      "--enable-profiler" -> set (\cfg -> cfg { ccEnableProfiler = True }) rest
+      "--disable-profiler" -> set (\cfg -> cfg { ccEnableProfiler = False }) rest
       
-      "--enable-parallel" -> parseArgs (config { ccEnableParallel = True }) rest
-      "--disable-parallel" -> parseArgs (config { ccEnableParallel = False }) rest
+      "--enable-parallel" -> set (\cfg -> cfg { ccEnableParallel = True }) rest
+      "--disable-parallel" -> set (\cfg -> cfg { ccEnableParallel = False }) rest
       
-      "--strict" -> parseArgs (config { ccStrictMode = True }) rest
-      "--no-strict" -> parseArgs (config { ccStrictMode = False }) rest
+      "--strict" -> set (\cfg -> cfg { ccStrictMode = True }) rest
+      "--no-strict" -> set (\cfg -> cfg { ccStrictMode = False }) rest
       
-      "--keep-intermediates" -> parseArgs (config { ccKeepIntermediates = True }) rest
-      "--clean-intermediates" -> parseArgs (config { ccKeepIntermediates = False }) rest
+      "--keep-intermediates" -> set (\cfg -> cfg { ccKeepIntermediates = True }) rest
+      "--clean-intermediates" -> set (\cfg -> cfg { ccKeepIntermediates = False }) rest
       
-      "--skip-compiler-check" -> parseArgs (config { ccSkipCompilerCheck = True }) rest
-      "--require-compiler-check" -> parseArgs (config { ccSkipCompilerCheck = False }) rest
+      "--skip-compiler-check" -> set (\cfg -> cfg { ccSkipCompilerCheck = True }) rest
+      "--require-compiler-check" -> set (\cfg -> cfg { ccSkipCompilerCheck = False }) rest
       
-      "-v" -> parseArgs (config { ccVerboseLevel = ccVerboseLevel config + 1 }) rest
-      "--verbose" -> parseArgs (config { ccVerboseLevel = ccVerboseLevel config + 1 }) rest
-      "--quiet" -> parseArgs (config { ccVerboseLevel = 0 }) rest
+      "-v" -> set (\cfg -> cfg { ccVerboseLevel = ccVerboseLevel cfg + 1 }) rest
+      "--verbose" -> set (\cfg -> cfg { ccVerboseLevel = ccVerboseLevel cfg + 1 }) rest
+      "--quiet" -> set (\cfg -> cfg { ccVerboseLevel = 0 }) rest
       
       "-o" -> case rest of
-        (output:rest') -> parseArgs (config { ccOutputPath = Just output }) rest'
+        (output:rest') -> set (\cfg -> cfg { ccOutputPath = Just output }) rest'
         [] -> Left "Expected output path after -o"
       
       "--output" -> case rest of
-        (output:rest') -> parseArgs (config { ccOutputPath = Just output }) rest'
+        (output:rest') -> set (\cfg -> cfg { ccOutputPath = Just output }) rest'
         [] -> Left "Expected output path after --output"
       
       "--work-dir" -> case rest of
-        (dir:rest') -> parseArgs (config { ccWorkDirectory = Just dir }) rest'
+        (dir:rest') -> set (\cfg -> cfg { ccWorkDirectory = Just dir }) rest'
         [] -> Left "Expected directory path after --work-dir"
       
       "--cpp-std" -> case rest of
-        (std:rest') -> parseArgs (config { ccCppStandard = T.pack std }) rest'
+        (std:rest') -> set (\cfg -> cfg { ccCppStandard = T.pack std }) rest'
         [] -> Left "Expected C++ standard after --cpp-std"
       
       "--cpp-compiler" -> case rest of
-        (compiler:rest') -> parseArgs (config { ccCppCompiler = T.pack compiler }) rest'
+        (compiler:rest') -> set (\cfg -> cfg { ccCppCompiler = T.pack compiler }) rest'
         [] -> Left "Expected compiler path after --cpp-compiler"
       
       "--max-concurrency" -> case rest of
         (n:rest') -> case reads n of
-          [(num, "")] -> parseArgs (config { ccMaxConcurrency = num }) rest'
+          [(num, "")] -> set (\cfg -> cfg { ccMaxConcurrency = num }) rest'
           _ -> Left "Invalid number for --max-concurrency"
         [] -> Left "Expected number after --max-concurrency"
       
       "--include" -> case rest of
-        (path:rest') -> parseArgs (config { ccIncludePaths = path : ccIncludePaths config }) rest'
+        (path:rest') -> set (\cfg -> cfg { ccIncludePaths = path : ccIncludePaths cfg }) rest'
         [] -> Left "Expected path after --include"
       
       "--library-path" -> case rest of
-        (path:rest') -> parseArgs (config { ccLibraryPaths = path : ccLibraryPaths config }) rest'
+        (path:rest') -> set (\cfg -> cfg { ccLibraryPaths = path : ccLibraryPaths cfg }) rest'
         [] -> Left "Expected path after --library-path"
       
       "--link" -> case rest of
-        (lib:rest') -> parseArgs (config { ccLinkedLibraries = T.pack lib : ccLinkedLibraries config }) rest'
+        (lib:rest') -> set (\cfg -> cfg { ccLinkedLibraries = T.pack lib : ccLinkedLibraries cfg }) rest'
         [] -> Left "Expected library name after --link"
       
       "--target" -> case rest of
         (target:rest') -> case parseTargetPlatform target of
-          Just platform -> parseArgs (config { ccTargetPlatform = platform }) rest'
+          Just platform -> set (\cfg -> cfg { ccTargetPlatform = platform }) rest'
           Nothing -> Left $ "Unknown target platform: " ++ target
         [] -> Left "Expected target platform after --target"
       
@@ -170,7 +170,11 @@ parseCommandLineArgs args = parseArgs defaultConfig args
       "--version" -> Left "Fluxus Compiler v0.1.0"
       
       _ | "--" `isPrefixOf` arg -> Left $ "Unknown option: " ++ arg
-      _ -> parseArgs config rest  -- Assume it's an input file
+      _ -> parseArgs rest  -- Assume it's an input file
+    
+    set modify remaining = do
+      next <- parseArgs remaining
+      pure (next . modify)
 
 -- | Parse target platform from string
 parseTargetPlatform :: String -> Maybe TargetPlatform
@@ -199,7 +203,7 @@ mergeConfigs base override = CompilerConfig
   , ccLinkedLibraries = ccLinkedLibraries override ++ ccLinkedLibraries base
   , ccCppStandard = ccCppStandard override
   , ccCppCompiler = ccCppCompiler override
-  , ccVerboseLevel = max (ccVerboseLevel base) (ccVerboseLevel override)
+  , ccVerboseLevel = ccVerboseLevel override
   , ccWorkDirectory = ccWorkDirectory override <|> ccWorkDirectory base
   , ccKeepIntermediates = ccKeepIntermediates override
   , ccStrictMode = ccStrictMode override
@@ -218,10 +222,18 @@ applyEnvironmentOverrides config = do
   enableInterop <- lookupEnv "FLUXUS_INTEROP"
   skipCompilerCheck <- lookupEnv "FLUXUS_SKIP_COMPILER_CHECK"
   
+  resolvedVerboseLevel <- case verboseLevel of
+    Nothing -> pure (ccVerboseLevel config)
+    Just raw -> case readMaybe raw of
+      Just level -> pure level
+      Nothing -> do
+        putStrLn $ "Warning: Ignoring invalid FLUXUS_VERBOSE value '" ++ raw ++ "' (keeping existing verbosity)."
+        pure (ccVerboseLevel config)
+
   return config
     { ccCppCompiler = maybe (ccCppCompiler config) T.pack cppCompiler
     , ccCppStandard = maybe (ccCppStandard config) T.pack cppStd
-    , ccVerboseLevel = maybe (ccVerboseLevel config) (fromMaybe 0 . readMaybe) verboseLevel
+    , ccVerboseLevel = resolvedVerboseLevel
     , ccEnableInterop = parseBoolOverride (ccEnableInterop config) enableInterop
     , ccSkipCompilerCheck = parseBoolOverride (ccSkipCompilerCheck config) skipCompilerCheck
     }
