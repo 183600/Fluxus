@@ -121,10 +121,10 @@ generatePythonStmt scope (Located span stmt) =
     PyExprStmt expr -> do
       cppExpr <- generatePythonExpr expr
       return $ CppExprStmt cppExpr
-    PyAssign patterns expr@(Located _ exprVal) ->
+    PyAssign patterns locatedExpr ->
       case patterns of
         [Located _ (PatVar (Identifier varName))] ->
-          handleSimpleAssignment scope varName expr exprVal
+          handleSimpleAssignment scope varName locatedExpr
         _ -> do
           let msg = "Multiple assignment not implemented"
           reportFatalNotImplemented msg
@@ -220,18 +220,18 @@ generatePythonStmt scope (Located span stmt) =
       addDeclaration $ CppFunction funcName returnType cppParams body
       emitInfo $ "Generated fallback stub for async function " <> funcName
 
-    handleSimpleAssignment :: PythonScope -> Text -> Located PythonExpr -> PythonExpr -> CppCodeGen CppStmt
-    handleSimpleAssignment scope' varName locatedExpr exprVal = do
+    handleSimpleAssignment :: PythonScope -> Text -> Located PythonExpr -> CppCodeGen CppStmt
+    handleSimpleAssignment scope' varName locatedExpr = do
       symtab <- gets cgsSymbolTable
-      case exprVal of
+      case locValue locatedExpr of
         PyList elems ->
-          handleListAssignment scope' symtab varName elems
+          handleListAssignment scope' symtab varName (locSpan locatedExpr) elems
         _ ->
           handleRegularAssignment scope' symtab varName locatedExpr
 
-    handleListAssignment :: PythonScope -> HashMap Text CppType -> Text -> [Located PythonExpr] -> CppCodeGen CppStmt
-    handleListAssignment scope' symtab varName elems = do
-      (vectorType, vectorExpr) <- generatePythonListLiteral elems
+    handleListAssignment :: PythonScope -> HashMap Text CppType -> Text -> SourceSpan -> [Located PythonExpr] -> CppCodeGen CppStmt
+    handleListAssignment scope' symtab varName listSpan elems = do
+      (vectorType, vectorExpr) <- generatePythonListLiteral listSpan elems
       let updateSymbolTable = modify $ \s -> s { cgsSymbolTable = HM.insert varName vectorType (cgsSymbolTable s) }
           assignmentExpr = CppExprStmt (CppBinary "=" (CppVar varName) vectorExpr)
           declarationStmt = CppDecl (CppVariable varName vectorType (Just vectorExpr))
@@ -634,7 +634,7 @@ syntheticSpan :: SourceSpan
 syntheticSpan = SourceSpan "<f-string>" (SourcePos 0 0) (SourcePos 0 0)
 
 generatePythonExpr :: Located PythonExpr -> CppCodeGen CppExpr
-generatePythonExpr (Located _ expr) = case expr of
+generatePythonExpr (Located span expr) = case expr of
   PyLiteral lit -> case lit of
     PyFString text _ -> generateFStringExpr text
     _ -> return $ CppLiteral $ mapPythonLiteral lit
@@ -735,39 +735,78 @@ generatePythonExpr (Located _ expr) = case expr of
         cppArgs <- mapM generatePythonArgument args
         return $ CppCall cppFunc cppArgs
   PyList exprs -> do
-    (_, vectorExpr) <- generatePythonListLiteral exprs
+    (_, vectorExpr) <- generatePythonListLiteral span exprs
     return vectorExpr
   _ -> do
     reportNotImplemented $ "TODO: Implement Python expression: " <> T.pack (show expr)
     return $ CppLiteral $ CppIntLit 0
 
 -- | Materialize a Python list literal into a C++ vector expression
-generatePythonListLiteral :: [Located PythonExpr] -> CppCodeGen (CppType, CppExpr)
-generatePythonListLiteral elems = do
+generatePythonListLiteral :: SourceSpan -> [Located PythonExpr] -> CppCodeGen (CppType, CppExpr)
+generatePythonListLiteral listSpan elems = do
   addInclude "<vector>"
-  cppElems <- mapM generatePythonExpr elems
-  let inferredTypes = map inferPythonExprCppTypeLocated elems
-      knownTypes = catMaybes inferredTypes
-      hasUnknown = length knownTypes /= length elems
+  indexedElems <-
+    mapM
+      (\(idx, element) -> do
+         cppExpr <- generatePythonExpr element
+         let defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated element)
+             elementSpanText = formatSpan (locSpan element)
+             context =
+               "list literal element #" <> T.pack (show idx) <> " at " <> elementSpanText
+         refinedType <- refinePythonExprType context element defaultType
+         pure (cppExpr, refinedType, idx)
+      )
+      (zip [0 :: Int ..] elems)
+  let cppElems = map (\(expr, _, _) -> expr) indexedElems
+      refinedTypes = map (\(_, ty, _) -> ty) indexedElems
+      knownTypes = filter (not . isUnknownType) refinedTypes
+      unknownPositions = [idx | (_, ty, idx) <- indexedElems, isUnknownType ty]
+      hasUnknown = not (null unknownPositions)
       combinedType = case knownTypes of
         [] -> Nothing
         (t:ts) -> foldM unifyElementType t ts
       uniqueTypes = nub knownTypes
-      fallbackAny = do
-        addInclude "<any>"
-        return $ CppClassType "std::any" []
+      listLocation = formatSpan listSpan
+      describeTypeList types = T.intercalate ", " (map renderCppType types)
+      unknownReason =
+        case unknownPositions of
+          [] -> "element types could not be resolved"
+          [i] -> "element " <> renderIndex i <> " lacks a resolved type"
+          _ -> "elements " <> renderIndexList unknownPositions <> " lack resolved types"
+      heterogeneousReason =
+        "distinct element types detected: " <> describeTypeList uniqueTypes
+      fallbackAnyWith reason = do
+        elemType <- ensureStdAny
+        emitInfo $
+          "List literal at " <> listLocation <> " falling back to " <> renderCppType elemType <> " because " <> reason
+        pure elemType
+      fallbackVariantWith types reason = do
+        addInclude "<variant>"
+        let variantType = CppVariant types
+        emitInfo $
+          "List literal at " <> listLocation <> " using " <> renderCppType variantType <> " because " <> reason
+        pure variantType
   elementType <-
     if null elems
-      then return CppLongLong
-      else case combinedType of
-        Just t | not hasUnknown -> return t
-        Just _ -> fallbackAny
-        Nothing | not hasUnknown && not (null uniqueTypes) -> do
-          addInclude "<variant>"
-          return $ CppVariant uniqueTypes
-        _ -> fallbackAny
+      then pure CppLongLong
+      else case (combinedType, hasUnknown, uniqueTypes) of
+        (Just t, False, _) -> pure t
+        (Just _, True, _) -> fallbackAnyWith unknownReason
+        (Nothing, False, types) | length types > 1 -> fallbackVariantWith types heterogeneousReason
+        (Nothing, False, _) -> fallbackAnyWith "element types could not be unified"
+        _ -> fallbackAnyWith unknownReason
   let vectorType = CppVector elementType
-  return (vectorType, CppBracedInit vectorType cppElems)
+  pure (vectorType, CppBracedInit vectorType cppElems)
+  where
+    renderIndex :: Int -> Text
+    renderIndex = T.pack . show
+    renderIndexList :: [Int] -> Text
+    renderIndexList = T.intercalate ", " . map renderIndex
+    isUnknownType :: CppType -> Bool
+    isUnknownType ty = case ty of
+      CppAuto -> True
+      CppConst inner -> isUnknownType inner
+      _ -> False
 
 inferPythonExprCppTypeLocated :: Located PythonExpr -> Maybe CppType
 inferPythonExprCppTypeLocated (Located _ e) = inferPythonExprCppType e

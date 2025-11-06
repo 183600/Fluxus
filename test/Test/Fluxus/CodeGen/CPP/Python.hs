@@ -2,7 +2,7 @@
 
 module Test.Fluxus.CodeGen.CPP.Python (spec) where
 
-import Data.Foldable (for_)
+import Data.Foldable (foldl', for_)
 import Data.List (find)
 import Data.Maybe (listToMaybe)
 import qualified Data.Text as T
@@ -872,6 +872,12 @@ analysisFeedbackSpec = describe "Analysis annotation integration" $ do
           , memLocation = Heap
           }
 
+      addAnnotation anns expr =
+        case pythonExprToCommon expr of
+          Left err -> error ("Failed to lower expression: " <> show err)
+          Right common ->
+            insertAnnotations (renderCommonExpr common) exprAnnotation anns
+
   it "refines module-level variable declarations using analysis annotations" $ do
     let callExpr = noLoc (PyCall (noLoc (PyVar (Identifier "factory"))) [])
         assignment = noLoc (PyAssign [noLoc (PatVar (Identifier "value"))] callExpr)
@@ -926,6 +932,102 @@ analysisFeedbackSpec = describe "Analysis annotation integration" $ do
             listToMaybe [expr | CppReturn (Just expr) <- body]
               `shouldBe` Just (CppCall (CppVar "factory") [])
           _ -> expectationFailure "Expected annotated function 'make'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  it "infers list literal element types using analysis annotations" $ do
+    let callExpr1 = noLoc (PyCall (noLoc (PyVar (Identifier "factory"))) [])
+        callExpr2 = noLoc (PyCall (noLoc (PyVar (Identifier "factory"))) [])
+        listExpr = noLoc (PyList [callExpr1, callExpr2])
+        assignment = noLoc (PyAssign [noLoc (PatVar (Identifier "values"))] listExpr)
+        pythonAst = PythonAST PythonModule
+          { pyModuleName = Nothing
+          , pyModuleDoc = Nothing
+          , pyModuleImports = []
+          , pyModuleBody = [assignment]
+          }
+        annotations = foldl' addAnnotation emptyAnnotations [callExpr1, callExpr2]
+    case generateCppWithAnnotations Shared.testCppConfig annotations (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+            isValues decl = case decl of
+              CppVariable name _ _ -> name == "values"
+              _ -> False
+        case find isValues decls of
+          Just (CppVariable _ varType (Just initializer)) -> do
+            let expectedType = CppVector (CppUniquePtr CppString)
+                expectedExpr = CppBracedInit expectedType
+                  [ CppCall (CppVar "factory") []
+                  , CppCall (CppVar "factory") []
+                  ]
+            varType `shouldBe` expectedType
+            initializer `shouldBe` expectedExpr
+          _ -> expectationFailure "Expected annotated list declaration for 'values'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  it "falls back to std::variant for heterogeneous list literals" $ do
+    let callExpr = noLoc (PyCall (noLoc (PyVar (Identifier "factory"))) [])
+        listExpr = noLoc (PyList [callExpr, noLoc (PyLiteral (PyInt 1))])
+        assignment = noLoc (PyAssign [noLoc (PatVar (Identifier "values"))] listExpr)
+        pythonAst = PythonAST PythonModule
+          { pyModuleName = Nothing
+          , pyModuleDoc = Nothing
+          , pyModuleImports = []
+          , pyModuleBody = [assignment]
+          }
+        annotations = foldl' addAnnotation emptyAnnotations [callExpr]
+    case generateCppWithAnnotations Shared.testCppConfig annotations (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+            isValues decl = case decl of
+              CppVariable name _ _ -> name == "values"
+              _ -> False
+            infoMessages = [diagMessage diag | diag <- cgrDiagnostics res, diagSeverity diag == SeverityInfo]
+        case find isValues decls of
+          Just (CppVariable _ varType (Just initializer)) -> do
+            let variantType = CppVariant [CppUniquePtr CppString, CppLongLong]
+                expectedType = CppVector variantType
+                expectedExpr = CppBracedInit expectedType
+                  [ CppCall (CppVar "factory") []
+                  , CppLiteral (CppIntLit 1)
+                  ]
+            varType `shouldBe` expectedType
+            initializer `shouldBe` expectedExpr
+            infoMessages `shouldSatisfy` any (T.isInfixOf "std::variant")
+          _ -> expectationFailure "Expected variant-based list declaration for 'values'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  it "falls back to std::any when list literal elements remain unresolved" $ do
+    let listExpr = noLoc (PyList [noLoc (PyVar (Identifier "dynamic")), noLoc (PyLiteral (PyInt 1))])
+        assignment = noLoc (PyAssign [noLoc (PatVar (Identifier "values"))] listExpr)
+        pythonAst = PythonAST PythonModule
+          { pyModuleName = Nothing
+          , pyModuleDoc = Nothing
+          , pyModuleImports = []
+          , pyModuleBody = [assignment]
+          }
+        annotations = emptyAnnotations
+    case generateCppWithAnnotations Shared.testCppConfig annotations (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+            isValues decl = case decl of
+              CppVariable name _ _ -> name == "values"
+              _ -> False
+            infoMessages = [diagMessage diag | diag <- cgrDiagnostics res, diagSeverity diag == SeverityInfo]
+        case find isValues decls of
+          Just (CppVariable _ varType (Just initializer)) -> do
+            let elemType = CppClassType "std::any" []
+                expectedType = CppVector elemType
+                expectedExpr = CppBracedInit expectedType
+                  [ CppVar "dynamic"
+                  , CppLiteral (CppIntLit 1)
+                  ]
+            varType `shouldBe` expectedType
+            initializer `shouldBe` expectedExpr
+            infoMessages `shouldSatisfy` any (T.isInfixOf "std::any")
+          _ -> expectationFailure "Expected std::any-based list declaration for 'values'"
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
