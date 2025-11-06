@@ -30,7 +30,13 @@ main = do
         Left err -> do
           hPutStrLn stderr $ "Configuration error: " ++ err
           exitFailure
-        Right config -> do
+        Right LoadConfigHelp -> do
+          printUsage
+          exitSuccess
+        Right (LoadConfigVersion versionText) -> do
+          putStrLn versionText
+          exitSuccess
+        Right (LoadConfigSuccess config) -> do
           -- Validate configuration
           case validateConfig config of
             Left validationError -> do
