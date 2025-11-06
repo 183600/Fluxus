@@ -246,7 +246,7 @@ statementGenerationSpec = describe "Statement generation" $ do
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
-  it "lowers Python with statements into try-finally blocks" $ do
+  it "lowers Python with statements using a scope guard" $ do
     let withItem = PythonWithItem
           { pyWithContext = noLoc (PyCall (noLoc (PyVar (Identifier "make_resource"))) [])
           , pyWithVar = Just (noLoc (PatVar (Identifier "resource")))
@@ -270,8 +270,8 @@ statementGenerationSpec = describe "Statement generation" $ do
               , pyModuleImports = []
               , pyModuleBody = moduleBody
               }
-        containsTry stmt = case stmt of
-          CppTry {} -> True
+        isFinallyGuardStruct decl = case decl of
+          CppStruct name _ -> name == "FluxusFinallyGuard"
           _ -> False
         isEnterCall expr = case expr of
           CppCall (CppMember _ "__enter__") [] -> True
@@ -280,36 +280,48 @@ statementGenerationSpec = describe "Statement generation" $ do
           CppDecl (CppVariable _ _ (Just initExpr)) -> isEnterCall initExpr
           CppExprStmt (CppBinary "=" _ rhs) -> isEnterCall rhs
           _ -> False
-        isExitCall stmt = case stmt of
-          CppExprStmt (CppCall (CppMember _ "__exit__") [CppLiteral CppNullPtr, CppLiteral CppNullPtr, CppLiteral CppNullPtr]) -> True
+        isGuardDecl stmt = case stmt of
+          CppDecl (CppVariable _ (CppClassType name _) (Just initExpr))
+            | name == "FluxusFinallyGuard"
+            , Just _ <- [extractGuardLambda initExpr] -> True
           _ -> False
         isUseCall stmt = case stmt of
           CppExprStmt (CppCall (CppVar "use") [CppVar "resource"]) -> True
           _ -> False
+        extractGuardLambda expr = case expr of
+          CppCall (CppVar name) [CppLambda [] lambdaStmts]
+            | name == "FluxusFinallyGuard" -> Just lambdaStmts
+          _ -> Nothing
+        isExitCall stmt = case stmt of
+          CppExprStmt (CppCall (CppMember _ "__exit__") args) ->
+            args == [CppLiteral CppNullPtr, CppLiteral CppNullPtr, CppLiteral CppNullPtr]
+          _ -> False
     case generateCpp Shared.testCppConfig (Left pythonAst) of
-      Right res ->
-        case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
+      Right res -> do
+        let unit = cgrUnit res
+        any isFinallyGuardStruct (cppDeclarations unit) `shouldBe` True
+        case find Shared.isMainFunction (cppDeclarations unit) of
           Just (CppFunction _ _ _ body) ->
-            case listToMaybe [stmts | CppStmtSeq stmts <- body, any containsTry stmts] of
+            case listToMaybe [stmts | CppStmtSeq stmts <- body] of
               Just stmts -> do
                 any declaresEnter stmts `shouldBe` True
-                case [ (tryBody, catches, finalStmts) | CppTry tryBody catches finalStmts <- stmts ] of
-                  [(tryBody, catches, finalStmts)] -> do
-                    catches `shouldBe` []
-                    finalStmts `shouldSatisfy`
-                      any isExitCall
-                    tryBody `shouldSatisfy`
-                      any isUseCall
-                  _ ->
-                    expectationFailure "Expected a single try block lowering for with statement"
-              Nothing ->
-                expectationFailure "Expected generated with lowering block"
-          _ ->
-            expectationFailure "Expected generated main function"
+                case [ blockStmts | CppBlock blockStmts <- stmts, any isGuardDecl blockStmts ] of
+                  [blockStmts] -> do
+                    any isUseCall blockStmts `shouldBe` True
+                    case listToMaybe
+                           [ lambdaStmts
+                           | CppDecl (CppVariable _ (CppClassType "FluxusFinallyGuard" _) (Just initExpr)) <- blockStmts
+                           , Just lambdaStmts <- [extractGuardLambda initExpr]
+                           ] of
+                      Just lambdaStmts -> lambdaStmts `shouldSatisfy` any isExitCall
+                      Nothing -> expectationFailure "Expected guard declaration with destructor lambda"
+                  _ -> expectationFailure "Expected scope block guarded by FluxusFinallyGuard"
+              Nothing -> expectationFailure "Expected compound statement sequence in main body"
+          _ -> expectationFailure "Expected generated main function"
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
-  it "translates Python try/except/else/finally into structured CppTry nodes" $ do
+  it "translates Python try/except/else/finally using a scope guard" $ do
     let bodyPrint =
           noLoc
             ( PyExprStmt
@@ -375,44 +387,52 @@ statementGenerationSpec = describe "Statement generation" $ do
         isSuccessAssignment flag stmt = case stmt of
           CppExprStmt (CppBinary "=" (CppVar name) (CppLiteral (CppBoolLit True))) -> name == flag
           _ -> False
-        isTryStmt stmt = case stmt of
-          CppTry {} -> True
+        isFinallyGuardStruct decl = case decl of
+          CppStruct name _ -> name == "FluxusFinallyGuard"
+          _ -> False
+        extractGuardLambda expr = case expr of
+          CppCall (CppVar name) [CppLambda [] lambdaStmts]
+            | name == "FluxusFinallyGuard" -> Just lambdaStmts
+          _ -> Nothing
+        lambdaHasElseAndFinally flag lambdaStmts =
+          any (isElseGuard flag) lambdaStmts && any (isPrintOf "finally branch") lambdaStmts
+        isElseGuard flag stmt = case stmt of
+          CppIf (CppVar condVar) thenStmts []
+            | condVar == flag -> any (isPrintOf "else branch") thenStmts
+          _ -> False
+        isGuardDecl flag stmt = case stmt of
+          CppDecl (CppVariable _ (CppClassType name _) (Just initExpr))
+            | name == "FluxusFinallyGuard"
+            , Just lambdaStmts <- extractGuardLambda initExpr -> lambdaHasElseAndFinally flag lambdaStmts
           _ -> False
     case generateCpp Shared.testCppConfig (Left pythonAst) of
-      Right res ->
-        case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
+      Right res -> do
+        let unit = cgrUnit res
+        any isFinallyGuardStruct (cppDeclarations unit) `shouldBe` True
+        case find Shared.isMainFunction (cppDeclarations unit) of
           Just (CppFunction _ _ _ body) ->
-            case listToMaybe [stmts | CppStmtSeq stmts <- body, any isTryStmt stmts] of
+            case listToMaybe [stmts | CppStmtSeq stmts <- body] of
               Just stmts ->
                 case stmts of
-                  [CppDecl (CppVariable flagName CppBool (Just (CppLiteral (CppBoolLit False)))), CppTry tryBody catches finalStmts] -> do
-                    tryBody `shouldSatisfy`
-                      any (isPrintOf "try branch")
-                    tryBody `shouldSatisfy`
-                      any (isSuccessAssignment flagName)
-                    case catches of
-                      [CppCatch catchType catchVar catchBody] -> do
-                        catchType `shouldBe` CppClassType "std::exception" []
-                        catchVar `shouldBe` "exc"
-                        catchBody `shouldSatisfy`
-                          any (isPrintOf "except branch")
-                      _ ->
-                        expectationFailure "Expected single catch clause"
-                    case finalStmts of
-                      (CppIf (CppVar condVar) elseStmts [] : restFinal) -> do
-                        condVar `shouldBe` flagName
-                        elseStmts `shouldSatisfy`
-                          any (isPrintOf "else branch")
-                        restFinal `shouldSatisfy`
-                          any (isPrintOf "finally branch")
-                      _ ->
-                        expectationFailure "Expected else guard and finally statements"
-                  _ ->
-                    expectationFailure "Expected success flag declaration followed by try block"
-              Nothing ->
-                expectationFailure "Expected generated try block"
-          _ ->
-            expectationFailure "Expected generated main function"
+                  CppDecl (CppVariable flagName CppBool (Just (CppLiteral (CppBoolLit False)))) : rest ->
+                    case [blockStmts | CppBlock blockStmts <- rest] of
+                      [blockStmts] ->
+                        case blockStmts of
+                          guardStmt : CppTry tryBody catches [] : _ -> do
+                            guardStmt `shouldSatisfy` isGuardDecl flagName
+                            tryBody `shouldSatisfy` any (isPrintOf "try branch")
+                            tryBody `shouldSatisfy` any (isSuccessAssignment flagName)
+                            case catches of
+                              [CppCatch catchType catchVar catchBody] -> do
+                                catchType `shouldBe` CppClassType "std::exception" []
+                                catchVar `shouldBe` "exc"
+                                catchBody `shouldSatisfy` any (isPrintOf "except branch")
+                              _ -> expectationFailure "Expected single catch clause"
+                          _ -> expectationFailure "Expected guard declaration followed by try block"
+                      _ -> expectationFailure "Expected scoped block containing guarded try"
+                  _ -> expectationFailure "Expected success flag declaration followed by scope block"
+              Nothing -> expectationFailure "Expected compound statement sequence in main body"
+          _ -> expectationFailure "Expected generated main function"
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
@@ -1509,5 +1529,44 @@ pythonRuntimeTests =
           ]
       , prtExpectedStdOut = "012\n"
       , prtPendingReason = Just "Python f-string expression evaluation is not yet supported in the C++ backend"
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles with statement using scope guard"
+      , prtSource =
+          [ "class Context:"
+          , "    def __enter__(self):"
+          , "        print(\"enter\")"
+          , "        return self"
+          , "    def __exit__(self, exc_type, exc, tb):"
+          , "        print(\"exit\")"
+          , "        return False"
+          , ""
+          , "def run_with():"
+          , "    with Context() as ctx:"
+          , "        print(\"body\")"
+          , "    print(\"done\")"
+          , ""
+          , "run_with()"
+          ]
+      , prtExpectedStdOut = unlines ["enter", "body", "exit", "done"]
+      , prtPendingReason = Nothing
+      }
+  , PythonRuntimeTest
+      { prtName = "compiles try finally with else guard"
+      , prtSource =
+          [ "def run():"
+          , "    try:"
+          , "        print(\"try\")"
+          , "    except Exception:"
+          , "        print(\"except\")"
+          , "    else:"
+          , "        print(\"else\")"
+          , "    finally:"
+          , "        print(\"finally\")"
+          , ""
+          , "run()"
+          ]
+      , prtExpectedStdOut = unlines ["try", "else", "finally"]
+      , prtPendingReason = Nothing
       }
   ]

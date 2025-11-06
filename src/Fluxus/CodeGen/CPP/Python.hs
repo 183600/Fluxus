@@ -398,6 +398,8 @@ generatePythonWith scope _ items body = do
       let contextDecl = CppDecl (CppVariable contextVar CppAuto (Just contextExpr))
       enterStmts <- bindWithTarget itemSpan (pyWithVar item) contextVar
       innerBody <- lowerWith rest
+      guardVar <- generateTempVar
+      ensureFinallyGuardHelper
       let exitCall =
             CppExprStmt
               (CppCall
@@ -406,8 +408,58 @@ generatePythonWith scope _ items body = do
                  , CppLiteral CppNullPtr
                  , CppLiteral CppNullPtr
                  ])
-          tryStmt = CppTry innerBody [] [exitCall]
-      pure (contextDecl : enterStmts ++ [tryStmt])
+          guardLambda = CppLambda [] [exitCall]
+          guardDecl =
+            CppDecl
+              (CppVariable guardVar finallyGuardType
+                (Just (CppCall (CppVar finallyGuardStructName) [guardLambda])))
+          guardBlock = CppBlock (guardDecl : innerBody)
+      pure (contextDecl : enterStmts ++ [guardBlock])
+
+finallyBlockSupportsRAII :: [CppStmt] -> Bool
+finallyBlockSupportsRAII = all stmtSupported
+  where
+    stmtSupported :: CppStmt -> Bool
+    stmtSupported (CppReturn Nothing) = True
+    stmtSupported (CppReturn (Just _)) = False
+    stmtSupported CppBreak = False
+    stmtSupported CppContinue = False
+    stmtSupported (CppIf _ thenStmts elseStmts) =
+      all stmtSupported thenStmts && all stmtSupported elseStmts
+    stmtSupported (CppWhile _ body) = all stmtSupported body
+    stmtSupported (CppFor mInit _ _ body) =
+      maybe True stmtSupported mInit && all stmtSupported body
+    stmtSupported (CppForRange _ _ body) = all stmtSupported body
+    stmtSupported (CppSwitch _ cases) = all caseSupported cases
+    stmtSupported (CppTry tryStmts catches finallyStmts) =
+      all stmtSupported tryStmts
+        && all catchSupported catches
+        && all stmtSupported finallyStmts
+    stmtSupported (CppStmtSeq stmts) = all stmtSupported stmts
+    stmtSupported (CppBlock stmts) = all stmtSupported stmts
+    stmtSupported (CppDecl _) = True
+    stmtSupported (CppExprStmt _) = True
+    stmtSupported (CppThrow _) = True
+    stmtSupported (CppComment _) = True
+    stmtSupported _ = True
+
+    caseSupported :: CppCase -> Bool
+    caseSupported (CppCase _ stmts) = all stmtSupported stmts
+    caseSupported (CppDefault stmts) = all stmtSupported stmts
+
+    catchSupported :: CppCatch -> Bool
+    catchSupported (CppCatch _ _ stmts) = all stmtSupported stmts
+
+finallyUnsupportedFallback :: SourceSpan -> Text -> CppCodeGen CppStmt
+finallyUnsupportedFallback span reason = do
+  let baseMessage = "Python 'finally' block " <> reason
+      message = baseMessage <> " at " <> formatSpan span <> " (runtime fallback)"
+  reportFatalUnsupported message
+  abortStmt <- runtimeAbortStmt message
+  pure $ CppStmtSeq
+    [ CppComment ("runtime fallback: " <> baseMessage)
+    , abortStmt
+    ]
 
 bindWithTarget :: SourceSpan -> Maybe (Located PythonPattern) -> Text -> CppCodeGen [CppStmt]
 bindWithTarget _ Nothing contextVar =
@@ -429,17 +481,29 @@ bindWithTarget span (Just locatedPattern) contextVar = do
       pure [CppExprStmt enterCall]
 
 generatePythonTry :: PythonScope -> SourceSpan -> [Located PythonStmt] -> [Located PythonExcept] -> [Located PythonStmt] -> [Located PythonStmt] -> CppCodeGen CppStmt
-generatePythonTry scope _ tryStmts excepts elseStmts finallyStmts = do
+generatePythonTry scope span tryStmts excepts elseStmts finallyStmts = do
   tryBody <- mapM (generatePythonStmt scope) tryStmts
   catches <- mapM (generateExceptHandler scope) excepts
   elseBody <- mapM (generatePythonStmt scope) elseStmts
   finallyBody <- mapM (generatePythonStmt scope) finallyStmts
   (prefix, tryBody', finalBlock) <- prepareElseBlock elseBody tryBody finallyBody
-  let tryStmt = CppTry tryBody' catches finalBlock
-  pure $
-    case prefix of
-      [] -> tryStmt
-      _  -> CppStmtSeq (prefix ++ [tryStmt])
+  let baseTry = CppTry tryBody' catches []
+      withPrefix node = case prefix of
+        [] -> node
+        _  -> CppStmtSeq (prefix ++ [node])
+  case finalBlock of
+    [] -> pure (withPrefix baseTry)
+    _ | finallyBlockSupportsRAII finalBlock -> do
+          ensureFinallyGuardHelper
+          guardVar <- generateTempVar
+          let guardLambda = CppLambda [] finalBlock
+              guardDecl =
+                CppDecl
+                  (CppVariable guardVar finallyGuardType
+                    (Just (CppCall (CppVar finallyGuardStructName) [guardLambda])))
+              scoped = CppBlock [guardDecl, baseTry]
+          pure (withPrefix scoped)
+      | otherwise -> finallyUnsupportedFallback span "contains control flow that cannot be lowered to RAII"
 
 prepareElseBlock :: [CppStmt] -> [CppStmt] -> [CppStmt] -> CppCodeGen ([CppStmt], [CppStmt], [CppStmt])
 prepareElseBlock elseBody tryBody finallyBody
@@ -961,8 +1025,81 @@ ensurePythonHelpers = do
           , CppReturn (Just resultVar)
           ]
 
+finallyGuardStructName :: Text
+finallyGuardStructName = "FluxusFinallyGuard"
+
+finallyGuardType :: CppType
+finallyGuardType = CppClassType finallyGuardStructName []
+
+ensureFinallyGuardHelper :: CppCodeGen ()
+ensureFinallyGuardHelper = do
+  addInclude "<functional>"
+  addInclude "<utility>"
+  existing <- gets cgsDeclarations
+  unless (any isFinallyGuard existing) $
+    addDeclaration finallyGuardDecl
+  where
+    isFinallyGuard (CppStruct name _) = name == finallyGuardStructName
+    isFinallyGuard _ = False
+
+finallyGuardDecl :: CppDecl
+finallyGuardDecl =
+  CppStruct finallyGuardStructName
+    [ CppAccessSpec "public"
+    , guardConstructor
+    , guardMoveConstructor
+    , guardDestructor
+    , guardDismiss
+    , CppAccessSpec "private"
+    , CppDecl (CppVariable "handler_" handlerType Nothing)
+    , CppDecl (CppVariable "active_" CppBool (Just (CppLiteral (CppBoolLit False))))
+    ]
+  where
+    handlerType = CppClassType "std::function" [CppFunctionType [] CppVoid]
+    guardConstructor =
+      CppConstructor finallyGuardStructName
+        [CppParam "handler" handlerType Nothing]
+        [ CppExprStmt
+            (CppBinary "="
+              (CppVar "handler_")
+              (CppMove (CppVar "handler")))
+        , CppExprStmt
+            (CppBinary "="
+              (CppVar "active_")
+              (CppLiteral (CppBoolLit True)))
+        ]
+    guardMoveConstructor =
+      CppConstructor finallyGuardStructName
+        [CppParam "other" (CppRvalueRef finallyGuardType) Nothing]
+        [ CppExprStmt
+            (CppBinary "="
+              (CppVar "handler_")
+              (CppMove (CppMember (CppVar "other") "handler_")))
+        , CppExprStmt
+            (CppBinary "="
+              (CppVar "active_")
+              (CppMember (CppVar "other") "active_"))
+        , CppExprStmt
+            (CppBinary "="
+              (CppMember (CppVar "other") "active_")
+              (CppLiteral (CppBoolLit False)))
+        ]
+    guardDestructor =
+      CppDestructor finallyGuardStructName
+        [ CppIf (CppVar "active_")
+            [CppExprStmt (CppCall (CppVar "handler_") [])]
+            []
+        ] False
+    guardDismiss =
+      CppMethod "dismiss" CppVoid []
+        [ CppExprStmt
+            (CppBinary "="
+              (CppVar "active_")
+              (CppLiteral (CppBoolLit False)))
+        ] False
+
 generatePythonFunction :: PythonFuncDef -> CppCodeGen ()
-generatePythonFunction funcDef = do
+
   let funcName = (\(Identifier n) -> n) (pyFuncName funcDef)
   
   -- Map parameters

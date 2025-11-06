@@ -245,8 +245,12 @@ renderCppStmt indentLevel stmt = case stmt of
   CppTry tryStmts catches finallyStmts ->
     let tryPart = indentLine indentLevel "try" <> "\n" <> renderBlock indentLevel tryStmts
         catchParts = map (renderCppCatch indentLevel) catches
-        finallyPart = if null finallyStmts then "" else "\n" <> indentLine indentLevel "finally" <> "\n" <> renderBlock indentLevel finallyStmts
-    in T.intercalate "\n" (filter (not . T.null) (tryPart : catchParts ++ [finallyPart]))
+        baseText = T.intercalate "\n" (filter (not . T.null) (tryPart : catchParts))
+    in if null finallyStmts
+         then baseText
+         else baseText
+           <> "\n" <> indentLine indentLevel "/* finally */"
+           <> "\n" <> renderBlock indentLevel finallyStmts
   CppThrow Nothing -> indentLine indentLevel "throw;"
   CppThrow (Just expr) -> indentLine indentLevel ("throw " <> renderCppExpr expr <> ";")
   CppBreak -> indentLine indentLevel "break;"
