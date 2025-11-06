@@ -15,6 +15,8 @@ module Fluxus.Compiler.Config
   , CLICommand(..)
   , fluxusVersionString
     -- * Configuration merging
+  , CompilerConfigOverrides(..)
+  , emptyOverrides
   , mergeConfigs
   , applyEnvironmentOverrides
     -- * Configuration validation
@@ -30,10 +32,8 @@ module Fluxus.Compiler.Config
   ) where
 
 import Data.Aeson
-import Data.Aeson.Types
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
 import Data.Yaml (decodeFileEither)
 import System.Environment (lookupEnv)
 import System.FilePath
@@ -41,9 +41,8 @@ import System.Directory
 import Control.Monad (unless, when)
 import Data.Char (toLower)
 import Control.Monad.IO.Class
-import Control.Applicative ((<|>))
 import Data.Maybe (fromMaybe)
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf, nub)
 import GHC.Generics (Generic)
 
 import Fluxus.Compiler.Driver
@@ -63,6 +62,119 @@ data LoadConfigResult
 
 fluxusVersionString :: String
 fluxusVersionString = "Fluxus Compiler v0.1.0"
+
+-- | Partial configuration overrides used when merging layered sources.
+data CompilerConfigOverrides = CompilerConfigOverrides
+  { ccoSourceLanguage    :: Maybe SourceLanguage
+  , ccoOptimizationLevel :: Maybe OptimizationLevel
+  , ccoTargetPlatform    :: Maybe TargetPlatform
+  , ccoOutputPath        :: Maybe FilePath
+  , ccoEnableInterop     :: Maybe Bool
+  , ccoEnableDebugInfo   :: Maybe Bool
+  , ccoEnableProfiler    :: Maybe Bool
+  , ccoEnableParallel    :: Maybe Bool
+  , ccoMaxConcurrency    :: Maybe Int
+  , ccoIncludePaths      :: Maybe [FilePath]
+  , ccoLibraryPaths      :: Maybe [FilePath]
+  , ccoLinkedLibraries   :: Maybe [Text]
+  , ccoCppStandard       :: Maybe Text
+  , ccoCppCompiler       :: Maybe Text
+  , ccoVerboseLevel      :: Maybe Int
+  , ccoWorkDirectory     :: Maybe FilePath
+  , ccoKeepIntermediates :: Maybe Bool
+  , ccoStrictMode        :: Maybe Bool
+  , ccoEnableAnalysis    :: Maybe Bool
+  , ccoStopAtCodegen     :: Maybe Bool
+  , ccoSkipCompilerCheck :: Maybe Bool
+  } deriving (Eq, Show, Generic)
+
+emptyOverrides :: CompilerConfigOverrides
+emptyOverrides = CompilerConfigOverrides
+  { ccoSourceLanguage = Nothing
+  , ccoOptimizationLevel = Nothing
+  , ccoTargetPlatform = Nothing
+  , ccoOutputPath = Nothing
+  , ccoEnableInterop = Nothing
+  , ccoEnableDebugInfo = Nothing
+  , ccoEnableProfiler = Nothing
+  , ccoEnableParallel = Nothing
+  , ccoMaxConcurrency = Nothing
+  , ccoIncludePaths = Nothing
+  , ccoLibraryPaths = Nothing
+  , ccoLinkedLibraries = Nothing
+  , ccoCppStandard = Nothing
+  , ccoCppCompiler = Nothing
+  , ccoVerboseLevel = Nothing
+  , ccoWorkDirectory = Nothing
+  , ccoKeepIntermediates = Nothing
+  , ccoStrictMode = Nothing
+  , ccoEnableAnalysis = Nothing
+  , ccoStopAtCodegen = Nothing
+  , ccoSkipCompilerCheck = Nothing
+  }
+
+instance FromJSON CompilerConfigOverrides where
+  parseJSON = withObject "CompilerConfig" $ \o -> do
+    rawSourceLanguage <- o .:? "source_language"
+    rawOptimization <- o .:? "optimization_level"
+    rawTarget <- o .:? "target_platform"
+    outputPath <- o .:? "output_path"
+    enableInterop <- o .:? "enable_interop"
+    enableDebug <- o .:? "enable_debug_info"
+    enableProfiler <- o .:? "enable_profiler"
+    enableParallel <- o .:? "enable_parallel"
+    maxConcurrency <- o .:? "max_concurrency"
+    includePaths <- o .:? "include_paths"
+    libraryPaths <- o .:? "library_paths"
+    linkedLibraries <- o .:? "linked_libraries"
+    cppStandard <- o .:? "cpp_standard"
+    cppCompiler <- o .:? "cpp_compiler"
+    verboseLevel <- o .:? "verbose_level"
+    workDirectory <- o .:? "work_directory"
+    keepIntermediates <- o .:? "keep_intermediates"
+    strictMode <- o .:? "strict_mode"
+    enableAnalysis <- o .:? "enable_analysis"
+    stopAtCodegen <- o .:? "stop_at_codegen"
+    skipCompilerCheck <- o .:? "skip_compiler_check"
+
+    let sourceLanguage = rawSourceLanguage >>= parseSourceLanguageValue
+        optimizationLevel = rawOptimization >>= parseOptimizationValue
+        targetPlatform = rawTarget >>= (parseTargetPlatform . T.unpack)
+    pure CompilerConfigOverrides
+      { ccoSourceLanguage = sourceLanguage
+      , ccoOptimizationLevel = optimizationLevel
+      , ccoTargetPlatform = targetPlatform
+      , ccoOutputPath = outputPath
+      , ccoEnableInterop = enableInterop
+      , ccoEnableDebugInfo = enableDebug
+      , ccoEnableProfiler = enableProfiler
+      , ccoEnableParallel = enableParallel
+      , ccoMaxConcurrency = maxConcurrency
+      , ccoIncludePaths = includePaths
+      , ccoLibraryPaths = libraryPaths
+      , ccoLinkedLibraries = linkedLibraries
+      , ccoCppStandard = cppStandard
+      , ccoCppCompiler = cppCompiler
+      , ccoVerboseLevel = verboseLevel
+      , ccoWorkDirectory = workDirectory
+      , ccoKeepIntermediates = keepIntermediates
+      , ccoStrictMode = strictMode
+      , ccoEnableAnalysis = enableAnalysis
+      , ccoStopAtCodegen = stopAtCodegen
+      , ccoSkipCompilerCheck = skipCompilerCheck
+      }
+    where
+      parseSourceLanguageValue = \case
+        "Python" -> Just Python
+        "Go" -> Just Go
+        _ -> Nothing
+      parseOptimizationValue = \case
+        "O0" -> Just O0
+        "O1" -> Just O1
+        "O2" -> Just O2
+        "O3" -> Just O3
+        "Os" -> Just Os
+        _ -> Nothing
 
 -- | Load configuration from multiple sources with precedence:
 -- 1. Command line arguments (highest)
@@ -94,7 +206,7 @@ loadConfig args = do
       pure $ Right (LoadConfigSuccess finalConfig)
 
 -- | Load configuration from YAML file
-loadConfigFromFile :: FilePath -> IO (Either String CompilerConfig)
+loadConfigFromFile :: FilePath -> IO (Either String CompilerConfigOverrides)
 loadConfigFromFile configFile = do
   exists <- doesFileExist configFile
   if not exists
@@ -103,7 +215,7 @@ loadConfigFromFile configFile = do
       result <- decodeFileEither configFile
       case result of
         Left err -> return $ Left $ "Failed to parse config file: " ++ show err
-        Right config -> return $ Right config
+        Right overrides -> return $ Right overrides
 
 -- | Parse command line arguments to compiler configuration modifiers or
 -- informational CLI commands.
@@ -175,15 +287,15 @@ parseCommandLineArgs args = go id args
         [] -> Left "Expected number after --max-concurrency"
       
       "--include" -> case rest of
-        (path:rest') -> set (\cfg -> cfg { ccIncludePaths = path : ccIncludePaths cfg }) rest'
+        (path:rest') -> set (\cfg -> cfg { ccIncludePaths = prependUnique path (ccIncludePaths cfg) }) rest'
         [] -> Left "Expected path after --include"
       
       "--library-path" -> case rest of
-        (path:rest') -> set (\cfg -> cfg { ccLibraryPaths = path : ccLibraryPaths cfg }) rest'
+        (path:rest') -> set (\cfg -> cfg { ccLibraryPaths = prependUnique path (ccLibraryPaths cfg) }) rest'
         [] -> Left "Expected path after --library-path"
       
       "--link" -> case rest of
-        (lib:rest') -> set (\cfg -> cfg { ccLinkedLibraries = T.pack lib : ccLinkedLibraries cfg }) rest'
+        (lib:rest') -> set (\cfg -> cfg { ccLinkedLibraries = prependUnique (T.pack lib) (ccLinkedLibraries cfg) }) rest'
         [] -> Left "Expected library name after --link"
       
       "--target" -> case rest of
@@ -197,6 +309,7 @@ parseCommandLineArgs args = go id args
       _ -> go modifier rest  -- Assume it's an input file
       where
         set modifyFn remaining = go (modifyFn . modifier) remaining
+        prependUnique value existing = value : filter (/= value) existing
 
 -- | Parse target platform from string
 parseTargetPlatform :: String -> Maybe TargetPlatform
@@ -209,30 +322,46 @@ parseTargetPlatform = \case
   _ -> Nothing
 
 -- | Merge two configurations, with the second taking precedence
-mergeConfigs :: CompilerConfig -> CompilerConfig -> CompilerConfig
-mergeConfigs base override = CompilerConfig
-  { ccSourceLanguage = ccSourceLanguage override
-  , ccOptimizationLevel = ccOptimizationLevel override
-  , ccTargetPlatform = ccTargetPlatform override
-  , ccOutputPath = ccOutputPath override <|> ccOutputPath base
-  , ccEnableInterop = ccEnableInterop override
-  , ccEnableDebugInfo = ccEnableDebugInfo override
-  , ccEnableProfiler = ccEnableProfiler override
-  , ccEnableParallel = ccEnableParallel override
-  , ccMaxConcurrency = ccMaxConcurrency override
-  , ccIncludePaths = ccIncludePaths override ++ ccIncludePaths base
-  , ccLibraryPaths = ccLibraryPaths override ++ ccLibraryPaths base
-  , ccLinkedLibraries = ccLinkedLibraries override ++ ccLinkedLibraries base
-  , ccCppStandard = ccCppStandard override
-  , ccCppCompiler = ccCppCompiler override
-  , ccVerboseLevel = ccVerboseLevel override
-  , ccWorkDirectory = ccWorkDirectory override <|> ccWorkDirectory base
-  , ccKeepIntermediates = ccKeepIntermediates override
-  , ccStrictMode = ccStrictMode override
-  , ccEnableAnalysis = ccEnableAnalysis override
-  , ccStopAtCodegen = ccStopAtCodegen override
-  , ccSkipCompilerCheck = ccSkipCompilerCheck override
+mergeConfigs :: CompilerConfig -> CompilerConfigOverrides -> CompilerConfig
+mergeConfigs base overrides = CompilerConfig
+  { ccSourceLanguage = choose (ccoSourceLanguage overrides) (ccSourceLanguage base)
+  , ccOptimizationLevel = choose (ccoOptimizationLevel overrides) (ccOptimizationLevel base)
+  , ccTargetPlatform = choose (ccoTargetPlatform overrides) (ccTargetPlatform base)
+  , ccOutputPath = chooseOptional (ccoOutputPath overrides) (ccOutputPath base)
+  , ccEnableInterop = choose (ccoEnableInterop overrides) (ccEnableInterop base)
+  , ccEnableDebugInfo = choose (ccoEnableDebugInfo overrides) (ccEnableDebugInfo base)
+  , ccEnableProfiler = choose (ccoEnableProfiler overrides) (ccEnableProfiler base)
+  , ccEnableParallel = choose (ccoEnableParallel overrides) (ccEnableParallel base)
+  , ccMaxConcurrency = choose (ccoMaxConcurrency overrides) (ccMaxConcurrency base)
+  , ccIncludePaths = mergeList (ccoIncludePaths overrides) (ccIncludePaths base)
+  , ccLibraryPaths = mergeList (ccoLibraryPaths overrides) (ccLibraryPaths base)
+  , ccLinkedLibraries = mergeList (ccoLinkedLibraries overrides) (ccLinkedLibraries base)
+  , ccCppStandard = choose (ccoCppStandard overrides) (ccCppStandard base)
+  , ccCppCompiler = choose (ccoCppCompiler overrides) (ccCppCompiler base)
+  , ccVerboseLevel = choose (ccoVerboseLevel overrides) (ccVerboseLevel base)
+  , ccWorkDirectory = chooseOptional (ccoWorkDirectory overrides) (ccWorkDirectory base)
+  , ccKeepIntermediates = choose (ccoKeepIntermediates overrides) (ccKeepIntermediates base)
+  , ccStrictMode = choose (ccoStrictMode overrides) (ccStrictMode base)
+  , ccEnableAnalysis = choose (ccoEnableAnalysis overrides) (ccEnableAnalysis base)
+  , ccStopAtCodegen = choose (ccoStopAtCodegen overrides) (ccStopAtCodegen base)
+  , ccSkipCompilerCheck = choose (ccoSkipCompilerCheck overrides) (ccSkipCompilerCheck base)
   }
+  where
+    choose :: Maybe a -> a -> a
+    choose maybeValue baseValue = fromMaybe baseValue maybeValue
+
+    chooseOptional :: Maybe a -> Maybe a -> Maybe a
+    chooseOptional maybeValue baseValue =
+      case maybeValue of
+        Just value -> Just value
+        Nothing -> baseValue
+
+    mergeList :: Eq a => Maybe [a] -> [a] -> [a]
+    mergeList maybeOverride baseList =
+      dedupPreservingOrder $ maybe baseList id maybeOverride
+
+    dedupPreservingOrder :: Eq a => [a] -> [a]
+    dedupPreservingOrder = nub
 
 -- | Apply environment variable overrides
 applyEnvironmentOverrides :: CompilerConfig -> IO CompilerConfig
