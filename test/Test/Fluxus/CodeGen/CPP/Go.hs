@@ -7,7 +7,9 @@ import Data.List (find)
 import Data.Maybe (listToMaybe)
 import qualified Data.Text as T
 import Fluxus.AST.Common
+import Fluxus.AST.Go
 import Fluxus.CodeGen.CPP
+import Fluxus.CodeGen.CPP.Diagnostics (diagMessage)
 import Fluxus.Compiler.Driver
   ( CompilerConfig(..)
   , SourceLanguage(..)
@@ -30,6 +32,8 @@ import qualified Test.Fluxus.CodeGen.CPP.Shared as Shared
 spec :: Spec
 spec = describe "Go code generation" $ do
   goPrintingSpec
+  goConcurrencySpec
+  goErrorReportingSpec
   goRuntimeSpec
   helperSpec
 
@@ -67,6 +71,84 @@ goPrintingSpec = describe "fmt translation" $ do
               _ -> expectationFailure "expected fmt.Printf to produce expression statement"
           _ -> expectationFailure "expected generated main function"
       Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+goConcurrencySpec :: Spec
+goConcurrencySpec = describe "concurrency runtime selection" $ do
+  it "does not include channel runtime when the program has no concurrency constructs" $ do
+    case generateCpp Shared.testCppConfig (Right Shared.goPrintlnAst) of
+      Right res -> do
+        let unit = cgrUnit res
+            includes = cppIncludes unit
+            heavyIncludes = map T.pack ["<thread>", "<mutex>", "<condition_variable>", "<queue>"]
+        any (`elem` includes) heavyIncludes `shouldBe` False
+        any isChannelTemplateDecl (cppDeclarations unit) `shouldBe` False
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+  it "injects channel runtime only when channel types are present" $ do
+    case generateCpp Shared.testCppConfig (Right channelSupportAst) of
+      Right res -> do
+        let unit = cgrUnit res
+            includes = cppIncludes unit
+            required = map T.pack ["<mutex>", "<condition_variable>", "<queue>", "<cstddef>"]
+        all (`elem` includes) required `shouldBe` True
+        any isChannelTemplateDecl (cppDeclarations unit) `shouldBe` True
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+goErrorReportingSpec :: Spec
+goErrorReportingSpec = describe "error reporting" $
+  it "reports unsupported select statements with source location" $ do
+    let selectStmt = withSpan "select.go" 4 3 4 9 (GoSelect [])
+        ast = Shared.goAstWithMain [selectStmt]
+    case generateCpp Shared.testCppConfig (Right ast) of
+      Right res -> do
+        let messages = map diagMessage (cgrDiagnostics res)
+            locationSnippet = T.pack "select.go:4:3"
+            descriptionSnippet = T.pack "select statement"
+            hasLocation = any (T.isInfixOf locationSnippet) messages
+            hasDescription = any (T.isInfixOf descriptionSnippet) messages
+        hasLocation `shouldBe` True
+        hasDescription `shouldBe` True
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+goAstWithDecls :: [Located GoDecl] -> GoAST
+goAstWithDecls decls =
+  let file = GoFile
+        { goFileName = "main.go"
+        , goFilePackage = Identifier "main"
+        , goFileImports = []
+        , goFileDecls = decls
+        }
+      pkg = GoPackage
+        { goPackageName = Identifier "main"
+        , goPackageFiles = [file]
+        }
+  in GoAST pkg
+
+channelSupportAst :: GoAST
+channelSupportAst =
+  goAstWithDecls
+    [ noLoc (GoTypeDecl (Identifier "IntChan") channelType)
+    , noLoc (GoFuncDecl mainFunction)
+    ]
+  where
+    channelType = noLoc (GoChanType GoChanBidi (noLoc (GoBasicType (Identifier "int"))))
+    mainFunction =
+      GoFunction
+        { goFuncName = Just (Identifier "main")
+        , goFuncParams = []
+        , goFuncResults = []
+        , goFuncBody = Just (noLoc (GoBlock [Shared.fmtPrintlnStmt]))
+        }
+
+isChannelTemplateDecl :: CppDecl -> Bool
+isChannelTemplateDecl (CppTemplate _ (CppClass "Channel" _ _)) = True
+isChannelTemplateDecl _ = False
+
+withSpan :: String -> Int -> Int -> Int -> Int -> a -> Located a
+withSpan file sl sc el ec value =
+  Located
+    (SourceSpan (T.pack file) (SourcePos sl sc) (SourcePos el ec))
+    value
 
 goRuntimeSpec :: Spec
 goRuntimeSpec = describe "Go end-to-end compilation" $ do
