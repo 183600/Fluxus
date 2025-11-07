@@ -213,10 +213,13 @@ lexerTokensSpec = describe "Python Lexer - tokens coverage" $ do
     case runPythonLexer "test.py" input of
       Left _ -> expectationFailure "Lexer failed"
       Right toks -> do
-        map locatedValue toks `shouldBe`
-          [ TokenString "hello"
-          , TokenFString "world" []
-          ]
+        case map locatedValue toks of
+          [TokenString "hello", TokenFString segments] -> do
+            length segments `shouldBe` 1
+            case head segments of
+              FStringLiteralSegment txt _ -> txt `shouldBe` "world"
+              _ -> expectationFailure "Expected literal segment"
+          other -> expectationFailure $ "Unexpected tokens: " <> show other
         -- triple-quoted strings
         let input2 = "\"\"\"multi\nline\"\"\""
         case runPythonLexer "test.py" input2 of
