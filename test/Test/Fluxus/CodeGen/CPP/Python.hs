@@ -11,7 +11,7 @@ import Fluxus.AST.Python
 import qualified Fluxus.AST.Python as Py
 import Fluxus.Analysis.CommonExprLowering (pythonExprToCommon, renderCommonExpr)
 import Fluxus.CodeGen.CPP
-import Fluxus.CodeGen.CPP.AST (CppCatch(..), CppType(..))
+import Fluxus.CodeGen.CPP.AST (CppCatch(..), CppType(..), renderCppExpr)
 import Fluxus.CodeGen.CPP.Diagnostics (CppDiagnostic(..), DiagnosticSeverity(..))
 import Fluxus.Compiler.Driver
   ( CompilerConfig(..)
@@ -436,10 +436,78 @@ statementGenerationSpec = describe "Statement generation" $ do
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
+  it "translates Python raise ValueError into std::runtime_error throws" $ do
+    let raiseStmt =
+          noLoc
+            ( PyRaise
+                ( Just
+                    ( noLoc
+                        ( PyCall
+                            (noLoc (PyVar (Identifier "ValueError")))
+                            [ noLoc (ArgPositional (noLoc (PyLiteral (PyString "boom")))) ]
+                        )
+                    )
+                )
+                Nothing
+            )
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [raiseStmt]
+              }
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res ->
+        case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
+          Just (CppFunction _ _ _ body) ->
+            case [expr | CppThrow (Just expr) <- body] of
+              [CppCall (CppVar "std::runtime_error") [messageExpr]] -> do
+                let rendered = renderCppExpr messageExpr
+                rendered `shouldSatisfy` T.isInfixOf "ValueError"
+                rendered `shouldSatisfy` T.isInfixOf "boom"
+              other ->
+                expectationFailure $ "Expected single std::runtime_error throw, got: " <> show other
+          _ ->
+            expectationFailure "Expected generated main function"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  it "rethrows current exception for bare raise statements" $ do
+    let bareRaise = noLoc (PyRaise Nothing Nothing)
+        exceptClause = PythonExcept
+          { pyExceptType = Nothing
+          , pyExceptName = Nothing
+          , pyExceptBody = [bareRaise]
+          }
+        tryStmt = noLoc (PyTry [] [noLoc exceptClause] [] [])
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [tryStmt]
+              }
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res ->
+        case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
+          Just (CppFunction _ _ _ body) ->
+            case listToMaybe [catches | CppTry _ catches _ <- body] of
+              Just [CppCatch _ _ catchBody] ->
+                catchBody `shouldSatisfy` any (== CppThrow Nothing)
+              other ->
+                expectationFailure $ "Expected catch body with bare rethrow, got: " <> show other
+          _ ->
+            expectationFailure "Expected generated main function"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
 fallbackHandlingSpec :: Spec
 fallbackHandlingSpec = describe "Runtime fallback handling" $ do
 
-  it "reports runtime fallback for raise statements in non-strict mode" $ do
+  it "lowers raise statements to std::runtime_error in non-strict mode" $ do
     let raiseStmt = noLoc
           ( PyRaise
               ( Just
@@ -463,10 +531,15 @@ fallbackHandlingSpec = describe "Runtime fallback handling" $ do
       Right res -> do
         let warnings = filter ((== SeverityWarning) . diagSeverity) (cgrDiagnostics res)
         warnings `shouldSatisfy`
-          any (T.isInfixOf "'raise' statement" . diagMessage)
+          all (not . T.isInfixOf "'raise' statement" . diagMessage)
         case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
-          Just (CppFunction _ _ _ body) ->
-            containsRuntimeAbort body `shouldBe` True
+          Just (CppFunction _ _ _ body) -> do
+            containsRuntimeAbort body `shouldBe` False
+            case [expr | CppThrow (Just expr) <- body] of
+              [CppCall (CppVar "std::runtime_error") [messageExpr]] ->
+                renderCppExpr messageExpr `shouldSatisfy` T.isInfixOf "boom"
+              other ->
+                expectationFailure $ "Expected lowered raise statement, got: " <> show other
           _ -> expectationFailure "Expected generated main function"
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
