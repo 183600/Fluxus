@@ -1124,6 +1124,84 @@ analysisFeedbackSpec = describe "Analysis annotation integration" $ do
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
+  it "uses list-level annotations before falling back to std::any" $ do
+    let dynamicExpr = noLoc (PyVar (Identifier "dynamic"))
+        aliasExpr = noLoc (PyVar (Identifier "alias"))
+        listExpr = noLoc (PyList [dynamicExpr, aliasExpr])
+        assignment = noLoc (PyAssign [noLoc (PatVar (Identifier "values"))] listExpr)
+        pythonAst = PythonAST PythonModule
+          { pyModuleName = Nothing
+          , pyModuleDoc = Nothing
+          , pyModuleImports = []
+          , pyModuleBody = [assignment]
+          }
+        listAnnotation =
+          ExprAnnotations
+            { eaInferredType = Just (TList TString)
+            , eaOwnership = Nothing
+            , eaEscapeInfo = Nothing
+            , eaOptimizationNotes = []
+            }
+        annotations =
+          case pythonExprToCommon listExpr of
+            Left err -> error ("Failed to lower expression: " <> show err)
+            Right common ->
+              insertAnnotations (renderCommonExpr common) listAnnotation emptyAnnotations
+    case generateCppWithAnnotations Shared.testCppConfig annotations (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+            isValues decl = case decl of
+              CppVariable name _ _ -> name == "values"
+              _ -> False
+            infoMessages = [diagMessage diag | diag <- cgrDiagnostics res, diagSeverity diag == SeverityInfo]
+        case find isValues decls of
+          Just (CppVariable _ varType (Just initializer)) -> do
+            let expectedType = CppVector CppString
+                expectedExpr = CppBracedInit expectedType
+                  [ CppVar "dynamic"
+                  , CppVar "alias"
+                  ]
+            varType `shouldBe` expectedType
+            initializer `shouldBe` expectedExpr
+            infoMessages `shouldSatisfy` all (not . T.isInfixOf "std::any")
+          _ -> expectationFailure "Expected annotated list declaration for 'values'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  it "falls back to std::any when list literal mixes heterogeneous and unresolved elements" $ do
+    let callExpr = noLoc (PyCall (noLoc (PyVar (Identifier "factory"))) [])
+        listExpr = noLoc (PyList [callExpr, noLoc (PyLiteral (PyInt 1)), noLoc (PyVar (Identifier "dynamic"))])
+        assignment = noLoc (PyAssign [noLoc (PatVar (Identifier "values"))] listExpr)
+        pythonAst = PythonAST PythonModule
+          { pyModuleName = Nothing
+          , pyModuleDoc = Nothing
+          , pyModuleImports = []
+          , pyModuleBody = [assignment]
+          }
+        annotations = foldl' addAnnotation emptyAnnotations [callExpr]
+    case generateCppWithAnnotations Shared.testCppConfig annotations (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+            isValues decl = case decl of
+              CppVariable name _ _ -> name == "values"
+              _ -> False
+            infoMessages = [diagMessage diag | diag <- cgrDiagnostics res, diagSeverity diag == SeverityInfo]
+        case find isValues decls of
+          Just (CppVariable _ varType (Just initializer)) -> do
+            let elemType = CppClassType "std::any" []
+                expectedType = CppVector elemType
+                expectedExpr = CppBracedInit expectedType
+                  [ CppCall (CppVar "factory") []
+                  , CppLiteral (CppIntLit 1)
+                  , CppVar "dynamic"
+                  ]
+            varType `shouldBe` expectedType
+            initializer `shouldBe` expectedExpr
+            infoMessages `shouldSatisfy` any (T.isInfixOf "std::any")
+          _ -> expectationFailure "Expected std::any-based list declaration for 'values'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
 -- Runtime compilation specs ---------------------------------------------------
 
 pythonRuntimeSpec :: Spec
