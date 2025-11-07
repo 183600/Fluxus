@@ -12,7 +12,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 
 import Fluxus.AST.Go
-import Fluxus.AST.Common (BinaryOp(..), ComparisonOp(..), Identifier(..), Located(..), UnaryOp(..))
+import Fluxus.AST.Common (BinaryOp(..), ComparisonOp(..), Identifier(..), Located(..), SourcePos(..), SourceSpan(..), UnaryOp(..))
 import Fluxus.Analysis.CommonExprLowering (goExprToCommon, renderCommonExpr, renderLoweringIssue)
 import Fluxus.CodeGen.CPP.AST
   ( CppDecl(..)
@@ -48,35 +48,20 @@ import Fluxus.CodeGen.CPP.Shared
 -- | Entry point for Go to C++ translation.
 generateCppFromGo :: GoAST -> CppCodeGen CppUnit
 generateCppFromGo (GoAST goPackage) = do
-  addInclude "<iostream>"
-  addInclude "<string>"
-  addInclude "<thread>"
-  addInclude "<mutex>"
-  addInclude "<condition_variable>"
-  addInclude "<queue>"
-  addInclude "<vector>"
-  addInclude "<functional>"
-  addInclude "<atomic>"
-  addInclude "<chrono>"
-
   let packageName = (\(Identifier n) -> n) (goPackageName goPackage)
   emitInfo $ "Generating C++ for Go package: " <> packageName
-
-  generateChannelClass
 
   let files = goPackageFiles goPackage
   emitInfo $ "Found " <> T.pack (show (length files)) <> " files in package"
   when (null files) $
-    reportUnsupported "No files found in package"
+    reportUnsupported $ "No files found in Go package '" <> packageName <> "'"
 
   mapM_ generateGoFile files
 
   when (packageName == "main") $ do
     hasMain <- gets (any isMainFunction . cgsDeclarations)
-    unless hasMain $ do
-      reportUnsupported "Generating fallback main function - Go parser not working properly"
-      addInclude "<iostream>"
-      addDeclaration $ CppFunction "main" CppInt [] [CppReturn (Just (CppLiteral (CppIntLit 0)))]
+    unless hasMain $
+      reportUnsupported "Go package \"main\" does not define a main function"
 
   includes <- gets cgsIncludes
   namespaces <- gets cgsNamespaces
@@ -86,16 +71,116 @@ generateCppFromGo (GoAST goPackage) = do
     isMainFunction (CppFunction "main" _ _ _) = True
     isMainFunction _ = False
 
+formatSourceSpanShort :: SourceSpan -> Text
+formatSourceSpanShort SourceSpan { spanFilename, spanStart = SourcePos line col } =
+  spanFilename <> ":" <> T.pack (show line) <> ":" <> T.pack (show col)
+
+reportDeclIssue :: (Text -> CppCodeGen ()) -> SourceSpan -> GoDecl -> Text -> Maybe Text -> CppCodeGen ()
+reportDeclIssue reporter span decl detail extra =
+  reporter $
+    detail
+      <> " ("
+      <> describeGoDecl decl
+      <> " at "
+      <> formatSourceSpanShort span
+      <> ")"
+      <> maybe "" (": " <>) extra
+
+reportStmtIssue :: (Text -> CppCodeGen ()) -> SourceSpan -> GoStmt -> Text -> Maybe Text -> CppCodeGen ()
+reportStmtIssue reporter span stmt detail extra =
+  reporter $
+    detail
+      <> " ("
+      <> describeGoStmt stmt
+      <> " at "
+      <> formatSourceSpanShort span
+      <> ")"
+      <> maybe "" (": " <>) extra
+
+reportExprIssue :: (Text -> CppCodeGen ()) -> SourceSpan -> GoExpr -> Text -> Maybe Text -> CppCodeGen ()
+reportExprIssue reporter span expr detail extra =
+  reporter $
+    detail
+      <> " ("
+      <> describeGoExpr expr
+      <> " at "
+      <> formatSourceSpanShort span
+      <> ")"
+      <> maybe "" (": " <>) extra
+
+describeGoDecl :: GoDecl -> Text
+describeGoDecl = \case
+  GoImportDecl _ -> "import declaration"
+  GoConstDecl _ -> "const declaration"
+  GoTypeDecl _ _ -> "type declaration"
+  GoVarDecl _ -> "variable declaration"
+  GoFuncDecl _ -> "function declaration"
+  GoMethodDecl _ _ -> "method declaration"
+
+describeGoStmt :: GoStmt -> Text
+describeGoStmt stmt = case stmt of
+  GoExprStmt _ -> "expression statement"
+  GoAssign _ _ -> "assignment statement"
+  GoDefine _ _ -> "short variable declaration"
+  GoIncDec _ True -> "increment statement"
+  GoIncDec _ False -> "decrement statement"
+  GoSend _ _ -> "channel send"
+  GoReturn _ -> "return statement"
+  GoBreak _ -> "break statement"
+  GoContinue _ -> "continue statement"
+  GoGoto _ -> "goto statement"
+  GoFallthrough -> "fallthrough statement"
+  GoEmpty -> "empty statement"
+  GoBlock _ -> "block"
+  GoIf {} -> "if statement"
+  GoSwitch {} -> "switch statement"
+  GoTypeSwitch {} -> "type switch statement"
+  GoFor {} -> "for loop"
+  GoRange {} -> "range loop"
+  GoSelect {} -> "select statement"
+  GoDefer {} -> "defer statement"
+  GoGo {} -> "go statement"
+  GoCase {} -> "case clause"
+  GoDefault {} -> "default clause"
+  GoCommCase {} -> "select communication clause"
+  GoCommDefault {} -> "select default clause"
+  GoLabeled {} -> "labeled statement"
+
+describeGoExpr :: GoExpr -> Text
+describeGoExpr expr = case expr of
+  GoLiteral _ -> "literal expression"
+  GoIdent _ -> "identifier"
+  GoQualifiedIdent _ _ -> "qualified identifier"
+  GoBinaryOp _ _ _ -> "binary operation"
+  GoUnaryOp _ _ -> "unary operation"
+  GoComparison _ _ _ -> "comparison expression"
+  GoCall _ _ -> "call expression"
+  GoIndex _ _ -> "index expression"
+  GoSlice _ _ -> "slice expression"
+  GoSelector _ _ -> "selector expression"
+  GoTypeAssert _ _ -> "type assertion"
+  GoCompositeLit _ _ -> "composite literal"
+  GoArrayLit _ _ -> "array literal"
+  GoSliceLit _ _ -> "slice literal"
+  GoMapLit _ _ -> "map literal"
+  GoStructLit _ _ -> "struct literal"
+  GoAddress _ -> "address-of expression"
+  GoDeref _ -> "dereference expression"
+  GoReceive _ -> "receive expression"
+  GoTypeConversion _ _ -> "type conversion"
+  GoFuncLit _ -> "function literal"
+  _ -> "expression"
+
 generateGoFile :: GoFile -> CppCodeGen ()
 generateGoFile goFile = do
   let decls = goFileDecls goFile
   emitInfo $ "Processing Go file with " <> T.pack (show (length decls)) <> " declarations"
   when (null decls) $
-    reportUnsupported "No declarations found in Go file - parser may need to be fixed"
+    reportUnsupported $ "No declarations found in Go file '" <> goFileName goFile <> "' - parser may need to be fixed"
   mapM_ generateGoDecl decls
 
 generateGoDecl :: Located GoDecl -> CppCodeGen ()
-generateGoDecl (Located _ decl) = case decl of
+generateGoDecl (Located span decl) = case decl of
   GoFuncDecl func -> do
     emitInfo $ "Generating function: " <> maybe "anonymous" (\(Identifier n) -> n) (goFuncName func)
     generateGoFunction func
@@ -106,9 +191,8 @@ generateGoDecl (Located _ decl) = case decl of
   GoVarDecl vars -> do
     emitInfo "Generating variable declaration(s)"
     mapM_ generateGoVariable vars
-  _ -> do
-    let msg = "Go declaration not implemented: " <> T.pack (show decl)
-    reportFatalNotImplemented msg
+  _ ->
+    reportDeclIssue reportFatalNotImplemented span decl "Unsupported Go declaration" (Just (T.pack (show decl)))
 
 generateGoFunction :: GoFunction -> CppCodeGen ()
 generateGoFunction func =
@@ -149,7 +233,7 @@ generateGoBlockStmt located@(Located _ stmt) = case stmt of
     pure [single]
 
 generateGoStmt :: Located GoStmt -> CppCodeGen CppStmt
-generateGoStmt (Located _ stmt) = case stmt of
+generateGoStmt (Located span stmt) = case stmt of
   GoReturn exprs -> do
     case exprs of
       [] -> pure $ CppReturn Nothing
@@ -202,13 +286,14 @@ generateGoStmt (Located _ stmt) = case stmt of
         detachStmt = CppExprStmt (CppCall (CppMember (CppVar threadVar) "detach") [])
     pure $ CppBlock [declStmt, detachStmt]
   GoSend channel value -> do
+    ensureChannelSupport
     cppChannel <- generateGoExpr channel
     cppValue <- generateGoExpr value
     pure $ CppExprStmt $ CppCall (CppMember cppChannel "send") [cppValue]
   GoDefine identifiers exprs ->
     if length identifiers /= length exprs
       then do
-        reportUnsupported "Mismatched variable definition arity"
+        reportStmtIssue reportUnsupported span stmt "Mismatched variable definition arity" Nothing
         pure cppNoop
       else do
         cppExprs <- mapM generateGoExpr exprs
@@ -226,7 +311,7 @@ generateGoStmt (Located _ stmt) = case stmt of
       _ ->
         if length leftExprs /= length rightExprs
           then do
-            reportUnsupported "Mismatched assignment arity"
+            reportStmtIssue reportUnsupported span stmt "Mismatched assignment arity" Nothing
             pure cppNoop
           else do
             prepResults <- mapM prepareAssignment (zip leftExprs rightExprs)
@@ -239,7 +324,7 @@ generateGoStmt (Located _ stmt) = case stmt of
     let op = if isIncrement then "++" else "--"
     pure $ CppExprStmt $ CppUnary op cppExpr
   _ -> do
-    reportNotImplemented $ "TODO: Implement Go statement: " <> T.pack (show stmt)
+    reportStmtIssue reportNotImplemented span stmt "Unsupported Go statement" (Just (T.pack (show stmt)))
     pure cppNoop
   where
     wrapStmts [] = CppStmtSeq []
@@ -269,18 +354,18 @@ generateGoStmt (Located _ stmt) = case stmt of
       pure $ CppExprStmt (CppBinary "=" leftCpp tempVarExpr)
 
 generateGoForInit :: Located GoStmt -> CppCodeGen (Maybe CppStmt)
-generateGoForInit stmt@(Located _ inner) = case inner of
+generateGoForInit stmt@(Located span inner) = case inner of
   GoDefine _ _ -> Just <$> generateGoStmt stmt
   GoAssign _ _ -> Just <$> generateGoStmt stmt
   GoExprStmt _ -> Just <$> generateGoStmt stmt
   GoIncDec _ _ -> Just <$> generateGoStmt stmt
   GoEmpty -> pure Nothing
   _ -> do
-    reportUnsupported $ "Unsupported for-loop initializer: " <> T.pack (show inner)
+    reportStmtIssue reportUnsupported span inner "Unsupported for-loop initializer" (Just (T.pack (show inner)))
     pure Nothing
 
 generateGoForPost :: Located GoStmt -> CppCodeGen (Maybe CppExpr)
-generateGoForPost (Located _ inner) = case inner of
+generateGoForPost (Located span inner) = case inner of
   GoIncDec expr isInc -> do
     cppExpr <- generateGoExpr expr
     let op = if isInc then "++" else "--"
@@ -292,11 +377,11 @@ generateGoForPost (Located _ inner) = case inner of
   GoExprStmt expr -> Just <$> generateGoExpr expr
   GoEmpty -> pure Nothing
   _ -> do
-    reportUnsupported $ "Unsupported for-loop post statement: " <> T.pack (show inner)
+    reportStmtIssue reportUnsupported span inner "Unsupported for-loop post statement" (Just (T.pack (show inner)))
     pure Nothing
 
 generateGoExpr :: Located GoExpr -> CppCodeGen CppExpr
-generateGoExpr (Located _ expr) = case expr of
+generateGoExpr (Located span expr) = case expr of
   GoLiteral lit -> pure $ CppLiteral $ mapGoLiteral lit
   GoIdent (Identifier name) -> pure $ CppVar name
   GoBinaryOp op left right -> do
@@ -337,11 +422,11 @@ generateGoExpr (Located _ expr) = case expr of
     cppObj <- generateGoExpr obj
     pure $ CppMember cppObj member
   GoReceive channelExpr -> do
+    ensureChannelSupport
     cppExpr <- generateGoExpr channelExpr
     pure $ CppCall (CppMember cppExpr "receive") []
   _ -> do
-    let msg = "Go expression not implemented: " <> T.pack (show expr)
-    reportFatalNotImplemented msg
+    reportExprIssue reportFatalNotImplemented span expr "Unsupported Go expression" (Just (T.pack (show expr)))
     pure $ CppLiteral (CppIntLit 0)
 
 buildPrintExpr :: [CppExpr] -> CppExpr
@@ -358,6 +443,43 @@ buildPrintlnExpr args =
           then [CppVar "std::endl"]
           else spaceSeparate args ++ [CppVar "std::endl"]
   in streamChain (CppVar "std::cout") components
+
+cppTypeContainsChannel :: CppType -> Bool
+cppTypeContainsChannel ty = case ty of
+  CppTemplateType name args -> (name == "Channel") || any cppTypeContainsChannel args
+  CppVector inner -> cppTypeContainsChannel inner
+  CppStdArray inner _ -> cppTypeContainsChannel inner
+  CppArray inner _ -> cppTypeContainsChannel inner
+  CppPointer inner -> cppTypeContainsChannel inner
+  CppReference inner -> cppTypeContainsChannel inner
+  CppRvalueRef inner -> cppTypeContainsChannel inner
+  CppConst inner -> cppTypeContainsChannel inner
+  CppVolatile inner -> cppTypeContainsChannel inner
+  CppOptional inner -> cppTypeContainsChannel inner
+  CppUniquePtr inner -> cppTypeContainsChannel inner
+  CppSharedPtr inner -> cppTypeContainsChannel inner
+  CppVariant inners -> any cppTypeContainsChannel inners
+  CppPair lhs rhs -> cppTypeContainsChannel lhs || cppTypeContainsChannel rhs
+  CppTuple inners -> any cppTypeContainsChannel inners
+  CppMap keyTy valueTy -> cppTypeContainsChannel keyTy || cppTypeContainsChannel valueTy
+  CppUnorderedMap keyTy valueTy -> cppTypeContainsChannel keyTy || cppTypeContainsChannel valueTy
+  CppFunctionType args ret -> any cppTypeContainsChannel args || cppTypeContainsChannel ret
+  CppClassType _ args -> any cppTypeContainsChannel args
+  CppStructLiteral fields -> any (cppTypeContainsChannel . snd) fields
+  _ -> False
+
+ensureChannelSupport :: CppCodeGen ()
+ensureChannelSupport = do
+  alreadyDefined <- gets (any isChannelDecl . cgsDeclarations)
+  addInclude "<mutex>"
+  addInclude "<condition_variable>"
+  addInclude "<queue>"
+  addInclude "<cstddef>"
+  unless alreadyDefined $
+    generateChannelClass
+  where
+    isChannelDecl (CppTemplate _ (CppClass "Channel" _ _)) = True
+    isChannelDecl _ = False
 
 generateChannelClass :: CppCodeGen ()
 generateChannelClass = do
@@ -431,6 +553,7 @@ mapGoParameter field = do
 generateGoType :: Located GoType -> CppCodeGen CppType
 generateGoType (Located _ goType) = do
   let cppType = mapGoTypeToCpp goType
+  when (cppTypeContainsChannel cppType) ensureChannelSupport
   mapM_ addInclude (collectCppTypeIncludes cppType)
   pure cppType
 
