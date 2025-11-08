@@ -20,6 +20,7 @@ module Fluxus.AST.Python
   , PythonWithItem(..)
     -- * Python literals and constants
   , PythonLiteral(..)
+  , PythonFStringSegment(..)
     -- * Function and class definitions
   , PythonFuncDef(..)
   , PythonClassDef(..)
@@ -170,13 +171,20 @@ data PythonLiteral
   | PyFloat !Double
   | PyComplex !Double !Double
   | PyString !Text
-  | PyFString !Text ![Located PythonExpr]    -- f-string with embedded expressions
+  | PyFString ![PythonFStringSegment]
   | PyBytes !Text
   | PyBool !Bool
   | PyNone
   | PyEllipsis
   deriving stock (Eq, Show, Generic)
     deriving anyclass (Hashable, NFData)
+
+-- | Segments that make up a Python f-string literal
+data PythonFStringSegment
+  = PythonFStringLiteral !Text
+  | PythonFStringExpr !(Located PythonExpr)
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (Hashable, NFData)
 
 -- | Function definitions
 data PythonFuncDef = PythonFuncDef

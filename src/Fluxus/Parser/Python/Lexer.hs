@@ -8,6 +8,7 @@
 module Fluxus.Parser.Python.Lexer
   ( -- * Token types
     PythonToken(..)
+  , FStringSegment(..)
   , Keyword(..)
   , Operator(..)
   , Delimiter(..)
@@ -31,9 +32,15 @@ module Fluxus.Parser.Python.Lexer
 
 import Control.Monad (void, when)
 import Control.Monad.State hiding (state)
+import Data.Char (chr, digitToInt, isHexDigit)
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Builder as TB
 import Data.Void (Void)
+import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed as UV
 import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
@@ -53,7 +60,7 @@ data PythonToken
   -- Identifiers and literals
   | TokenIdent !Text
   | TokenString !Text
-  | TokenFString !Text ![Text]                              -- f-string content and expressions
+  | TokenFString ![FStringSegment]                              -- f-string split into segments with spans
   | TokenNumber !Text !Bool                             -- Text representation, isFloat
   | TokenBytes !Text
   
@@ -74,9 +81,16 @@ data PythonToken
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (Hashable, NFData)
 
--- | Python keywords
-data Keyword
-  = KwAnd | KwAs | KwAssert | KwAsync | KwAwait | KwBreak | KwClass | KwContinue
+  -- | Segments inside an f-string token
+  data FStringSegment
+  = FStringLiteralSegment !Text !SourceSpan
+  | FStringExpressionSegment !Text !SourceSpan
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (Hashable, NFData)
+
+  -- | Python keywords
+  data Keyword
+
   | KwDef | KwDel | KwElif | KwElse | KwExcept | KwFalse | KwFinally | KwFor
   | KwFrom | KwGlobal | KwIf | KwImport | KwIn | KwIs | KwLambda | KwNone
   | KwNonlocal | KwNot | KwOr | KwPass | KwRaise | KwReturn | KwTrue | KwTry
@@ -358,8 +372,191 @@ stringLiteral = choice
     parseFString = do
       _ <- lift $ char 'f' <|> char 'F'
       quote <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
-      content <- lift $ manyTill L.charLiteral (string quote)
-      return $ TokenFString (T.pack content) []  -- TODO: Parse expressions within {}
+      contentStart <- lift getSourcePos
+      (rawContent, _) <- lift $ MP.match (parseFStringContent quote)
+      segments <- case buildFStringSegments contentStart rawContent of
+        Left err -> fail (T.unpack err)
+        Right segs -> pure segs
+      _ <- lift $ string quote
+      return $ TokenFString segments
+
+-- Helpers for parsing f-strings ------------------------------------------------
+
+parseFStringContent :: Text -> MP.Parsec Void Text ()
+parseFStringContent quote = void $ MP.manyTill consumeChar (MP.lookAhead (string quote))
+  where
+    consumeChar = do
+      c <- MP.anySingle
+      when (c == '\\') $ void MP.anySingle
+
+buildFStringSegments :: MP.SourcePos -> Text -> Either Text [FStringSegment]
+buildFStringSegments start rawContent = do
+  (processedText, offsetsVec) <- decodeRawStringWithMap rawContent
+  segmentRecords <- splitProcessedSegments processedText
+  let filename = T.pack (MP.sourceName start)
+      basePos = convertPos start
+      positionsVec = buildRawPositions basePos rawContent
+  pure $ map (segmentToToken filename rawContent offsetsVec positionsVec) segmentRecords
+
+data SegmentRecord
+  = SegmentLiteralRecord !Text !Int !Int
+  | SegmentExpressionRecord !Int !Int
+  deriving (Eq, Show)
+
+segmentToToken :: Text -> Text -> UV.Vector Int -> V.Vector SourcePos -> SegmentRecord -> FStringSegment
+segmentToToken filename rawContent offsets positions = \case
+  SegmentLiteralRecord text startIdx endIdx ->
+    let startRaw = offsets UV.! startIdx
+        endRaw = offsets UV.! endIdx
+        span = SourceSpan filename (positions V.! startRaw) (positions V.! endRaw)
+    in FStringLiteralSegment text span
+  SegmentExpressionRecord startIdx endIdx ->
+    let startRaw = offsets UV.! startIdx
+        endRaw = offsets UV.! endIdx
+        exprText = T.take (endRaw - startRaw) (T.drop startRaw rawContent)
+        span = SourceSpan filename (positions V.! startRaw) (positions V.! endRaw)
+    in FStringExpressionSegment exprText span
+
+decodeRawStringWithMap :: Text -> Either Text (Text, UV.Vector Int)
+decodeRawStringWithMap input = do
+  (builder, offsetsRev, finalRaw) <- go input 0 mempty []
+  let offsetsList = reverse offsetsRev ++ [finalRaw]
+  pure (TL.toStrict (TB.toLazyText builder), UV.fromList offsetsList)
+  where
+    go txt rawOffset builder offsetsRev =
+      case T.uncons txt of
+        Nothing -> Right (builder, offsetsRev, rawOffset)
+        Just ('\\', rest) ->
+          case T.uncons rest of
+            Nothing -> Left "unterminated escape in f-string literal"
+            Just (esc, rest') -> do
+              (mChar, consumed, rest'') <- decodeEscape esc rest'
+              let builder' = case mChar of
+                               Just ch -> builder <> TB.singleton ch
+                               Nothing -> builder
+                  offsetsRev' = case mChar of
+                                  Just _ -> rawOffset : offsetsRev
+                                  Nothing -> offsetsRev
+              go rest'' (rawOffset + consumed) builder' offsetsRev'
+        Just (c, rest) ->
+          go rest (rawOffset + 1) (builder <> TB.singleton c) (rawOffset : offsetsRev)
+
+decodeEscape :: Char -> Text -> Either Text (Maybe Char, Int, Text)
+decodeEscape esc rest = case esc of
+  '\\' -> Right (Just '\\', 2, rest)
+  '"'  -> Right (Just '"', 2, rest)
+  '\'' -> Right (Just '\'', 2, rest)
+  'n'  -> Right (Just '\n', 2, rest)
+  't'  -> Right (Just '\t', 2, rest)
+  'r'  -> Right (Just '\r', 2, rest)
+  'b'  -> Right (Just '\b', 2, rest)
+  'f'  -> Right (Just '\f', 2, rest)
+  '\n' -> Right (Nothing, 2, rest)
+  '\r' ->
+    case T.uncons rest of
+      Just ('\n', rest') -> Right (Nothing, 3, rest')
+      _ -> Right (Nothing, 2, rest)
+  'x' ->
+    let (digits, rest') = T.splitAt 2 rest
+    in case T.unpack digits of
+         [d1, d2] | isHexDigit d1 && isHexDigit d2 ->
+           let value = digitToInt d1 * 16 + digitToInt d2
+           in Right (Just (chr value), 4, rest')
+         _ -> Left "invalid hexadecimal escape in f-string literal"
+  _ -> Right (Just esc, 2, rest)
+
+splitProcessedSegments :: Text -> Either Text [SegmentRecord]
+splitProcessedSegments input = fmap reverse (go input 0 Nothing mempty [])
+  where
+    go txt offset mStart builder acc =
+      case T.uncons txt of
+        Nothing -> flushLiteral offset mStart builder acc
+        Just ('{', _) | "{{" `T.isPrefixOf` txt ->
+          let builder' = builder <> TB.singleton '{'
+              offset' = offset + 2
+              mStart' = Just (fromMaybe offset mStart)
+          in go (T.drop 2 txt) offset' mStart' builder' acc
+        Just ('}', _) | "}}" `T.isPrefixOf` txt ->
+          let builder' = builder <> TB.singleton '}'
+              offset' = offset + 2
+              mStart' = Just (fromMaybe offset mStart)
+          in go (T.drop 2 txt) offset' mStart' builder' acc
+        Just ('{', rest) -> do
+          acc' <- flushLiteral offset mStart builder acc
+          let offsetAfterBrace = offset + 1
+          (exprText, remainder) <- takeExpression rest
+          let consumedTotal = T.length rest - T.length remainder
+              (exprCoreText, debugLiteral) = stripFormatSpecWithLen exprText
+              exprStartIdx = offsetAfterBrace
+              exprEndIdx = exprStartIdx + T.length exprCoreText
+              accWithDebug = maybe acc' (\txtDebug -> SegmentLiteralRecord txtDebug exprStartIdx (exprStartIdx + T.length txtDebug) : acc') debugLiteral
+              accWithExpr = SegmentExpressionRecord exprStartIdx exprEndIdx : accWithDebug
+              offsetAfterExpr = offsetAfterBrace + consumedTotal
+          go remainder offsetAfterExpr Nothing mempty accWithExpr
+        Just ('}', _) -> Left "Single '}' in f-string literal"
+        _ ->
+          let (chunk, remainder) = T.break (`elem` ("{}" :: String)) txt
+          in if T.null chunk
+               then Left "Unexpected state while parsing f-string literal"
+               else
+                 let builder' = builder <> TB.fromText chunk
+                     mStart' = Just (fromMaybe offset mStart)
+                     offset' = offset + T.length chunk
+                 in go remainder offset' mStart' builder' acc
+
+    flushLiteral currentOffset mStart builder acc =
+      case mStart of
+        Nothing -> Right acc
+        Just startIdx ->
+          let text = TL.toStrict (TB.toLazyText builder)
+          in if T.null text
+               then Right acc
+               else Right (SegmentLiteralRecord text startIdx currentOffset : acc)
+
+stripFormatSpecWithLen :: Text -> (Text, Maybe Text)
+stripFormatSpecWithLen txt =
+  let (core, _rest) = breakOnFormat txt
+  in case T.unsnoc core of
+       Just (withoutEq, '=') -> (withoutEq, Just core)
+       _ -> (core, Nothing)
+
+takeExpression :: Text -> Either Text (Text, Text)
+takeExpression txt = goExpr 0 [] txt
+  where
+    goExpr depth acc remaining =
+      case T.uncons remaining of
+        Nothing -> Left "Unterminated '{' in f-string literal"
+        Just ('{', rest') -> goExpr (depth + 1) ('{' : acc) rest'
+        Just ('}', rest')
+          | depth == 0 -> Right (T.pack (reverse acc), rest')
+          | otherwise  -> goExpr (depth - 1) ('}' : acc) rest'
+        Just (c, rest') -> goExpr depth (c : acc) rest'
+
+breakOnFormat :: Text -> (Text, Text)
+breakOnFormat txt = goFmt 0 0 0 [] txt
+  where
+    goFmt braceDepth parenDepth bracketDepth acc remaining =
+      case T.uncons remaining of
+        Nothing -> (T.pack (reverse acc), T.empty)
+        Just (c, rest')
+          | c == '{' -> goFmt (braceDepth + 1) parenDepth bracketDepth (c : acc) rest'
+          | c == '}' && braceDepth > 0 -> goFmt (braceDepth - 1) parenDepth bracketDepth (c : acc) rest'
+          | c == '(' -> goFmt braceDepth (parenDepth + 1) bracketDepth (c : acc) rest'
+          | c == ')' && parenDepth > 0 -> goFmt braceDepth (parenDepth - 1) bracketDepth (c : acc) rest'
+          | c == '[' -> goFmt braceDepth parenDepth (bracketDepth + 1) (c : acc) rest'
+          | c == ']' && bracketDepth > 0 -> goFmt braceDepth parenDepth (bracketDepth - 1) (c : acc) rest'
+          | (c == ':' || c == '!') && braceDepth == 0 && parenDepth == 0 && bracketDepth == 0 ->
+              (T.pack (reverse acc), rest')
+          | otherwise -> goFmt braceDepth parenDepth bracketDepth (c : acc) rest'
+
+buildRawPositions :: SourcePos -> Text -> V.Vector SourcePos
+buildRawPositions base rawContent =
+  V.fromList (scanl advance base (T.unpack rawContent))
+  where
+    advance pos ch
+      | ch == '\n' = SourcePos (posLine pos + 1) 1
+      | ch == '\r' = SourcePos (posLine pos + 1) 1
+      | otherwise  = SourcePos (posLine pos) (posColumn pos + 1)
 
 -- | Parse bytes literals
 bytesLiteral :: PythonLexer PythonToken

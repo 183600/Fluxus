@@ -693,104 +693,9 @@ generatePythonArgument (Located _ arg) = case arg of
   ArgStarred expr -> generatePythonExpr expr  -- Simplified
   ArgKwStarred expr -> generatePythonExpr expr  -- Simplified
 
--- | Segments extracted from an f-string literal
-data FStringSegment
-  = FStringLiteral !Text
-  | FStringExpression !Text
-  deriving (Eq, Show)
 
-splitFStringSegments :: Text -> Either Text [FStringSegment]
-splitFStringSegments input = go input []
-  where
-    go txt acc =
-      case T.uncons txt of
-        Nothing -> Right (reverse acc)
-        Just ('{', rest)
-          | "{{" `T.isPrefixOf` txt -> go (T.drop 2 txt) (addLiteral "{" acc)
-          | otherwise -> do
-              (exprText, remainder) <- takeExpression rest
-              let (exprCoreRaw, debugLiteral) = stripFormatSpec exprText
-                  exprCore = T.strip exprCoreRaw
-              when (T.null exprCore) $
-                Left "Empty expression in f-string"
-              let accWithDebug = maybe acc (\lit -> addLiteral lit acc) debugLiteral
-              go remainder (FStringExpression exprCore : accWithDebug)
-        Just ('}', _)
-          | "}}" `T.isPrefixOf` txt -> go (T.drop 2 txt) (addLiteral "}" acc)
-          | otherwise -> Left "Single '}' in f-string"
-        _ ->
-          let (literal, remainder) = T.break (`elem` ("{}" :: String)) txt
-          in go remainder (addLiteral literal acc)
-
-    addLiteral lit acc
-      | T.null lit = acc
-      | otherwise = case acc of
-          (FStringLiteral existing : rest) -> FStringLiteral (existing <> lit) : rest
-          _ -> FStringLiteral lit : acc
-
-    takeExpression :: Text -> Either Text (Text, Text)
-    takeExpression txt = goExpr 0 [] txt
-      where
-        goExpr :: Int -> String -> Text -> Either Text (Text, Text)
-        goExpr depth acc remaining =
-          case T.uncons remaining of
-            Nothing -> Left "Unterminated '{' in f-string"
-            Just ('{', rest') -> goExpr (depth + 1) ('{' : acc) rest'
-            Just ('}', rest')
-              | depth == 0 -> Right (T.pack (reverse acc), rest')
-              | otherwise  -> goExpr (depth - 1) ('}' : acc) rest'
-            Just (c, rest') -> goExpr depth (c : acc) rest'
-
-    stripFormatSpec :: Text -> (Text, Maybe Text)
-    stripFormatSpec txt =
-      let (core, _) = breakOnFormat txt
-          trimmed = T.strip core
-      in case T.unsnoc trimmed of
-           Just (rest, '=') ->
-             let exprPart = T.strip rest
-             in (exprPart, Just core)
-           _ -> (trimmed, Nothing)
-
-    breakOnFormat :: Text -> (Text, Text)
-    breakOnFormat txt = goFmt 0 0 0 [] txt
-      where
-        goFmt :: Int -> Int -> Int -> String -> Text -> (Text, Text)
-        goFmt braceDepth parenDepth bracketDepth acc remaining =
-          case T.uncons remaining of
-            Nothing -> (T.pack (reverse acc), T.empty)
-            Just (c, rest')
-              | c == '{' -> goFmt (braceDepth + 1) parenDepth bracketDepth (c : acc) rest'
-              | c == '}' && braceDepth > 0 -> goFmt (braceDepth - 1) parenDepth bracketDepth (c : acc) rest'
-              | c == '(' -> goFmt braceDepth (parenDepth + 1) bracketDepth (c : acc) rest'
-              | c == ')' && parenDepth > 0 -> goFmt braceDepth (parenDepth - 1) bracketDepth (c : acc) rest'
-              | c == '[' -> goFmt braceDepth parenDepth (bracketDepth + 1) (c : acc) rest'
-              | c == ']' && bracketDepth > 0 -> goFmt braceDepth parenDepth (bracketDepth - 1) (c : acc) rest'
-              | (c == ':' || c == '!') && braceDepth == 0 && parenDepth == 0 && bracketDepth == 0 ->
-                  (T.pack (reverse acc), rest')
-              | otherwise -> goFmt braceDepth parenDepth bracketDepth (c : acc) rest'
-
--- | Parse a small Python expression (used in f-strings)
-parseInlinePythonExpr :: Text -> Either Text (Located PythonExpr)
-parseInlinePythonExpr exprText = do
-  let trimmed = T.strip exprText
-  when (T.null trimmed) $
-    Left "Empty expression"
-  tokens <- first (T.pack . MP.errorBundlePretty) $
-    runPythonLexer "<f-string>" trimmed
-  let eofToken = Located syntheticSpan TokenEOF
-      tokenStream = tokens ++ [eofToken]
-  case MP.parse (parseExpression <* MP.eof) "<f-string>" tokenStream of
-    Left _ -> Left $ "Failed to parse inline Python expression: " <> trimmed
-    Right parsed -> Right parsed
-
--- | Generate a C++ expression from a Python f-string literal
-generateFStringExpr :: Text -> CppCodeGen CppExpr
-generateFStringExpr raw = do
-  segments <- case splitFStringSegments raw of
-    Left err -> do
-      reportInternalError $ "Failed to parse f-string: " <> err
-      return [FStringLiteral raw]
-    Right segs -> return segs
+generateFStringExpr :: [PythonFStringSegment] -> CppCodeGen CppExpr
+generateFStringExpr segments = do
   compiled <- mapM compileSegment segments
   ossName <- generateTempVar
   addInclude "<sstream>"
@@ -800,23 +705,16 @@ generateFStringExpr raw = do
       streamStmts = map (\expr -> CppExprStmt (CppBinary "<<" ossVar expr)) compiled
       resultExpr = CppCall (CppMember ossVar "str") []
       lambdaBody = ossDecl : streamStmts ++ [CppReturn (Just resultExpr)]
-  return $ CppCall (CppLambda [] lambdaBody) []
+  pure $ CppCall (CppLambda [] lambdaBody) []
   where
-    compileSegment (FStringLiteral lit) = return $ CppLiteral (CppStringLit lit)
-    compileSegment (FStringExpression exprTxt) =
-      case parseInlinePythonExpr exprTxt of
-        Left err -> do
-          reportInternalError $ "Failed to parse f-string expression: " <> err
-          return $ CppLiteral (CppStringLit ("{" <> exprTxt <> "}"))
-        Right parsed -> generatePythonExpr parsed
+    compileSegment (PythonFStringLiteral text) = pure $ CppLiteral (CppStringLit text)
+    compileSegment (PythonFStringExpr expr) = generatePythonExpr expr
 
-syntheticSpan :: SourceSpan
-syntheticSpan = SourceSpan "<f-string>" (SourcePos 0 0) (SourcePos 0 0)
 
 generatePythonExpr :: Located PythonExpr -> CppCodeGen CppExpr
 generatePythonExpr (Located span expr) = case expr of
   PyLiteral lit -> case lit of
-    PyFString text _ -> generateFStringExpr text
+    PyFString segments -> generateFStringExpr segments
     _ -> return $ CppLiteral $ mapPythonLiteral lit
   PyConst (QualifiedName _ (Identifier name)) -> case name of
     "True"  -> return $ CppLiteral (CppBoolLit True)
@@ -1390,7 +1288,7 @@ mapPythonLiteral = \case
   PyFloat f -> CppFloatLit f
   PyBool b -> CppBoolLit b
   PyString s -> CppStringLit s
-  PyFString s _ -> CppStringLit s  -- For now, treat f-strings as regular strings
+  PyFString segments -> CppStringLit (mconcat [txt | PythonFStringLiteral txt <- segments])
   PyNone -> CppNullPtr
   _ -> CppIntLit 0
 

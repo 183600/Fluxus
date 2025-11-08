@@ -346,7 +346,7 @@ generateExpression (Located _ expr) = case expr of
     PyBool b -> pure (if b then "true" else "false")
     PyNone -> pure "nil"
     PyComplex _ _ -> pure "0"
-    PyFString _ _ -> pure "\"\""
+    PyFString _ -> pure "\"\""
     PyBytes _ -> pure "[]byte{}"
     PyEllipsis -> pure "nil"
 

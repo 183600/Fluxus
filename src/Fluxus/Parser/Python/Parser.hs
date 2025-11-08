@@ -33,6 +33,7 @@ module Fluxus.Parser.Python.Parser
 
 import Control.Monad (void)
 import Control.Applicative ((<|>), optional, many, some)
+import Data.Bifunctor (first)
 import Data.Functor (($>))
 import qualified Control.Applicative as A
 import Data.Text (Text)
@@ -44,6 +45,7 @@ import Text.Megaparsec.Char
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 
+import Fluxus.AST.Common (SourcePos(..), SourceSpan(..), Located(..))
 import Fluxus.AST.Common as Common
 import Fluxus.AST.Python
 import qualified Fluxus.Parser.Python.Lexer as Lexer
@@ -445,7 +447,9 @@ parseLiteral = do
   Located _ token <- anySingle
   case token of
     TokenString text -> return $ PyLiteral $ PyString text
-    TokenFString text exprs -> return $ PyLiteral $ PyFString text []  -- TODO: Parse embedded expressions
+    TokenFString segments -> do
+      pySegments <- mapM convertFStringSegment segments
+      return $ PyLiteral $ PyFString pySegments
     TokenNumber text isFloat ->
       if isFloat
         then return $ PyLiteral $ PyFloat (read $ T.unpack text)
@@ -454,6 +458,46 @@ parseLiteral = do
     TokenKeyword KwFalse -> return $ PyLiteral $ PyBool False
     TokenKeyword KwNone -> return $ PyLiteral PyNone
     _ -> fail "Expected literal"
+
+convertFStringSegment :: Lexer.FStringSegment -> PythonParser PythonFStringSegment
+convertFStringSegment segment = case segment of
+  Lexer.FStringLiteralSegment text _ -> pure (PythonFStringLiteral text)
+  Lexer.FStringExpressionSegment exprText spanInfo ->
+    case parseFStringExpression exprText spanInfo of
+      Left err -> fail (T.unpack err)
+      Right locatedExpr -> pure (PythonFStringExpr locatedExpr)
+
+parseFStringExpression :: Text -> SourceSpan -> Either Text (Located PythonExpr)
+parseFStringExpression exprText spanInfo = do
+  tokens <- first (T.pack . MP.errorBundlePretty) $
+    Lexer.runPythonLexer (spanFilename spanInfo) exprText
+  let shifted = map (shiftFStringToken spanInfo) tokens
+      eofToken = Located spanInfo TokenEOF
+      sourceName = T.unpack (spanFilename spanInfo)
+  case MP.parse (parseExpression <* MP.eof) sourceName (shifted ++ [eofToken]) of
+    Left err -> Left (T.pack (MP.errorBundlePretty err))
+    Right parsed -> Right parsed
+
+shiftFStringToken :: SourceSpan -> Located PythonToken -> Located PythonToken
+shiftFStringToken base (Located spanInfo token) =
+  let span' = shiftSourceSpan base spanInfo
+  in Located span' token
+
+shiftSourceSpan :: SourceSpan -> SourceSpan -> SourceSpan
+shiftSourceSpan base relative = SourceSpan
+  { spanFilename = spanFilename base
+  , spanStart = shiftSourcePos (spanStart base) (spanStart relative)
+  , spanEnd = shiftSourcePos (spanStart base) (spanEnd relative)
+  }
+
+shiftSourcePos :: SourcePos -> SourcePos -> SourcePos
+shiftSourcePos base relative = SourcePos
+  { posLine = posLine base + posLine relative - 1
+  , posColumn =
+      if posLine relative == 1
+        then posColumn base + posColumn relative - 1
+        else posColumn relative
+  }
 
 parseIdentifierExpr :: PythonParser PythonExpr
 parseIdentifierExpr = PyVar <$> parseIdentifier

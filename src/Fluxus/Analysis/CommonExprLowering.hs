@@ -307,7 +307,7 @@ pythonLiteralToLiteral span = \case
   PyInt n -> Right $ LInt (fromIntegral n :: Int64)
   PyFloat f -> Right $ LFloat f
   PyString s -> Right $ LString s
-  PyFString _ _ -> Left $ unsupportedAt span "F-string literals are not supported in common expression lowering"
+  PyFString _ -> Left $ unsupportedAt span "F-string literals are not supported in common expression lowering"
   PyBytes b -> Right $ LBytes b
   PyBool b -> Right $ LBool b
   PyNone -> Right LNone
