@@ -59,7 +59,7 @@ runCompilerMain config args = do
     exitFailure
   
   when (ccSourceLanguage config == Go || any (".go" `isSuffixOf`) inputFiles) $
-    hPutStrLn stderr "Warning: Go backend is experimental and type inference remains limited; complex constructs may degrade to interface{}."
+    hPutStrLn stderr "Warning: Go backend remains experimental; translation for constructs such as switch/select and struct literals is still incomplete and may fall back to runtime aborts."
   
   -- Check system requirements
   sysCheckResult <- checkSystemRequirements config
