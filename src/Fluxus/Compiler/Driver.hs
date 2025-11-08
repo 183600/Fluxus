@@ -358,9 +358,14 @@ setupCompilerEnvironment = do
 
   logInfo "Compiler environment setup completed"
 
--- | Compile a single file
-compileFile :: FilePath -> CompilerM FilePath
-compileFile inputFile = do
+-- | Compilation artifacts produced for a single file prior to linking
+data CompilationArtifacts = CompilationArtifacts
+  { caCppFile :: !FilePath
+  , caObjectFile :: !(Maybe FilePath)
+  }
+
+compileFileArtifacts :: FilePath -> CompilerM CompilationArtifacts
+compileFileArtifacts inputFile = do
   config <- ask
   
   logInfo $ "Compiling file: " <> T.pack inputFile
@@ -392,29 +397,36 @@ compileFile inputFile = do
   liftIO $ TIO.writeFile cppFile (renderCppUnit cppCode)
   addIntermediateFile cppFile
   
-  -- Check if we should stop at code generation
   if ccStopAtCodegen config
     then do
       logInfo $ "Code generation completed: " <> T.pack cppFile
       incrementProcessedFiles
-      return cppFile
+      pure $ CompilationArtifacts cppFile Nothing
     else do
-      -- Compile C++ to object file
       setCurrentPhase "c++-compilation"
       objFile <- compileCpp cppFile
-      
-      -- Link if this is the final step
+      addIntermediateFile objFile
+      logInfo $ "Generated object file: " <> T.pack objFile
+      incrementProcessedFiles
+      pure $ CompilationArtifacts cppFile (Just objFile)
+
+-- | Compile a single file
+compileFile :: FilePath -> CompilerM FilePath
+compileFile inputFile = do
+  config <- ask
+  artifacts <- compileFileArtifacts inputFile
+  
+  case caObjectFile artifacts of
+    Nothing -> return (caCppFile artifacts)
+    Just objFile -> do
       setCurrentPhase "linking"
       finalOutput <- case ccOutputPath config of
-        Nothing -> do
-          -- Generate executable name from input file
+        Nothing ->
           let executableName = dropExtension (takeFileName inputFile)
-          linkObjects [objFile] executableName
+          in linkObjects [objFile] executableName
         Just outPath -> linkObjects [objFile] outPath
       
-      incrementProcessedFiles
       logInfo $ "Successfully compiled: " <> T.pack inputFile
-      
       return finalOutput
 
 -- | Compile a project (multiple files)
@@ -428,7 +440,7 @@ compileProject inputFiles = do
   logInfo $ "Compiling project with " <> T.pack (show $ length inputFiles) <> " files"
   
   -- Compile all files to object files
-  objFiles <- mapM compileFile inputFiles
+  artifacts <- mapM compileFileArtifacts inputFiles
   
   if ccStopAtCodegen config
     then do
@@ -436,7 +448,10 @@ compileProject inputFiles = do
       let outputPath = fromMaybe "." (ccOutputPath config)
       return outputPath
     else do
-      -- Link all object files
+      let objFiles = catMaybes (map caObjectFile artifacts)
+      when (length objFiles /= length inputFiles) $
+        throwError $ CodeGenError $ T.pack "Object file generation was skipped for one or more inputs; cannot link project without object files"
+      
       let outputPath = fromMaybe "hyperstatic_output" (ccOutputPath config)
       setCurrentPhase "final-linking"
       finalBinary <- linkObjects objFiles outputPath
