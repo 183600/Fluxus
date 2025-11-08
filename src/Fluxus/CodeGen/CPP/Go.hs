@@ -7,7 +7,9 @@ module Fluxus.CodeGen.CPP.Go
 
 import Control.Monad (unless, when)
 import Control.Monad.State (gets)
-import Data.Maybe (catMaybes)
+import Data.List (foldl', partition)
+import qualified Data.HashMap.Strict as HM
+import Data.Maybe (catMaybes, isNothing)
 import Data.Text (Text)
 import qualified Data.Text as T
 
@@ -30,10 +32,12 @@ import Fluxus.CodeGen.CPP.Monad
   , addInclude
   , cppNoop
   , emitInfo
+  , emitWarning
   , generateTempVar
   , reportFatalNotImplemented
   , reportNotImplemented
   , reportUnsupported
+  , runtimeAbortStmt
   )
 import Fluxus.CodeGen.CPP.Go.TypeMapping
   ( collectCppTypeIncludes
@@ -74,6 +78,11 @@ generateCppFromGo (GoAST goPackage) = do
 formatSourceSpanShort :: SourceSpan -> Text
 formatSourceSpanShort SourceSpan { spanFilename, spanStart = SourcePos line col } =
   spanFilename <> ":" <> T.pack (show line) <> ":" <> T.pack (show col)
+
+wrapStatements :: [CppStmt] -> CppStmt
+wrapStatements [] = CppStmtSeq []
+wrapStatements [single] = single
+wrapStatements stmts = CppStmtSeq stmts
 
 reportDeclIssue :: (Text -> CppCodeGen ()) -> SourceSpan -> GoDecl -> Text -> Maybe Text -> CppCodeGen ()
 reportDeclIssue reporter span decl detail extra =
@@ -270,6 +279,10 @@ generateGoStmt (Located span stmt) = case stmt of
           Just postS -> generateGoForPost postS
         bodyStmts <- generateGoBlockStmt bodyStmt
         pure $ CppFor initStmt condExpr postExpr bodyStmts
+  GoSwitch mInit mExpr clauses ->
+    generateGoSwitch span mInit mExpr clauses
+  GoSelect clauses ->
+    generateGoSelect span clauses
   GoBlock stmts -> CppBlock <$> mapM generateGoStmt stmts
   GoGo expr -> do
     addInclude "<thread>"
@@ -298,7 +311,7 @@ generateGoStmt (Located span stmt) = case stmt of
       else do
         cppExprs <- mapM generateGoExpr exprs
         decls <- mapM defineBinding (zip3 identifiers exprs cppExprs)
-        pure $ wrapStmts decls
+        pure $ wrapStatements decls
   GoAssign leftExprs rightExprs ->
     case (leftExprs, rightExprs) of
       ([leftExpr], [rightExpr]) -> do
@@ -318,7 +331,7 @@ generateGoStmt (Located span stmt) = case stmt of
             let evalStmts = map fst prepResults
                 assignmentInputs = catMaybes (map snd prepResults)
             assignStmts <- mapM buildAssignment assignmentInputs
-            pure $ wrapStmts (evalStmts ++ assignStmts)
+            pure $ wrapStatements (evalStmts ++ assignStmts)
   GoIncDec expr isIncrement -> do
     cppExpr <- generateGoExpr expr
     let op = if isIncrement then "++" else "--"
@@ -327,10 +340,6 @@ generateGoStmt (Located span stmt) = case stmt of
     reportStmtIssue reportNotImplemented span stmt "Unsupported Go statement" (Just (T.pack (show stmt)))
     pure cppNoop
   where
-    wrapStmts [] = CppStmtSeq []
-    wrapStmts [single] = single
-    wrapStmts stmts = CppStmtSeq stmts
-
     defineBinding (Identifier name, locatedExpr, expr)
       | name == "_" = pure $ CppExprStmt expr
       | otherwise = do
@@ -352,6 +361,107 @@ generateGoStmt (Located span stmt) = case stmt of
     buildAssignment (leftExpr, tempVarExpr) = do
       leftCpp <- generateGoExpr leftExpr
       pure $ CppExprStmt (CppBinary "=" leftCpp tempVarExpr)
+
+data SwitchBranch = SwitchBranch
+  { sbCondition :: Maybe CppExpr
+  , sbBody :: [CppStmt]
+  }
+
+combineWithOr :: [CppExpr] -> CppExpr
+combineWithOr [] = CppLiteral (CppBoolLit False)
+combineWithOr (firstExpr : restExprs) =
+  foldl' (\acc nextExpr -> CppBinary "||" acc nextExpr) firstExpr restExprs
+
+generateGoSwitch :: SourceSpan -> Maybe (Located GoStmt) -> Maybe (Located GoExpr) -> [Located GoStmt] -> CppCodeGen CppStmt
+generateGoSwitch span mInit mExpr clauses = do
+  initStmt <- traverse generateGoStmt mInit
+  (valueDecl, scrutExpr) <- case mExpr of
+    Nothing -> pure (Nothing, Nothing)
+    Just expr -> do
+      cppExpr <- generateGoExpr expr
+      tempName <- generateTempVar
+      refinedType <- refineGoExprType "switch expression" expr CppAuto
+      let decl = CppDecl (CppVariable tempName refinedType (Just cppExpr))
+      pure (Just decl, Just (CppVar tempName))
+  loweredClauses <- mapM (lowerClause scrutExpr) clauses
+  let switchClauses = catMaybes loweredClauses
+  when (null switchClauses) $
+    emitWarning $ "switch statement at " <> formatSourceSpanShort span <> " has no clauses that can be emitted"
+  matchFlagName <- generateTempVar
+  let matchVarExpr = CppVar matchFlagName
+      matchDecl = CppDecl (CppVariable matchFlagName CppBool (Just (CppLiteral (CppBoolLit False))))
+      guardExpr = CppUnary "!" matchVarExpr
+      setMatched = CppExprStmt (CppBinary "=" matchVarExpr (CppLiteral (CppBoolLit True)))
+      buildClause SwitchBranch { sbCondition, sbBody } =
+        let condition = maybe guardExpr (\condExpr -> CppBinary "&&" guardExpr condExpr) sbCondition
+            body = setMatched : sbBody
+        in CppIf condition body []
+      clauseStmts = map buildClause switchClauses
+      prefixStmts = catMaybes [initStmt, valueDecl]
+      blockStmts = prefixStmts ++ [matchDecl] ++ clauseStmts
+  pure $ CppBlock blockStmts
+  where
+    lowerClause scrut (Located clauseSpan clause) = case clause of
+      GoCase exprs body -> do
+        bodyStmts <- generateSwitchClauseBody body
+        condition <- buildCaseCondition scrut exprs
+        pure $ Just (SwitchBranch condition bodyStmts)
+      GoDefault body -> do
+        bodyStmts <- generateSwitchClauseBody body
+        pure $ Just (SwitchBranch Nothing bodyStmts)
+      other -> do
+        reportStmtIssue emitWarning clauseSpan other "switch clause is not supported and will be ignored" Nothing
+        pure Nothing
+
+    buildCaseCondition _ [] = pure Nothing
+    buildCaseCondition (Just scrutExpr) exprs = do
+      comparisons <- mapM (buildComparison scrutExpr) exprs
+      pure $ Just (combineWithOr comparisons)
+    buildCaseCondition Nothing exprs = do
+      conditions <- mapM generateGoExpr exprs
+      pure $ Just (combineWithOr conditions)
+
+    buildComparison scrutExpr targetExpr = do
+      rhs <- generateGoExpr targetExpr
+      pure (CppBinary "==" scrutExpr rhs)
+
+generateSwitchClauseBody :: [Located GoStmt] -> CppCodeGen [CppStmt]
+generateSwitchClauseBody = go
+  where
+    go [] = pure []
+    go (Located fallSpan GoFallthrough : _) = do
+      emitWarning $ "fallthrough at " <> formatSourceSpanShort fallSpan <> " is not yet supported in the C++ backend"
+      pure []
+    go (stmt : rest) = do
+      cppStmt <- generateGoStmt stmt
+      remaining <- go rest
+      pure (cppStmt : remaining)
+
+generateGoSelect :: SourceSpan -> [Located GoCommClause] -> CppCodeGen CppStmt
+generateGoSelect span clauses = do
+  let unwrap (Located _ clause) = clause
+      (defaultClauses, commClauses) = partition (isNothing . goCommStmt . unwrap) clauses
+  case (commClauses, defaultClauses) of
+    ([], []) -> do
+      emitWarning $ "select statement at " <> formatSourceSpanShort span <> " contains no clauses; emitting runtime abort helper"
+      runtimeAbortStmt "select statements must contain at least one clause"
+    ([], defClause : extraDefaults) -> do
+      unless (null extraDefaults) $
+        emitWarning $ "select statement at " <> formatSourceSpanShort span <> " has multiple default clauses; only the first one will be used"
+      branch <- generateSelectBranch defClause
+      pure $ wrapStatements branch
+    ([singleClause], []) -> do
+      branch <- generateSelectBranch singleClause
+      pure $ wrapStatements branch
+    _ -> do
+      emitWarning $ "select statement at " <> formatSourceSpanShort span <> " uses combinations that are not yet supported; emitting runtime abort helper"
+      runtimeAbortStmt "select statements with multiple clauses are not yet supported"
+
+generateSelectBranch :: Located GoCommClause -> CppCodeGen [CppStmt]
+generateSelectBranch (Located _ clause) = do
+  prefix <- maybe (pure []) (\commStmt -> (:[]) <$> generateGoStmt commStmt) (goCommStmt clause)
+  body <- mapM generateGoStmt (goCommBody clause)
+  pure (prefix ++ body)
 
 generateGoForInit :: Located GoStmt -> CppCodeGen (Maybe CppStmt)
 generateGoForInit stmt@(Located span inner) = case inner of
@@ -425,9 +535,85 @@ generateGoExpr (Located span expr) = case expr of
     ensureChannelSupport
     cppExpr <- generateGoExpr channelExpr
     pure $ CppCall (CppMember cppExpr "receive") []
+  GoStructLit structType fields ->
+    generateGoStructLiteral span structType fields
   _ -> do
     reportExprIssue reportFatalNotImplemented span expr "Unsupported Go expression" (Just (T.pack (show expr)))
     pure $ CppLiteral (CppIntLit 0)
+
+generateGoStructLiteral :: SourceSpan -> Located GoType -> [(Identifier, Located GoExpr)] -> CppCodeGen CppExpr
+generateGoStructLiteral span typeExpr fields = do
+  cppType <- generateGoType typeExpr
+  values <- case cppType of
+    CppStructLiteral structFields ->
+      resolveStructLiteralValues span structFields fields
+    _ -> do
+      let keyedPresent = any (\(Identifier name, _) -> not (T.null name)) fields
+      when keyedPresent $
+        emitWarning $ "struct literal at " <> formatSourceSpanShort span <> " targets a named type; field keys will be emitted in source order"
+      mapM (generateGoExpr . snd) fields
+  pure $ CppBracedInit cppType values
+
+resolveStructLiteralValues :: SourceSpan -> [(Text, CppType)] -> [(Identifier, Located GoExpr)] -> CppCodeGen [CppExpr]
+resolveStructLiteralValues span structFields provided =
+  let keyedEntries = [(name, expr) | (Identifier name, expr) <- provided, not (T.null name)]
+  in if null keyedEntries
+       then resolvePositional
+       else resolveKeyed keyedEntries
+  where
+    resolvePositional = do
+      let needed = length structFields
+          providedCount = length provided
+          trimmed = take needed provided
+          extra = drop needed provided
+      exprs <- mapM (generateGoExpr . snd) trimmed
+      unless (null extra) $
+        emitWarning $ "struct literal at " <> formatSourceSpanShort span <> " provides extra values that will be ignored"
+      when (providedCount < needed) $
+        emitWarning $ "struct literal at " <> formatSourceSpanShort span <> " is missing values; default initialization will be used"
+      let missingFields = drop (length trimmed) structFields
+          defaults = map (defaultValueForType . snd) missingFields
+      pure (exprs ++ defaults)
+
+    resolveKeyed keyedEntries = do
+      let providedMap = HM.fromList keyedEntries
+          structNames = map fst structFields
+          missingNames = [name | (name, _) <- structFields, HM.notMember name providedMap]
+          extraNames = [name | (name, _) <- keyedEntries, name `notElem` structNames]
+      unless (null missingNames) $
+        emitWarning $
+          "struct literal at " <> formatSourceSpanShort span <> " is missing fields: "
+            <> T.intercalate ", " missingNames
+      unless (null extraNames) $
+        emitWarning $
+          "struct literal at " <> formatSourceSpanShort span <> " provided unknown fields: "
+            <> T.intercalate ", " extraNames
+      mapM
+        (\(name, fieldType) ->
+          case HM.lookup name providedMap of
+            Just valueExpr -> generateGoExpr valueExpr
+            Nothing -> pure (defaultValueForType fieldType))
+        structFields
+
+defaultValueForType :: CppType -> CppExpr
+defaultValueForType ty = case ty of
+  CppBool -> CppLiteral (CppBoolLit False)
+  CppChar -> CppLiteral (CppCharLit '\0')
+  CppUChar -> CppLiteral (CppCharLit '\0')
+  CppShort -> CppLiteral (CppIntLit 0)
+  CppUShort -> CppLiteral (CppIntLit 0)
+  CppInt -> CppLiteral (CppIntLit 0)
+  CppUInt -> CppLiteral (CppIntLit 0)
+  CppLong -> CppLiteral (CppIntLit 0)
+  CppULong -> CppLiteral (CppIntLit 0)
+  CppLongLong -> CppLiteral (CppIntLit 0)
+  CppULongLong -> CppLiteral (CppIntLit 0)
+  CppFloat -> CppLiteral (CppFloatLit 0)
+  CppDouble -> CppLiteral (CppFloatLit 0)
+  CppLongDouble -> CppLiteral (CppFloatLit 0)
+  CppPointer _ -> CppLiteral CppNullPtr
+  CppString -> CppBracedInit CppString []
+  _ -> CppBracedInit ty []
 
 buildPrintExpr :: [CppExpr] -> CppExpr
 buildPrintExpr args =

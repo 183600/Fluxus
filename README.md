@@ -41,6 +41,7 @@
 ### ⚠️ 当前限制
 - 默认启用严格模式（`ccStrictMode = True`），确保遇到未实现的语义时立即报错；如需继续编译，可显式使用 `--no-strict`。
 - `with`、`try/except`、`raise`、`yield` 及 `async` 相关语句在非严格模式下会降级为运行时回退：代码生成阶段会发出警告并注入 `fluxus_runtime_abort` 调用，以避免静默语义丢失，并提示需要完整语义的用户使用原生 Python 运行时。
+- Go → C++ 后端仍属实验阶段，仅覆盖 `switch`/`select`/结构体字面量等语法的基础子集；当无法安全降级时会发出警告并在生成代码中注入 `fluxus_runtime_abort`，以提醒使用者回退到原生 Go 运行。
 
 ### 🔮 规划中的高级特性
 
