@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 
--- | Main entry point for the HyperStatic/CXX compiler
+-- | Main entry point for the Fluxus compiler
 module Main (main) where
 
 import System.Environment (getArgs)
@@ -176,6 +176,10 @@ printUsage = do
   putStrLn "  --target PLATFORM     Target platform (linux-x86_64, darwin-x86_64, etc.)"
   putStrLn "  -o FILE               Output file path"
   putStrLn ""
+  putStrLn "Configuration Options:"
+  putStrLn "  --config FILE        Load configuration overrides from FILE (repeatable; last wins)"
+  putStrLn "  -c FILE              Shorthand for --config FILE"
+  putStrLn ""
   putStrLn "Feature Options:"
   putStrLn "  --enable-interop      Enable runtime interoperability (default)"
   putStrLn "  --disable-interop     Disable runtime interoperability"
@@ -209,7 +213,7 @@ printUsage = do
   putStrLn ""
   putStrLn "Output Options:"
   putStrLn "  -v, --verbose         Increase verbosity level"
-  putStrLn "  --quiet              Suppress all output except errors"
+  putStrLn "  --quiet               Suppress all output except errors"
   putStrLn ""
   putStrLn "Information Options:"
   putStrLn "  --help               Show this help message"
@@ -219,6 +223,7 @@ printUsage = do
   putStrLn "  fluxus --python -O2 main.py"
   putStrLn "  fluxus --go --enable-debug *.go"
   putStrLn "  fluxus --python -O3 --enable-interop -o fast_app app.py lib.py"
+  putStrLn "  fluxus --config production.yaml app.py"
   putStrLn ""
   putStrLn "Environment Variables:"
   putStrLn "  CXX                   C++ compiler (overrides --cpp-compiler)"
@@ -227,5 +232,5 @@ printUsage = do
   putStrLn "  FLUXUS_INTEROP        Enable interop (1/0)"
   putStrLn ""
   putStrLn "Configuration File:"
-  putStrLn "  The compiler looks for 'fluxus.yaml' in the current directory"
-  putStrLn "  for default configuration settings."
+  putStrLn "  The compiler loads 'fluxus.yaml' from the current directory when present."
+  putStrLn "  Use --config FILE to select an explicit configuration file."
