@@ -9,6 +9,8 @@ module Fluxus.Compiler.Config
   ( -- * Configuration loading
     loadConfig
   , loadConfigFromFile
+  , ConfigFileError(..)
+  , renderConfigFileError
     -- * Command line parsing
   , parseCommandLineArgs
   , LoadConfigResult(..)
@@ -34,7 +36,7 @@ module Fluxus.Compiler.Config
 import Data.Aeson
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Yaml (decodeFileEither)
+import Data.Yaml (decodeFileEither, prettyPrintParseException)
 import System.Environment (lookupEnv)
 import System.FilePath
 import System.Directory
@@ -49,7 +51,7 @@ import Fluxus.Compiler.Driver
 
 -- | Result of parsing command line arguments.
 data CLICommand
-  = CLICommandModify (CompilerConfig -> CompilerConfig)
+  = CLICommandModify (CompilerConfig -> CompilerConfig) [FilePath]
   | CLICommandShowHelp
   | CLICommandShowVersion String
 
@@ -62,6 +64,18 @@ data LoadConfigResult
 
 fluxusVersionString :: String
 fluxusVersionString = "Fluxus Compiler v0.1.0"
+
+-- | Errors that can occur while loading configuration files.
+data ConfigFileError
+  = ConfigFileNotFound FilePath
+  | ConfigFileParseError FilePath String
+  deriving (Eq, Show)
+
+-- | Render a human-readable message for configuration file errors.
+renderConfigFileError :: ConfigFileError -> String
+renderConfigFileError = \case
+  ConfigFileNotFound path -> "Configuration file not found: " ++ path
+  ConfigFileParseError path msg -> "Failed to parse config file '" ++ path ++ "': " ++ msg
 
 -- | Partial configuration overrides used when merging layered sources.
 data CompilerConfigOverrides = CompilerConfigOverrides
@@ -182,139 +196,158 @@ instance FromJSON CompilerConfigOverrides where
 -- 3. Configuration file
 -- 4. Defaults (lowest)
 loadConfig :: [String] -> IO (Either String LoadConfigResult)
-loadConfig args = do
-  -- Start with default config
-  let baseConfig = defaultConfig
-  
-  -- Load from config file if it exists
-  configFromFile <- loadConfigFromFile "fluxus.yaml"
-  let configWithFile = case configFromFile of
-        Left _ -> baseConfig
-        Right cfg -> mergeConfigs baseConfig cfg
-  
-  -- Apply environment variable overrides
-  configWithEnv <- applyEnvironmentOverrides configWithFile
-  
-  -- Apply command line arguments (highest priority)
+loadConfig args =
   case parseCommandLineArgs args of
     Left err -> pure $ Left err
     Right CLICommandShowHelp -> pure $ Right LoadConfigHelp
     Right (CLICommandShowVersion versionText) ->
       pure $ Right (LoadConfigVersion versionText)
-    Right (CLICommandModify cliModifier) -> do
-      let finalConfig = cliModifier configWithEnv
-      pure $ Right (LoadConfigSuccess finalConfig)
+    Right (CLICommandModify cliModifier configPaths) -> do
+      let baseConfig = defaultConfig
+          requestedFiles =
+            if null configPaths
+              then [("fluxus.yaml", False)]
+              else map (\path -> (path, True)) configPaths
+      configAfterFilesResult <- loadConfigFromSources baseConfig requestedFiles
+      case configAfterFilesResult of
+        Left err -> pure $ Left (renderConfigFileError err)
+        Right configAfterFiles -> do
+          configWithEnv <- applyEnvironmentOverrides configAfterFiles
+          let finalConfig = cliModifier configWithEnv
+          pure $ Right (LoadConfigSuccess finalConfig)
+  where
+    loadConfigFromSources :: CompilerConfig -> [(FilePath, Bool)] -> IO (Either ConfigFileError CompilerConfig)
+    loadConfigFromSources config [] = pure $ Right config
+    loadConfigFromSources config ((path, required):rest) = do
+      result <- loadConfigFromFile path
+      case result of
+        Left err -> case err of
+          ConfigFileNotFound _
+            | not required -> loadConfigFromSources config rest
+            | otherwise -> pure $ Left err
+          _ -> pure $ Left err
+        Right overrides ->
+          let merged = mergeConfigs config overrides
+          in loadConfigFromSources merged rest
 
 -- | Load configuration from YAML file
-loadConfigFromFile :: FilePath -> IO (Either String CompilerConfigOverrides)
+loadConfigFromFile :: FilePath -> IO (Either ConfigFileError CompilerConfigOverrides)
 loadConfigFromFile configFile = do
   exists <- doesFileExist configFile
   if not exists
-    then return $ Left $ "Configuration file not found: " ++ configFile
+    then pure $ Left (ConfigFileNotFound configFile)
     else do
       result <- decodeFileEither configFile
       case result of
-        Left err -> return $ Left $ "Failed to parse config file: " ++ show err
-        Right overrides -> return $ Right overrides
+        Left err ->
+          let message = prettyPrintParseException err
+          in pure $ Left (ConfigFileParseError configFile message)
+        Right overrides -> pure $ Right overrides
 
 -- | Parse command line arguments to compiler configuration modifiers or
 -- informational CLI commands.
 parseCommandLineArgs :: [String] -> Either String CLICommand
-parseCommandLineArgs args = go id args
+parseCommandLineArgs args = go id [] args
   where
-    go modifier [] = Right (CLICommandModify modifier)
-    go _ ("--help":_) = Right CLICommandShowHelp
-    go _ ("--version":_) = Right (CLICommandShowVersion fluxusVersionString)
-    go modifier (arg:rest) = case arg of
-      "--python" -> set (\cfg -> cfg { ccSourceLanguage = Python }) rest
-      "--go" -> set (\cfg -> cfg { ccSourceLanguage = Go }) rest
+    go modifier configs [] = Right (CLICommandModify modifier configs)
+    go _ _ ("--help":_) = Right CLICommandShowHelp
+    go _ _ ("--version":_) = Right (CLICommandShowVersion fluxusVersionString)
+    go modifier configs (arg:rest) = case arg of
+      "--config" -> case rest of
+        (path:rest') -> go modifier (configs ++ [path]) rest'
+        [] -> Left "Expected file path after --config"
+      "-c" -> case rest of
+        (path:rest') -> go modifier (configs ++ [path]) rest'
+        [] -> Left "Expected file path after -c"
+      "--python" -> set (\cfg -> cfg { ccSourceLanguage = Python }) configs rest
+      "--go" -> set (\cfg -> cfg { ccSourceLanguage = Go }) configs rest
       
-      "-O0" -> set (\cfg -> cfg { ccOptimizationLevel = O0 }) rest
-      "-O1" -> set (\cfg -> cfg { ccOptimizationLevel = O1 }) rest
-      "-O2" -> set (\cfg -> cfg { ccOptimizationLevel = O2 }) rest
-      "-O3" -> set (\cfg -> cfg { ccOptimizationLevel = O3 }) rest
-      "-Os" -> set (\cfg -> cfg { ccOptimizationLevel = Os }) rest
+      "-O0" -> set (\cfg -> cfg { ccOptimizationLevel = O0 }) configs rest
+      "-O1" -> set (\cfg -> cfg { ccOptimizationLevel = O1 }) configs rest
+      "-O2" -> set (\cfg -> cfg { ccOptimizationLevel = O2 }) configs rest
+      "-O3" -> set (\cfg -> cfg { ccOptimizationLevel = O3 }) configs rest
+      "-Os" -> set (\cfg -> cfg { ccOptimizationLevel = Os }) configs rest
       
-      "--enable-interop" -> set (\cfg -> cfg { ccEnableInterop = True }) rest
-      "--disable-interop" -> set (\cfg -> cfg { ccEnableInterop = False }) rest
+      "--enable-interop" -> set (\cfg -> cfg { ccEnableInterop = True }) configs rest
+      "--disable-interop" -> set (\cfg -> cfg { ccEnableInterop = False }) configs rest
       
-      "--enable-debug" -> set (\cfg -> cfg { ccEnableDebugInfo = True }) rest
-      "--disable-debug" -> set (\cfg -> cfg { ccEnableDebugInfo = False }) rest
+      "--enable-debug" -> set (\cfg -> cfg { ccEnableDebugInfo = True }) configs rest
+      "--disable-debug" -> set (\cfg -> cfg { ccEnableDebugInfo = False }) configs rest
       
-      "--enable-profiler" -> set (\cfg -> cfg { ccEnableProfiler = True }) rest
-      "--disable-profiler" -> set (\cfg -> cfg { ccEnableProfiler = False }) rest
+      "--enable-profiler" -> set (\cfg -> cfg { ccEnableProfiler = True }) configs rest
+      "--disable-profiler" -> set (\cfg -> cfg { ccEnableProfiler = False }) configs rest
       
-      "--enable-parallel" -> set (\cfg -> cfg { ccEnableParallel = True }) rest
-      "--disable-parallel" -> set (\cfg -> cfg { ccEnableParallel = False }) rest
+      "--enable-parallel" -> set (\cfg -> cfg { ccEnableParallel = True }) configs rest
+      "--disable-parallel" -> set (\cfg -> cfg { ccEnableParallel = False }) configs rest
       
-      "--strict" -> set (\cfg -> cfg { ccStrictMode = True }) rest
-      "--no-strict" -> set (\cfg -> cfg { ccStrictMode = False }) rest
+      "--strict" -> set (\cfg -> cfg { ccStrictMode = True }) configs rest
+      "--no-strict" -> set (\cfg -> cfg { ccStrictMode = False }) configs rest
       
-      "--enable-analysis" -> set (\cfg -> cfg { ccEnableAnalysis = True }) rest
-      "--disable-analysis" -> set (\cfg -> cfg { ccEnableAnalysis = False }) rest
+      "--enable-analysis" -> set (\cfg -> cfg { ccEnableAnalysis = True }) configs rest
+      "--disable-analysis" -> set (\cfg -> cfg { ccEnableAnalysis = False }) configs rest
       
-      "--stop-at-codegen" -> set (\cfg -> cfg { ccStopAtCodegen = True }) rest
-      "--full-pipeline" -> set (\cfg -> cfg { ccStopAtCodegen = False }) rest
+      "--stop-at-codegen" -> set (\cfg -> cfg { ccStopAtCodegen = True }) configs rest
+      "--full-pipeline" -> set (\cfg -> cfg { ccStopAtCodegen = False }) configs rest
       
-      "--keep-intermediates" -> set (\cfg -> cfg { ccKeepIntermediates = True }) rest
-      "--clean-intermediates" -> set (\cfg -> cfg { ccKeepIntermediates = False }) rest
+      "--keep-intermediates" -> set (\cfg -> cfg { ccKeepIntermediates = True }) configs rest
+      "--clean-intermediates" -> set (\cfg -> cfg { ccKeepIntermediates = False }) configs rest
       
-      "--skip-compiler-check" -> set (\cfg -> cfg { ccSkipCompilerCheck = True }) rest
-      "--require-compiler-check" -> set (\cfg -> cfg { ccSkipCompilerCheck = False }) rest
+      "--skip-compiler-check" -> set (\cfg -> cfg { ccSkipCompilerCheck = True }) configs rest
+      "--require-compiler-check" -> set (\cfg -> cfg { ccSkipCompilerCheck = False }) configs rest
       
-      "-v" -> set (\cfg -> cfg { ccVerboseLevel = ccVerboseLevel cfg + 1 }) rest
-      "--verbose" -> set (\cfg -> cfg { ccVerboseLevel = ccVerboseLevel cfg + 1 }) rest
-      "--quiet" -> set (\cfg -> cfg { ccVerboseLevel = 0 }) rest
+      "-v" -> set (\cfg -> cfg { ccVerboseLevel = ccVerboseLevel cfg + 1 }) configs rest
+      "--verbose" -> set (\cfg -> cfg { ccVerboseLevel = ccVerboseLevel cfg + 1 }) configs rest
+      "--quiet" -> set (\cfg -> cfg { ccVerboseLevel = 0 }) configs rest
       
       "-o" -> case rest of
-        (output:rest') -> set (\cfg -> cfg { ccOutputPath = Just output }) rest'
+        (output:rest') -> set (\cfg -> cfg { ccOutputPath = Just output }) configs rest'
         [] -> Left "Expected output path after -o"
       
       "--output" -> case rest of
-        (output:rest') -> set (\cfg -> cfg { ccOutputPath = Just output }) rest'
+        (output:rest') -> set (\cfg -> cfg { ccOutputPath = Just output }) configs rest'
         [] -> Left "Expected output path after --output"
       
       "--work-dir" -> case rest of
-        (dir:rest') -> set (\cfg -> cfg { ccWorkDirectory = Just dir }) rest'
+        (dir:rest') -> set (\cfg -> cfg { ccWorkDirectory = Just dir }) configs rest'
         [] -> Left "Expected directory path after --work-dir"
       
       "--cpp-std" -> case rest of
-        (std:rest') -> set (\cfg -> cfg { ccCppStandard = T.pack std }) rest'
+        (std:rest') -> set (\cfg -> cfg { ccCppStandard = T.pack std }) configs rest'
         [] -> Left "Expected C++ standard after --cpp-std"
       
       "--cpp-compiler" -> case rest of
-        (compiler:rest') -> set (\cfg -> cfg { ccCppCompiler = T.pack compiler }) rest'
+        (compiler:rest') -> set (\cfg -> cfg { ccCppCompiler = T.pack compiler }) configs rest'
         [] -> Left "Expected compiler path after --cpp-compiler"
       
       "--max-concurrency" -> case rest of
         (n:rest') -> case reads n of
-          [(num, "")] -> set (\cfg -> cfg { ccMaxConcurrency = num }) rest'
+          [(num, "")] -> set (\cfg -> cfg { ccMaxConcurrency = num }) configs rest'
           _ -> Left "Invalid number for --max-concurrency"
         [] -> Left "Expected number after --max-concurrency"
       
       "--include" -> case rest of
-        (path:rest') -> set (\cfg -> cfg { ccIncludePaths = prependUnique path (ccIncludePaths cfg) }) rest'
+        (path:rest') -> set (\cfg -> cfg { ccIncludePaths = prependUnique path (ccIncludePaths cfg) }) configs rest'
         [] -> Left "Expected path after --include"
       
       "--library-path" -> case rest of
-        (path:rest') -> set (\cfg -> cfg { ccLibraryPaths = prependUnique path (ccLibraryPaths cfg) }) rest'
+        (path:rest') -> set (\cfg -> cfg { ccLibraryPaths = prependUnique path (ccLibraryPaths cfg) }) configs rest'
         [] -> Left "Expected path after --library-path"
       
       "--link" -> case rest of
-        (lib:rest') -> set (\cfg -> cfg { ccLinkedLibraries = prependUnique (T.pack lib) (ccLinkedLibraries cfg) }) rest'
+        (lib:rest') -> set (\cfg -> cfg { ccLinkedLibraries = prependUnique (T.pack lib) (ccLinkedLibraries cfg) }) configs rest'
         [] -> Left "Expected library name after --link"
       
       "--target" -> case rest of
         (target:rest') -> case parseTargetPlatform target of
-          Just platform -> set (\cfg -> cfg { ccTargetPlatform = platform }) rest'
+          Just platform -> set (\cfg -> cfg { ccTargetPlatform = platform }) configs rest'
           Nothing -> Left $ "Unknown target platform: " ++ target
         [] -> Left "Expected target platform after --target"
       
       _ | "--" `isPrefixOf` arg ->
             Left $ "Unknown option: " ++ arg ++ ". Use --help to see available options."
-      _ -> go modifier rest  -- Assume it's an input file
+      _ -> go modifier configs rest  -- Assume it's an input file
       where
-        set modifyFn remaining = go (modifyFn . modifier) remaining
+        set modifyFn currentConfigs remaining = go (modifyFn . modifier) currentConfigs remaining
         prependUnique value existing = value : filter (/= value) existing
 
 -- | Parse target platform from string
@@ -418,7 +451,7 @@ validateConfigFile :: FilePath -> IO (Either String ())
 validateConfigFile configFile = do
   result <- loadConfigFromFile configFile
   case result of
-    Left err -> return $ Left err
+    Left err -> return $ Left (renderConfigFileError err)
     Right _ -> return $ Right ()
 
 -- | Check if system meets requirements for compilation

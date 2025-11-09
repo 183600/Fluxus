@@ -131,8 +131,8 @@ defaultCppGenConfig = CppGenConfig
   , cgcUseSmartPointers = True
   , cgcEnableParallel = True
   , cgcEnableCoroutines = True
-  , cgcNamespace = "hyperstatic"
-  , cgcHeaderGuard = "HYPERSTATIC_GENERATED"
+  , cgcNamespace = "fluxus"
+  , cgcHeaderGuard = "FLUXUS_GENERATED"
   , cgcStrictMode = True
   }
 

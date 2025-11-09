@@ -23,7 +23,7 @@ main = do
 
 fullSpec :: Spec
 fullSpec =
-  describe "HyperStatic Compiler Test Suite" $ do
+  describe "Fluxus Compiler Test Suite" $ do
     PythonTests.spec
     GoTests.spec
     TypeInferenceTests.spec

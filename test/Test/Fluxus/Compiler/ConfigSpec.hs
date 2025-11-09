@@ -41,10 +41,16 @@ spec = describe "Fluxus.Compiler.Config" $ do
 
     it "deduplicates include paths when the same CLI flag is provided multiple times" $ do
       case parseCommandLineArgs ["--include", "/custom", "--include", "/custom"] of
-        Right (CLICommandModify modifier) -> do
+        Right (CLICommandModify modifier _) -> do
           let updated = modifier defaultConfig
           ccIncludePaths updated `shouldBe` ["/custom", "/usr/include", "/usr/local/include"]
         Right _ -> expectationFailure "expected CLICommandModify for --include"
+        Left err -> expectationFailure $ "failed to parse CLI args: " ++ err
+
+    it "collects configuration files from --config arguments in order" $ do
+      case parseCommandLineArgs ["--config", "alpha.yaml", "-c", "beta.yaml"] of
+        Right (CLICommandModify _ configs) -> configs `shouldBe` ["alpha.yaml", "beta.yaml"]
+        Right _ -> expectationFailure "expected CLICommandModify for --config"
         Left err -> expectationFailure $ "failed to parse CLI args: " ++ err
 
   describe "mergeConfigs" $ do
@@ -117,3 +123,40 @@ spec = describe "Fluxus.Compiler.Config" $ do
                   ccLibraryPaths finalConfig `shouldBe` ["/file/lib"]
                 Right other -> expectationFailure $ "unexpected non-success result: " ++ show other
                 Left err -> expectationFailure $ "loadConfig failed: " ++ err)
+
+    it "loads configuration overrides from explicit --config files" $ do
+      withSystemTempDirectory "fluxus-config-explicit" $ \tmpDir -> do
+        let firstConfig = tmpDir </> "first.yaml"
+            secondConfig = tmpDir </> "second.yaml"
+        writeFile firstConfig $ unlines
+          [ "cpp_standard: c++17"
+          , "cpp_compiler: first-clang++"
+          ]
+        writeFile secondConfig $ unlines
+          [ "cpp_standard: c++23"
+          , "cpp_compiler: second-clang++"
+          ]
+        result <- loadConfig ["--config", firstConfig, "--config", secondConfig]
+        case result of
+          Right (LoadConfigSuccess finalConfig) -> do
+            ccCppStandard finalConfig `shouldBe` T.pack "c++23"
+            ccCppCompiler finalConfig `shouldBe` T.pack "second-clang++"
+          Right other -> expectationFailure $ "unexpected non-success result: " ++ show other
+          Left err -> expectationFailure $ "loadConfig failed: " ++ err
+
+    it "reports parsing errors from configuration files" $ do
+      withSystemTempDirectory "fluxus-config-invalid" $ \tmpDir -> do
+        let invalidConfig = tmpDir </> "broken.yaml"
+        writeFile invalidConfig "cpp_standard: [unterminated"
+        result <- loadConfig ["--config", invalidConfig]
+        case result of
+          Left err -> do
+            err `shouldContain` "Failed to parse config file"
+            err `shouldContain` "broken.yaml"
+          Right other -> expectationFailure $ "expected failure, got " ++ show other
+
+    it "fails when an explicit --config file cannot be found" $ do
+      result <- loadConfig ["--config", "nonexistent-config.yaml"]
+      case result of
+        Left err -> err `shouldContain` "Configuration file not found"
+        Right other -> expectationFailure $ "expected failure, got " ++ show other

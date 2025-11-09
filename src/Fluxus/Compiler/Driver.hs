@@ -365,6 +365,25 @@ data CompilationArtifacts = CompilationArtifacts
   , caObjectFile :: !(Maybe FilePath)
   }
 
+-- | Resolve a candidate path into the configured work directory if one is set.
+resolveWorkPath :: CompilerConfig -> FilePath -> FilePath
+resolveWorkPath config candidate =
+  case ccWorkDirectory config of
+    Nothing -> candidate
+    Just workDir -> workDir </> takeFileName candidate
+
+-- | Compute the intermediate file path for a given source using the work directory.
+makeIntermediatePath :: CompilerConfig -> FilePath -> String -> FilePath
+makeIntermediatePath config source newExt =
+  resolveWorkPath config (replaceExtension source newExt)
+
+-- | Resolve a default-named artifact (like the executable) into the work directory.
+defaultOutputLocation :: CompilerConfig -> FilePath -> FilePath
+defaultOutputLocation config name =
+  case ccWorkDirectory config of
+    Nothing -> name
+    Just workDir -> workDir </> name
+
 compileFileArtifacts :: FilePath -> CompilerM CompilationArtifacts
 compileFileArtifacts inputFile = do
   config <- ask
@@ -394,8 +413,10 @@ compileFileArtifacts inputFile = do
   cppCode <- codeGenStage optimizedAst
   
   -- Write intermediate C++ file
-  let cppFile = replaceExtension inputFile ".cpp"
-  liftIO $ TIO.writeFile cppFile (renderCppUnit cppCode)
+  let cppFile = makeIntermediatePath config inputFile ".cpp"
+  liftIO $ do
+    createDirectoryIfMissing True (takeDirectory cppFile)
+    TIO.writeFile cppFile (renderCppUnit cppCode)
   addIntermediateFile cppFile
   
   if ccStopAtCodegen config
@@ -424,7 +445,8 @@ compileFile inputFile = do
       finalOutput <- case ccOutputPath config of
         Nothing ->
           let executableName = dropExtension (takeFileName inputFile)
-          in linkObjects [objFile] executableName
+              outputPath = defaultOutputLocation config executableName
+          in linkObjects [objFile] outputPath
         Just outPath -> linkObjects [objFile] outPath
       
       logInfo $ "Successfully compiled: " <> T.pack inputFile
@@ -447,14 +469,16 @@ compileProject inputFiles = do
   if ccStopAtCodegen config
     then do
       logInfo "Code generation completed for all files"
-      let outputPath = fromMaybe "." (ccOutputPath config)
+      let defaultLocation = fromMaybe "." (ccWorkDirectory config)
+          outputPath = fromMaybe defaultLocation (ccOutputPath config)
       return outputPath
     else do
       let objFiles = catMaybes (map caObjectFile artifacts)
       when (length objFiles /= length inputFiles) $
         throwError $ CodeGenError $ T.pack "Object file generation was skipped for one or more inputs; cannot link project without object files"
       
-      let outputPath = fromMaybe "hyperstatic_output" (ccOutputPath config)
+      let defaultOutput = defaultOutputLocation config "fluxus_output"
+          outputPath = fromMaybe defaultOutput (ccOutputPath config)
       setCurrentPhase "final-linking"
       finalBinary <- linkObjects objFiles outputPath
       
@@ -721,8 +745,8 @@ codeGenStage ast = do
         , cgcUseSmartPointers = ccOptimizationLevel config >= O2
         , cgcEnableParallel = ccEnableParallel config
         , cgcEnableCoroutines = ccCppStandard config >= "c++20"
-        , cgcNamespace = "hyperstatic"
-        , cgcHeaderGuard = "HYPERSTATIC_GENERATED"
+        , cgcNamespace = "fluxus"
+        , cgcHeaderGuard = "FLUXUS_GENERATED"
         , cgcStrictMode = ccStrictMode config
         }
 
@@ -779,6 +803,7 @@ linkObjects objFiles outputPath = do
   
   let args = buildLinkerArgs config objFiles outputPath
   
+  liftIO $ createDirectoryIfMissing True (takeDirectory outputPath)
   logVerbose $ "Linking: " <> T.pack (unwords $ map T.unpack args)
   
   (exitCode, stdout, stderr) <- liftIO $ readProcessWithExitCode 
