@@ -250,6 +250,12 @@ parseCommandLineArgs args = go id args
       "--strict" -> set (\cfg -> cfg { ccStrictMode = True }) rest
       "--no-strict" -> set (\cfg -> cfg { ccStrictMode = False }) rest
       
+      "--enable-analysis" -> set (\cfg -> cfg { ccEnableAnalysis = True }) rest
+      "--disable-analysis" -> set (\cfg -> cfg { ccEnableAnalysis = False }) rest
+      
+      "--stop-at-codegen" -> set (\cfg -> cfg { ccStopAtCodegen = True }) rest
+      "--full-pipeline" -> set (\cfg -> cfg { ccStopAtCodegen = False }) rest
+      
       "--keep-intermediates" -> set (\cfg -> cfg { ccKeepIntermediates = True }) rest
       "--clean-intermediates" -> set (\cfg -> cfg { ccKeepIntermediates = False }) rest
       
@@ -501,6 +507,8 @@ configToArgs config = concat
   , if ccEnableProfiler config then ["--enable-profiler"] else ["--disable-profiler"]
   , if ccEnableParallel config then ["--enable-parallel"] else ["--disable-parallel"]
   , if ccStrictMode config then ["--strict"] else ["--no-strict"]
+  , if ccEnableAnalysis config then ["--enable-analysis"] else ["--disable-analysis"]
+  , if ccStopAtCodegen config then ["--stop-at-codegen"] else ["--full-pipeline"]
   , if ccKeepIntermediates config then ["--keep-intermediates"] else ["--clean-intermediates"]
   , if ccSkipCompilerCheck config then ["--skip-compiler-check"] else ["--require-compiler-check"]
   , replicate (ccVerboseLevel config) "-v"
@@ -536,6 +544,7 @@ printConfig config = do
   putStrLn $ "Keep Intermediates: " ++ show (ccKeepIntermediates config)
   putStrLn $ "Strict Mode: " ++ show (ccStrictMode config)
   putStrLn $ "Skip Compiler Check: " ++ show (ccSkipCompilerCheck config)
+  putStrLn $ "Stop at Codegen: " ++ show (ccStopAtCodegen config)
   putStrLn $ "Static Analysis: " ++ show (ccEnableAnalysis config)
   putStrLn "=============================================="
 

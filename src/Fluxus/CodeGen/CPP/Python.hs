@@ -816,8 +816,15 @@ generatePythonExpr (Located span expr) = case expr of
     (_, vectorExpr) <- generatePythonListLiteral (Located span expr)
     return vectorExpr
   _ -> do
-    reportNotImplemented $ "TODO: Implement Python expression: " <> T.pack (show expr)
-    return $ CppLiteral $ CppIntLit 0
+    let message = "TODO: Implement Python expression: " <> T.pack (show expr)
+    reportNotImplemented message
+    strict <- gets (cgcStrictMode . cgsConfig)
+    if strict
+      then do
+        abortExpr <- runtimeAbortCall message
+        return $ CppBinary "," abortExpr (CppLiteral (CppIntLit 0))
+      else
+        return $ CppLiteral $ CppIntLit 0
 
 -- | Materialize a Python list literal into a C++ vector expression
 data ListFallback
