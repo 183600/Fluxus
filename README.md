@@ -301,6 +301,8 @@ export CXX=clang++                    # C++ 编译器
 export FLUXUS_CPP_STD=c++23           # C++ 标准
 export FLUXUS_VERBOSE=2               # 详细级别
 export FLUXUS_INTEROP=1               # 启用互操作
+export FLUXUS_ENABLE_ANALYSIS=1       # 启用静态分析
+export FLUXUS_STOP_AT_CODEGEN=0       # 生成后继续完整编译流程（设为1仅生成C++）
 ```
 
 ## 🔧 开发

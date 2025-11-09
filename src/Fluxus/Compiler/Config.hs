@@ -247,11 +247,17 @@ parseCommandLineArgs args = go id args
       "--enable-parallel" -> set (\cfg -> cfg { ccEnableParallel = True }) rest
       "--disable-parallel" -> set (\cfg -> cfg { ccEnableParallel = False }) rest
       
+      "--enable-analysis" -> set (\cfg -> cfg { ccEnableAnalysis = True }) rest
+      "--disable-analysis" -> set (\cfg -> cfg { ccEnableAnalysis = False }) rest
+      
       "--strict" -> set (\cfg -> cfg { ccStrictMode = True }) rest
       "--no-strict" -> set (\cfg -> cfg { ccStrictMode = False }) rest
       
       "--keep-intermediates" -> set (\cfg -> cfg { ccKeepIntermediates = True }) rest
       "--clean-intermediates" -> set (\cfg -> cfg { ccKeepIntermediates = False }) rest
+      
+      "--stop-at-codegen" -> set (\cfg -> cfg { ccStopAtCodegen = True }) rest
+      "--full-pipeline" -> set (\cfg -> cfg { ccStopAtCodegen = False }) rest
       
       "--skip-compiler-check" -> set (\cfg -> cfg { ccSkipCompilerCheck = True }) rest
       "--require-compiler-check" -> set (\cfg -> cfg { ccSkipCompilerCheck = False }) rest
@@ -371,6 +377,8 @@ applyEnvironmentOverrides config = do
   cppStd <- lookupEnv "FLUXUS_CPP_STD"
   verboseLevel <- lookupEnv "FLUXUS_VERBOSE"
   enableInterop <- lookupEnv "FLUXUS_INTEROP"
+  enableAnalysis <- lookupEnv "FLUXUS_ENABLE_ANALYSIS"
+  stopAtCodegen <- lookupEnv "FLUXUS_STOP_AT_CODEGEN"
   skipCompilerCheck <- lookupEnv "FLUXUS_SKIP_COMPILER_CHECK"
   
   resolvedVerboseLevel <- case verboseLevel of
@@ -386,6 +394,8 @@ applyEnvironmentOverrides config = do
     , ccCppStandard = maybe (ccCppStandard config) T.pack cppStd
     , ccVerboseLevel = resolvedVerboseLevel
     , ccEnableInterop = parseBoolOverride (ccEnableInterop config) enableInterop
+    , ccEnableAnalysis = parseBoolOverride (ccEnableAnalysis config) enableAnalysis
+    , ccStopAtCodegen = parseBoolOverride (ccStopAtCodegen config) stopAtCodegen
     , ccSkipCompilerCheck = parseBoolOverride (ccSkipCompilerCheck config) skipCompilerCheck
     }
   where
@@ -500,8 +510,10 @@ configToArgs config = concat
   , if ccEnableDebugInfo config then ["--enable-debug"] else ["--disable-debug"]
   , if ccEnableProfiler config then ["--enable-profiler"] else ["--disable-profiler"]
   , if ccEnableParallel config then ["--enable-parallel"] else ["--disable-parallel"]
+  , if ccEnableAnalysis config then ["--enable-analysis"] else ["--disable-analysis"]
   , if ccStrictMode config then ["--strict"] else ["--no-strict"]
   , if ccKeepIntermediates config then ["--keep-intermediates"] else ["--clean-intermediates"]
+  , if ccStopAtCodegen config then ["--stop-at-codegen"] else ["--full-pipeline"]
   , if ccSkipCompilerCheck config then ["--skip-compiler-check"] else ["--require-compiler-check"]
   , replicate (ccVerboseLevel config) "-v"
   , maybe [] (\path -> ["-o", path]) (ccOutputPath config)
@@ -535,8 +547,9 @@ printConfig config = do
   putStrLn $ "Work Directory: " ++ maybe "<temp>" id (ccWorkDirectory config)
   putStrLn $ "Keep Intermediates: " ++ show (ccKeepIntermediates config)
   putStrLn $ "Strict Mode: " ++ show (ccStrictMode config)
-  putStrLn $ "Skip Compiler Check: " ++ show (ccSkipCompilerCheck config)
   putStrLn $ "Static Analysis: " ++ show (ccEnableAnalysis config)
+  putStrLn $ "Stop At Codegen: " ++ show (ccStopAtCodegen config)
+  putStrLn $ "Skip Compiler Check: " ++ show (ccSkipCompilerCheck config)
   putStrLn "=============================================="
 
 

@@ -433,6 +433,8 @@ compileFile inputFile = do
           in linkObjects [objFile] executableName
         Just outPath -> linkObjects [objFile] outPath
       
+      cleanupIntermediateFiles
+      
       logInfo $ "Successfully compiled: " <> T.pack inputFile
       return finalOutput
 
@@ -463,11 +465,7 @@ compileProject inputFiles = do
       setCurrentPhase "final-linking"
       finalBinary <- linkObjects objFiles outputPath
       
-      -- Cleanup intermediate files if requested
-      unless (ccKeepIntermediates config) $ do
-        intermediates <- gets csIntermediateFiles
-        liftIO $ mapM_ removeFile intermediates
-        logInfo "Cleaned up intermediate files"
+      cleanupIntermediateFiles
       
       logInfo $ "Project compilation completed: " <> T.pack finalBinary
       return finalBinary
@@ -802,6 +800,17 @@ linkObjects objFiles outputPath = do
     ExitFailure code -> do
       let errorMsg = "Linking failed (exit code " <> T.pack (show code) <> "): " <> T.pack stderr
       throwError $ LinkError errorMsg
+
+cleanupIntermediateFiles :: CompilerM ()
+cleanupIntermediateFiles = do
+  config <- ask
+  unless (ccKeepIntermediates config) $ do
+    intermediates <- gets csIntermediateFiles
+    liftIO $ forM_ intermediates $ \path -> do
+      exists <- doesFileExist path
+      when exists $ removeFile path
+    modify $ \s -> s { csIntermediateFiles = [] }
+    logInfo "Cleaned up intermediate files"
 
 -- | Build C++ compiler arguments
 buildCppCompilerArgs :: CompilerConfig -> FilePath -> FilePath -> [Text]

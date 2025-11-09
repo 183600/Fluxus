@@ -47,6 +47,22 @@ spec = describe "Fluxus.Compiler.Config" $ do
         Right _ -> expectationFailure "expected CLICommandModify for --include"
         Left err -> expectationFailure $ "failed to parse CLI args: " ++ err
 
+    it "allows disabling analysis from the CLI" $ do
+      case parseCommandLineArgs ["--disable-analysis"] of
+        Right (CLICommandModify modifier) -> do
+          let updated = modifier defaultConfig
+          ccEnableAnalysis updated `shouldBe` False
+        Right _ -> expectationFailure "expected CLICommandModify for --disable-analysis"
+        Left err -> expectationFailure $ "failed to parse CLI args: " ++ err
+
+    it "enables stop-at-codegen when requested on the CLI" $ do
+      case parseCommandLineArgs ["--stop-at-codegen"] of
+        Right (CLICommandModify modifier) -> do
+          let updated = modifier defaultConfig
+          ccStopAtCodegen updated `shouldBe` True
+        Right _ -> expectationFailure "expected CLICommandModify for --stop-at-codegen"
+        Left err -> expectationFailure $ "failed to parse CLI args: " ++ err
+
   describe "mergeConfigs" $ do
     it "allows overriding include paths with an empty list" $ do
       let overrides = emptyOverrides { ccoIncludePaths = Just [] }
@@ -84,6 +100,8 @@ spec = describe "Fluxus.Compiler.Config" $ do
       originalCwd <- getCurrentDirectory
       originalCxx <- lookupEnv "CXX"
       originalVerbose <- lookupEnv "FLUXUS_VERBOSE"
+      originalEnableAnalysis <- lookupEnv "FLUXUS_ENABLE_ANALYSIS"
+      originalStopAtCodegen <- lookupEnv "FLUXUS_STOP_AT_CODEGEN"
       withSystemTempDirectory "fluxus-config-test" $ \tmpDir -> do
         let configContent = unlines
               [ "cpp_standard: c++23"
@@ -92,6 +110,8 @@ spec = describe "Fluxus.Compiler.Config" $ do
               , "  - /file/include"
               , "library_paths:"
               , "  - /file/lib"
+              , "enable_analysis: false"
+              , "stop_at_codegen: true"
               ]
         writeFile (tmpDir </> "fluxus.yaml") configContent
 
@@ -103,11 +123,15 @@ spec = describe "Fluxus.Compiler.Config" $ do
         bracket_
           (do setCurrentDirectory tmpDir
               setEnv "CXX" "env-clang++"
-              setEnv "FLUXUS_VERBOSE" "2")
+              setEnv "FLUXUS_VERBOSE" "2"
+              setEnv "FLUXUS_ENABLE_ANALYSIS" "1"
+              setEnv "FLUXUS_STOP_AT_CODEGEN" "0")
           (do setCurrentDirectory originalCwd
               restoreEnv "CXX" originalCxx
-              restoreEnv "FLUXUS_VERBOSE" originalVerbose)
-          (do result <- loadConfig ["--cpp-std", "c++26", "--cpp-compiler", "cli-clang++", "--include", "/cli/include"]
+              restoreEnv "FLUXUS_VERBOSE" originalVerbose
+              restoreEnv "FLUXUS_ENABLE_ANALYSIS" originalEnableAnalysis
+              restoreEnv "FLUXUS_STOP_AT_CODEGEN" originalStopAtCodegen)
+          (do result <- loadConfig ["--cpp-std", "c++26", "--cpp-compiler", "cli-clang++", "--include", "/cli/include", "--disable-analysis", "--stop-at-codegen"]
               case result of
                 Right (LoadConfigSuccess finalConfig) -> do
                   ccCppCompiler finalConfig `shouldBe` T.pack "cli-clang++"
@@ -115,5 +139,7 @@ spec = describe "Fluxus.Compiler.Config" $ do
                   ccVerboseLevel finalConfig `shouldBe` 2
                   ccIncludePaths finalConfig `shouldBe` ["/cli/include", "/file/include"]
                   ccLibraryPaths finalConfig `shouldBe` ["/file/lib"]
+                  ccEnableAnalysis finalConfig `shouldBe` False
+                  ccStopAtCodegen finalConfig `shouldBe` True
                 Right other -> expectationFailure $ "unexpected non-success result: " ++ show other
                 Left err -> expectationFailure $ "loadConfig failed: " ++ err)
