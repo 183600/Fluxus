@@ -34,8 +34,11 @@ module Fluxus.CodeGen.CPP.Monad
   , addDeclaration
   , ensureHelperFunction
   , ensureRuntimeAbortHelper
+  , ensureRuntimeFallbackHelper
   , runtimeAbortCall
   , runtimeAbortStmt
+  , runtimeFallbackCall
+  , runtimeFallbackStmt
   , recordHoistedGlobal
   , enterNamespace
   , exitNamespace
@@ -133,7 +136,7 @@ defaultCppGenConfig = CppGenConfig
   , cgcEnableCoroutines = True
   , cgcNamespace = "fluxus"
   , cgcHeaderGuard = "FLUXUS_GENERATED"
-  , cgcStrictMode = True
+  , cgcStrictMode = False
   }
 
 initialCppGenState :: CppGenConfig -> CppGenState
@@ -238,6 +241,9 @@ ensureHelperFunction helperName decl = do
 runtimeAbortHelperName :: Text
 runtimeAbortHelperName = "fluxus_runtime_abort"
 
+runtimeFallbackHelperName :: Text
+runtimeFallbackHelperName = "fluxus_runtime_fallback"
+
 ensureRuntimeAbortHelper :: CppCodeGen ()
 ensureRuntimeAbortHelper = do
   addInclude "<stdexcept>"
@@ -248,6 +254,23 @@ ensureRuntimeAbortHelper = do
         [CppParam "message" (CppPointer (CppConst CppChar)) Nothing]
         [CppThrow (Just (CppCall (CppVar "std::runtime_error") [CppVar "message"]))]
 
+ensureRuntimeFallbackHelper :: CppCodeGen ()
+ensureRuntimeFallbackHelper = do
+  addInclude "<iostream>"
+  ensureHelperFunction runtimeFallbackHelperName helperDecl
+  where
+    helperDecl =
+      CppFunction runtimeFallbackHelperName CppVoid
+        [CppParam "message" (CppPointer (CppConst CppChar)) Nothing]
+        [CppExprStmt fallbackExpr]
+    fallbackExpr =
+      let prefixExpr = CppLiteral (CppStringLit "[fluxus runtime fallback] ")
+          cerrExpr = CppVar "std::cerr"
+          endlExpr = CppVar "std::endl"
+          withPrefix = CppBinary "<<" cerrExpr prefixExpr
+          withMessage = CppBinary "<<" withPrefix (CppVar "message")
+      in CppBinary "<<" withMessage endlExpr
+
 runtimeAbortCall :: Text -> CppCodeGen CppExpr
 runtimeAbortCall message = do
   ensureRuntimeAbortHelper
@@ -255,6 +278,14 @@ runtimeAbortCall message = do
 
 runtimeAbortStmt :: Text -> CppCodeGen CppStmt
 runtimeAbortStmt message = CppExprStmt <$> runtimeAbortCall message
+
+runtimeFallbackCall :: Text -> CppCodeGen CppExpr
+runtimeFallbackCall message = do
+  ensureRuntimeFallbackHelper
+  pure $ CppCall (CppVar runtimeFallbackHelperName) [CppLiteral (CppStringLit message)]
+
+runtimeFallbackStmt :: Text -> CppCodeGen CppStmt
+runtimeFallbackStmt message = CppExprStmt <$> runtimeFallbackCall message
 
 recordHoistedGlobal :: Text -> CppCodeGen ()
 recordHoistedGlobal name =
