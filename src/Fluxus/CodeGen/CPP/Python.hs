@@ -165,18 +165,18 @@ generatePythonStmt scope (Located span stmt) =
     PyTry tryBody excepts elseStmts finallyStmts ->
       generatePythonTry scope span tryBody excepts elseStmts finallyStmts
     PyAsyncWith _ _ ->
-      runtimeFallbackStmt span "Python 'async with' statement requires runtime fallback"
+      buildRuntimeFallback span "Python 'async with' statement requires runtime fallback"
     PyAsyncFor _ _ _ _ ->
-      runtimeFallbackStmt span "Python 'async for' statement requires runtime fallback"
+      buildRuntimeFallback span "Python 'async for' statement requires runtime fallback"
     PyAsyncFuncDef funcDef -> do
       generateAsyncFunctionFallback span funcDef
       return cppNoop
     PyRaise excExpr causeExpr ->
       generatePythonRaise span excExpr causeExpr
     PyYield _ ->
-      runtimeFallbackStmt span "Python 'yield' expression requires runtime fallback"
+      buildRuntimeFallback span "Python 'yield' expression requires runtime fallback"
     PyYieldFrom _ ->
-      runtimeFallbackStmt span "Python 'yield from' expression requires runtime fallback"
+      buildRuntimeFallback span "Python 'yield from' expression requires runtime fallback"
     _ -> do
       let msg = "Python statement not implemented: " <> T.pack (show stmt)
       reportFatalNotImplemented msg
@@ -191,20 +191,22 @@ generatePythonStmt scope (Located span stmt) =
         else emitWarning message
       pure message
 
-    runtimeFallbackStmt :: SourceSpan -> Text -> CppCodeGen CppStmt
-    runtimeFallbackStmt loc baseMessage = do
+    buildRuntimeFallback :: SourceSpan -> Text -> CppCodeGen CppStmt
+    buildRuntimeFallback loc baseMessage = do
       message <- runtimeFallbackMessage loc baseMessage
-      abortStmt <- runtimeAbortStmt message
+      strict <- gets (cgcStrictMode . cgsConfig)
+      fallbackStmt <- if strict
+        then runtimeAbortStmt message
+        else runtimeFallbackStmt message
       pure $ CppStmtSeq
         [ CppComment ("runtime fallback: " <> baseMessage)
-        , abortStmt
+        , fallbackStmt
         ]
 
     generateAsyncFunctionFallback :: SourceSpan -> PythonFuncDef -> CppCodeGen ()
     generateAsyncFunctionFallback loc funcDef = do
       let funcName = (\(Identifier n) -> n) (pyFuncName funcDef)
           baseMessage = "Python async function '" <> funcName <> "' requires runtime fallback"
-      message <- runtimeFallbackMessage loc baseMessage
       cppParams <- mapM mapPythonParameter (pyFuncParams funcDef)
       returnType <- case pyFuncReturns funcDef of
         Just typeExpr ->
@@ -212,11 +214,8 @@ generatePythonStmt scope (Located span stmt) =
             then pure CppVoid
             else mapPythonType typeExpr
         Nothing -> pure CppAuto
-      abortStmt <- runtimeAbortStmt message
-      let body =
-            [ CppComment ("runtime fallback: async function '" <> funcName <> "'")
-            , abortStmt
-            ]
+      fallbackStmt <- buildRuntimeFallback loc baseMessage
+      let body = [fallbackStmt]
       addDeclaration $ CppFunction funcName returnType cppParams body
       emitInfo $ "Generated fallback stub for async function " <> funcName
 

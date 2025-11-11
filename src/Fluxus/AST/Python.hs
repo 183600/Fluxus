@@ -246,7 +246,7 @@ data PythonComprehension = PythonComprehension
 -- | Import statements
 data PythonImport
   = ImportModule !ModuleName !(Maybe Identifier)  -- import module [as alias]
-  | ImportFrom !ModuleName ![Identifier] ![Identifier]  -- from module import names [as aliases]
+  | ImportFrom !ModuleName ![(Identifier, Maybe Identifier)]  -- from module import names [as aliases]
   | ImportFromStar !ModuleName                     -- from module import *
   deriving stock (Eq, Show, Generic)
     deriving anyclass (Hashable, NFData)

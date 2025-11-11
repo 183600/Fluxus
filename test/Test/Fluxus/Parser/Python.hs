@@ -6,7 +6,7 @@ module Test.Fluxus.Parser.Python (spec) where
 
 import Test.Hspec
 import Data.Text (Text)
--- import qualified Data.Text as T
+import qualified Data.Text as T
 
 import Fluxus.Parser.Python.Lexer
 import Fluxus.Parser.Python.Parser
@@ -16,6 +16,21 @@ import Fluxus.AST.Common
 safeHead :: [a] -> a
 safeHead [] = error "safeHead: empty list (test invariant violated)"
 safeHead (x:_) = x
+
+parseModuleFrom :: Text -> Either String PythonModule
+parseModuleFrom source =
+  case runPythonLexer (T.pack "test.py") source of
+    Left err -> Left (show err)
+    Right tokens ->
+      case runPythonParser (T.pack "test.py") tokens of
+        Left perr -> Left (show perr)
+        Right (PythonAST modu) -> Right modu
+
+withParsedModule :: Text -> (PythonModule -> Expectation) -> Expectation
+withParsedModule source action =
+  case parseModuleFrom source of
+    Left err -> expectationFailure err
+    Right modu -> action modu
 
 spec :: Spec
 spec = describe "Python Parser" $ do
@@ -345,6 +360,107 @@ parserSpec = describe "Python Parser" $ do
         case locatedValue (safeHead (pyModuleBody module_)) of
           PyIf _ _ _ -> return ()
           _ -> expectationFailure "Expected if statement"
+  
+  describe "enhanced constructs" $ do
+    it "parses list literals with elements" $
+      withParsedModule "values = [1, 2, 3]\n" $ \module_ -> do
+        case pyModuleBody module_ of
+          [assignStmt] -> case locatedValue assignStmt of
+            PyAssign targets value -> do
+              length targets `shouldBe` 1
+              let SourceSpan { spanStart = SourcePos startLine _ } = locSpan value
+              startLine `shouldSatisfy` (> 0)
+              case locValue value of
+                PyList elems -> do
+                  length elems `shouldBe` 3
+                  all (isLiteral . locValue) elems `shouldBe` True
+                other -> expectationFailure $ "Expected list literal, found " <> show other
+            other -> expectationFailure $ "Expected assignment, found " <> show other
+          _ -> expectationFailure "Expected single assignment statement"
+    
+    it "parses dictionary literals" $
+      withParsedModule "mapping = {\"a\": 1, \"b\": 2}\n" $ \module_ -> do
+        case pyModuleBody module_ of
+          [assignStmt] -> case locatedValue assignStmt of
+            PyAssign _ value -> case locValue value of
+              PyDict pairs -> do
+                length pairs `shouldBe` 2
+                let firstPair = head pairs
+                isLiteral (locValue (fst firstPair)) `shouldBe` True
+              other -> expectationFailure $ "Expected dict literal, found " <> show other
+            other -> expectationFailure $ "Expected assignment, found " <> show other
+          _ -> expectationFailure "Expected single assignment"
+    
+    it "parses set literals" $
+      withParsedModule "names = {a, b, c}\n" $ \module_ -> do
+        case pyModuleBody module_ of
+          [assignStmt] -> case locatedValue assignStmt of
+            PyAssign _ value -> case locValue value of
+              PySet elems -> length elems `shouldBe` 3
+              other -> expectationFailure $ "Expected set literal, found " <> show other
+            other -> expectationFailure $ "Expected assignment, found " <> show other
+          _ -> expectationFailure "Expected single assignment"
+    
+    it "parses destructuring assignments with starred patterns" $
+      withParsedModule "first, *rest = values\n" $ \module_ -> do
+        case pyModuleBody module_ of
+          [assignStmt] -> case locatedValue assignStmt of
+            PyAssign targets _ -> case map locValue targets of
+              [PatTuple [firstPat, starredPat]] -> do
+                firstPat `shouldBe` PatVar (Identifier "first")
+                case starredPat of
+                  PatStarred inner -> locValue inner `shouldBe` PatVar (Identifier "rest")
+                  other -> expectationFailure $ "Expected starred pattern, found " <> show other
+              other -> expectationFailure $ "Expected tuple pattern, found " <> show other
+            other -> expectationFailure $ "Expected assignment, found " <> show other
+          _ -> expectationFailure "Expected single assignment"
+    
+    it "captures decorators and starred parameters for async functions" $
+      withParsedModule (T.unlines
+        [ "@logged"
+        , "async def func(a, *args, **kwargs):"
+        , "    pass"
+        ]) $ \module_ -> do
+        case pyModuleBody module_ of
+          [funcStmt] -> case locatedValue funcStmt of
+            PyAsyncFuncDef funcDef -> do
+              length (pyFuncDecorators funcDef) `shouldBe` 1
+              case pyFuncDecorators funcDef of
+                [Located _ decorator] -> locValue (pyDecoratorName decorator) `shouldBe` PyVar (Identifier "logged")
+                _ -> expectationFailure "Expected single decorator"
+              let params = map locValue (pyFuncParams funcDef)
+              params `shouldSatisfy` any isVarParam
+              params `shouldSatisfy` any isVarArgsParam
+              params `shouldSatisfy` any isKwArgsParam
+            other -> expectationFailure $ "Expected async function, found " <> show other
+          _ -> expectationFailure "Expected single function"
+    
+    it "parses decorated classes with bases and keyword arguments" $
+      withParsedModule (T.unlines
+        [ "@decorator"
+        , "class Derived(Base, metaclass=Meta):"
+        , "    pass"
+        ]) $ \module_ -> do
+        case pyModuleBody module_ of
+          [classStmt] -> case locatedValue classStmt of
+            PyClassDef classDef -> do
+              length (pyClassDecorators classDef) `shouldBe` 1
+              map locValue (pyClassBases classDef) `shouldBe` [PyVar (Identifier "Base")]
+              case pyClassKeywords classDef of
+                [(Identifier "metaclass", metaExpr)] -> locValue metaExpr `shouldBe` PyVar (Identifier "Meta")
+                other -> expectationFailure $ "Unexpected class keywords: " <> show other
+            other -> expectationFailure $ "Expected class definition, found " <> show other
+          _ -> expectationFailure "Expected single class"
+    
+    it "parses from-import statements with aliases" $
+      withParsedModule "from package.sub import name as alias, other\n" $ \module_ -> do
+        case pyModuleImports module_ of
+          [Located _ importStmt] -> case importStmt of
+            ImportFrom moduleName items -> do
+              moduleName `shouldBe` ModuleName "package.sub"
+              items `shouldBe` [(Identifier "name", Just (Identifier "alias")), (Identifier "other", Nothing)]
+            other -> expectationFailure $ "Expected from-import, found " <> show other
+          _ -> expectationFailure "Expected single import"
 
 -- Helper functions
 mockTokens :: [PythonToken] -> [Located PythonToken]
@@ -354,6 +470,22 @@ mockToken :: PythonToken -> Located PythonToken
 mockToken token = Located mockSpan token
   where
     mockSpan = SourceSpan "test.py" (SourcePos 1 1) (SourcePos 1 10)
+
+isLiteral :: PythonExpr -> Bool
+isLiteral (PyLiteral _) = True
+isLiteral _ = False
+
+isVarParam :: PythonParameter -> Bool
+isVarParam (ParamNormal (Identifier name) _ _) = name == "a"
+isVarParam _ = False
+
+isVarArgsParam :: PythonParameter -> Bool
+isVarArgsParam (ParamVarArgs (Identifier name) _) = name == "args"
+isVarArgsParam _ = False
+
+isKwArgsParam :: PythonParameter -> Bool
+isKwArgsParam (ParamKwArgs (Identifier name) _) = name == "kwargs"
+isKwArgsParam _ = False
 
 tokenValue :: PythonToken -> Text
 tokenValue = \case
