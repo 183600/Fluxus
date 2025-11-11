@@ -6,7 +6,7 @@ import qualified Data.Text as T
 import Data.Either (isRight)
 import Test.Hspec
 import System.Directory (createDirectoryIfMissing, doesFileExist)
-import System.FilePath ((</>), takeDirectory)
+import System.FilePath ((</>), takeDirectory, replaceExtension)
 import System.IO.Temp (withSystemTempDirectory)
 
 import Fluxus.Compiler.Driver
@@ -17,6 +17,7 @@ import Fluxus.Compiler.Driver
   , defaultConfig
   , runCompiler
   , setupCompilerEnvironment
+  , resolveWorkPath
   )
 
 spec :: Spec
@@ -71,9 +72,10 @@ spec = describe "Fluxus.Compiler.Driver" $ do
             compileFile sourceFile
           case compileResult of
             Right (cppPath, _) -> do
-              cppPath `shouldBe` workDir </> "example.cpp"
-              doesFileExist (workDir </> "example.cpp") `shouldReturn` True
-              doesFileExist (srcDir </> "example.cpp") `shouldReturn` False
+              let expectedCpp = resolveWorkPath config (replaceExtension sourceFile ".cpp")
+              cppPath `shouldBe` expectedCpp
+              doesFileExist expectedCpp `shouldReturn` True
+              doesFileExist (replaceExtension sourceFile ".cpp") `shouldReturn` False
             Left err -> expectationFailure $ "Compilation failed: " ++ show err
 
   describe "compileProject" $ do
@@ -104,8 +106,44 @@ spec = describe "Fluxus.Compiler.Driver" $ do
           case compileResult of
             Right (outputPath, _) -> do
               outputPath `shouldBe` workDir
-              doesFileExist (workDir </> "first.cpp") `shouldReturn` True
-              doesFileExist (workDir </> "second.cpp") `shouldReturn` True
-              doesFileExist (srcDir </> "pkg" </> "first.cpp") `shouldReturn` False
-              doesFileExist (srcDir </> "other" </> "second.cpp") `shouldReturn` False
+              let firstCpp = resolveWorkPath config (replaceExtension firstSource ".cpp")
+                  secondCpp = resolveWorkPath config (replaceExtension secondSource ".cpp")
+              doesFileExist firstCpp `shouldReturn` True
+              doesFileExist secondCpp `shouldReturn` True
+              doesFileExist (replaceExtension firstSource ".cpp") `shouldReturn` False
+              doesFileExist (replaceExtension secondSource ".cpp") `shouldReturn` False
+            Left err -> expectationFailure $ "Project compilation failed: " ++ show err
+
+    it "preserves directory structure in the work directory to avoid filename collisions" $ do
+      withSystemTempDirectory "fluxus-work" $ \workDir ->
+        withSystemTempDirectory "fluxus-src" $ \srcDir -> do
+          let firstSource = srcDir </> "pkg" </> "main.py"
+              secondSource = srcDir </> "tests" </> "main.py"
+          createDirectoryIfMissing True (takeDirectory firstSource)
+          createDirectoryIfMissing True (takeDirectory secondSource)
+          writeFile firstSource $ unlines
+            [ "def first():"
+            , "    return 1"
+            ]
+          writeFile secondSource $ unlines
+            [ "def second():"
+            , "    return 2"
+            ]
+          let config = defaultConfig
+                { ccStopAtCodegen = True
+                , ccSkipCompilerCheck = True
+                , ccWorkDirectory = Just workDir
+                , ccVerboseLevel = 0
+                }
+          compileResult <- runCompiler config $ do
+            setupCompilerEnvironment
+            compileProject [firstSource, secondSource]
+          case compileResult of
+            Right _ -> do
+              let firstCpp = resolveWorkPath config (replaceExtension firstSource ".cpp")
+                  secondCpp = resolveWorkPath config (replaceExtension secondSource ".cpp")
+              firstCpp `shouldNotBe` secondCpp
+              takeDirectory firstCpp `shouldNotBe` takeDirectory secondCpp
+              doesFileExist firstCpp `shouldReturn` True
+              doesFileExist secondCpp `shouldReturn` True
             Left err -> expectationFailure $ "Project compilation failed: " ++ show err
