@@ -30,6 +30,7 @@ module Fluxus.Compiler.Driver
   , validateConfig
   , setupCompilerEnvironment
   , showTargetPlatform
+  , resolveWorkPath
   ) where
 
 import Data.List (intercalate, foldl', partition)
@@ -53,7 +54,7 @@ import System.FilePath
 import System.Directory
 import System.Process
 import System.Exit
-import Data.Hashable (Hashable)
+import Data.Hashable (Hashable, hash)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 
@@ -370,7 +371,36 @@ resolveWorkPath :: CompilerConfig -> FilePath -> FilePath
 resolveWorkPath config candidate =
   case ccWorkDirectory config of
     Nothing -> candidate
-    Just workDir -> workDir </> takeFileName candidate
+    Just workDir ->
+      let normalizedCandidate = normalise candidate
+          relativeCandidate = candidateRelative normalizedCandidate
+          sanitizedRelative = sanitizeRelativePath relativeCandidate
+          resolvedRelative =
+            if null sanitizedRelative
+              then hashedFallback normalizedCandidate
+              else sanitizedRelative
+      in normalise (workDir </> resolvedRelative)
+  where
+    candidateRelative path
+      | isRelative path = path
+      | otherwise =
+          let noDrive = dropDrive path
+          in dropWhile isPathSeparator noDrive
+    sanitizeRelativePath path =
+      let components = filter (not . null) (splitDirectories path)
+          sanitizedComponents = map sanitizeComponent components
+      in joinPath sanitizedComponents
+    sanitizeComponent ".." = "__parent__"
+    sanitizeComponent "." = "__current__"
+    sanitizeComponent component = component
+    hashedFallback path =
+      let digest = show (abs (hash path))
+          baseName = takeFileName path
+          leafName =
+            if null baseName
+              then digest <> ".artifact"
+              else baseName
+      in joinPath [digest, leafName]
 
 -- | Compute the intermediate file path for a given source using the work directory.
 makeIntermediatePath :: CompilerConfig -> FilePath -> String -> FilePath
