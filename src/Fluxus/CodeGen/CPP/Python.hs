@@ -556,7 +556,6 @@ finallyBlockSupportsRAII = all stmtSupported
     stmtSupported (CppExprStmt _) = True
     stmtSupported (CppThrow _) = True
     stmtSupported (CppComment _) = True
-    stmtSupported _ = True
 
     caseSupported :: CppCase -> Bool
     caseSupported (CppCase _ stmts) = all stmtSupported stmts
@@ -985,7 +984,7 @@ inferPythonLiteralType = \case
   PyFloat _ -> Just CppDouble
   PyBool _ -> Just CppBool
   PyString _ -> Just CppString
-  PyFString _ _ -> Just CppString
+  PyFString _ -> Just CppString
   PyBytes _ -> Just CppString
   _ -> Nothing
 
@@ -1137,8 +1136,8 @@ finallyGuardDecl =
     , guardDestructor
     , guardDismiss
     , CppAccessSpec "private"
-    , CppDecl (CppVariable "handler_" handlerType Nothing)
-    , CppDecl (CppVariable "active_" CppBool (Just (CppLiteral (CppBoolLit False))))
+    , CppVariable "handler_" handlerType Nothing
+    , CppVariable "active_" CppBool (Just (CppLiteral (CppBoolLit False)))
     ]
   where
     handlerType = CppClassType "std::function" [CppFunctionType [] CppVoid]
@@ -1185,12 +1184,12 @@ finallyGuardDecl =
         ] False
 
 generatePythonFunction :: PythonFuncDef -> CppCodeGen ()
-
+generatePythonFunction funcDef = do
   let funcName = (\(Identifier n) -> n) (pyFuncName funcDef)
-  
+
   -- Map parameters
   cppParams <- mapM mapPythonParameter (pyFuncParams funcDef)
-  
+
   -- Determine return type
   returnType <- case pyFuncReturns funcDef of
     Just typeExpr ->
@@ -1202,15 +1201,15 @@ generatePythonFunction :: PythonFuncDef -> CppCodeGen ()
     Nothing
       | funcName == "main" -> return CppInt
       | otherwise -> inferFunctionReturnType funcName (pyFuncBody funcDef)
-  
+
   -- Generate function body
   bodyStmts <- mapM (generatePythonStmt ScopeFunction) (pyFuncBody funcDef)
-  
+
   -- Add return statement for main function if needed
   let finalBodyStmts = if funcName == "main" && returnType == CppInt
                       then bodyStmts ++ [CppReturn (Just (CppLiteral $ CppIntLit 0))]
                       else bodyStmts
-  
+
   addDeclaration $ CppFunction funcName returnType cppParams finalBodyStmts
 
 refineAnnotatedReturnType :: Text -> CppType -> [Located PythonStmt] -> CppCodeGen CppType

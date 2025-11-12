@@ -34,6 +34,7 @@ module Fluxus.Compiler.Config
   ) where
 
 import Data.Aeson
+import Data.Aeson.Types (Parser)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Yaml (decodeFileEither, prettyPrintParseException)
@@ -131,9 +132,9 @@ emptyOverrides = CompilerConfigOverrides
 
 instance FromJSON CompilerConfigOverrides where
   parseJSON = withObject "CompilerConfig" $ \o -> do
-    rawSourceLanguage <- o .:? "source_language"
-    rawOptimization <- o .:? "optimization_level"
-    rawTarget <- o .:? "target_platform"
+    rawSourceLanguage <- (o .:? "source_language" :: Parser (Maybe Text))
+    rawOptimization <- (o .:? "optimization_level" :: Parser (Maybe Text))
+    rawTarget <- (o .:? "target_platform" :: Parser (Maybe Text))
     outputPath <- o .:? "output_path"
     enableInterop <- o .:? "enable_interop"
     enableDebug <- o .:? "enable_debug_info"
@@ -182,11 +183,14 @@ instance FromJSON CompilerConfigOverrides where
       , ccoSkipCompilerCheck = skipCompilerCheck
       }
     where
-      parseSourceLanguageValue = \case
+      parseSourceLanguageValue :: Text -> Maybe SourceLanguage
+      parseSourceLanguageValue value = case T.unpack value of
         "Python" -> Just Python
         "Go" -> Just Go
         _ -> Nothing
-      parseOptimizationValue = \case
+
+      parseOptimizationValue :: Text -> Maybe OptimizationLevel
+      parseOptimizationValue value = case T.unpack value of
         "O0" -> Just O0
         "O1" -> Just O1
         "O2" -> Just O2

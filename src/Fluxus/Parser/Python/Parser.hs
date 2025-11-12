@@ -39,7 +39,7 @@ import qualified Control.Applicative as A
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
-import Text.Megaparsec hiding (many, some)
+import Text.Megaparsec hiding (many, some, SourcePos)
 import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
 import Data.List.NonEmpty (NonEmpty)
@@ -541,7 +541,7 @@ parseFStringExpression exprText spanInfo = do
       eofToken = Located spanInfo TokenEOF
       sourceName = T.unpack (spanFilename spanInfo)
   case MP.parse (parseExpression <* MP.eof) sourceName (shifted ++ [eofToken]) of
-    Left err -> Left (T.pack (MP.errorBundlePretty err))
+    Left err -> Left (T.pack (show err))
     Right parsed -> Right parsed
 
 shiftFStringToken :: SourceSpan -> Located PythonToken -> Located PythonToken

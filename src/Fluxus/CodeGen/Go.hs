@@ -651,7 +651,7 @@ inferGoTypeHeuristic expr = case expr of
     PyBool _ -> "bool"
     PyNone -> "interface{}"
     PyComplex _ _ -> "complex128"
-    PyFString _ _ -> "string"
+    PyFString _ -> "string"
     PyBytes _ -> "[]byte"
     PyEllipsis -> "interface{}"
   PyConst qn -> pure (goTypeFromSimpleName (identifierText (qnName qn)))

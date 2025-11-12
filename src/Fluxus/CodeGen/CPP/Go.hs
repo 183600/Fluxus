@@ -76,8 +76,8 @@ generateCppFromGo (GoAST goPackage) = do
     isMainFunction _ = False
 
 formatSourceSpanShort :: SourceSpan -> Text
-formatSourceSpanShort SourceSpan { spanFilename, spanStart = SourcePos line col } =
-  spanFilename <> ":" <> T.pack (show line) <> ":" <> T.pack (show col)
+formatSourceSpanShort SourceSpan { spanFilename = filename, spanStart = SourcePos line col } =
+  filename <> ":" <> T.pack (show line) <> ":" <> T.pack (show col)
 
 wrapStatements :: [CppStmt] -> CppStmt
 wrapStatements [] = CppStmtSeq []
@@ -392,9 +392,9 @@ generateGoSwitch span mInit mExpr clauses = do
       matchDecl = CppDecl (CppVariable matchFlagName CppBool (Just (CppLiteral (CppBoolLit False))))
       guardExpr = CppUnary "!" matchVarExpr
       setMatched = CppExprStmt (CppBinary "=" matchVarExpr (CppLiteral (CppBoolLit True)))
-      buildClause SwitchBranch { sbCondition, sbBody } =
-        let condition = maybe guardExpr (\condExpr -> CppBinary "&&" guardExpr condExpr) sbCondition
-            body = setMatched : sbBody
+      buildClause SwitchBranch { sbCondition = branchCondition, sbBody = branchBody } =
+        let condition = maybe guardExpr (\condExpr -> CppBinary "&&" guardExpr condExpr) branchCondition
+            body = setMatched : branchBody
         in CppIf condition body []
       clauseStmts = map buildClause switchClauses
       prefixStmts = catMaybes [initStmt, valueDecl]
@@ -578,7 +578,7 @@ resolveStructLiteralValues span structFields provided =
     resolveKeyed keyedEntries = do
       let providedMap = HM.fromList keyedEntries
           structNames = map fst structFields
-          missingNames = [name | (name, _) <- structFields, HM.notMember name providedMap]
+          missingNames = [name | (name, _) <- structFields, not (HM.member name providedMap)]
           extraNames = [name | (name, _) <- keyedEntries, name `notElem` structNames]
       unless (null missingNames) $
         emitWarning $
