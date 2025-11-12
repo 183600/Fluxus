@@ -176,6 +176,7 @@ data CompilerConfig = CompilerConfig
   , ccKeepIntermediates :: !Bool
   , ccStrictMode        :: !Bool            -- Treat warnings as errors
   , ccEnableAnalysis    :: !Bool            -- Enable static analysis
+  , ccEnableExperimentalOptimizations :: !Bool -- Enable unfinished optimization passes
   , ccStopAtCodegen     :: !Bool            -- Stop after generating C++ source
   , ccSkipCompilerCheck :: !Bool            -- Skip verifying the C++ compiler during setup
   } deriving stock (Eq, Show, Generic)
@@ -200,6 +201,7 @@ instance ToJSON CompilerConfig where
     , "enable_debug_info" .= ccEnableDebugInfo config
     , "enable_profiler" .= ccEnableProfiler config
     , "enable_parallel" .= ccEnableParallel config
+    , "enable_experimental_optimizations" .= ccEnableExperimentalOptimizations config
     , "max_concurrency" .= ccMaxConcurrency config
     , "include_paths" .= ccIncludePaths config
     , "library_paths" .= ccLibraryPaths config
@@ -279,6 +281,7 @@ defaultConfig = CompilerConfig
   , ccKeepIntermediates = False
   , ccStrictMode = False
   , ccEnableAnalysis = True
+  , ccEnableExperimentalOptimizations = False
   , ccStopAtCodegen = False
   , ccSkipCompilerCheck = False
   }
@@ -621,7 +624,10 @@ typeInferenceStage ast = do
 optimizationStage :: Either PythonAST GoAST -> CompilerM (Either PythonAST GoAST)
 optimizationStage ast = do
   config <- ask
+  let experimentalEnabled = ccEnableExperimentalOptimizations config
   logInfo $ "Running optimizations at level " <> T.pack (show $ ccOptimizationLevel config)
+  unless experimentalEnabled $
+    logVerbose "Experimental optimization passes are disabled by default. Enable them with --enable-experimental-optimizations to exercise monomorphization and devirtualization."
   let (commonExprs, extractionIssues) = collectCommonExpressions ast
       (unsupportedIssues, failureIssues) = partition isUnsupportedIssue extractionIssues
   forM_ failureIssues $ \issue ->
@@ -715,38 +721,43 @@ optimizationStage ast = do
       modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel fallbackAnnotation (csAnalysisAnnotations s) }
       addWarning $ OptimizationWarning ("Runtime fallback recommended for " <> exprLabel)
     let (fallbackExpr, _) = runSmartFallback (optimizeWithFallback escapeOptimized)
-    let (monoResult, monoState) = runMonomorphization (monomorphize fallbackExpr)
-    recordOptimizationStat "optimization.monomorphization"
-    when (not (null (mrOptimizations monoResult))) $ do
-      let monoHints = mrOptimizations monoResult
-          monoAnnotation = ExprAnnotations
-            { eaInferredType = Nothing
-            , eaOwnership = Nothing
-            , eaEscapeInfo = Nothing
-            , eaOptimizationNotes = monoHints
-            }
-      modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel monoAnnotation (csAnalysisAnnotations s) }
-      forM_ monoHints $ \msg ->
-        addWarning $ OptimizationWarning ("Monomorphization note for " <> exprLabel <> ": " <> msg)
-    recordOptimizationStatN "optimization.specializations" (HM.size (msSpecializations monoState))
-    let (devirtResult, devirtState) = runDevirtualization (devirtualize (mrExpression monoResult))
-    recordOptimizationStat "optimization.devirtualization"
-    when (not (null (drOptimizations devirtResult))) $ do
-      let devirtHints = drOptimizations devirtResult
-          devirtAnnotation = ExprAnnotations
-            { eaInferredType = Nothing
-            , eaOwnership = Nothing
-            , eaEscapeInfo = Nothing
-            , eaOptimizationNotes = devirtHints
-            }
-      modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel devirtAnnotation (csAnalysisAnnotations s) }
-      forM_ devirtHints $ \msg ->
-        addWarning $ OptimizationWarning ("Devirtualization note for " <> exprLabel <> ": " <> msg)
-    let resolvedCount = HM.size (dsResolvedCalls devirtState)
-    when (resolvedCount > 0) $
-      recordOptimizationStatN "optimization.devirtualization.resolved" resolvedCount
-    when (drExpression devirtResult /= expr) $
-      recordOptimizationStat "optimization.expr.changed"
+    if experimentalEnabled
+      then do
+        let (monoResult, monoState) = runMonomorphization (monomorphize fallbackExpr)
+        recordOptimizationStat "optimization.monomorphization"
+        when (not (null (mrOptimizations monoResult))) $ do
+          let monoHints = mrOptimizations monoResult
+              monoAnnotation = ExprAnnotations
+                { eaInferredType = Nothing
+                , eaOwnership = Nothing
+                , eaEscapeInfo = Nothing
+                , eaOptimizationNotes = monoHints
+                }
+          modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel monoAnnotation (csAnalysisAnnotations s) }
+          forM_ monoHints $ \msg ->
+            addWarning $ OptimizationWarning ("Monomorphization note for " <> exprLabel <> ": " <> msg)
+        recordOptimizationStatN "optimization.specializations" (HM.size (msSpecializations monoState))
+        let (devirtResult, devirtState) = runDevirtualization (devirtualize (mrExpression monoResult))
+        recordOptimizationStat "optimization.devirtualization"
+        when (not (null (drOptimizations devirtResult))) $ do
+          let devirtHints = drOptimizations devirtResult
+              devirtAnnotation = ExprAnnotations
+                { eaInferredType = Nothing
+                , eaOwnership = Nothing
+                , eaEscapeInfo = Nothing
+                , eaOptimizationNotes = devirtHints
+                }
+          modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel devirtAnnotation (csAnalysisAnnotations s) }
+          forM_ devirtHints $ \msg ->
+            addWarning $ OptimizationWarning ("Devirtualization note for " <> exprLabel <> ": " <> msg)
+        let resolvedCount = HM.size (dsResolvedCalls devirtState)
+        when (resolvedCount > 0) $
+          recordOptimizationStatN "optimization.devirtualization.resolved" resolvedCount
+        when (drExpression devirtResult /= expr) $
+          recordOptimizationStat "optimization.expr.changed"
+      else do
+        recordOptimizationStat "optimization.experimental.skipped"
+        logVerbose $ "Experimental optimization passes are disabled; skipping monomorphization and devirtualization for " <> exprLabel
   return ast
 
 -- Common expression lowering utilities are provided by Fluxus.Analysis.CommonExprLowering.

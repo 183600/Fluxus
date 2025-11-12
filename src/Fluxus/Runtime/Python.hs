@@ -28,7 +28,6 @@ module Fluxus.Runtime.Python
 
 import Fluxus.AST.Common
 -- import Control.Monad.IO.Class  -- unused
-import Control.Exception (bracket, try, SomeException)
 import Control.Concurrent.STM
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -42,9 +41,7 @@ import Data.Vector (Vector)
 import qualified Data.Vector as Vector
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
-import Foreign.Ptr (Ptr, nullPtr)
-import Foreign.C.Types
-import Foreign.C.String
+import Foreign.Ptr (Ptr)
 import Control.Monad (when)
 
 -- | Main Python runtime state
@@ -121,40 +118,16 @@ data RuntimeBridge = RuntimeBridge
   , rbOptimizations :: ![Text]               -- Enabled optimizations
   } deriving stock (Generic)
 
--- Foreign function declarations (would interface with CPython C API)
-foreign import ccall unsafe "Py_Initialize" 
-  py_Initialize :: IO ()
+runtimeUnavailable :: Text
+runtimeUnavailable = "Python runtime interop is not implemented yet"
 
+-- Foreign function declarations (would interface with CPython C API)
 foreign import ccall unsafe "Py_Finalize" 
   py_Finalize :: IO ()
 
-foreign import ccall unsafe "PyRun_SimpleString" 
-  pyRun_SimpleString :: CString -> IO CInt
-
 -- | Initialize Python runtime with specified mode
 initPythonRuntime :: InteropMode -> IO (Either Text PythonRuntime)
-initPythonRuntime mode = do
-  -- Initialize Python interpreter
-  py_Initialize
-  
-  -- Create runtime state
-  moduleCache <- newTVarIO HashMap.empty
-  objectCache <- newTVarIO HashMap.empty
-  errorState <- newTVarIO Nothing
-  refCount <- newTVarIO 1
-  
-  -- For now, use null pointers (in real implementation, would get actual Python objects)
-  let runtime = PythonRuntime
-        { pyrInterpreter = nullPtr
-        , pyrGlobalDict = nullPtr
-        , pyrModuleCache = moduleCache
-        , pyrObjectCache = objectCache
-        , pyrInteropMode = mode
-        , pyrErrorState = errorState
-        , pyrRefCount = refCount
-        }
-  
-  return $ Right runtime
+initPythonRuntime _mode = pure (Left runtimeUnavailable)
 
 -- | Shutdown Python runtime and cleanup resources
 shutdownPythonRuntime :: PythonRuntime -> IO ()
@@ -178,55 +151,19 @@ shutdownPythonRuntime runtime = do
 
 -- | Call a Python function with arguments
 callPythonFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-callPythonFunction runtime funcName args = do
-  case pyrInteropMode runtime of
-    StaticInterop -> callOptimizedFunction runtime funcName args
-    OptimizedInterop -> callCachedFunction runtime funcName args
-    FullInterop -> callGenericFunction runtime funcName args
-    FallbackInterop -> callFallbackFunction runtime funcName args
+callPythonFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
 
 -- | Call a Python method on an object
 callPythonMethod :: PythonRuntime -> PythonObject -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-callPythonMethod runtime obj methodName args = do
-  -- Check if method is cached
-  case HashMap.lookup methodName (poMethods obj) of
-    Just cachedMethod -> do
-      result <- try $ cachedMethod (Vector.fromList args)
-      case result of
-        Left ex -> return $ Left $ T.pack $ show (ex :: SomeException)
-        Right val -> return $ Right val
-    Nothing -> do
-      -- Fallback to generic method call
-      let objectName = "obj_" <> T.pack (show $ poPtr obj)
-      let fullMethodName = objectName <> "." <> methodName
-      callPythonFunction runtime fullMethodName args
+callPythonMethod _runtime _obj _methodName _args = pure (Left runtimeUnavailable)
 
 -- | Import a Python module
 importPythonModule :: PythonRuntime -> Text -> IO (Either Text (Ptr ()))
-importPythonModule runtime moduleName = do
-  -- Check cache first
-  cached <- readTVarIO (pyrModuleCache runtime)
-  case HashMap.lookup moduleName cached of
-    Just modulePtr -> return $ Right modulePtr
-    Nothing -> do
-      -- Import module (placeholder implementation)
-      let modulePtr = nullPtr  -- Would be actual PyModule_Import call
-      -- Cache the module
-      atomically $ modifyTVar (pyrModuleCache runtime) $ HashMap.insert moduleName modulePtr
-      return $ Right modulePtr
+importPythonModule _runtime _moduleName = pure (Left runtimeUnavailable)
 
 -- | Create a Python object from Fluxus values
 createPythonObject :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text PythonObject)
-createPythonObject runtime className args = do
-  -- This would call the Python class constructor
-  let obj = PythonObject
-        { poPtr = nullPtr  -- Would be actual PyObject pointer
-        , poType = className
-        , poRefCount = 1
-        , poAttributes = HashMap.empty
-        , poMethods = HashMap.empty
-        }
-  return $ Right obj
+createPythonObject _runtime _className _args = pure (Left runtimeUnavailable)
 
 -- | Convert Fluxus literals to Python runtime values
 convertToPython :: Literal -> RuntimeValue
@@ -252,18 +189,7 @@ convertFromPython _ = LNone  -- Fallback for complex types
 
 -- | Run arbitrary Python code
 runPythonCode :: PythonRuntime -> Text -> IO (Either Text RuntimeValue)
-runPythonCode runtime code = do
-  result <- try $ do
-    -- Convert Text to CString and run
-    withCString (T.unpack code) $ \cstr -> do
-      resultCode <- pyRun_SimpleString cstr
-      if resultCode == 0
-        then return RVNone  -- Success
-        else return $ RVError "Python execution failed"
-  
-  case result of
-    Left ex -> return $ Left $ T.pack $ show (ex :: SomeException)
-    Right val -> return $ Right val
+runPythonCode _runtime _code = pure (Left runtimeUnavailable)
 
 -- | Create a runtime bridge for optimized interop
 createRuntimeBridge :: PythonRuntime -> [Text] -> IO RuntimeBridge
@@ -274,56 +200,38 @@ createRuntimeBridge runtime optimizations = do
     { rbPythonRuntime = runtime
     , rbTypeMap = typeMap
     , rbFunctionCache = functionCache
-    , rbOptimizations = optimizations
+    , rbOptimizations = "runtime-unavailable" : optimizations
     }
 
 -- | Optimized function call for statically analyzed code
 optimizedCall :: RuntimeBridge -> Text -> [Type] -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-optimizedCall bridge funcName argTypes args = do
-  -- Use type information for optimized marshalling
-  let optimizedArgs = zipWith optimizeArgument argTypes args
-  callPythonFunction (rbPythonRuntime bridge) funcName optimizedArgs
+optimizedCall _bridge _funcName _argTypes _args = pure (Left runtimeUnavailable)
 
 -- | Batch call multiple Python functions
 batchCallPython :: PythonRuntime -> [(Text, [RuntimeValue])] -> IO [Either Text RuntimeValue]
-batchCallPython runtime calls = do
-  -- Execute all calls and collect results
-  mapM (uncurry (callPythonFunction runtime)) calls
+batchCallPython _runtime calls = pure (replicate (length calls) (Left runtimeUnavailable))
 
 -- | Managed Python call with automatic resource cleanup
 managedPythonCall :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-managedPythonCall runtime funcName args = bracket
-  (return ())  -- Acquire resources
-  (\_ -> return ())  -- Release resources
-  (\_ -> callPythonFunction runtime funcName args)  -- Use resources
+managedPythonCall _runtime _funcName _args = pure (Left runtimeUnavailable)
 
 -- Helper functions
 
 -- | Optimized function call for static interop
 callOptimizedFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-callOptimizedFunction _runtime _funcName _args = do
-  -- This would use compile-time knowledge to generate optimized calls
-  return $ Right RVNone
+callOptimizedFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
 
 -- | Cached function call for optimized interop
 callCachedFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-callCachedFunction _runtime _funcName _args = do
-  -- This would cache compiled function calls
-  return $ Right RVNone
+callCachedFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
 
 -- | Generic function call for full interop
 callGenericFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-callGenericFunction _runtime _funcName _args = do
-  -- This would use full Python C API
-  return $ Right RVNone
+callGenericFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
 
 -- | Fallback function call that always uses Python
 callFallbackFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-callFallbackFunction runtime funcName args = do
-  -- Convert arguments to Python code and execute
-  let argsCode = T.intercalate ", " $ map renderArgument args
-  let callCode = funcName <> "(" <> argsCode <> ")"
-  runPythonCode runtime callCode
+callFallbackFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
 
 -- | Create type mapping from Fluxus types to Python types
 createTypeMapping :: HashMap Type Text

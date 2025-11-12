@@ -38,7 +38,11 @@
 - **错误处理**：详细的错误报告和诊断信息
 - **测试框架**：全面的单元测试覆盖
 
+> 注意：运行时互操作 API 仍在原型阶段，暂未连接到真实的 CPython / Go runtime，具体限制见下文。
+
 ### ⚠️ 当前限制
+- Python / Go 运行时互操作尚未实装：`Fluxus.Runtime.Python` 与 `Fluxus.Runtime.Go` 目前会显式返回 “runtime interop is not implemented yet”，因此编译流程只能生成纯 C++ 代码，无法直接驱动 CPython 或 Go runtime。
+- 单态化、去虚拟化等实验性优化仍在开发中。它们现在默认关闭，需要通过 `--enable-experimental-optimizations`（或在配置中设置 `enable_experimental_optimizations: true`）显式开启；开启后仅会附加诊断提示，不会修改最终 AST。
 - 默认关闭严格模式（`ccStrictMode = False`），在遇到未实现的语义时会尽量降级为运行时回退；若希望在第一次命中缺失特性时立即终止编译，可显式传入 `--strict`（或在配置中将 `strict_mode` 设为 `true`）。
 - `with`、`try/except`、`raise`、`yield` 及 `async` 相关语句在非严格模式下会降级为运行时回退：代码生成阶段会发出警告并注入 `fluxus_runtime_abort` 调用，以避免静默语义丢失，并提示需要完整语义的用户使用原生 Python 运行时。
 - Go → C++ 后端仍属实验阶段，仅覆盖 `switch`/`select`/结构体字面量等语法的基础子集；当无法安全降级时会发出警告并在生成代码中注入 `fluxus_runtime_abort`，以提醒使用者回退到原生 Go 运行。
@@ -175,6 +179,9 @@ fluxus -vv --python input.py
 
 # 启用所有优化
 fluxus --python -O3 --enable-parallel input.py
+
+# 显式开启实验性优化管线（目前仅输出诊断信息）
+fluxus --python input.py --enable-experimental-optimizations
 ```
 
 ## 📁 项目结构

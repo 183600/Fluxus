@@ -16,6 +16,7 @@ enable_debug_info: false
 enable_profiler: false
 enable_parallel: true
 enable_analysis: true
+enable_experimental_optimizations: false
 
 # Compilation settings
 max_concurrency: 4

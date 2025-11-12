@@ -331,7 +331,8 @@ generateTempVar = do
   pure $ "temp_" <> T.pack (show count)
 
 addStatement :: CppStmt -> CppCodeGen ()
-addStatement _ = pure ()
+addStatement _ =
+  reportNotImplemented "addStatement is not yet supported; emit statements within the surrounding code generation context."
 
 addComment :: Text -> CppCodeGen ()
-addComment = emitInfo
+addComment msg = addDeclaration (CppCommentDecl msg)

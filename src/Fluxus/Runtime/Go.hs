@@ -22,8 +22,7 @@ module Fluxus.Runtime.Go
   ) where
 
 import Fluxus.AST.Common
-import Control.Exception (try, SomeException)
-import Control.Concurrent.STM
+import Control.Concurrent.STM (TVar)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -31,12 +30,11 @@ import Data.Int (Int64)
 import Data.Word (Word64)
 import Data.ByteString (ByteString)
 import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as HashMap
 import Data.Vector (Vector)
 -- import qualified Data.Vector as V  -- unusedector
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
-import Foreign.Ptr (Ptr, nullPtr)
+import Foreign.Ptr (Ptr)
 -- import Foreign.C.Types  -- unused
 -- import Foreign.C.String  -- unused
 
@@ -106,25 +104,12 @@ data GoObject = GoObject
 instance Show GoObject where
   show obj = "GoObject{type=" ++ T.unpack (goType obj) ++ ", package=" ++ T.unpack (goPackage obj) ++ "}"
 
+runtimeUnavailable :: Text
+runtimeUnavailable = "Go runtime interop is not implemented yet"
+
 -- | Initialize Go runtime
 initGoRuntime :: GoInteropMode -> IO (Either Text GoRuntime)
-initGoRuntime mode = do
-  result <- try $ do
-    packages <- newTVarIO HashMap.empty
-    objects <- newTVarIO HashMap.empty
-    errorState <- newTVarIO Nothing
-    return $ GoRuntime
-      { gorCompiler = "go"
-      , gorWorkDir = "."
-      , gorPackages = packages
-      , gorObjects = objects
-      , gorInteropMode = mode
-      , gorErrorState = errorState
-      }
-  
-  case result of
-    Left ex -> return $ Left $ T.pack $ show (ex :: SomeException)
-    Right runtime -> return $ Right runtime
+initGoRuntime _mode = pure (Left runtimeUnavailable)
 
 -- | Shutdown Go runtime
 shutdownGoRuntime :: GoRuntime -> IO ()
@@ -132,33 +117,15 @@ shutdownGoRuntime _runtime = return ()
 
 -- | Call a Go function
 callGoFunction :: GoRuntime -> Text -> [GoValue] -> IO (Either Text GoValue)
-callGoFunction _runtime _funcName _args = do
-  -- Placeholder implementation
-  return $ Right GVNil
+callGoFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
 
 -- | Call a Go method on an object
 callGoMethod :: GoRuntime -> GoObject -> Text -> [GoValue] -> IO (Either Text GoValue)
-callGoMethod runtime obj methodName args = do
-  case HashMap.lookup methodName (goMethods obj) of
-    Just method -> do
-      result <- try $ method args
-      case result of
-        Left ex -> return $ Left $ T.pack $ show (ex :: SomeException)
-        Right val -> return $ Right val
-    Nothing -> do
-      let fullMethodName = goType obj <> "." <> methodName
-      callGoFunction runtime fullMethodName args
+callGoMethod _runtime _obj _methodName _args = pure (Left runtimeUnavailable)
 
 -- | Create a Go object
 createGoObject :: GoRuntime -> Text -> Text -> [GoValue] -> IO (Either Text GoObject)
-createGoObject _runtime packageName typeName _args = do
-  let obj = GoObject
-        { goPtr = nullPtr
-        , goType = typeName
-        , goPackage = packageName
-        , goMethods = HashMap.empty
-        }
-  return $ Right obj
+createGoObject _runtime _packageName _typeName _args = pure (Left runtimeUnavailable)
 
 -- | Convert Fluxus literals to Go values
 convertToGo :: Literal -> GoValue
@@ -184,18 +151,8 @@ convertFromGo _ = LNone  -- Fallback for complex types
 
 -- | Run Go code
 runGoCode :: GoRuntime -> Text -> IO (Either Text GoValue)
-runGoCode _runtime _code = do
-  -- This would compile and run Go code
-  return $ Right GVNil
+runGoCode _runtime _code = pure (Left runtimeUnavailable)
 
 -- | Import a Go package
 importGoPackage :: GoRuntime -> Text -> IO (Either Text (Ptr ()))
-importGoPackage runtime packageName = do
-  cached <- readTVarIO (gorPackages runtime)
-  case HashMap.lookup packageName cached of
-    Just pkg -> return $ Right pkg
-    Nothing -> do
-      -- Import package (placeholder)
-      let pkgPtr = nullPtr
-      atomically $ modifyTVar (gorPackages runtime) $ HashMap.insert packageName pkgPtr
-      return $ Right pkgPtr
+importGoPackage _runtime _packageName = pure (Left runtimeUnavailable)
