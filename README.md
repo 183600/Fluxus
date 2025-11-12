@@ -39,7 +39,7 @@
 - **测试框架**：全面的单元测试覆盖
 
 ### ⚠️ 当前限制
-- 默认启用严格模式（`ccStrictMode = True`），确保遇到未实现的语义时立即报错；如需继续编译，可显式使用 `--no-strict`。
+- 默认关闭严格模式（`ccStrictMode = False`），在遇到未实现的语义时会尽量降级为运行时回退；若希望在第一次命中缺失特性时立即终止编译，可显式传入 `--strict`（或在配置中将 `strict_mode` 设为 `true`）。
 - `with`、`try/except`、`raise`、`yield` 及 `async` 相关语句在非严格模式下会降级为运行时回退：代码生成阶段会发出警告并注入 `fluxus_runtime_abort` 调用，以避免静默语义丢失，并提示需要完整语义的用户使用原生 Python 运行时。
 - Go → C++ 后端仍属实验阶段，仅覆盖 `switch`/`select`/结构体字面量等语法的基础子集；当无法安全降级时会发出警告并在生成代码中注入 `fluxus_runtime_abort`，以提醒使用者回退到原生 Go 运行。
 

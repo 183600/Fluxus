@@ -721,8 +721,6 @@ inferBinaryOpType op left right = do
     OpAnd -> "bool"
     OpOr -> "bool"
     OpConcat -> "string"
-    OpIn -> "bool"
-    OpNotIn -> "bool"
 
 -- | Promote numeric types for binary operations
 promoteNumericTypes :: Text -> Text -> Text

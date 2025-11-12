@@ -439,8 +439,10 @@ parseCompOp = choice
   , operator' Lexer.OpGe $> OpGe
   , operator' Lexer.OpLt $> OpLt
   , operator' Lexer.OpGt $> OpGt
+  , try $ keywordP KwIs *> keywordP KwNot $> OpIsNot
   , keywordP KwIs $> OpIs
-  , keywordP KwIn $> OpEq  -- Using OpEq as placeholder for now
+  , try $ keywordP KwNot *> keywordP KwIn $> OpNotIn
+  , keywordP KwIn $> OpIn
   ]
 
 parseArithExpr :: PythonParser (Located PythonExpr)

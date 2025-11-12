@@ -35,6 +35,7 @@ module Fluxus.CodeGen.CPP.Monad
   , ensureHelperFunction
   , ensureRuntimeAbortHelper
   , ensureRuntimeFallbackHelper
+  , ensureRuntimeExecuteHelper
   , runtimeAbortCall
   , runtimeAbortStmt
   , runtimeFallbackCall
@@ -270,6 +271,28 @@ ensureRuntimeFallbackHelper = do
           withPrefix = CppBinary "<<" cerrExpr prefixExpr
           withMessage = CppBinary "<<" withPrefix (CppVar "message")
       in CppBinary "<<" withMessage endlExpr
+
+ensureRuntimeExecuteHelper :: CppCodeGen ()
+ensureRuntimeExecuteHelper = do
+  ensureRuntimeFallbackHelper
+  existing <- gets cgsDeclarations
+  unless (any isRuntimeExecute existing) $
+    addDeclaration runtimeExecuteDecl
+  where
+    runtimeExecuteName = "runtime_execute"
+    isRuntimeExecute decl = case decl of
+      CppTemplate _ (CppFunction name _ _ _) -> name == runtimeExecuteName
+      CppFunction name _ _ _ -> name == runtimeExecuteName
+      _ -> False
+    runtimeExecuteDecl =
+      CppTemplate ["typename T"]
+        (CppFunction runtimeExecuteName (CppTemplateType "T" [])
+          [CppParam "value" (CppTemplateType "T" []) Nothing]
+          [ CppComment "runtime fallback: delegate to interpreter"
+          , CppExprStmt (CppCall (CppVar runtimeFallbackHelperName)
+              [CppLiteral (CppStringLit "fluxus smart fallback executed at runtime")])
+          , CppReturn (Just (CppVar "value"))
+          ])
 
 runtimeAbortCall :: Text -> CppCodeGen CppExpr
 runtimeAbortCall message = do

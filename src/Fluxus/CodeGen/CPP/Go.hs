@@ -804,6 +804,8 @@ mapComparisonOp = \case
   OpGe -> ">="
   OpIs -> "=="
   OpIsNot -> "!="
+  OpIn -> error "mapComparisonOp: OpIn requires special handling"
+  OpNotIn -> error "mapComparisonOp: OpNotIn requires special handling"
 
 refineGoExprType :: Text -> Located GoExpr -> CppType -> CppCodeGen CppType
 refineGoExprType context locatedExpr defaultType =
