@@ -202,10 +202,9 @@ data BinaryOp
   
   -- String/list operations
   | OpConcat                            -- String/list concatenation
-  | OpIn | OpNotIn                      -- Membership testing
-  
+
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
-  deriving anyclass (Hashable, NFData)
+    deriving anyclass (Hashable, NFData)
 
 -- | Unary operators
 data UnaryOp
@@ -214,14 +213,15 @@ data UnaryOp
   | OpBitNot
   | OpPositive                          -- Unary +
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
-  deriving anyclass (Hashable, NFData)
+    deriving anyclass (Hashable, NFData)
 
 -- | Comparison operators
 data ComparisonOp
   = OpEq | OpNe | OpLt | OpLe | OpGt | OpGe
   | OpIs | OpIsNot                      -- Python identity comparison
+  | OpIn | OpNotIn                      -- Membership testing
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
-  deriving anyclass (Hashable, NFData)
+    deriving anyclass (Hashable, NFData)
 
 -- | Common expression patterns that appear in multiple languages
 data CommonExpr

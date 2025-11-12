@@ -127,11 +127,28 @@ inferExpr (CEBinaryOp op left right) = do
 inferExpr (CEUnaryOp op operand) = do
   operandType <- inferExpr (locatedValue operand)
   inferUnaryOp op operandType
-inferExpr (CEComparison _op left right) = do
-  leftType <- inferExpr (locatedValue left)
-  rightType <- inferExpr (locatedValue right)
-  addConstraint leftType rightType  -- Both operands should have same type
-  return TBool
+inferExpr (CEComparison op left right) =
+  case op of
+    OpIn -> membershipConstraints
+    OpNotIn -> membershipConstraints
+    _ -> do
+      leftType <- inferExpr (locatedValue left)
+      rightType <- inferExpr (locatedValue right)
+      addConstraint leftType rightType  -- Both operands should have same type
+      return TBool
+  where
+    membershipConstraints = do
+      leftType <- inferExpr (locatedValue left)
+      rightType <- inferExpr (locatedValue right)
+      constrainMembershipTypes leftType rightType
+      return TBool
+    constrainMembershipTypes needleType containerType =
+      case containerType of
+        TList elemType -> addConstraint needleType elemType
+        TSet elemType -> addConstraint needleType elemType
+        TDict keyType _ -> addConstraint needleType keyType
+        TString -> addConstraint needleType TChar
+        _ -> pure ()
 inferExpr (CECall func args) = do
   funcType <- inferExpr (locatedValue func)
   argTypes <- mapM (inferExpr . locatedValue) args
@@ -339,25 +356,6 @@ inferBinaryOp op leftType rightType = case op of
     -- Could be string + string or list + list
     addConstraint leftType rightType
     return leftType
-  
-  -- Membership testing
-  OpIn -> do
-    -- right should be a container type containing elements of leftType
-    case rightType of
-      TList elemType -> addConstraint leftType elemType
-      TSet elemType -> addConstraint leftType elemType
-      TDict keyType _ -> addConstraint leftType keyType
-      TString -> addConstraint leftType TChar
-      _ -> return ()  -- Generic container
-    return TBool
-  OpNotIn -> do
-    case rightType of
-      TList elemType -> addConstraint leftType elemType
-      TSet elemType -> addConstraint leftType elemType
-      TDict keyType _ -> addConstraint leftType keyType
-      TString -> addConstraint leftType TChar
-      _ -> return ()
-    return TBool
 
 -- | Helper for arithmetic operations
 inferArithmeticOp :: Type -> Type -> TypeInferenceM Type

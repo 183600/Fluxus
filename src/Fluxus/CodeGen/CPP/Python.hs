@@ -753,18 +753,12 @@ generatePythonExpr (Located span expr) = case expr of
   PyComparison ops exprs -> do
     -- Handle chained comparisons: a < b < c becomes (a < b) && (b < c)
     case (ops, exprs) of
-      ([op], [left, right]) -> do
-        -- Simple comparison
-        cppLeft <- generatePythonExpr left
-        cppRight <- generatePythonExpr right
-        let cppOp = mapComparisonOp op
-        return $ CppBinary cppOp cppLeft cppRight
+      ([op], [left, right]) ->
+        generateComparison op left right
       (ops', exprs') | length ops' + 1 == length exprs' -> do
-        -- Chained comparison
-        cppExprs <- mapM generatePythonExpr exprs'
-        let pairs = zip3 (init cppExprs) (map mapComparisonOp ops') (tail cppExprs)
-        let comparisons = map (\(l, op, r) -> CppBinary op l r) pairs
-        -- Chain with && operators
+        let lefts = init exprs'
+            rights = tail exprs'
+        comparisons <- sequence [generateComparison op left right | (op, left, right) <- zip3 ops' lefts rights]
         return $ foldl1 (\acc comp -> CppBinary "&&" acc comp) comparisons
       _ -> do
         reportInternalError "Invalid comparison expression"
@@ -807,6 +801,11 @@ generatePythonExpr (Located span expr) = case expr of
         case cppArgs of
           [CppLiteral (CppIntLit n)] -> return $ CppCall (CppVar "range") [CppLiteral (CppIntLit n)]
           _ -> return $ CppCall (CppVar "range") cppArgs
+      Located _ (PyVar (Identifier "runtime_execute")) -> do
+        ensureRuntimeExecuteHelper
+        cppFunc <- generatePythonExpr func
+        cppArgs <- mapM generatePythonArgument args
+        return $ CppCall cppFunc cppArgs
       _ -> do
         cppFunc <- generatePythonExpr func
         cppArgs <- mapM generatePythonArgument args
@@ -824,6 +823,35 @@ generatePythonExpr (Located span expr) = case expr of
         return $ CppBinary "," abortExpr (CppLiteral (CppIntLit 0))
       else
         return $ CppLiteral $ CppIntLit 0
+  where
+    generateComparison op leftExpr rightExpr = case op of
+      OpIn -> generateMembershipComparison leftExpr rightExpr False
+      OpNotIn -> generateMembershipComparison leftExpr rightExpr True
+      _ -> do
+        cppLeft <- generatePythonExpr leftExpr
+        cppRight <- generatePythonExpr rightExpr
+        let cppOp = mapComparisonOp op
+        return $ CppBinary cppOp cppLeft cppRight
+
+    generateMembershipComparison leftExpr rightExpr isNegated = do
+      needleExpr <- generatePythonExpr leftExpr
+      haystackExpr <- generatePythonExpr rightExpr
+      let operatorLabel = if isNegated then "not in" else "in"
+          baseMessage = "Python membership operator '" <> operatorLabel <> "' requires runtime fallback"
+          message = baseMessage <> " at " <> formatSpan span
+      strict <- gets (cgcStrictMode . cgsConfig)
+      action <- if strict
+        then runtimeAbortStmt message
+        else runtimeFallbackStmt message
+      let resultLiteral = CppLiteral (CppBoolLit (if isNegated then True else False))
+          lambdaBody =
+            [ CppComment ("runtime fallback: membership comparison '" <> operatorLabel <> "'")
+            , CppExprStmt needleExpr
+            , CppExprStmt haystackExpr
+            , action
+            , CppReturn (Just resultLiteral)
+            ]
+      return $ CppCall (CppLambda [] lambdaBody) []
 
 -- | Materialize a Python list literal into a C++ vector expression
 data ListFallback
@@ -1326,6 +1354,8 @@ mapComparisonOp = \case
   OpGe -> ">="
   OpIs -> "=="
   OpIsNot -> "!="
+  OpIn -> error "mapComparisonOp: OpIn requires special handling"
+  OpNotIn -> error "mapComparisonOp: OpNotIn requires special handling"
 
 generatePythonInteropBindings :: Text -> CppCodeGen ()
 generatePythonInteropBindings moduleName =
