@@ -36,8 +36,9 @@ import qualified Data.HashMap.Strict as HashMap
 import Data.Set (Set)
 import qualified Data.Set as Set
 import GHC.Generics (Generic)
-import Data.Hashable (Hashable)
+import Data.Hashable (Hashable(..))
 import Control.DeepSeq (NFData)
+import Data.List (sortOn)
 
 type ShapeAnalysisM = ReaderT ShapeContext (StateT ShapeAnalysisState (Except Text))
 
@@ -71,6 +72,19 @@ data ShapeInfo = ShapeInfo
   , siAccessPattern :: !AccessPattern    -- How data is typically accessed
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
+
+instance Hashable ShapeInfo where
+  hashWithSalt salt shape =
+    let dims = Vector.toList (siDimensions shape)
+        fieldEntries = sortOn fst (HashMap.toList (siFieldTypes shape))
+        step1 = hashWithSalt salt dims
+        step2 = hashWithSalt step1 (siIsKnown shape)
+        step3 = hashWithSalt step2 (siElementType shape)
+        step4 = hashWithSalt step3 fieldEntries
+        step5 = hashWithSalt step4 (siSize shape)
+        step6 = hashWithSalt step5 (siAlignment shape)
+        step7 = hashWithSalt step6 (siIsHomogeneous shape)
+    in hashWithSalt step7 (siAccessPattern shape)
 
 -- | Access patterns for optimization
 data AccessPattern

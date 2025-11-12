@@ -98,6 +98,7 @@ data CompilerConfigOverrides = CompilerConfigOverrides
   , ccoKeepIntermediates :: Maybe Bool
   , ccoStrictMode        :: Maybe Bool
   , ccoEnableAnalysis    :: Maybe Bool
+  , ccoEnableExperimentalOptimizations :: Maybe Bool
   , ccoStopAtCodegen     :: Maybe Bool
   , ccoSkipCompilerCheck :: Maybe Bool
   } deriving (Eq, Show, Generic)
@@ -123,6 +124,7 @@ emptyOverrides = CompilerConfigOverrides
   , ccoKeepIntermediates = Nothing
   , ccoStrictMode = Nothing
   , ccoEnableAnalysis = Nothing
+  , ccoEnableExperimentalOptimizations = Nothing
   , ccoStopAtCodegen = Nothing
   , ccoSkipCompilerCheck = Nothing
   }
@@ -148,6 +150,7 @@ instance FromJSON CompilerConfigOverrides where
     keepIntermediates <- o .:? "keep_intermediates"
     strictMode <- o .:? "strict_mode"
     enableAnalysis <- o .:? "enable_analysis"
+    enableExperimental <- o .:? "enable_experimental_optimizations"
     stopAtCodegen <- o .:? "stop_at_codegen"
     skipCompilerCheck <- o .:? "skip_compiler_check"
 
@@ -174,6 +177,7 @@ instance FromJSON CompilerConfigOverrides where
       , ccoKeepIntermediates = keepIntermediates
       , ccoStrictMode = strictMode
       , ccoEnableAnalysis = enableAnalysis
+      , ccoEnableExperimentalOptimizations = enableExperimental
       , ccoStopAtCodegen = stopAtCodegen
       , ccoSkipCompilerCheck = skipCompilerCheck
       }
@@ -286,6 +290,9 @@ parseCommandLineArgs args = go id [] args
       "--enable-analysis" -> set (\cfg -> cfg { ccEnableAnalysis = True }) configs rest
       "--disable-analysis" -> set (\cfg -> cfg { ccEnableAnalysis = False }) configs rest
       
+      "--enable-experimental-optimizations" -> set (\cfg -> cfg { ccEnableExperimentalOptimizations = True }) configs rest
+      "--disable-experimental-optimizations" -> set (\cfg -> cfg { ccEnableExperimentalOptimizations = False }) configs rest
+      
       "--stop-at-codegen" -> set (\cfg -> cfg { ccStopAtCodegen = True }) configs rest
       "--full-pipeline" -> set (\cfg -> cfg { ccStopAtCodegen = False }) configs rest
       
@@ -382,6 +389,7 @@ mergeConfigs base overrides = CompilerConfig
   , ccKeepIntermediates = choose (ccoKeepIntermediates overrides) (ccKeepIntermediates base)
   , ccStrictMode = choose (ccoStrictMode overrides) (ccStrictMode base)
   , ccEnableAnalysis = choose (ccoEnableAnalysis overrides) (ccEnableAnalysis base)
+  , ccEnableExperimentalOptimizations = choose (ccoEnableExperimentalOptimizations overrides) (ccEnableExperimentalOptimizations base)
   , ccStopAtCodegen = choose (ccoStopAtCodegen overrides) (ccStopAtCodegen base)
   , ccSkipCompilerCheck = choose (ccoSkipCompilerCheck overrides) (ccSkipCompilerCheck base)
   }
@@ -410,6 +418,7 @@ applyEnvironmentOverrides config = do
   cppStd <- lookupEnv "FLUXUS_CPP_STD"
   verboseLevel <- lookupEnv "FLUXUS_VERBOSE"
   enableInterop <- lookupEnv "FLUXUS_INTEROP"
+  experimentalOptimizations <- lookupEnv "FLUXUS_EXPERIMENTAL_OPTIMIZATIONS"
   skipCompilerCheck <- lookupEnv "FLUXUS_SKIP_COMPILER_CHECK"
   
   resolvedVerboseLevel <- case verboseLevel of
@@ -425,6 +434,7 @@ applyEnvironmentOverrides config = do
     , ccCppStandard = maybe (ccCppStandard config) T.pack cppStd
     , ccVerboseLevel = resolvedVerboseLevel
     , ccEnableInterop = parseBoolOverride (ccEnableInterop config) enableInterop
+    , ccEnableExperimentalOptimizations = parseBoolOverride (ccEnableExperimentalOptimizations config) experimentalOptimizations
     , ccSkipCompilerCheck = parseBoolOverride (ccSkipCompilerCheck config) skipCompilerCheck
     }
   where
@@ -541,6 +551,7 @@ configToArgs config = concat
   , if ccEnableParallel config then ["--enable-parallel"] else ["--disable-parallel"]
   , if ccStrictMode config then ["--strict"] else ["--no-strict"]
   , if ccEnableAnalysis config then ["--enable-analysis"] else ["--disable-analysis"]
+  , if ccEnableExperimentalOptimizations config then ["--enable-experimental-optimizations"] else ["--disable-experimental-optimizations"]
   , if ccStopAtCodegen config then ["--stop-at-codegen"] else ["--full-pipeline"]
   , if ccKeepIntermediates config then ["--keep-intermediates"] else ["--clean-intermediates"]
   , if ccSkipCompilerCheck config then ["--skip-compiler-check"] else ["--require-compiler-check"]
@@ -579,6 +590,7 @@ printConfig config = do
   putStrLn $ "Skip Compiler Check: " ++ show (ccSkipCompilerCheck config)
   putStrLn $ "Stop at Codegen: " ++ show (ccStopAtCodegen config)
   putStrLn $ "Static Analysis: " ++ show (ccEnableAnalysis config)
+  putStrLn $ "Experimental Optimizations: " ++ show (ccEnableExperimentalOptimizations config)
   putStrLn "=============================================="
 
 
