@@ -1,74 +1,66 @@
 # Fluxus 项目改进分析
 
 ## 摘要
-- 🗂️ **ccWorkDirectory 未参与中间产物管理**：`setupCompilerEnvironment` 虽然会创建工作目录，但 `compileFileArtifacts`/`compileCpp` 仍直接在源文件旁写出 `.cpp/.o`，导致 stop-at-codegen 或多文件编译时依旧污染源码目录。
-- ⚙️ **CLI 无法选择配置文件**：当前 `loadConfig` 固定读取 `fluxus.yaml`，`parseCommandLineArgs` 也没有 `--config` 选项，README 中的示例命令会触发 “Unknown option” 错误，使用者无法切换不同配置。
-- 🚨 **配置解析失败被静默忽略**：`loadConfig` 对 `loadConfigFromFile` 返回的错误统一回退到默认配置，既不冒泡也无日志，用户难以及时发现 YAML 拼写问题。
-- 🔁 **HyperStatic 品牌仍散落在代码生成配置**：`codeGenStage` 和 `defaultCppGenConfig` 仍写死 `hyperstatic` 命名空间/头卫士，`compileProject` 的默认输出也叫 `hyperstatic_output`，与项目更名后的文档不一致。
+- 🔁 **多文件 stop-at-codegen 输出路径不明确**：`compileProject` 在 `ccStopAtCodegen` 为 `True` 时仅返回工作目录（或用户手动指定的输出路径），而不是实际生成的 `.cpp` 列表，导致 CLI 输出 `Output: .` 之类的路径提示，用户需要自行去工作目录内查找哈希散列后的子目录。
+- ⚠️ **CLI `--strict` 默认值文案与实际行为不符**：`app/Main.hs` 的 `printUsage` 仍提示 “Treat warnings as errors (default)”，但当前 `defaultConfig` 里 `ccStrictMode = False`，文档与行为出现分歧。
+- 🧹 **工作目录清理仅删除文件，不会回收哈希子目录**：`cleanupIntermediateFiles` 使用 `removeFile` 删除 `.cpp/.o`，但不会清理 `resolveWorkPath` 创建的哈希文件夹，频繁构建会让工作目录残留大量空目录。
+- 🪟 **Windows 目标缺省产物缺少 `.exe` 扩展名**：`compileFile`/`compileProject` 默认输出 `fluxus_output` 等裸文件名，`linkObjects` 也不会根据 `TargetPlatform` 自动附加 `.exe`，Windows 用户得到的可执行文件无法直接双击运行。
+- 🪪 **示例与验证资产仍大量残留 HyperStatic 品牌**：`examples/**`, `debug_*.cpp`, 多份验证报告和脚本依旧以 “HyperStatic/CXX Compiler” 抬头，与代码里已切换到 `fluxus` 命名空间不一致。
 
 ## 重点改进方向
 
-### 1. 让 ccWorkDirectory 主导中间产物路径
-#### 现状
-- 代码位置：`setupCompilerEnvironment`（Driver 约第 326-360 行）仅负责创建 `ccWorkDirectory`。
-- 生成阶段 `compileFileArtifacts`（同文件第 397 行）直接使用 `replaceExtension inputFile ".cpp"`，`compileCpp` 也对 `.cpp` 文件调用 `replaceExtension` 生成 `.o`。
-- `cleanupIntermediateFiles` 删除的仍是源目录中的文件，未迁移到工作目录。
+### 1. stop-at-codegen 应提供明确的产出定位
+**现状**：`Fluxus.Compiler.Driver.compileProject`（约 500 行附近）在 `ccStopAtCodegen` 为真时直接返回工作目录或 `ccOutputPath`。CLI 最终向用户打印 `Output: /tmp/build` 之类的目录，但所有 `.cpp` 文件被写入诸如 `/tmp/build/1528743341/module.cpp` 的哈希子目录中。
 
-#### 影响
-- stop-at-codegen 模式下 `.cpp` 文件依旧散落在源目录。
-- 多文件项目无法使用统一的构建输出目录，和 IDE/CI 的 “build/” 约定冲突。
-- 使用者误以为 `--work-dir` 能隔离产物，实际却只创建了空目录。
+**影响**：
+- 用户需要自行遍历工作目录才能找到每个输入对应的 `.cpp`，增加使用门槛。
+- IDE/CI 想要消费这些文件时缺乏稳定的约定，难以脚本化处理。
 
-#### 改进建议
-- 在写入 `.cpp`/`.o`/最终二进制前，通过 `ccWorkDirectory` 重写路径（例如提供 `withWorkDir` 辅助函数）。
-- 将 `cleanupIntermediateFiles` 与 `linkObjects` 也适配工作目录，以便目录清理逻辑一致。
-- 回归测试覆盖：设置 `ccWorkDirectory` 后编译，验证源目录无新产物、工作目录存在期望文件。
+**建议**：
+- `compileProject` 返回明确的文件列表或汇总文件（例如写出 `codegen-manifest.json`）。
+- CLI 输出中列出实际生成的相对路径，或提示 Manifest 的位置。
 
-### 2. 为 CLI 提供可配置的配置文件入口
-#### 现状
-- `loadConfig`（Config 第 180-207 行）始终从当前目录加载 `fluxus.yaml`。
-- `parseCommandLineArgs` 缺少 `--config`/`-c` 等分支，README 中 `fluxus --config custom.yaml app.py` 会被 `_ | "--" \`isPrefixOf\` arg` 捕获为未知选项。
-- 无法在同一仓库内切换 “开发配置”“生产配置”。
+### 2. 更新 CLI 帮助以匹配新的严格模式默认值
+**现状**：`app/Main.hs` 中 `printUsage` 的 `--strict` 行仍声称“(default)”。
 
-#### 影响
-- 用户不得不覆盖单一的 `fluxus.yaml`，不利于多环境及团队协作。
-- 文档示例与实际实现不符，降低信任度。
+**影响**：
+- 新用户以为默认会在缺失特性时立即报错，实际仍会降级为运行时回退，和 README “默认关闭严格模式” 的说明冲突。
 
-#### 改进建议
-- 在 CLI 解析阶段支持 `--config PATH`（可多次出现，约定最后一次生效或按顺序合并）。
-- `loadConfig` 接受可选路径参数，并在未找到文件时沿用已有回退策略。
-- 更新 README/usage 文案及相关测试，确保命令行示例可直接运行。
+**建议**：
+- 将帮助文案改成 “Treat warnings as errors (default: off)” 或类似措辞，并在 README/示例命令保持一致。
 
-### 3. 显式暴露配置文件解析错误
-#### 现状
-- `loadConfigFromFile` 返回 `Left "Failed to parse config file: ..."`。
-- `loadConfig` 中 `case configFromFile of Left _ -> baseConfig` 直接吞掉错误。
-- CLI 视角只得到默认配置，且没有任何警告。
+### 3. 扩展中间产物清理逻辑以移除空目录
+**现状**：`cleanupIntermediateFiles` 仅调用 `removeFile`，不会删除 `ccWorkDirectory` 下的哈希目录。
 
-#### 影响
-- YAML 拼写或缩进错误会被静默忽略，编译过程使用默认参数，问题定位困难。
-- 破坏 “配置 > 默认” 的优先级预期。
+**影响**：
+- 每次编译都会留下若干空文件夹（如 `/tmp/build/412398765/`），长期使用会拖慢 `find`、`ls` 等操作，也影响缓存同步。
 
-#### 改进建议
-- 当 `loadConfigFromFile` 返回 `Left err` 时，将错误转成 `Left err` 直接返回给 CLI。
-- 可在错误信息中提示 `--config-validate` 或类似命令，以便用户单独校验。
-- 添加针对格式错误 YAML 的测试，确保未来不会回退到沉默模式。
+**建议**：
+- 在删除文件后尝试调用 `removePathForcibly` 或自定义逻辑递归清理空目录（受 `ccKeepIntermediates` 控制）。
+- 为避免竞态，可在 `resolveWorkPath` 中记录目录清单，清理时逆序删空。
 
-### 4. 清理残留的 HyperStatic 品牌标识
-#### 现状
-- `codeGenStage`（Driver 第 717-726 行）仍写死 `cgcNamespace = "hyperstatic"`、`cgcHeaderGuard = "HYPERSTATIC_GENERATED"`。
-- `Fluxus.CodeGen.CPP.Monad.defaultCppGenConfig`（第 128-137 行）沿用同样的默认值。
-- `compileProject` 在未指定输出时生成 `hyperstatic_output`。
-- `app/Main.hs` 顶层注释仍是 “HyperStatic/CXX compiler”。
+### 4. 针对 Windows 目标自动补齐可执行扩展名
+**现状**：`defaultOutputLocation`/`linkObjects` 不会根据 `ccTargetPlatform` 调整输出文件名。
 
-#### 影响
-- 生成的代码和产物名称与 Fluxus 品牌不一致，给用户造成 “fork 或旧版本” 的错觉。
-- 后续若允许用户自定义命名空间，需要首先拆除这些硬编码。
+**影响**：
+- Windows 平台默认得到名为 `fluxus_output` 的可执行文件，双击会被当作“未知文件”处理。
+- README 中的 `./fibonacci` 示例在 Windows 下同样失效。
 
-#### 改进建议
-- 将默认命名空间/头卫士更新为 `fluxus`/`FLUXUS_GENERATED`，同时允许通过配置覆盖。
-- 调整 `compileProject` 默认输出名，并更新示例/测试期望。
-- 审核代码库中的 `HyperStatic` 字样，逐步替换为 Fluxus。
+**建议**：
+- 在未显式指定 `ccOutputPath`、且目标平台为 `Windows_x86_64` 时自动附加 `.exe`。
+- 若用户已提供自定义输出但无扩展名，可考虑给出提示或提供 `--force-windows-suffix` 选项。
 
-## 其他观察
-- 测试描述及示例产物中仍有大量 “HyperStatic” 字样，建议在品牌统一的同一迭代处理，避免回归测试期望反复修改。
+### 5. 统一示例与文档中的品牌标识
+**现状**：绝大多数示例 `.cpp`、调试脚本和验证报告仍以 “HyperStatic/CXX Compiler” 为头注释或命名空间（`examples/python/fibonacci.cpp` 即一例）。
+
+**影响**：
+- 新用户难以分辨哪些文件属于 Fluxus 的当前产出，哪些是旧的遗留工件。
+- 自动化校验（如对比生成结果）容易因命名空间不匹配而产生噪音。
+
+**建议**：
+- 批量更新示例、测试资产和报告中的标识，确保与 `codeGenStage` 默认的 `fluxus` 命名空间一致。
+- 为历史工件保留专门的迁移说明，避免误判为当前输出。
+
+---
+
+上述改进集中在易用性与一致性层面，投入较小即可显著提升用户体验，并避免文档与实现之间产生新的认知偏差。
