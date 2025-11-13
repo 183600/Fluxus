@@ -298,7 +298,7 @@ enable_debug_info: false
 cpp_standard: "c++20"
 cpp_compiler: "clang++"
 max_concurrency: 4
-verbose_level: 1
+verbose_level: 0
 ```
 
 ### 环境变量
