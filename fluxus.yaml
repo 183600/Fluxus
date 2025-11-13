@@ -22,7 +22,7 @@ enable_experimental_optimizations: false
 max_concurrency: 4
 cpp_standard: "c++20"
 cpp_compiler: "clang++"
-verbose_level: 1
+verbose_level: 0
 
 # Build settings
 keep_intermediates: false
