@@ -407,8 +407,8 @@ parserSpec = describe "Python Parser" $ do
           [assignStmt] -> case locatedValue assignStmt of
             PyAssign targets _ -> case map locValue targets of
               [PatTuple [firstPat, starredPat]] -> do
-                firstPat `shouldBe` PatVar (Identifier "first")
-                case starredPat of
+                locValue firstPat `shouldBe` PatVar (Identifier "first")
+                case locValue starredPat of
                   PatStarred inner -> locValue inner `shouldBe` PatVar (Identifier "rest")
                   other -> expectationFailure $ "Expected starred pattern, found " <> show other
               other -> expectationFailure $ "Expected tuple pattern, found " <> show other

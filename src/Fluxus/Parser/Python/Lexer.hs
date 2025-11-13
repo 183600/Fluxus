@@ -81,20 +81,50 @@ data PythonToken
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (Hashable, NFData)
 
-  -- | Segments inside an f-string token
-  data FStringSegment
+-- | Segments inside an f-string token
+data FStringSegment
   = FStringLiteralSegment !Text !SourceSpan
   | FStringExpressionSegment !Text !SourceSpan
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (Hashable, NFData)
 
-  -- | Python keywords
-  data Keyword
-
-  | KwDef | KwDel | KwElif | KwElse | KwExcept | KwFalse | KwFinally | KwFor
-  | KwFrom | KwGlobal | KwIf | KwImport | KwIn | KwIs | KwLambda | KwNone
-  | KwNonlocal | KwNot | KwOr | KwPass | KwRaise | KwReturn | KwTrue | KwTry
-  | KwWhile | KwWith | KwYield
+-- | Python keywords
+data Keyword
+  = KwAnd
+  | KwAs
+  | KwAssert
+  | KwAsync
+  | KwAwait
+  | KwBreak
+  | KwClass
+  | KwContinue
+  | KwDef
+  | KwDel
+  | KwElif
+  | KwElse
+  | KwExcept
+  | KwFalse
+  | KwFinally
+  | KwFor
+  | KwFrom
+  | KwGlobal
+  | KwIf
+  | KwImport
+  | KwIn
+  | KwIs
+  | KwLambda
+  | KwNone
+  | KwNonlocal
+  | KwNot
+  | KwOr
+  | KwPass
+  | KwRaise
+  | KwReturn
+  | KwTrue
+  | KwTry
+  | KwWhile
+  | KwWith
+  | KwYield
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
   deriving anyclass (Hashable, NFData)
 

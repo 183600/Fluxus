@@ -33,7 +33,7 @@ module Fluxus.Compiler.Driver
   , resolveWorkPath
   ) where
 
-import Data.List (intercalate, foldl', partition)
+import Data.List (intercalate, foldl', partition, isPrefixOf)
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Except
@@ -128,7 +128,7 @@ import Fluxus.CodeGen.CPP.Diagnostics
   , CppDiagnostic(..)
   , renderCppCodeGenError
   )
-import Fluxus.Utils.Pretty
+import Fluxus.Utils.Pretty hiding ((</>))
 
 -- | Source language selection
 data SourceLanguage = Python | Go
@@ -375,14 +375,21 @@ resolveWorkPath config candidate =
   case ccWorkDirectory config of
     Nothing -> candidate
     Just workDir ->
-      let normalizedCandidate = normalise candidate
+      let normalizedWork = normalise workDir
+          normalizedCandidate = normalise candidate
+          withinWork =
+            let prefix = addTrailingPathSeparator normalizedWork
+                target = addTrailingPathSeparator normalizedCandidate
+            in prefix `isPrefixOf` target
           relativeCandidate = candidateRelative normalizedCandidate
           sanitizedRelative = sanitizeRelativePath relativeCandidate
           resolvedRelative =
             if null sanitizedRelative
               then hashedFallback normalizedCandidate
               else sanitizedRelative
-      in normalise (workDir </> resolvedRelative)
+      in if withinWork
+           then normalizedCandidate
+           else normalise (normalizedWork </> resolvedRelative)
   where
     candidateRelative path
       | isRelative path = path

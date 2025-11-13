@@ -283,7 +283,7 @@ statementGenerationSpec = describe "Statement generation" $ do
         isGuardDecl stmt = case stmt of
           CppDecl (CppVariable _ (CppClassType name _) (Just initExpr))
             | name == "FluxusFinallyGuard"
-            , Just _ <- [extractGuardLambda initExpr] -> True
+            , Just _ <- extractGuardLambda initExpr -> True
           _ -> False
         isUseCall stmt = case stmt of
           CppExprStmt (CppCall (CppVar "use") [CppVar "resource"]) -> True
