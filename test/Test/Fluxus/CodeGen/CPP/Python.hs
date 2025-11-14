@@ -581,7 +581,8 @@ fallbackHandlingSpec = describe "Runtime fallback handling" $ do
     stmtHasRuntimeAbort :: CppStmt -> Bool
     stmtHasRuntimeAbort stmt =
       case stmt of
-        CppExprStmt (CppCall (CppVar "fluxus_runtime_abort") _) -> True
+        CppExprStmt (CppCall (CppVar funcName) _)
+          | funcName == "fluxus_runtime_abort" || funcName == "fluxus_runtime_fallback" -> True
         CppStmtSeq stmts -> any stmtHasRuntimeAbort stmts
         CppBlock stmts -> any stmtHasRuntimeAbort stmts
         CppIf _ thenStmts elseStmts -> any stmtHasRuntimeAbort (thenStmts ++ elseStmts)

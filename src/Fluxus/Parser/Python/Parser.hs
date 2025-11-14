@@ -31,7 +31,7 @@ module Fluxus.Parser.Python.Parser
   , parsePattern
   ) where
 
-import Control.Monad (void)
+import Control.Monad (void, when)
 import Control.Applicative ((<|>), optional, many, some)
 import Data.Bifunctor (first)
 import Data.Functor (($>))
@@ -115,6 +115,8 @@ parseStatement = located $ choice
   , try parseIfStmt
   , try parseWhileStmt
   , try parseForStmt
+  , try parseWithStmt
+  , try parseTryStmt
   , try parseReturnStmt
   , try parseBreakStmt
   , try parseContinueStmt
@@ -224,6 +226,64 @@ parseForStmt = do
     void $ delimiterP DelimColon
     parseBlock
   return $ PyFor target iter body elseBody
+
+-- | Parse with statements
+parseWithStmt :: PythonParser PythonStmt
+parseWithStmt = do
+  isAsync <- option False (keywordP KwAsync $> True)
+  void $ keywordP KwWith
+  items <- parseWithItem `sepBy1` delimiterP DelimComma
+  void $ delimiterP DelimColon
+  body <- parseBlock
+  let constructor = if isAsync then PyAsyncWith else PyWith
+  pure $ constructor items body
+
+parseWithItem :: PythonParser (Located PythonWithItem)
+parseWithItem = located $ do
+  contextExpr <- parseExpression
+  alias <- optional $ do
+    void $ keywordP KwAs
+    parsePattern
+  pure $ PythonWithItem
+    { pyWithContext = contextExpr
+    , pyWithVar = alias
+    }
+
+-- | Parse try statements
+parseTryStmt :: PythonParser PythonStmt
+parseTryStmt = do
+  void $ keywordP KwTry
+  void $ delimiterP DelimColon
+  body <- parseBlock
+  exceptClauses <- many parseExceptClause
+  elseBody <- option [] $ do
+    void $ keywordP KwElse
+    void $ delimiterP DelimColon
+    parseBlock
+  finallyBody <- option [] $ do
+    void $ keywordP KwFinally
+    void $ delimiterP DelimColon
+    parseBlock
+  when (null exceptClauses && null finallyBody) $
+    fail "try statement requires at least one except or finally clause"
+  pure $ PyTry body exceptClauses elseBody finallyBody
+
+parseExceptClause :: PythonParser (Located PythonExcept)
+parseExceptClause = located $ do
+  void $ keywordP KwExcept
+  exceptType <- optional parseExpression
+  exceptName <- case exceptType of
+    Nothing -> pure Nothing
+    Just _ -> optional $ do
+      void $ keywordP KwAs
+      parseIdentifier
+  void $ delimiterP DelimColon
+  clauseBody <- parseBlock
+  pure $ PythonExcept
+    { pyExceptType = exceptType
+    , pyExceptName = exceptName
+    , pyExceptBody = clauseBody
+    }
 
 parseDecorators :: PythonParser [Located PythonDecorator]
 parseDecorators = many (try parseDecorator)
