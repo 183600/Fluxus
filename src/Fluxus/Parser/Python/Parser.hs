@@ -746,8 +746,8 @@ parsePatternAtom = choice
   [ parseStarPattern
   , parseParenPattern
   , parseListPattern
-  , parseLiteralPattern
-  , parseWildcardPattern
+  , try parseLiteralPattern
+  , try parseWildcardPattern
   , parseIdentifierPattern
   ]
 

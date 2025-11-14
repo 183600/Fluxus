@@ -313,13 +313,13 @@ locatedPythonToken = do
 
 -- | Parse keywords
 keyword :: PythonLexer PythonToken
-keyword = do
-  kw <- choice (map tryKeyword allKeywords)
-  lift $ notFollowedBy alphaNumChar
-  return $ TokenKeyword kw
+keyword = choice (map tryKeyword allKeywords)
   where
     allKeywords = [minBound .. maxBound]
-    tryKeyword kw = lift (string (keywordToText kw)) $> kw
+    identChar = alphaNumChar <|> char '_'
+    tryKeyword kw = do
+      _ <- lift $ MP.try (string (keywordToText kw) <* notFollowedBy identChar)
+      pure $ TokenKeyword kw
 
 -- | Parse identifiers
 identifier :: PythonLexer PythonToken
