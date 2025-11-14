@@ -483,10 +483,15 @@ checkSystemRequirements config = do
   compilerCheckResult <-
     if shouldCheckCompiler
       then do
-        maybeCompiler <- locateCompiler (T.unpack $ ccCppCompiler config)
-        pure $ case maybeCompiler of
-          Nothing -> Left $ "C++ compiler not found: " ++ T.unpack (ccCppCompiler config) ++ " (use --skip-compiler-check to bypass detection)"
-          Just _ -> Right ()
+        detection <- detectCompilerBinary config
+        case detection of
+          Left errText -> pure $ Left (T.unpack errText)
+          Right (resolved, fallbackUsed) -> do
+            when fallbackUsed $
+              putStrLn $
+                "Warning: Requested C++ compiler '" ++ T.unpack (ccCppCompiler config) ++
+                "' was not found; using '" ++ T.unpack resolved ++ "' instead."
+            pure (Right ())
       else pure (Right ())
   
   case compilerCheckResult of
@@ -496,11 +501,6 @@ checkSystemRequirements config = do
       mapM_ checkLibraryPath (ccLibraryPaths config)
       pure $ Right ()
   where
-    locateCompiler compilerBinary = do
-      directExists <- doesFileExist compilerBinary
-      if directExists
-        then pure (Just compilerBinary)
-        else findExecutable compilerBinary
     checkIncludePath path = do
       exists <- doesDirectoryExist path
       unless exists $ putStrLn $ "Warning: Include path does not exist: " ++ path

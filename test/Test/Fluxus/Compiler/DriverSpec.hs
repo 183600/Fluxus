@@ -5,12 +5,15 @@ module Test.Fluxus.Compiler.DriverSpec (spec) where
 import qualified Data.Text as T
 import Data.Either (isRight)
 import Test.Hspec
-import System.Directory (createDirectoryIfMissing, doesFileExist)
+import System.Directory (createDirectoryIfMissing, doesFileExist, findExecutable)
 import System.FilePath ((</>), takeDirectory, replaceExtension)
 import System.IO.Temp (withSystemTempDirectory)
 
+import qualified Test.Fluxus.CodeGen.CPP.Shared as Shared
+
 import Fluxus.Compiler.Driver
   ( CompilerConfig(..)
+  , CompilerState(..)
   , CompilerError(..)
   , compileFile
   , compileProject
@@ -51,6 +54,23 @@ spec = describe "Fluxus.Compiler.Driver" $ do
             }
       result <- runCompiler config setupCompilerEnvironment
       result `shouldSatisfy` isRight
+
+    it "falls back to an available system compiler when clang++ is unavailable" $ do
+      clangExecutable <- findExecutable "clang++"
+      case clangExecutable of
+        Just _ -> pendingWith "clang++ is available; fallback path not exercised"
+        Nothing -> do
+          maybeSystem <- Shared.findCppCompiler
+          case maybeSystem of
+            Nothing -> pendingWith "No alternative C++ compiler detected for fallback"
+            Just systemCompiler -> do
+              let config = defaultConfig { ccVerboseLevel = 0 }
+              result <- runCompiler config setupCompilerEnvironment
+              case result of
+                Left err -> expectationFailure $ "expected fallback to succeed, but got " ++ show err
+                Right (_, finalState) -> do
+                  csCompilerFallback finalState `shouldBe` True
+                  csResolvedCompiler finalState `shouldBe` Just (T.pack systemCompiler)
 
   describe "compileFile" $ do
     it "emits intermediate files into the configured work directory" $ do
