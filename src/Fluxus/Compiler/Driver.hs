@@ -29,6 +29,7 @@ module Fluxus.Compiler.Driver
   , defaultConfig
   , validateConfig
   , setupCompilerEnvironment
+  , detectCompilerBinary
   , showTargetPlatform
   , resolveWorkPath
   ) where
@@ -242,16 +243,18 @@ data CompilerWarning
 
 -- | Compiler state
 data CompilerState = CompilerState
-  { csErrors           :: ![CompilerError]
-  , csWarnings         :: ![CompilerWarning]
-  , csStartTime        :: !UTCTime
-  , csCurrentPhase     :: !Text
-  , csProcessedFiles   :: !Int
-  , csTotalFiles       :: !Int
-  , csSymbolTable      :: !(HashMap Text Type)
-  , csTypeEnvironment  :: !(HashMap Text Type)
-  , csOptimizationStats :: !(HashMap Text Int)
-  , csIntermediateFiles :: ![FilePath]
+  { csErrors             :: ![CompilerError]
+  , csWarnings           :: ![CompilerWarning]
+  , csStartTime          :: !UTCTime
+  , csCurrentPhase       :: !Text
+  , csResolvedCompiler   :: !(Maybe Text)
+  , csCompilerFallback   :: !Bool
+  , csProcessedFiles     :: !Int
+  , csTotalFiles         :: !Int
+  , csSymbolTable        :: !(HashMap Text Type)
+  , csTypeEnvironment    :: !(HashMap Text Type)
+  , csOptimizationStats  :: !(HashMap Text Int)
+  , csIntermediateFiles  :: ![FilePath]
   , csAnalysisAnnotations :: !AnalysisAnnotations
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
@@ -293,6 +296,8 @@ initialCompilerState startTime = CompilerState
   , csWarnings = []
   , csStartTime = startTime
   , csCurrentPhase = "initialization"
+  , csResolvedCompiler = Nothing
+  , csCompilerFallback = False
   , csProcessedFiles = 0
   , csTotalFiles = 0
   , csSymbolTable = HM.empty
@@ -326,6 +331,47 @@ validateConfig config = do
   
   return config
 
+-- | Attempt to resolve the configured C++ compiler, falling back to common
+-- system compilers when using the default configuration. Returns the resolved
+-- compiler executable path along with a flag indicating whether a fallback was
+-- required.
+detectCompilerBinary :: CompilerConfig -> IO (Either Text (Text, Bool))
+detectCompilerBinary config = do
+  primary <- locateBinary (ccCppCompiler config)
+  case primary of
+    Just resolved -> pure (Right (resolved, False))
+    Nothing -> tryFallbacks (ccCppCompiler config) fallbackOptions
+  where
+    fallbackOptions
+      | ccCppCompiler config == ccCppCompiler defaultConfig = ["g++", "c++"]
+      | otherwise = []
+
+    locateBinary :: Text -> IO (Maybe Text)
+    locateBinary candidate = do
+      let raw = T.unpack candidate
+      directExists <- doesFileExist raw
+      if directExists
+        then pure (Just (T.pack raw))
+        else fmap T.pack <$> findExecutable raw
+
+    tryFallbacks :: Text -> [Text] -> IO (Either Text (Text, Bool))
+    tryFallbacks requested [] =
+      pure $ Left $
+        "C++ compiler not found: " <> requested <>
+        " (no alternative compilers were available; enable ccSkipCompilerCheck to bypass detection)"
+    tryFallbacks requested options = go options
+      where
+        go [] =
+          pure $ Left $
+            "C++ compiler not found: " <> requested <>
+            " (also tried " <> T.intercalate ", " options <>
+            "; enable ccSkipCompilerCheck to bypass detection)"
+        go (candidate:rest) = do
+          located <- locateBinary candidate
+          case located of
+            Just resolved -> pure (Right (resolved, True))
+            Nothing -> go rest
+
 -- | Setup compiler environment
 setupCompilerEnvironment :: CompilerM ()
 setupCompilerEnvironment = do
@@ -349,17 +395,20 @@ setupCompilerEnvironment = do
       | stopAtCodegen ->
           logInfo "Skipping C++ compiler availability check because stop-at-codegen is enabled"
       | otherwise -> do
-          detectedPath <- liftIO $ do
-            let compilerBinary = T.unpack (ccCppCompiler config)
-            directExists <- doesFileExist compilerBinary
-            if directExists
-              then pure (Just compilerBinary)
-              else findExecutable compilerBinary
-          case detectedPath of
-            Nothing ->
-              throwError $ ConfigurationError $ "C++ compiler not found: " <> ccCppCompiler config <> " (enable ccSkipCompilerCheck to bypass detection)"
-            Just path ->
-              logVerbose $ "Detected C++ compiler at " <> T.pack path
+          detection <- liftIO $ detectCompilerBinary config
+          case detection of
+            Left err ->
+              throwError $ ConfigurationError err
+            Right (resolved, fallbackUsed) -> do
+              modify $ \s -> s
+                { csResolvedCompiler = Just resolved
+                , csCompilerFallback = fallbackUsed
+                }
+              when fallbackUsed $
+                logWarning $
+                  "Requested C++ compiler '" <> ccCppCompiler config <>
+                  "' was not found; using '" <> resolved <> "' instead."
+              logVerbose $ "Resolved C++ compiler at " <> resolved
 
   logInfo "Compiler environment setup completed"
 
@@ -824,14 +873,16 @@ codeGenStage ast = do
 compileCpp :: FilePath -> CompilerM FilePath
 compileCpp cppFile = do
   config <- ask
+  compilerState <- get
   
-  let objFile = replaceExtension cppFile ".o"
-  let args = buildCppCompilerArgs config cppFile objFile
+  let compilerBinary = fromMaybe (ccCppCompiler config) (csResolvedCompiler compilerState)
+      objFile = replaceExtension cppFile ".o"
+      args = buildCppCompilerArgs config cppFile objFile
   
   logVerbose $ "Compiling C++: " <> T.pack (unwords $ map T.unpack args)
   
   (exitCode, stdout, stderr) <- liftIO $ readProcessWithExitCode 
-    (T.unpack $ ccCppCompiler config) 
+    (T.unpack compilerBinary) 
     (map T.unpack args) 
     ""
   
@@ -848,14 +899,16 @@ compileCpp cppFile = do
 linkObjects :: [FilePath] -> FilePath -> CompilerM FilePath
 linkObjects objFiles outputPath = do
   config <- ask
+  compilerState <- get
   
-  let args = buildLinkerArgs config objFiles outputPath
+  let compilerBinary = fromMaybe (ccCppCompiler config) (csResolvedCompiler compilerState)
+      args = buildLinkerArgs config objFiles outputPath
   
   liftIO $ createDirectoryIfMissing True (takeDirectory outputPath)
   logVerbose $ "Linking: " <> T.pack (unwords $ map T.unpack args)
   
   (exitCode, stdout, stderr) <- liftIO $ readProcessWithExitCode 
-    (T.unpack $ ccCppCompiler config) 
+    (T.unpack compilerBinary) 
     (map T.unpack args) 
     ""
   
