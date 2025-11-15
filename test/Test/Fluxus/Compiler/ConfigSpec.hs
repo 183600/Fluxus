@@ -124,6 +124,34 @@ spec = describe "Fluxus.Compiler.Config" $ do
                 Right other -> expectationFailure $ "unexpected non-success result: " ++ show other
                 Left err -> expectationFailure $ "loadConfig failed: " ++ err)
 
+    it "ignores empty environment overrides" $ do
+      originalCwd <- getCurrentDirectory
+      originalCxx <- lookupEnv "CXX"
+      originalCppStd <- lookupEnv "FLUXUS_CPP_STD"
+      originalVerbose <- lookupEnv "FLUXUS_VERBOSE"
+      withSystemTempDirectory "fluxus-config-empty-env" $ \tmpDir -> do
+        let restoreEnv name maybeValue =
+              case maybeValue of
+                Just value -> setEnv name value
+                Nothing -> unsetEnv name
+        bracket_
+          (do setCurrentDirectory tmpDir
+              setEnv "CXX" ""
+              setEnv "FLUXUS_CPP_STD" ""
+              setEnv "FLUXUS_VERBOSE" "")
+          (do setCurrentDirectory originalCwd
+              restoreEnv "CXX" originalCxx
+              restoreEnv "FLUXUS_CPP_STD" originalCppStd
+              restoreEnv "FLUXUS_VERBOSE" originalVerbose)
+          (do result <- loadConfig []
+              case result of
+                Right (LoadConfigSuccess finalConfig) -> do
+                  ccCppCompiler finalConfig `shouldBe` ccCppCompiler defaultConfig
+                  ccCppStandard finalConfig `shouldBe` ccCppStandard defaultConfig
+                  ccVerboseLevel finalConfig `shouldBe` ccVerboseLevel defaultConfig
+                Right other -> expectationFailure $ "unexpected non-success result: " ++ show other
+                Left err -> expectationFailure $ "loadConfig failed: " ++ err)
+
     it "loads configuration overrides from explicit --config files" $ do
       withSystemTempDirectory "fluxus-config-explicit" $ \tmpDir -> do
         let firstConfig = tmpDir </> "first.yaml"
