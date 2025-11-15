@@ -424,8 +424,25 @@ applyEnvironmentOverrides config = do
   enableInterop <- lookupEnv "FLUXUS_INTEROP"
   experimentalOptimizations <- lookupEnv "FLUXUS_EXPERIMENTAL_OPTIMIZATIONS"
   skipCompilerCheck <- lookupEnv "FLUXUS_SKIP_COMPILER_CHECK"
-  
-  resolvedVerboseLevel <- case verboseLevel of
+
+  let sanitizeEnvText :: Maybe String -> Maybe Text
+      sanitizeEnvText maybeValue =
+        case maybeValue of
+          Nothing -> Nothing
+          Just raw ->
+            let trimmed = T.strip (T.pack raw)
+            in if T.null trimmed then Nothing else Just trimmed
+      sanitizeEnvString :: Maybe String -> Maybe String
+      sanitizeEnvString = fmap T.unpack . sanitizeEnvText
+
+      sanitizedCompiler = sanitizeEnvText cppCompiler
+      sanitizedStd = sanitizeEnvText cppStd
+      sanitizedVerbose = sanitizeEnvString verboseLevel
+      sanitizedInterop = sanitizeEnvString enableInterop
+      sanitizedExperimental = sanitizeEnvString experimentalOptimizations
+      sanitizedSkip = sanitizeEnvString skipCompilerCheck
+
+  resolvedVerboseLevel <- case sanitizedVerbose of
     Nothing -> pure (ccVerboseLevel config)
     Just raw -> case readMaybe raw of
       Just level -> pure level
@@ -434,12 +451,12 @@ applyEnvironmentOverrides config = do
         pure (ccVerboseLevel config)
 
   return config
-    { ccCppCompiler = maybe (ccCppCompiler config) T.pack cppCompiler
-    , ccCppStandard = maybe (ccCppStandard config) T.pack cppStd
+    { ccCppCompiler = fromMaybe (ccCppCompiler config) sanitizedCompiler
+    , ccCppStandard = fromMaybe (ccCppStandard config) sanitizedStd
     , ccVerboseLevel = resolvedVerboseLevel
-    , ccEnableInterop = parseBoolOverride (ccEnableInterop config) enableInterop
-    , ccEnableExperimentalOptimizations = parseBoolOverride (ccEnableExperimentalOptimizations config) experimentalOptimizations
-    , ccSkipCompilerCheck = parseBoolOverride (ccSkipCompilerCheck config) skipCompilerCheck
+    , ccEnableInterop = parseBoolOverride (ccEnableInterop config) sanitizedInterop
+    , ccEnableExperimentalOptimizations = parseBoolOverride (ccEnableExperimentalOptimizations config) sanitizedExperimental
+    , ccSkipCompilerCheck = parseBoolOverride (ccSkipCompilerCheck config) sanitizedSkip
     }
   where
     readMaybe s = case reads s of
