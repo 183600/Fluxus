@@ -82,10 +82,22 @@ runCompilerMain config args = do
       hPutStrLn stderr $ "Compilation failed: " ++ formatCompilerError compilerError
       exitFailure
     Right (outputPath, finalState) -> do
-      when (ccVerboseLevel config >= 1) $ do
-        TIO.putStrLn $ "Compilation successful!"
-        TIO.putStrLn $ "Output: " <> T.pack outputPath
+      let outputText = T.pack outputPath
+          warningCount = length (csWarnings finalState)
+          verboseLevel = ccVerboseLevel config
+
+      TIO.putStrLn $ "Output artifact: " <> outputText
+
+      when (warningCount > 0) $
+        (if verboseLevel >= 1 then TIO.putStrLn else TIO.hPutStrLn stderr) $
+          "Compilation completed with " <> T.pack (show warningCount) <>
+          " warning(s)." <>
+          if verboseLevel >= 1 then "" else " Re-run with -v for details."
+
+      when (verboseLevel >= 1) $ do
+        TIO.putStrLn "Compilation successful!"
         printCompilationStats finalState
+
       exitSuccess
 
 -- | Extract input files from command line arguments
