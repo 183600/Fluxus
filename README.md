@@ -155,6 +155,8 @@ fluxus --python -O2 examples/python/fibonacci.py -o fibonacci
 ./fibonacci
 ```
 
+执行命令后，Fluxus 会在终端输出形如 `Output artifact: fibonacci` 的提示，默认即可确认生成的产物路径；如果存在编译警告且当前未开启详细模式，警告摘要会写入标准错误并提示使用 `-v` 查看详情。
+
 **编译 Go 程序：**
 
 ```bash
