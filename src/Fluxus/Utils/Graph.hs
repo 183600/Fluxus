@@ -67,6 +67,8 @@ import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Data.List (foldl', find)
+import Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
 
 -- | Node identifier
 type NodeId = Int
@@ -163,25 +165,36 @@ edgeExists from to graph =
 
 -- | Topological sort using Kahn's algorithm
 topologicalSort :: Graph a -> Maybe [NodeId]
-topologicalSort graph = go (Set.fromList $ map nodeId $ nodes graph) [] []
+topologicalSort graph = go fullInDegrees initialQueue [] 0
   where
-    inDegree nodeId = length $ predecessors nodeId graph
-    
-    go remaining result queue
-      | Set.null remaining && null queue = Just (reverse result)
-      | null queue = Nothing  -- Cycle detected
-      | otherwise = 
-          let (current, restQueue) = case queue of
-                [] -> 
-                  let noIncoming = Set.filter (\n -> inDegree n == 0) remaining
-                  in if Set.null noIncoming 
-                     then (Set.findMin remaining, [])  -- Force progress, might indicate cycle
-                     else (Set.findMin noIncoming, Set.toList noIncoming)
-                (x:xs) -> (x, xs)
-              newRemaining = Set.delete current remaining
-              newSuccessors = filter (`Set.member` newRemaining) (successors current graph)
-              newQueue = restQueue ++ newSuccessors
-          in go newRemaining (current : result) newQueue
+    nodeIds = map nodeId (nodes graph)
+    totalNodes = length nodeIds
+    initialInDegrees =
+      foldl' (\acc edge -> Map.insertWith (+) (edgeTo edge) 1 acc) Map.empty (edges graph)
+    fullInDegrees =
+      foldl' (\acc nid -> Map.insertWith (\_ old -> old) nid 0 acc) initialInDegrees nodeIds
+    initialQueue =
+      Seq.fromList [nid | nid <- nodeIds, Map.findWithDefault 0 nid fullInDegrees == 0]
+
+    go inDeg queue result processed =
+      case Seq.viewl queue of
+        Seq.EmptyL ->
+          if processed == totalNodes
+            then Just (reverse result)
+            else Nothing
+        current Seq.:< rest ->
+          let (inDeg', rest') = foldl' update (inDeg, rest) (successors current graph)
+              update (degMap, q) succ =
+                case Map.lookup succ degMap of
+                  Nothing -> (degMap, q)
+                  Just deg ->
+                    let deg' = deg - 1
+                        degMap' = Map.insert succ deg' degMap
+                        q'
+                          | deg' == 0 = q Seq.|> succ
+                          | otherwise = q
+                    in (degMap', q')
+          in go inDeg' rest' (current : result) (processed + 1)
 
 -- | Find strongly connected components using Tarjan's algorithm
 stronglyConnectedComponents :: Graph a -> [[NodeId]]
