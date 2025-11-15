@@ -6,7 +6,7 @@ import qualified Data.Text as T
 import Data.Either (isRight)
 import Test.Hspec
 import System.Directory (createDirectoryIfMissing, doesFileExist, findExecutable)
-import System.FilePath ((</>), takeDirectory, replaceExtension)
+import System.FilePath ((</>), takeDirectory, replaceExtension, normalise)
 import System.IO.Temp (withSystemTempDirectory)
 
 import qualified Test.Fluxus.CodeGen.CPP.Shared as Shared
@@ -71,6 +71,14 @@ spec = describe "Fluxus.Compiler.Driver" $ do
                 Right (_, finalState) -> do
                   csCompilerFallback finalState `shouldBe` True
                   csResolvedCompiler finalState `shouldBe` Just (T.pack systemCompiler)
+
+  describe "resolveWorkPath" $ do
+    it "sanitizes parent directory traversal to keep outputs within the work directory" $ do
+      withSystemTempDirectory "fluxus-work" $ \workDir -> do
+        let config = defaultConfig { ccWorkDirectory = Just workDir }
+            resolved = resolveWorkPath config ("../outside.cpp")
+            expected = normalise (workDir </> "__parent__" </> "outside.cpp")
+        resolved `shouldBe` expected
 
   describe "compileFile" $ do
     it "emits intermediate files into the configured work directory" $ do

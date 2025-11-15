@@ -34,7 +34,7 @@ module Fluxus.Compiler.Driver
   , resolveWorkPath
   ) where
 
-import Data.List (intercalate, foldl', partition, isPrefixOf)
+import Data.List (intercalate, foldl', partition, isPrefixOf, dropWhileEnd)
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Except
@@ -446,12 +446,24 @@ resolveWorkPath config candidate =
           let noDrive = dropDrive path
           in dropWhile isPathSeparator noDrive
     sanitizeRelativePath path =
-      let components = filter (not . null) (splitDirectories path)
-          sanitizedComponents = map sanitizeComponent components
-      in joinPath sanitizedComponents
-    sanitizeComponent ".." = "__parent__"
-    sanitizeComponent "." = "__current__"
-    sanitizeComponent component = component
+      let rawComponents = splitDirectories path
+          sanitizedComponents =
+            [ componentSanitized
+            | rawComponent <- rawComponents
+            , let componentSanitized = sanitizeComponent rawComponent
+            , not (null componentSanitized)
+            ]
+      in case sanitizedComponents of
+           [] -> ""
+           _  -> joinPath sanitizedComponents
+    sanitizeComponent component =
+      let trimmed = dropWhileEnd isPathSeparator component
+          stripped = dropWhile isPathSeparator trimmed
+      in case stripped of
+           ".." -> "__parent__"
+           "."  -> "__current__"
+           ""   -> ""
+           other -> other
     hashedFallback path =
       let digest = show (abs (hash path))
           baseName = takeFileName path
