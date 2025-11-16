@@ -46,6 +46,21 @@ spec = describe "Fluxus.Compiler.Driver" $ do
       result <- runCompiler config setupCompilerEnvironment
       result `shouldSatisfy` isRight
 
+    it "records the configured compiler when skipping the compiler check" $ do
+      let configured = "fluxus-skipped-compiler"
+          config = defaultConfig
+            { ccCppCompiler = configured
+            , ccSkipCompilerCheck = True
+            , ccVerboseLevel = 0
+            }
+      result <- runCompiler config setupCompilerEnvironment
+      case result of
+        Right (_, finalState) -> do
+          csResolvedCompiler finalState `shouldBe` Just configured
+          csCompilerFallback finalState `shouldBe` False
+        other ->
+          expectationFailure $ "expected successful setup, got " ++ show other
+
     it "succeeds when stopping at code generation" $ do
       let config = defaultConfig
             { ccCppCompiler = "fluxus-nonexistent-compiler"

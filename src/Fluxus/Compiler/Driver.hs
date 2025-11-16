@@ -390,11 +390,39 @@ setupCompilerEnvironment = do
       stopAtCodegen = ccStopAtCodegen config
 
   case () of
-    _ | skipCheck ->
+    _ | skipCheck -> do
           logInfo "Skipping C++ compiler availability check (ccSkipCompilerCheck enabled)"
+          modify $ \s -> s
+            { csResolvedCompiler = Just (ccCppCompiler config)
+            , csCompilerFallback = False
+            }
+          logVerbose $ "Using configured C++ compiler without detection: " <> ccCppCompiler config
       | stopAtCodegen ->
           logInfo "Skipping C++ compiler availability check because stop-at-codegen is enabled"
       | otherwise -> do
+          _ <- ensureCompilerResolved
+          pure ()
+
+  logInfo "Compiler environment setup completed"
+
+-- | Ensure the compiler executable is available and cached in the state.
+ensureCompilerResolved :: CompilerM Text
+ensureCompilerResolved = do
+  cached <- gets csResolvedCompiler
+  config <- ask
+  case cached of
+    Just resolved -> pure resolved
+    Nothing ->
+      if ccSkipCompilerCheck config
+        then do
+          let configured = ccCppCompiler config
+          modify $ \s -> s
+            { csResolvedCompiler = Just configured
+            , csCompilerFallback = False
+            }
+          logVerbose $ "Using configured C++ compiler without detection: " <> configured
+          pure configured
+        else do
           detection <- liftIO $ detectCompilerBinary config
           case detection of
             Left err ->
@@ -409,8 +437,7 @@ setupCompilerEnvironment = do
                   "Requested C++ compiler '" <> ccCppCompiler config <>
                   "' was not found; using '" <> resolved <> "' instead."
               logVerbose $ "Resolved C++ compiler at " <> resolved
-
-  logInfo "Compiler environment setup completed"
+              pure resolved
 
 -- | Compilation artifacts produced for a single file prior to linking
 data CompilationArtifacts = CompilationArtifacts
@@ -885,10 +912,9 @@ codeGenStage ast = do
 compileCpp :: FilePath -> CompilerM FilePath
 compileCpp cppFile = do
   config <- ask
-  compilerState <- get
+  compilerBinary <- ensureCompilerResolved
   
-  let compilerBinary = fromMaybe (ccCppCompiler config) (csResolvedCompiler compilerState)
-      objFile = replaceExtension cppFile ".o"
+  let objFile = replaceExtension cppFile ".o"
       args = buildCppCompilerArgs config cppFile objFile
   
   logVerbose $ "Compiling C++: " <> T.pack (unwords $ map T.unpack args)
@@ -911,10 +937,9 @@ compileCpp cppFile = do
 linkObjects :: [FilePath] -> FilePath -> CompilerM FilePath
 linkObjects objFiles outputPath = do
   config <- ask
-  compilerState <- get
+  compilerBinary <- ensureCompilerResolved
   
-  let compilerBinary = fromMaybe (ccCppCompiler config) (csResolvedCompiler compilerState)
-      args = buildLinkerArgs config objFiles outputPath
+  let args = buildLinkerArgs config objFiles outputPath
   
   liftIO $ createDirectoryIfMissing True (takeDirectory outputPath)
   logVerbose $ "Linking: " <> T.pack (unwords $ map T.unpack args)
