@@ -145,7 +145,8 @@ test-suite fluxus-test
     temporary,
     text,
     unordered-containers,
-    mtl >= 2.3
+    mtl >= 2.3,
+    vector
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
 
 benchmark fluxus-bench
