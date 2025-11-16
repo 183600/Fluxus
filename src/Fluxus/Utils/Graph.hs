@@ -165,17 +165,21 @@ edgeExists from to graph =
 
 -- | Topological sort using Kahn's algorithm
 topologicalSort :: Graph a -> Maybe [NodeId]
-topologicalSort graph = go fullInDegrees initialQueue [] 0
+topologicalSort graph = go fullInDegrees initialQueue [] (0 :: Int)
   where
     nodeIds = map nodeId (nodes graph)
     totalNodes = length nodeIds
+    initialInDegrees :: Map NodeId Int
     initialInDegrees =
       foldl' (\acc edge -> Map.insertWith (+) (edgeTo edge) 1 acc) Map.empty (edges graph)
+    fullInDegrees :: Map NodeId Int
     fullInDegrees =
       foldl' (\acc nid -> Map.insertWith (\_ old -> old) nid 0 acc) initialInDegrees nodeIds
+    initialQueue :: Seq NodeId
     initialQueue =
       Seq.fromList [nid | nid <- nodeIds, Map.findWithDefault 0 nid fullInDegrees == 0]
 
+    go :: Map NodeId Int -> Seq NodeId -> [NodeId] -> Int -> Maybe [NodeId]
     go inDeg queue result processed =
       case Seq.viewl queue of
         Seq.EmptyL ->
