@@ -178,7 +178,6 @@ describeGoExpr expr = case expr of
   GoReceive _ -> "receive expression"
   GoTypeConversion _ _ -> "type conversion"
   GoFuncLit _ -> "function literal"
-  _ -> "expression"
 
 generateGoFile :: GoFile -> CppCodeGen ()
 generateGoFile goFile = do
