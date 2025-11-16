@@ -125,10 +125,19 @@ generatePythonStmt scope (Located span stmt) =
       case patterns of
         [Located _ (PatVar (Identifier varName))] ->
           handleSimpleAssignment scope varName locatedExpr
+        [Located _ (PatTuple patElems)] ->
+          handleTupleUnpacking scope patElems locatedExpr
         _ -> do
-          let msg = "Multiple assignment not implemented"
-          reportFatalNotImplemented msg
-          return cppNoop
+          let msg = "Multiple assignment targets (other than tuple unpacking) not implemented"
+          reportNotImplemented msg
+          strict <- gets (cgcStrictMode . cgsConfig)
+          if strict
+            then do
+              reportFatalNotImplemented msg
+              return cppNoop
+            else do
+              emitWarning msg
+              return cppNoop
     PyReturn mexpr -> do
       mcppExpr <- mapM generatePythonExpr mexpr
       return $ CppReturn mcppExpr
@@ -283,6 +292,66 @@ generatePythonStmt scope (Located span stmt) =
             else do
               updateSymbolTableWith refinedType
               return $ declarationStmt refinedType
+
+    handleTupleUnpacking :: PythonScope -> [Located PythonPattern] -> Located PythonExpr -> CppCodeGen CppStmt
+    handleTupleUnpacking scope' patterns locatedExpr = do
+      addInclude "<tuple>"
+      cppExpr <- generatePythonExpr locatedExpr
+      symtab <- gets cgsSymbolTable
+      
+      -- Extract variable names from patterns
+      let extractVarName (Located _ (PatVar (Identifier name))) = Just name
+          extractVarName _ = Nothing
+          varNames = catMaybes (map extractVarName patterns)
+      
+      -- Check if all patterns are simple variables
+      if length varNames /= length patterns
+        then do
+          let msg = "Complex tuple unpacking patterns not supported"
+          reportNotImplemented msg
+          strict <- gets (cgcStrictMode . cgsConfig)
+          if strict
+            then reportFatalNotImplemented msg >> return cppNoop
+            else emitWarning msg >> return cppNoop
+        else do
+          -- Generate tuple destructuring using std::tie
+          let tieExpr = CppCall (CppVar "std::tie") (map CppVar varNames)
+              updateSymbolTables = mapM_ (\name -> modify $ \s -> 
+                s { cgsSymbolTable = HM.insert name CppAuto (cgsSymbolTable s) }) varNames
+          
+          case scope' of
+            ScopeModule -> do
+              -- For module scope, we need to declare and then assign
+              let alreadyDeclared = filter (`HM.member` symtab) varNames
+                  needsDeclaration = filter (`notElem` alreadyDeclared) varNames
+              
+              -- Declare undeclared variables
+              mapM_ (\name -> do
+                modify $ \s -> s { cgsSymbolTable = HM.insert name CppAuto (cgsSymbolTable s) }
+                recordHoistedGlobal name
+                addDeclaration $ CppVariable name CppAuto Nothing
+                emitInfo $ "Declared module-level variable " <> name <> " for tuple unpacking"
+                ) needsDeclaration
+              
+              -- Generate assignment statement
+              return $ CppExprStmt (CppBinary "=" tieExpr cppExpr)
+              
+            ScopeFunction -> do
+              let alreadyDeclared = filter (`HM.member` symtab) varNames
+                  needsDeclaration = filter (`notElem` alreadyDeclared) varNames
+              
+              updateSymbolTables
+              
+              if null needsDeclaration
+                then 
+                  -- All variables already declared, just assign
+                  return $ CppExprStmt (CppBinary "=" tieExpr cppExpr)
+                else
+                  -- Need to declare some variables first
+                  -- Use auto declarations followed by tie assignment
+                  let declarations = map (\name -> CppDecl (CppVariable name CppAuto Nothing)) needsDeclaration
+                      assignment = CppExprStmt (CppBinary "=" tieExpr cppExpr)
+                  in return $ CppStmtSeq (declarations ++ [assignment])
 
     parseRangeArgs :: [Located PythonArgument] -> CppCodeGen (Maybe RangeSpec)
     parseRangeArgs args = case traverse extractPositional args of
@@ -685,11 +754,20 @@ exceptionTypeName (Located _ expr) =
 -- | Generate C++ from Python expressions
 -- | Generate C++ expression from Python argument
 generatePythonArgument :: Located PythonArgument -> CppCodeGen CppExpr
-generatePythonArgument (Located _ arg) = case arg of
+generatePythonArgument (Located span arg) = case arg of
   ArgPositional expr -> generatePythonExpr expr
-  ArgKeyword _ expr -> generatePythonExpr expr  -- Simplified: ignore keyword
-  ArgStarred expr -> generatePythonExpr expr  -- Simplified
-  ArgKwStarred expr -> generatePythonExpr expr  -- Simplified
+  ArgKeyword name expr -> do
+    emitWarning $ "Keyword argument '" <> (\(Identifier n) -> n) name <> 
+      "' at " <> formatSpan span <> " is being treated as positional argument"
+    generatePythonExpr expr
+  ArgStarred expr -> do
+    emitWarning $ "*args unpacking at " <> formatSpan span <> 
+      " is not fully supported, treating as single argument"
+    generatePythonExpr expr
+  ArgKwStarred expr -> do
+    emitWarning $ "**kwargs unpacking at " <> formatSpan span <> 
+      " is not fully supported, treating as single argument"
+    generatePythonExpr expr
 
 
 generateFStringExpr :: [PythonFStringSegment] -> CppCodeGen CppExpr
@@ -812,6 +890,29 @@ generatePythonExpr (Located span expr) = case expr of
   PyList _ -> do
     (_, vectorExpr) <- generatePythonListLiteral (Located span expr)
     return vectorExpr
+  PyTuple exprs -> do
+    generatePythonTupleLiteral exprs
+  PySet exprs -> do
+    generatePythonSetLiteral exprs
+  PyDict pairs -> do
+    generatePythonDictLiteral pairs
+  PyLambda params body -> do
+    generatePythonLambda params body
+  PyListComp element comprehensions -> do
+    generatePythonListComprehension span element comprehensions
+  PySetComp element comprehensions -> do
+    generatePythonSetComprehension span element comprehensions
+  PyDictComp keyExpr valueExpr comprehensions -> do
+    generatePythonDictComprehension span keyExpr valueExpr comprehensions
+  PyIfExp testExpr thenExpr elseExpr -> do
+    -- Python ternary: `thenExpr if testExpr else elseExpr`
+    -- C++ ternary: `testExpr ? thenExpr : elseExpr`
+    cppTest <- generatePythonExpr testExpr
+    cppThen <- generatePythonExpr thenExpr
+    cppElse <- generatePythonExpr elseExpr
+    return $ CppCall (CppLambda []
+      [CppReturn (Just (CppBinary "?" cppTest (CppBinary ":" cppThen cppElse)))])
+      []
   _ -> do
     let message = "TODO: Implement Python expression: " <> T.pack (show expr)
     reportNotImplemented message
@@ -957,6 +1058,99 @@ generatePythonListLiteral locatedList@(Located listSpan expr) =
       CppConst inner -> isUnknownType inner
       _ -> False
 
+-- | Generate C++ code for Python tuple literals
+generatePythonTupleLiteral :: [Located PythonExpr] -> CppCodeGen CppExpr
+generatePythonTupleLiteral exprs = do
+  addInclude "<tuple>"
+  cppExprs <- mapM generatePythonExpr exprs
+  types <- mapM (\e -> pure $ fromMaybe CppAuto (inferPythonExprCppTypeLocated e)) exprs
+  let tupleType = CppClassType "std::tuple" types
+  return $ CppCall (CppVar "std::make_tuple") cppExprs
+
+-- | Generate C++ code for Python set literals  
+generatePythonSetLiteral :: [Located PythonExpr] -> CppCodeGen CppExpr
+generatePythonSetLiteral exprs = do
+  addInclude "<set>"
+  cppExprs <- mapM generatePythonExpr exprs
+  let elementType = case exprs of
+        [] -> CppLongLong  -- Default for empty set
+        (e:es) -> fromMaybe CppAuto $
+          foldM unifyElementType (fromMaybe CppAuto $ inferPythonExprCppTypeLocated e)
+            (map (fromMaybe CppAuto . inferPythonExprCppTypeLocated) es)
+  let setType = CppClassType "std::set" [elementType]
+  return $ CppBracedInit setType cppExprs
+
+-- | Generate C++ code for Python dict literals
+generatePythonDictLiteral :: [(Located PythonExpr, Located PythonExpr)] -> CppCodeGen CppExpr
+generatePythonDictLiteral pairs = do
+  addInclude "<map>"
+  cppPairs <- mapM generatePair pairs
+  let (keyType, valueType) = case pairs of
+        [] -> (CppString, CppAuto)  -- Default for empty dict
+        ((k,v):_) -> 
+          ( fromMaybe CppString (inferPythonExprCppTypeLocated k)
+          , fromMaybe CppAuto (inferPythonExprCppTypeLocated v)
+          )
+  let mapType = CppClassType "std::map" [keyType, valueType]
+  return $ CppBracedInit mapType cppPairs
+  where
+    generatePair (k, v) = do
+      cppKey <- generatePythonExpr k
+      cppValue <- generatePythonExpr v
+      return $ CppBracedInit (CppClassType "std::pair" [CppAuto, CppAuto]) [cppKey, cppValue]
+
+-- | Generate C++ lambda from Python lambda
+generatePythonLambda :: [Located PythonParameter] -> Located PythonExpr -> CppCodeGen CppExpr
+generatePythonLambda params bodyExpr = do
+  cppParams <- mapM mapPythonParameter params
+  cppBody <- generatePythonExpr bodyExpr
+  return $ CppLambda cppParams [CppReturn (Just cppBody)]
+
+-- | Generate C++ code for Python list comprehensions
+generatePythonListComprehension :: SourceSpan -> Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
+generatePythonListComprehension span element comprehensions = do
+  let message = "Python list comprehension requires runtime fallback at " <> formatSpan span
+  reportNotImplemented message
+  strict <- gets (cgcStrictMode . cgsConfig)
+  if strict
+    then do
+      abortExpr <- runtimeAbortCall message
+      return $ CppBinary "," abortExpr (CppLiteral (CppIntLit 0))
+    else do
+      emitWarning message
+      addInclude "<vector>"
+      return $ CppBracedInit (CppVector CppAuto) []
+
+-- | Generate C++ code for Python set comprehensions
+generatePythonSetComprehension :: SourceSpan -> Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
+generatePythonSetComprehension span element comprehensions = do
+  let message = "Python set comprehension requires runtime fallback at " <> formatSpan span
+  reportNotImplemented message
+  strict <- gets (cgcStrictMode . cgsConfig)
+  if strict
+    then do
+      abortExpr <- runtimeAbortCall message
+      return $ CppBinary "," abortExpr (CppLiteral (CppIntLit 0))
+    else do
+      emitWarning message
+      addInclude "<set>"
+      return $ CppBracedInit (CppClassType "std::set" [CppAuto]) []
+
+-- | Generate C++ code for Python dict comprehensions
+generatePythonDictComprehension :: SourceSpan -> Located PythonExpr -> Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
+generatePythonDictComprehension span keyExpr valueExpr comprehensions = do
+  let message = "Python dict comprehension requires runtime fallback at " <> formatSpan span
+  reportNotImplemented message
+  strict <- gets (cgcStrictMode . cgsConfig)
+  if strict
+    then do
+      abortExpr <- runtimeAbortCall message
+      return $ CppBinary "," abortExpr (CppLiteral (CppIntLit 0))
+    else do
+      emitWarning message
+      addInclude "<map>"
+      return $ CppBracedInit (CppClassType "std::map" [CppString, CppAuto]) []
+
 inferPythonExprCppTypeLocated :: Located PythonExpr -> Maybe CppType
 inferPythonExprCppTypeLocated (Located _ e) = inferPythonExprCppType e
 
@@ -1075,6 +1269,7 @@ ensurePythonHelpers = do
   ensureHelper boolToStringHelperName boolHelperDecl
   addInclude "<sstream>"
   ensureHelper floatToStringHelperName floatHelperDecl
+  ensureRangeHelper
   where
     ensureHelper name decl = do
       existing <- gets cgsDeclarations
@@ -1109,6 +1304,30 @@ ensurePythonHelpers = do
               []
           , CppReturn (Just resultVar)
           ]
+
+-- | Ensure range() helper function is added
+ensureRangeHelper :: CppCodeGen ()
+ensureRangeHelper = do
+  addInclude "<vector>"
+  existing <- gets cgsDeclarations
+  unless (any isRangeHelper existing) $ do
+    addDeclaration rangeHelperDecl
+  where
+    isRangeHelper (CppFunction name _ _ _) = name == "range"
+    isRangeHelper _ = False
+    
+    rangeHelperDecl =
+      CppFunction "range" (CppVector CppLongLong)
+        [CppParam "n" CppLongLong Nothing]
+        [ CppDecl (CppVariable "result" (CppVector CppLongLong) Nothing)
+        , CppExprStmt (CppCall (CppMember (CppVar "result") "reserve") [CppVar "n"])
+        , CppFor
+            (Just (CppDecl (CppVariable "i" CppLongLong (Just (CppLiteral (CppIntLit 0))))))
+            (Just (CppBinary "<" (CppVar "i") (CppVar "n")))
+            (Just (CppUnary "++" (CppVar "i")))
+            [CppExprStmt (CppCall (CppMember (CppVar "result") "push_back") [CppVar "i"])]
+        , CppReturn (Just (CppVar "result"))
+        ]
 
 finallyGuardStructName :: Text
 finallyGuardStructName = "FluxusFinallyGuard"
