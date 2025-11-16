@@ -8,9 +8,11 @@ module Fluxus.Analysis.ShapeAnalysis
   ( ShapeAnalysisM
   , ShapeAnalysisState(..)
   , ShapeInfo(..)
+  , AccessPattern(..)
   , StructShape(..)
   , ContainerShape(..)
   , CppMapping(..)
+  , MemoryLayout(..)
   , runShapeAnalysis
   , analyzeShape
   , inferShape
