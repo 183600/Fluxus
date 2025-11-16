@@ -235,7 +235,9 @@ inferExpr (CEGeneratorComp value clauses) =
 withScope :: TypeInferenceM a -> TypeInferenceM a
 withScope action = do
   _pushScope
-  result <- action
+  result <- action `catchError` \err -> do
+    _popScope
+    throwError err
   _popScope
   return result
 
