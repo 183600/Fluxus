@@ -6,11 +6,12 @@ import qualified Data.Text as T
 import Data.Either (isRight)
 import Data.List (isInfixOf, isPrefixOf)
 import Control.Exception (bracket_)
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (get)
 import Test.Hspec
-import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, findExecutable, getPermissions, setPermissions, Permissions(..))
+import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, findExecutable, getPermissions, removeFile, setPermissions, Permissions(..))
 import System.Environment (lookupEnv, setEnv, unsetEnv)
-import System.FilePath ((</>), addTrailingPathSeparator, takeDirectory, takeExtension, replaceExtension, normalise)
+import System.FilePath ((</>), addTrailingPathSeparator, takeDirectory, takeExtension, replaceExtension, normalise, takeFileName)
 import System.IO.Temp (withSystemTempDirectory)
 
 import qualified Test.Fluxus.CodeGen.CPP.Shared as Shared
@@ -128,6 +129,28 @@ spec = describe "Fluxus.Compiler.Driver" $ do
           Left err ->
             expectationFailure $ "expected setup to succeed, but got " ++ show err
 
+    it "reuses a resolved compiler across multiple environment setups" $ do
+      withSystemTempDirectory "fluxus-cache-compiler" $ \tmpDir -> do
+        let compilerBinary = tmpDir </> "custom-clang++"
+            config = defaultConfig
+              { ccCppCompiler = T.pack compilerBinary
+              , ccSkipCompilerCheck = False
+              , ccVerboseLevel = 0
+              }
+        createExecutable compilerBinary trivialCompilerScript
+        result <- runCompiler config $ do
+          setupCompilerEnvironment
+          liftIO $ removeFile compilerBinary
+          setupCompilerEnvironment
+          st <- get
+          pure (csResolvedCompiler st, csCompilerFallback st)
+        case result of
+          Right ((resolved, fallbackUsed), _) -> do
+            resolved `shouldBe` Just (T.pack compilerBinary)
+            fallbackUsed `shouldBe` False
+          Left err ->
+            expectationFailure $ "expected cached setup to succeed, but got " ++ show err
+
   describe "resolveWorkPath" $ do
     it "keeps paths within the work directory unchanged" $ do
       withSystemTempDirectory "fluxus-work" $ \workDir -> do
@@ -176,6 +199,41 @@ spec = describe "Fluxus.Compiler.Driver" $ do
         let config = defaultConfig { ccWorkDirectory = Just workDir }
             expected = normalise (workDir </> "__current__")
         resolveWorkPath config "." `shouldBe` expected
+
+    it "returns the candidate path unchanged when no work directory is configured" $ do
+      let candidate = "/tmp/sample/module.cpp"
+      resolveWorkPath defaultConfig candidate `shouldBe` candidate
+
+    it "preserves the original filename when sanitizing absolute paths" $ do
+      withSystemTempDirectory "fluxus-work" $ \workDir -> do
+        let config = defaultConfig { ccWorkDirectory = Just workDir }
+            candidate = "/opt/project/src/module.cpp"
+            resolved = resolveWorkPath config candidate
+            expectedPrefix = addTrailingPathSeparator (normalise workDir)
+            normalizedResolved = normalise resolved
+        normalizedResolved `shouldSatisfy` (\path -> expectedPrefix `isPrefixOf` path)
+        takeFileName normalizedResolved `shouldBe` "module.cpp"
+
+    it "produces identical sanitized paths for equivalent absolute inputs" $ do
+      withSystemTempDirectory "fluxus-work" $ \workDir -> do
+        let config = defaultConfig { ccWorkDirectory = Just workDir }
+            canonical = "/tmp/sources/example.cpp"
+            messy = "/tmp//sources///example.cpp"
+            resolvedCanonical = resolveWorkPath config canonical
+            resolvedMessy = resolveWorkPath config messy
+        resolvedCanonical `shouldBe` resolvedMessy
+
+    it "generates distinct sanitized directories for different absolute parents" $ do
+      withSystemTempDirectory "fluxus-work" $ \workDir -> do
+        let config = defaultConfig { ccWorkDirectory = Just workDir }
+            firstPath = "/opt/project/src/main.cpp"
+            secondPath = "/opt/other/src/main.cpp"
+            firstResolved = resolveWorkPath config firstPath
+            secondResolved = resolveWorkPath config secondPath
+        firstResolved `shouldNotBe` secondResolved
+        takeDirectory firstResolved `shouldNotBe` takeDirectory secondResolved
+        takeFileName firstResolved `shouldBe` "main.cpp"
+        takeFileName secondResolved `shouldBe` "main.cpp"
 
   describe "validateConfig" $ do
     it "rejects configurations without a compiler name" $ do
@@ -231,6 +289,33 @@ spec = describe "Fluxus.Compiler.Driver" $ do
               rendered `shouldContain` "clang++"
             Right other ->
               expectationFailure $ "expected detection to fail, but got " ++ show other
+
+    it "does not attempt fallback when a non-default compiler is missing" $ do
+      withSystemTempDirectory "fluxus-detect-custom-missing" $ \tmpDir ->
+        withTemporaryEnv "PATH" (Just tmpDir) $ do
+          createExecutable (tmpDir </> "g++") trivialCompilerScript
+          let config = defaultConfig { ccCppCompiler = "custom++" }
+          detection <- detectCompilerBinary config
+          case detection of
+            Left err -> do
+              let rendered = T.unpack err
+              rendered `shouldContain` "custom++"
+              rendered `shouldContain` "no alternative compilers were available"
+            Right other ->
+              expectationFailure $ "expected detection to fail without fallback, but got " ++ show other
+
+    it "falls back to c++ when g++ is unavailable but c++ exists" $ do
+      withSystemTempDirectory "fluxus-detect-cpp-only" $ \tmpDir ->
+        withTemporaryEnv "PATH" (Just tmpDir) $ do
+          let cppPath = tmpDir </> "c++"
+          createExecutable cppPath trivialCompilerScript
+          detection <- detectCompilerBinary defaultConfig
+          case detection of
+            Right (resolved, fallbackUsed) -> do
+              fallbackUsed `shouldBe` True
+              normalise (T.unpack resolved) `shouldBe` normalise cppPath
+            Left err ->
+              expectationFailure $ "expected fallback detection to succeed, but got " ++ T.unpack err
 
   describe "showTargetPlatform" $ do
     it "renders known target platforms" $ do
@@ -413,6 +498,42 @@ spec = describe "Fluxus.Compiler.Driver" $ do
             Left err ->
               expectationFailure $ "Compilation failed: " ++ show err
 
+    it "fails gracefully when the C++ compiler exits with an error" $ do
+      withFailingCompiler $ \compilerBinary logPath ->
+        withSystemTempDirectory "fluxus-compile-failure" $ \tmpDir -> do
+          let workDir = tmpDir </> "work"
+              sourceDir = tmpDir </> "src"
+              sourceFile = sourceDir </> "broken.py"
+              outputPath = workDir </> "bin" </> "broken"
+              config = defaultConfig
+                { ccCppCompiler = T.pack compilerBinary
+                , ccSkipCompilerCheck = False
+                , ccStopAtCodegen = False
+                , ccWorkDirectory = Just workDir
+                , ccOutputPath = Just outputPath
+                , ccVerboseLevel = 0
+                }
+          createDirectoryIfMissing True sourceDir
+          writeFile sourceFile $ unlines
+            [ "def broken():"
+            , "    return 1 / 0"
+            ]
+          result <- runCompiler config $ do
+            setupCompilerEnvironment
+            compileFile sourceFile
+          case result of
+            Left (CodeGenError msg) -> do
+              let rendered = T.unpack msg
+              rendered `shouldContain` "compile failure"
+              rendered `shouldContain` "exit code 64"
+              doesFileExist outputPath `shouldReturn` False
+              logLines <- fmap lines (readFile logPath)
+              logLines `shouldSatisfy` (\entries -> length entries == 1)
+            Left err ->
+              expectationFailure $ "expected CodeGenError, got " ++ show err
+            Right _ ->
+              expectationFailure "Compilation unexpectedly succeeded"
+
   describe "compileProject" $ do
     it "routes generated C++ files into the work directory when stopping at code generation" $ do
       withSystemTempDirectory "fluxus-work" $ \workDir ->
@@ -560,6 +681,46 @@ spec = describe "Fluxus.Compiler.Driver" $ do
             Left err ->
               expectationFailure $ "Project compilation failed: " ++ show err
 
+    it "respects an explicit output path when linking a project" $ do
+      withFakeCompiler $ \compilerBinary logPath ->
+        withSystemTempDirectory "fluxus-project-custom-link" $ \tmpRoot -> do
+          let workDir = tmpRoot </> "work"
+              sourceDir = tmpRoot </> "src"
+              firstSource = sourceDir </> "pkg" </> "alpha.py"
+              secondSource = sourceDir </> "pkg" </> "beta.py"
+              outputPath = tmpRoot </> "artifacts" </> "bin" </> "app"
+              config = defaultConfig
+                { ccCppCompiler = T.pack compilerBinary
+                , ccSkipCompilerCheck = False
+                , ccStopAtCodegen = False
+                , ccWorkDirectory = Just workDir
+                , ccOutputPath = Just outputPath
+                , ccKeepIntermediates = False
+                , ccVerboseLevel = 0
+                }
+          createDirectoryIfMissing True (takeDirectory firstSource)
+          createDirectoryIfMissing True (takeDirectory secondSource)
+          writeFile firstSource $ unlines
+            [ "def alpha():"
+            , "    return 1"
+            ]
+          writeFile secondSource $ unlines
+            [ "def beta():"
+            , "    return 2"
+            ]
+          result <- runCompiler config $ do
+            setupCompilerEnvironment
+            compileProject [firstSource, secondSource]
+          case result of
+            Right (finalBinary, finalState) -> do
+              finalBinary `shouldBe` outputPath
+              doesFileExist outputPath `shouldReturn` True
+              csIntermediateFiles finalState `shouldBe` []
+              logLines <- fmap lines (readFile logPath)
+              logLines `shouldSatisfy` (\entries -> length entries == 3)
+            Left err ->
+              expectationFailure $ "Project compilation failed: " ++ show err
+
     it "retains intermediate artifacts when keepIntermediates is enabled for projects" $ do
       withFakeCompiler $ \compilerBinary _logPath ->
         withSystemTempDirectory "fluxus-project-keep" $ \tmpRoot -> do
@@ -673,6 +834,44 @@ spec = describe "Fluxus.Compiler.Driver" $ do
             Right _ ->
               expectationFailure "Linking unexpectedly succeeded"
 
+    it "stops project compilation when a translation unit fails to compile" $ do
+      withFailingCompiler $ \compilerBinary logPath ->
+        withSystemTempDirectory "fluxus-project-compile-failure" $ \tmpRoot -> do
+          let workDir = tmpRoot </> "work"
+              sourceDir = tmpRoot </> "src"
+              firstSource = sourceDir </> "pkg" </> "alpha.py"
+              secondSource = sourceDir </> "pkg" </> "beta.py"
+              config = defaultConfig
+                { ccCppCompiler = T.pack compilerBinary
+                , ccSkipCompilerCheck = False
+                , ccStopAtCodegen = False
+                , ccWorkDirectory = Just workDir
+                , ccVerboseLevel = 0
+                }
+          createDirectoryIfMissing True (takeDirectory firstSource)
+          createDirectoryIfMissing True (takeDirectory secondSource)
+          writeFile firstSource $ unlines
+            [ "def alpha():"
+            , "    return 1"
+            ]
+          writeFile secondSource $ unlines
+            [ "def beta():"
+            , "    return 2"
+            ]
+          result <- runCompiler config $ do
+            setupCompilerEnvironment
+            compileProject [firstSource, secondSource]
+          case result of
+            Left (CodeGenError msg) -> do
+              let rendered = T.unpack msg
+              rendered `shouldContain` "compile failure"
+              logLines <- fmap lines (readFile logPath)
+              logLines `shouldSatisfy` (\entries -> length entries == 1)
+            Left err ->
+              expectationFailure $ "expected CodeGenError, got " ++ show err
+            Right _ ->
+              expectationFailure "Project compilation unexpectedly succeeded"
+
 withTemporaryEnv :: String -> Maybe String -> IO a -> IO a
 withTemporaryEnv key newValue action = do
   original <- lookupEnv key
@@ -706,6 +905,9 @@ withCustomCompiler mkScript action =
 withFakeCompiler :: (FilePath -> FilePath -> IO a) -> IO a
 withFakeCompiler = withCustomCompiler fakeCompilerScript
 
+withFailingCompiler :: (FilePath -> FilePath -> IO a) -> IO a
+withFailingCompiler = withCustomCompiler failingCompilerScript
+
 withFailingLinkerCompiler :: (FilePath -> FilePath -> IO a) -> IO a
 withFailingLinkerCompiler = withCustomCompiler failingLinkerScript
 
@@ -727,6 +929,15 @@ fakeCompilerScript logPath =
     , "  touch \"$out_file\""
     , "fi"
     , "exit 0"
+    ]
+
+failingCompilerScript :: FilePath -> String
+failingCompilerScript logPath =
+  unlines
+    [ "#!/usr/bin/env bash"
+    , "echo \"$@\" >> \"" ++ logPath ++ "\""
+    , "echo \"compile failure\" >&2"
+    , "exit 64"
     ]
 
 failingLinkerScript :: FilePath -> String
