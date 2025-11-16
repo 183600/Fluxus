@@ -11,6 +11,7 @@ import qualified Test.Fluxus.Analysis.EscapeAnalysis as EscapeAnalysisTests
 import qualified Test.Fluxus.Analysis.OwnershipInference as OwnershipInferenceTests
 import qualified Test.Fluxus.Analysis.SmartFallback as SmartFallbackTests
 import qualified Test.Fluxus.Analysis.CommonExprLowering as CommonExprLoweringTests
+import qualified Test.Fluxus.Analysis.ShapeAnalysis as ShapeAnalysisTests
 import qualified Test.Fluxus.CodeGen.CPP as CodeGenTests
 import qualified Test.Fluxus.Utils.GraphSpec as GraphUtilsTests
 import qualified Test.Fluxus.Compiler.ConfigSpec as ConfigTests
@@ -32,6 +33,7 @@ fullSpec =
     OwnershipInferenceTests.spec
     SmartFallbackTests.spec
     CommonExprLoweringTests.spec
+    ShapeAnalysisTests.spec
     CodeGenTests.spec
     GraphUtilsTests.spec
     ConfigTests.spec
