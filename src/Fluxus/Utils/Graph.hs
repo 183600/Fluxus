@@ -406,17 +406,29 @@ buildDominatorTree :: NodeId -> Graph a -> DominatorTree
 buildDominatorTree entry graph = 
   let doms = dominators entry graph
       immDoms = Map.mapWithKey (findImmediateDominator doms) doms
-      (_, emptyDomTree) = addNode entry emptyGraph
-  in foldl' addDomEdge emptyDomTree (Map.toList immDoms)
+      allNodeIds = Map.keys doms
+      baseTree = Graph
+        { graphNodes = Map.fromList [(nid, Node nid nid) | nid <- allNodeIds]
+        , graphEdges = Set.empty
+        , graphNextId = nextNodeId allNodeIds
+        }
+  in foldl' addDomEdge baseTree (Map.toList immDoms)
   where
+    nextNodeId ids =
+      case ids of
+        [] -> 0
+        _ -> foldl' max entry ids + 1
+
     findImmediateDominator allDoms nodeId nodeDoms
       | nodeId == entry = Nothing
       | otherwise = 
           let properDoms = Set.delete nodeId nodeDoms
               candidates = Set.toList properDoms
+              isImmediate candidate =
+                not $ any (\other -> other /= candidate && Set.member candidate (allDoms Map.! other)) candidates
           in case candidates of
                [] -> Nothing
-               _ -> find (\d -> all (\other -> Set.member d (allDoms Map.! other)) candidates) candidates
+               _ -> find isImmediate candidates
 
     addDomEdge tree (nodeId, mImmDom) =
       case mImmDom of
