@@ -8,7 +8,7 @@ import Data.List (isInfixOf, isPrefixOf)
 import Control.Monad.State (get)
 import Test.Hspec
 import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, findExecutable, getPermissions, setPermissions, Permissions(..))
-import System.FilePath ((</>), addTrailingPathSeparator, takeDirectory, replaceExtension, normalise)
+import System.FilePath ((</>), addTrailingPathSeparator, takeDirectory, takeExtension, replaceExtension, normalise)
 import System.IO.Temp (withSystemTempDirectory)
 
 import qualified Test.Fluxus.CodeGen.CPP.Shared as Shared
@@ -154,6 +154,22 @@ spec = describe "Fluxus.Compiler.Driver" $ do
             expected = normalise (workDir </> "__parent__" </> "__parent__" </> "deep" </> "module.cpp")
         resolved `shouldBe` expected
 
+    it "uses hashed fallback for sanitized root paths" $ do
+      withSystemTempDirectory "fluxus-work" $ \workDir -> do
+        let config = defaultConfig { ccWorkDirectory = Just workDir }
+            resolved = resolveWorkPath config "/"
+            expectedPrefix = addTrailingPathSeparator (normalise workDir)
+            normalizedResolved = normalise resolved
+        normalizedResolved `shouldSatisfy` (\path -> expectedPrefix `isPrefixOf` path)
+        normalizedResolved `shouldNotBe` normalise "/"
+        takeExtension normalizedResolved `shouldBe` ".artifact"
+
+    it "sanitizes current directory references within candidate paths" $ do
+      withSystemTempDirectory "fluxus-work" $ \workDir -> do
+        let config = defaultConfig { ccWorkDirectory = Just workDir }
+            expected = normalise (workDir </> "__current__")
+        resolveWorkPath config "." `shouldBe` expected
+
   describe "compileFile" $ do
     it "emits intermediate files into the configured work directory" $ do
       withSystemTempDirectory "fluxus-work" $ \workDir ->
@@ -278,6 +294,52 @@ spec = describe "Fluxus.Compiler.Driver" $ do
               csIntermediateFiles finalState `shouldSatisfy` (not . null)
               csIntermediateFiles finalState `shouldSatisfy` (objPath `elem`)
               csIntermediateFiles finalState `shouldSatisfy` (cppPath `elem`)
+            Left err ->
+              expectationFailure $ "Compilation failed: " ++ show err
+
+    it "compiles and links successfully when skipping the compiler detection" $ do
+      withFakeCompiler $ \compilerBinary logPath ->
+        withSystemTempDirectory "fluxus-compile-skip" $ \tmpDir -> do
+          let workDir = tmpDir </> "work"
+              sourceDir = tmpDir </> "src"
+              sourceFile = sourceDir </> "skip.py"
+              outputPath = workDir </> "bin" </> "skip"
+              config = defaultConfig
+                { ccCppCompiler = T.pack compilerBinary
+                , ccSkipCompilerCheck = True
+                , ccStopAtCodegen = False
+                , ccWorkDirectory = Just workDir
+                , ccOutputPath = Just outputPath
+                , ccVerboseLevel = 0
+                }
+              cppPath = resolveWorkPath config (replaceExtension sourceFile ".cpp")
+              objPath = replaceExtension cppPath ".o"
+          createDirectoryIfMissing True sourceDir
+          writeFile sourceFile $ unlines
+            [ "def skip(value):"
+            , "    return value"
+            ]
+          result <- runCompiler config $ do
+            setupCompilerEnvironment
+            compileFile sourceFile
+          case result of
+            Right (finalBinary, finalState) -> do
+              finalBinary `shouldBe` outputPath
+              csResolvedCompiler finalState `shouldBe` Just (T.pack compilerBinary)
+              csCompilerFallback finalState `shouldBe` False
+              csIntermediateFiles finalState `shouldBe` []
+              doesFileExist cppPath `shouldReturn` False
+              doesFileExist objPath `shouldReturn` False
+              doesFileExist outputPath `shouldReturn` True
+              logLines <- fmap lines (readFile logPath)
+              case logLines of
+                [compileInvocation, linkInvocation] -> do
+                  compileInvocation `shouldSatisfy` ("-c" `isInfixOf`)
+                  compileInvocation `shouldSatisfy` (cppPath `isInfixOf`)
+                  compileInvocation `shouldSatisfy` (objPath `isInfixOf`)
+                  linkInvocation `shouldSatisfy` (outputPath `isInfixOf`)
+                other ->
+                  expectationFailure $ "expected compile and link invocations, got " ++ show other
             Left err ->
               expectationFailure $ "Compilation failed: " ++ show err
 
@@ -428,6 +490,47 @@ spec = describe "Fluxus.Compiler.Driver" $ do
             Left err ->
               expectationFailure $ "Project compilation failed: " ++ show err
 
+    it "retains intermediate artifacts when keepIntermediates is enabled for projects" $ do
+      withFakeCompiler $ \compilerBinary _logPath ->
+        withSystemTempDirectory "fluxus-project-keep" $ \tmpRoot -> do
+          let workDir = tmpRoot </> "work"
+              sourceDir = tmpRoot </> "src"
+              firstSource = sourceDir </> "pkg" </> "alpha.py"
+              secondSource = sourceDir </> "pkg" </> "beta.py"
+              config = defaultConfig
+                { ccCppCompiler = T.pack compilerBinary
+                , ccSkipCompilerCheck = False
+                , ccStopAtCodegen = False
+                , ccWorkDirectory = Just workDir
+                , ccKeepIntermediates = True
+                , ccVerboseLevel = 0
+                }
+          createDirectoryIfMissing True (takeDirectory firstSource)
+          createDirectoryIfMissing True (takeDirectory secondSource)
+          writeFile firstSource $ unlines
+            [ "def alpha():"
+            , "    return 1"
+            ]
+          writeFile secondSource $ unlines
+            [ "def beta():"
+            , "    return 2"
+            ]
+          result <- runCompiler config $ do
+            setupCompilerEnvironment
+            compileProject [firstSource, secondSource]
+          case result of
+            Right (finalBinary, finalState) -> do
+              let expectedOutput = workDir </> "fluxus_output"
+              finalBinary `shouldBe` expectedOutput
+              doesFileExist expectedOutput `shouldReturn` True
+              let cppPaths = map (\src -> resolveWorkPath config (replaceExtension src ".cpp")) [firstSource, secondSource]
+                  objPaths = map (\cpp -> replaceExtension cpp ".o") cppPaths
+                  expectedArtifacts = cppPaths ++ objPaths
+              mapM_ (\path -> doesFileExist path `shouldReturn` True) expectedArtifacts
+              csIntermediateFiles finalState `shouldSatisfy` (\paths -> all (`elem` paths) expectedArtifacts)
+            Left err ->
+              expectationFailure $ "Project compilation failed: " ++ show err
+
     it "updates processed and total file counters during project compilation" $ do
       withSystemTempDirectory "fluxus-project-counters-work" $ \workDir ->
         withSystemTempDirectory "fluxus-project-counters-src" $ \srcDir -> do
@@ -459,15 +562,62 @@ spec = describe "Fluxus.Compiler.Driver" $ do
             Left err ->
               expectationFailure $ "Project compilation failed: " ++ show err
 
-withFakeCompiler :: (FilePath -> FilePath -> IO a) -> IO a
-withFakeCompiler action =
-  withSystemTempDirectory "fluxus-fake-compiler" $ \tmpDir -> do
+    it "propagates linker failures with diagnostic messages" $ do
+      withFailingLinkerCompiler $ \compilerBinary logPath ->
+        withSystemTempDirectory "fluxus-project-link-failure" $ \tmpRoot -> do
+          let workDir = tmpRoot </> "work"
+              sourceDir = tmpRoot </> "src"
+              firstSource = sourceDir </> "pkg" </> "alpha.py"
+              secondSource = sourceDir </> "pkg" </> "beta.py"
+              config = defaultConfig
+                { ccCppCompiler = T.pack compilerBinary
+                , ccSkipCompilerCheck = False
+                , ccStopAtCodegen = False
+                , ccWorkDirectory = Just workDir
+                , ccKeepIntermediates = False
+                , ccVerboseLevel = 0
+                }
+          createDirectoryIfMissing True (takeDirectory firstSource)
+          createDirectoryIfMissing True (takeDirectory secondSource)
+          writeFile firstSource $ unlines
+            [ "def alpha():"
+            , "    return 1"
+            ]
+          writeFile secondSource $ unlines
+            [ "def beta():"
+            , "    return 2"
+            ]
+          result <- runCompiler config $ do
+            setupCompilerEnvironment
+            compileProject [firstSource, secondSource]
+          case result of
+            Left (LinkError msg) -> do
+              let rendered = T.unpack msg
+              rendered `shouldContain` "Linking failed"
+              rendered `shouldContain` "exit code 42"
+              doesFileExist (workDir </> "fluxus_output") `shouldReturn` False
+              logLines <- fmap lines (readFile logPath)
+              logLines `shouldSatisfy` (\entries -> length entries == 3)
+            Left err ->
+              expectationFailure $ "expected LinkError, got " ++ show err
+            Right _ ->
+              expectationFailure "Linking unexpectedly succeeded"
+
+withCustomCompiler :: (FilePath -> String) -> (FilePath -> FilePath -> IO a) -> IO a
+withCustomCompiler mkScript action =
+  withSystemTempDirectory "fluxus-custom-compiler" $ \tmpDir -> do
     let scriptPath = tmpDir </> "fake-compiler.sh"
         logPath = tmpDir </> "compiler-invocations.log"
-    writeFile scriptPath (fakeCompilerScript logPath)
+    writeFile scriptPath (mkScript logPath)
     perms <- getPermissions scriptPath
     setPermissions scriptPath perms { executable = True }
     action scriptPath logPath
+
+withFakeCompiler :: (FilePath -> FilePath -> IO a) -> IO a
+withFakeCompiler = withCustomCompiler fakeCompilerScript
+
+withFailingLinkerCompiler :: (FilePath -> FilePath -> IO a) -> IO a
+withFailingLinkerCompiler = withCustomCompiler failingLinkerScript
 
 fakeCompilerScript :: FilePath -> String
 fakeCompilerScript logPath =
@@ -487,4 +637,29 @@ fakeCompilerScript logPath =
     , "  touch \"$out_file\""
     , "fi"
     , "exit 0"
+    ]
+
+failingLinkerScript :: FilePath -> String
+failingLinkerScript logPath =
+  unlines
+    [ "#!/usr/bin/env bash"
+    , "echo \"$@\" >> \"" ++ logPath ++ "\""
+    , "prev=\"\""
+    , "out_file=\"\""
+    , "mode=\"link\""
+    , "for arg in \"$@\"; do"
+    , "  if [ \"$arg\" = \"-c\" ]; then"
+    , "    mode=\"compile\""
+    , "  fi"
+    , "  if [ \"$prev\" = \"-o\" ]; then"
+    , "    out_file=\"$arg\""
+    , "  fi"
+    , "  prev=\"$arg\""
+    , "done"
+    , "if [ \"$mode\" = \"compile\" ]; then"
+    , "  mkdir -p \"$(dirname \"$out_file\")\""
+    , "  touch \"$out_file\""
+    , "  exit 0"
+    , "fi"
+    , "exit 42"
     ]
