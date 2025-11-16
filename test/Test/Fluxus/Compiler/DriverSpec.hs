@@ -5,9 +5,11 @@ module Test.Fluxus.Compiler.DriverSpec (spec) where
 import qualified Data.Text as T
 import Data.Either (isRight)
 import Data.List (isInfixOf, isPrefixOf)
+import Control.Exception (bracket_)
 import Control.Monad.State (get)
 import Test.Hspec
 import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, findExecutable, getPermissions, setPermissions, Permissions(..))
+import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.FilePath ((</>), addTrailingPathSeparator, takeDirectory, takeExtension, replaceExtension, normalise)
 import System.IO.Temp (withSystemTempDirectory)
 
@@ -17,12 +19,17 @@ import Fluxus.Compiler.Driver
   ( CompilerConfig(..)
   , CompilerState(..)
   , CompilerError(..)
+  , OptimizationLevel(..)
+  , TargetPlatform(..)
   , compileFile
   , compileProject
   , defaultConfig
+  , detectCompilerBinary
+  , resolveWorkPath
   , runCompiler
   , setupCompilerEnvironment
-  , resolveWorkPath
+  , showTargetPlatform
+  , validateConfig
   )
 
 spec :: Spec
@@ -169,6 +176,69 @@ spec = describe "Fluxus.Compiler.Driver" $ do
         let config = defaultConfig { ccWorkDirectory = Just workDir }
             expected = normalise (workDir </> "__current__")
         resolveWorkPath config "." `shouldBe` expected
+
+  describe "validateConfig" $ do
+    it "rejects configurations without a compiler name" $ do
+      let config = defaultConfig { ccCppCompiler = "" }
+      validateConfig config `shouldBe` Left (ConfigurationError "C++ compiler not specified")
+
+    it "rejects enabling debug info at O3 optimization" $ do
+      let config = defaultConfig
+            { ccOptimizationLevel = O3
+            , ccEnableDebugInfo = True
+            }
+      validateConfig config `shouldBe` Left (ConfigurationError "Debug info not recommended with O3 optimization")
+
+    it "rejects non-positive maximum concurrency values" $ do
+      let config = defaultConfig { ccMaxConcurrency = 0 }
+      validateConfig config `shouldBe` Left (ConfigurationError "Max concurrency must be positive")
+
+    it "accepts valid configuration overrides" $ do
+      let config = defaultConfig
+            { ccCppCompiler = "g++"
+            , ccOptimizationLevel = O1
+            , ccMaxConcurrency = 8
+            }
+      validateConfig config `shouldBe` Right config
+
+  describe "detectCompilerBinary" $ do
+    it "returns the configured compiler path when it exists" $ do
+      withFakeCompiler $ \compilerBinary _logPath -> do
+        detection <- detectCompilerBinary defaultConfig { ccCppCompiler = T.pack compilerBinary }
+        detection `shouldBe` Right (T.pack compilerBinary, False)
+
+    it "falls back to alternative compilers when the primary is missing" $ do
+      withSystemTempDirectory "fluxus-detect-fallback" $ \tmpDir -> do
+        let gppPath = tmpDir </> "g++"
+        createExecutable gppPath trivialCompilerScript
+        withTemporaryEnv "PATH" (Just tmpDir) $ do
+          detection <- detectCompilerBinary defaultConfig
+          case detection of
+            Right (resolved, fallbackUsed) -> do
+              fallbackUsed `shouldBe` True
+              normalise (T.unpack resolved) `shouldBe` normalise gppPath
+            Left err ->
+              expectationFailure $ "expected fallback detection to succeed, but got " ++ T.unpack err
+
+    it "reports a descriptive error when no compiler can be resolved" $ do
+      withSystemTempDirectory "fluxus-detect-missing" $ \tmpDir ->
+        withTemporaryEnv "PATH" (Just tmpDir) $ do
+          detection <- detectCompilerBinary defaultConfig
+          case detection of
+            Left err -> do
+              let rendered = T.unpack err
+              rendered `shouldContain` "C++ compiler not found"
+              rendered `shouldContain` "clang++"
+            Right other ->
+              expectationFailure $ "expected detection to fail, but got " ++ show other
+
+  describe "showTargetPlatform" $ do
+    it "renders known target platforms" $ do
+      showTargetPlatform Linux_x86_64 `shouldBe` "linux-x86_64"
+      showTargetPlatform Linux_ARM64 `shouldBe` "linux-arm64"
+      showTargetPlatform Darwin_x86_64 `shouldBe` "darwin-x86_64"
+      showTargetPlatform Darwin_ARM64 `shouldBe` "darwin-arm64"
+      showTargetPlatform Windows_x86_64 `shouldBe` "windows-x86_64"
 
   describe "compileFile" $ do
     it "emits intermediate files into the configured work directory" $ do
@@ -602,6 +672,26 @@ spec = describe "Fluxus.Compiler.Driver" $ do
               expectationFailure $ "expected LinkError, got " ++ show err
             Right _ ->
               expectationFailure "Linking unexpectedly succeeded"
+
+withTemporaryEnv :: String -> Maybe String -> IO a -> IO a
+withTemporaryEnv key newValue action = do
+  original <- lookupEnv key
+  let setVar = maybe (unsetEnv key) (setEnv key) newValue
+      restoreVar = maybe (unsetEnv key) (setEnv key) original
+  bracket_ setVar restoreVar action
+
+createExecutable :: FilePath -> String -> IO ()
+createExecutable path contents = do
+  writeFile path contents
+  perms <- getPermissions path
+  setPermissions path perms { executable = True }
+
+trivialCompilerScript :: String
+trivialCompilerScript =
+  unlines
+    [ "#!/usr/bin/env bash"
+    , "exit 0"
+    ]
 
 withCustomCompiler :: (FilePath -> String) -> (FilePath -> FilePath -> IO a) -> IO a
 withCustomCompiler mkScript action =
