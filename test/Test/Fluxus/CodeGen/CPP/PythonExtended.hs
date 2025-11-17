@@ -9,6 +9,7 @@ import Fluxus.AST.Common
 import Fluxus.AST.Python
 import Fluxus.CodeGen.CPP
 import Fluxus.CodeGen.CPP.AST
+import Fluxus.CodeGen.CPP.Diagnostics (diagMessage)
 import Test.Hspec
 
 import qualified Test.Fluxus.CodeGen.CPP.Shared as Shared
@@ -44,7 +45,7 @@ tupleUnpackingSpec = describe "Tuple unpacking" $ do
     case result of
       Right res -> do
         let unit = cgrUnit res
-        cppIncludes unit `shouldContain` "<tuple>"
+        cppIncludes unit `shouldSatisfy` (elem (T.pack "<tuple>"))
         case find Shared.isMainFunction (cppDeclarations unit) of
           Just (CppFunction _ _ _ body) -> do
             let hasTie stmt = case stmt of
@@ -99,7 +100,7 @@ collectionLiteralsSpec = describe "Collection literals" $ do
     case result of
       Right res -> do
         let unit = cgrUnit res
-        cppIncludes unit `shouldContain` "<tuple>"
+        cppIncludes unit `shouldSatisfy` (elem (T.pack "<tuple>"))
         let decls = cppDeclarations unit
             hasMakeTuple (CppVariable _ _ (Just expr)) = containsMakeTuple expr
             hasMakeTuple _ = False
@@ -128,7 +129,7 @@ collectionLiteralsSpec = describe "Collection literals" $ do
     case result of
       Right res -> do
         let unit = cgrUnit res
-        cppIncludes unit `shouldContain` "<set>"
+        cppIncludes unit `shouldSatisfy` (elem (T.pack "<set>"))
       Left failure -> expectationFailure $ "Code generation failed: " <> show failure
 
   it "generates std::map for Python dict literals" $ do
@@ -151,7 +152,7 @@ collectionLiteralsSpec = describe "Collection literals" $ do
     case result of
       Right res -> do
         let unit = cgrUnit res
-        cppIncludes unit `shouldContain` "<map>"
+        cppIncludes unit `shouldSatisfy` (elem (T.pack "<map>"))
       Left failure -> expectationFailure $ "Code generation failed: " <> show failure
 
 -- Test lambda expressions
