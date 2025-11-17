@@ -19,7 +19,7 @@ import qualified Text.Megaparsec as MP
 
 import Fluxus.AST.Common hiding (TypeVar)
 import Fluxus.AST.Python
-import Fluxus.Analysis.CommonExprLowering (pythonExprToCommon, renderCommonExpr, renderLoweringIssue, formatSpan)
+import Fluxus.Analysis.CommonExprLowering (pythonExprToLocatedCommon, renderLocatedCommonExpr, fingerprintCommonExpr, renderLoweringIssue, formatSpan)
 import Fluxus.CodeGen.CPP.AST
 import Fluxus.CodeGen.CPP.Monad
 import Fluxus.CodeGen.CPP.Shared
@@ -1526,12 +1526,12 @@ generatePythonClass classDef = do
 
 refinePythonExprType :: Text -> Located PythonExpr -> CppType -> CppCodeGen CppType
 refinePythonExprType context locatedExpr defaultType =
-  case pythonExprToCommon locatedExpr of
+  case pythonExprToLocatedCommon locatedExpr of
     Left err -> do
       emitInfo $ context <> ": unable to fingerprint expression for annotations - " <> renderLoweringIssue err
       pure defaultType
-    Right common ->
-      let exprKey = renderCommonExpr common
+    Right commonLocated ->
+      let exprKey = fingerprintCommonExpr commonLocated
       in lookupAndApplyAnnotations context exprKey defaultType
 
 mapPythonLiteral :: PythonLiteral -> CppLiteral
@@ -1797,37 +1797,38 @@ mapTypeLiteral span literalExpr =
     Nothing -> fallbackToStdAny span (TypeLiteral literalExpr) "could not infer literal type"
 
 mapPythonParameter :: Located PythonParameter -> CppCodeGen CppParam
-mapPythonParameter (Located _ param) =
+mapPythonParameter (Located span param) =
   case param of
     ParamNormal (Identifier name) mtype mdefault -> do
       baseType <- maybe (pure CppAuto) mapPythonType mtype
-      refinedType <- applyParameterAnnotations name baseType
+      refinedType <- applyParameterAnnotations span name baseType
       cppDefault <- mapM generatePythonExpr mdefault
       pure $ CppParam name refinedType cppDefault
     ParamKwOnly (Identifier name) mtype mdefault -> do
       baseType <- maybe (pure CppAuto) mapPythonType mtype
-      refinedType <- applyParameterAnnotations name baseType
+      refinedType <- applyParameterAnnotations span name baseType
       cppDefault <- mapM generatePythonExpr mdefault
       pure $ CppParam name refinedType cppDefault
     ParamVarArgs (Identifier name) mtype -> do
       elemType <- maybe ensureStdAny mapPythonType mtype
       addInclude "<vector>"
       let vectorType = CppVector elemType
-      refinedType <- applyParameterAnnotations name vectorType
+      refinedType <- applyParameterAnnotations span name vectorType
       pure $ CppParam name refinedType Nothing
     ParamKwArgs (Identifier name) mtype -> do
       valueType <- maybe ensureStdAny mapPythonType mtype
       addInclude "<unordered_map>"
       addInclude "<string>"
       let mapType = CppUnorderedMap CppString valueType
-      refinedType <- applyParameterAnnotations name mapType
+      refinedType <- applyParameterAnnotations span name mapType
       pure $ CppParam name refinedType Nothing
 
-applyParameterAnnotations :: Text -> CppType -> CppCodeGen CppType
-applyParameterAnnotations name baseType
+applyParameterAnnotations :: SourceSpan -> Text -> CppType -> CppCodeGen CppType
+applyParameterAnnotations span name baseType
   | T.null name = pure baseType
   | otherwise =
-      let exprKey = renderCommonExpr (CEVar (Identifier name))
+      let locatedCommon = Located span (CEVar (Identifier name))
+          exprKey = fingerprintCommonExpr locatedCommon
           context = "parameter " <> name
       in lookupAndApplyAnnotations context exprKey baseType
 
