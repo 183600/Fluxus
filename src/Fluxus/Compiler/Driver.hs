@@ -100,6 +100,8 @@ import Fluxus.Analysis.CommonExprLowering
   , renderLoweringIssue
   , isUnsupportedIssue
   , renderCommonExpr
+  , renderLocatedCommonExpr
+  , fingerprintCommonExpr
   )
 import Fluxus.Optimization.Monomorphization
   ( MonomorphizationResult(..)
@@ -688,8 +690,9 @@ typeInferenceStage ast = do
         addWarning $ TypeWarning ("Failed to infer types for " <> textShow failures <> " expressions") systemSpan
       return ast
   where
-    inferExpression env (okCount, errCount) expr = 
-      case runTypeInference env $ do
+    inferExpression env (okCount, errCount) locatedExpr =
+      let expr = locValue locatedExpr
+      in case runTypeInference env $ do
         result <- inferType expr
         solveConstraints
         st <- get
@@ -698,11 +701,13 @@ typeInferenceStage ast = do
         pure finalType
       of
         Left err -> do
-          addWarning $ TypeWarning ("Type inference failed: " <> err) systemSpan
+          let exprLabel = renderLocatedCommonExpr locatedExpr
+          addWarning $ TypeWarning ("Type inference failed for " <> exprLabel <> ": " <> err) systemSpan
           recordOptimizationStat "type-inference.failure"
           pure (okCount, errCount + 1)
         Right inferredType -> do
-          let exprKey = renderCommonExpr expr
+          let exprKey = fingerprintCommonExpr locatedExpr
+              exprLabel = renderLocatedCommonExpr locatedExpr
           modify $ \s -> s { csTypeEnvironment = HM.insert exprKey inferredType (csTypeEnvironment s) }
           let annotation = ExprAnnotations
                 { eaInferredType = Just inferredType
@@ -712,7 +717,7 @@ typeInferenceStage ast = do
                 }
           modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprKey annotation (csAnalysisAnnotations s) }
           recordOptimizationStat "type-inference.success"
-          logVerbose $ "Inferred type for " <> exprKey <> ": " <> renderType inferredType
+          logVerbose $ "Inferred type for " <> exprLabel <> ": " <> renderType inferredType
           pure (okCount + 1, errCount)
 
 -- | Optimization stage
@@ -739,8 +744,10 @@ optimizationStage ast = do
     if null failureIssues
       then logInfo "No analyzable expressions found for optimization pipeline (encountered constructs are currently unsupported)"
       else addWarning $ OptimizationWarning "No analyzable expressions found for optimization pipeline due to lowering failures"
-  forM_ commonExprs $ \expr -> do
-    let exprLabel = renderCommonExpr expr
+  forM_ commonExprs $ \locatedExpr -> do
+    let expr = locValue locatedExpr
+        exprKey = fingerprintCommonExpr locatedExpr
+        exprLabel = renderLocatedCommonExpr locatedExpr
     recordOptimizationStat "optimization.expressions"
     let ((escapeOptimized, escapeHints), escapeState) = runEscapeAnalysis (optimizeMemoryAllocation expr)
         (escapeResult, _) = runEscapeAnalysis (analyzeEscape expr)
@@ -752,7 +759,7 @@ optimizationStage ast = do
           , eaEscapeInfo = Just escapeInfo
           , eaOptimizationNotes = escapeHints
           }
-    modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel baseAnnotation (csAnalysisAnnotations s) }
+    modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprKey baseAnnotation (csAnalysisAnnotations s) }
     recordOptimizationStat "optimization.escape"
     forM_ escapeHints $ \hint ->
       addWarning $ OptimizationWarning ("Escape analysis hint for " <> exprLabel <> ": " <> hint)
@@ -786,7 +793,7 @@ optimizationStage ast = do
               , eaEscapeInfo = Just escapeInfo
               , eaOptimizationNotes = oisOptimizationHints ownershipState
               }
-        modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel ownershipAnnotation (csAnalysisAnnotations s) }
+        modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprKey ownershipAnnotation (csAnalysisAnnotations s) }
         recordOptimizationStat ("optimization.ownership." <> strategyTag)
         forM_ (oisOptimizationHints ownershipState) $ \hint ->
           addWarning $ OptimizationWarning ("Ownership hint for " <> exprLabel <> ": " <> hint)
@@ -801,9 +808,9 @@ optimizationStage ast = do
               , eaEscapeInfo = Nothing
               , eaOptimizationNotes = shapeHints
               }
-        modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel shapeAnnotation (csAnalysisAnnotations s) }
+        modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprKey shapeAnnotation (csAnalysisAnnotations s) }
         forM_ shapeHints $ \hint ->
-          addWarning $ OptimizationWarning ("Shape analysis suggestion for " <> exprLabel <> ": " <> hint)
+          addWarning $ OptimizationWarning ("Shape analysis hint for " <> exprLabel <> ": " <> hint)
     let (fallbackRequired, _) = runSmartFallback (shouldFallbackToRuntime escapeOptimized)
     when fallbackRequired $ do
       recordOptimizationStat "optimization.fallback.runtime"
@@ -813,7 +820,7 @@ optimizationStage ast = do
             , eaEscapeInfo = Nothing
             , eaOptimizationNotes = ["Runtime fallback recommended"]
             }
-      modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel fallbackAnnotation (csAnalysisAnnotations s) }
+      modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprKey fallbackAnnotation (csAnalysisAnnotations s) }
       addWarning $ OptimizationWarning ("Runtime fallback recommended for " <> exprLabel)
     let (fallbackExpr, _) = runSmartFallback (optimizeWithFallback escapeOptimized)
     if experimentalEnabled
@@ -828,7 +835,7 @@ optimizationStage ast = do
                 , eaEscapeInfo = Nothing
                 , eaOptimizationNotes = monoHints
                 }
-          modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel monoAnnotation (csAnalysisAnnotations s) }
+          modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprKey monoAnnotation (csAnalysisAnnotations s) }
           forM_ monoHints $ \msg ->
             addWarning $ OptimizationWarning ("Monomorphization note for " <> exprLabel <> ": " <> msg)
         recordOptimizationStatN "optimization.specializations" (HM.size (msSpecializations monoState))
@@ -842,7 +849,7 @@ optimizationStage ast = do
                 , eaEscapeInfo = Nothing
                 , eaOptimizationNotes = devirtHints
                 }
-          modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprLabel devirtAnnotation (csAnalysisAnnotations s) }
+          modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprKey devirtAnnotation (csAnalysisAnnotations s) }
           forM_ devirtHints $ \msg ->
             addWarning $ OptimizationWarning ("Devirtualization note for " <> exprLabel <> ": " <> msg)
         let resolvedCount = HM.size (dsResolvedCalls devirtState)

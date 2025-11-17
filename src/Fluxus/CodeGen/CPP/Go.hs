@@ -15,7 +15,7 @@ import qualified Data.Text as T
 
 import Fluxus.AST.Go
 import Fluxus.AST.Common (BinaryOp(..), ComparisonOp(..), Identifier(..), Located(..), SourcePos(..), SourceSpan(..), UnaryOp(..))
-import Fluxus.Analysis.CommonExprLowering (goExprToCommon, renderCommonExpr, renderLoweringIssue)
+import Fluxus.Analysis.CommonExprLowering (goExprToLocatedCommon, fingerprintCommonExpr, renderLoweringIssue)
 import Fluxus.CodeGen.CPP.AST
   ( CppDecl(..)
   , CppExpr(..)
@@ -808,10 +808,10 @@ mapComparisonOp = \case
 
 refineGoExprType :: Text -> Located GoExpr -> CppType -> CppCodeGen CppType
 refineGoExprType context locatedExpr defaultType =
-  case goExprToCommon locatedExpr of
+  case goExprToLocatedCommon locatedExpr of
     Left err -> do
       emitInfo $ context <> ": unable to fingerprint expression for annotations - " <> renderLoweringIssue err
       pure defaultType
-    Right common ->
-      let exprKey = renderCommonExpr common
+    Right commonLocated ->
+      let exprKey = fingerprintCommonExpr commonLocated
       in lookupAndApplyAnnotations context exprKey defaultType

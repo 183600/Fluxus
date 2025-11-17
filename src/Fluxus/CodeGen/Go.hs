@@ -32,7 +32,7 @@ import GHC.Generics (Generic)
 import Fluxus.AST.Common hiding (TypeVar)
 import qualified Fluxus.AST.Common as Common (TypeVar(..))
 import Fluxus.AST.Python
-import Fluxus.Analysis.CommonExprLowering (pythonExprToCommon, renderCommonExpr)
+import Fluxus.Analysis.CommonExprLowering (pythonExprToLocatedCommon, fingerprintCommonExpr)
 
 -- | Go code generation configuration
 data GoGenConfig = GoGenConfig
@@ -625,10 +625,10 @@ iterableElementType container
 inferGoTypeFromAnnotations :: Located PythonExpr -> GoGen (Maybe Text)
 inferGoTypeFromAnnotations exprLoc = do
   env <- ask
-  case pythonExprToCommon exprLoc of
+  case pythonExprToLocatedCommon exprLoc of
     Left _ -> pure Nothing
-    Right common -> do
-      let key = renderCommonExpr common
+    Right commonLocated -> do
+      let key = fingerprintCommonExpr commonLocated
       case lookupAnnotations key (ggeAnnotations env) of
         Nothing -> pure Nothing
         Just anns -> pure (mapCommonTypeToGo <$> eaInferredType anns)

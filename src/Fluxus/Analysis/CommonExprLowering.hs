@@ -14,6 +14,9 @@ module Fluxus.Analysis.CommonExprLowering
   , goExprToLocatedCommon
   , goLiteralToLiteral
   , renderCommonExpr
+  , renderLocatedCommonExpr
+  , fingerprintCommonExpr
+  , fingerprintSpan
   , formatSpan
   ) where
 
@@ -51,15 +54,15 @@ failureAt :: SourceSpan -> Text -> LoweringIssue
 failureAt span msg = LoweringFailure (msg <> " at " <> formatSpan span)
 
 -- | Collect analyzable expressions that can be fed into the shared analysis passes.
-collectCommonExpressions :: Either PythonAST GoAST -> ([CommonExpr], [LoweringIssue])
+collectCommonExpressions :: Either PythonAST GoAST -> ([Located CommonExpr], [LoweringIssue])
 collectCommonExpressions = \case
   Left (PythonAST pyModule) ->
     let pythonExprs = collectPythonExpressions pyModule
-        (issues, commons) = partitionEithers (map pythonExprToCommon pythonExprs)
+        (issues, commons) = partitionEithers (map pythonExprToLocatedCommon pythonExprs)
     in (commons, issues)
   Right (GoAST goPackage) ->
     let goExprs = collectGoExpressions goPackage
-        (issues, commons) = partitionEithers (map goExprToCommon goExprs)
+        (issues, commons) = partitionEithers (map goExprToLocatedCommon goExprs)
     in (commons, issues)
 
 collectPythonExpressions :: PythonModule -> [Located PythonExpr]
@@ -434,6 +437,25 @@ textShow = T.pack . show
 
 renderCommonExpr :: CommonExpr -> Text
 renderCommonExpr = textShow
+
+renderLocatedCommonExpr :: Located CommonExpr -> Text
+renderLocatedCommonExpr (Located span expr) =
+  renderCommonExpr expr <> "@" <> formatSpan span
+
+fingerprintCommonExpr :: Located CommonExpr -> Text
+fingerprintCommonExpr (Located span expr) =
+  renderCommonExpr expr <> "#" <> fingerprintSpan span
+
+fingerprintSpan :: SourceSpan -> Text
+fingerprintSpan span =
+  let SourceSpan file start end = span
+      startText = posText start
+      endText = posText end
+  in file <> ":" <> startText <> "-" <> endText
+  where
+    posText :: SourcePos -> Text
+    posText (SourcePos line column) =
+      textShow line <> ":" <> textShow column
 
 identifierToText :: Identifier -> Text
 identifierToText (Identifier name) = name

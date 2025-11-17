@@ -9,7 +9,7 @@ import qualified Data.Text as T
 import Fluxus.AST.Common
 import Fluxus.AST.Python
 import qualified Fluxus.AST.Python as Py
-import Fluxus.Analysis.CommonExprLowering (pythonExprToCommon, renderCommonExpr)
+import Fluxus.Analysis.CommonExprLowering (pythonExprToLocatedCommon, fingerprintCommonExpr)
 import Fluxus.CodeGen.CPP
 import Fluxus.CodeGen.CPP.AST (CppCatch(..), CppType(..), renderCppExpr)
 import Fluxus.CodeGen.CPP.Diagnostics (CppDiagnostic(..), DiagnosticSeverity(..))
@@ -944,10 +944,10 @@ pythonGlobalSpec = describe "Python module handling" $ do
 analysisFeedbackSpec :: Spec
 analysisFeedbackSpec = describe "Analysis annotation integration" $ do
   let annotationsFor expr =
-        case pythonExprToCommon expr of
+        case pythonExprToLocatedCommon expr of
           Left err -> error ("Failed to lower expression: " <> show err)
-          Right common ->
-            insertAnnotations (renderCommonExpr common) exprAnnotation emptyAnnotations
+          Right commonLocated ->
+            insertAnnotations (fingerprintCommonExpr commonLocated) exprAnnotation emptyAnnotations
 
       exprAnnotation =
         ExprAnnotations
@@ -967,10 +967,10 @@ analysisFeedbackSpec = describe "Analysis annotation integration" $ do
           }
 
       addAnnotation anns expr =
-        case pythonExprToCommon expr of
+        case pythonExprToLocatedCommon expr of
           Left err -> error ("Failed to lower expression: " <> show err)
-          Right common ->
-            insertAnnotations (renderCommonExpr common) exprAnnotation anns
+          Right commonLocated ->
+            insertAnnotations (fingerprintCommonExpr commonLocated) exprAnnotation anns
 
   it "refines module-level variable declarations using analysis annotations" $ do
     let callExpr = noLoc (PyCall (noLoc (PyVar (Identifier "factory"))) [])
@@ -1144,11 +1144,11 @@ analysisFeedbackSpec = describe "Analysis annotation integration" $ do
             , eaOptimizationNotes = []
             }
         annotations =
-          case pythonExprToCommon listExpr of
+          case pythonExprToLocatedCommon listExpr of
             Left err -> error ("Failed to lower expression: " <> show err)
-            Right common ->
-              insertAnnotations (renderCommonExpr common) listAnnotation emptyAnnotations
-    case generateCppWithAnnotations Shared.testCppConfig annotations (Left pythonAst) of
+            Right commonLocated ->
+              insertAnnotations (fingerprintCommonExpr commonLocated) listAnnotation emptyAnnotations
+
       Right res -> do
         let decls = cppDeclarations (cgrUnit res)
             isValues decl = case decl of
