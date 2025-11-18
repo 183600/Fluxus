@@ -129,6 +129,7 @@ test-suite fluxus-test
     Test.Fluxus.CodeGen.CPP.TypeMapping
     Test.Fluxus.CodeGen.CPP.UnsupportedConstructs
     Test.Fluxus.CodeGen.CPP.Python
+    Test.Fluxus.CodeGen.CPP.PythonExtended
     Test.Fluxus.CodeGen.CPP.Go
     Test.Fluxus.Utils.GraphSpec
     Test.Fluxus.Compiler.ConfigSpec

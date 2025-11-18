@@ -129,14 +129,13 @@ generatePythonStmt scope (Located span stmt) =
           handleTupleUnpacking scope patElems locatedExpr
         _ -> do
           let msg = "Multiple assignment targets (other than tuple unpacking) not implemented"
-          reportNotImplemented msg
           strict <- gets (cgcStrictMode . cgsConfig)
           if strict
             then do
               reportFatalNotImplemented msg
               return cppNoop
             else do
-              emitWarning msg
+              reportNotImplemented msg
               return cppNoop
     PyReturn mexpr -> do
       mcppExpr <- mapM generatePythonExpr mexpr
@@ -1221,12 +1220,21 @@ promoteToTrueDivOperand expr = case expr of
 
 -- | Format an argument for printing, converting Python bool values to "True"/"False"
 formatPrintArgument :: Located PythonArgument -> CppCodeGen CppExpr
-formatPrintArgument (Located _ argument) =
+formatPrintArgument (Located span argument) =
   case argument of
     ArgPositional expr -> formatExpr expr
-    ArgKeyword _ expr -> formatExpr expr
-    ArgStarred expr -> generatePythonExpr expr
-    ArgKwStarred expr -> generatePythonExpr expr
+    ArgKeyword name expr -> do
+      emitWarning $ "Keyword argument '" <> (\(Identifier n) -> n) name
+        <> "' at " <> formatSpan span <> " is being treated as positional argument"
+      formatExpr expr
+    ArgStarred expr -> do
+      emitWarning $ "*args unpacking at " <> formatSpan span
+        <> " is not fully supported, treating as single argument"
+      generatePythonExpr expr
+    ArgKwStarred expr -> do
+      emitWarning $ "**kwargs unpacking at " <> formatSpan span
+        <> " is not fully supported, treating as single argument"
+      generatePythonExpr expr
   where
     formatExpr :: Located PythonExpr -> CppCodeGen CppExpr
     formatExpr locatedExpr = do

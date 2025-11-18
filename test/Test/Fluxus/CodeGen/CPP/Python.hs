@@ -1149,6 +1149,7 @@ analysisFeedbackSpec = describe "Analysis annotation integration" $ do
             Right commonLocated ->
               insertAnnotations (fingerprintCommonExpr commonLocated) listAnnotation emptyAnnotations
 
+    case generateCppWithAnnotations Shared.testCppConfig annotations (Left pythonAst) of
       Right res -> do
         let decls = cppDeclarations (cgrUnit res)
             isValues decl = case decl of

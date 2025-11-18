@@ -1,0 +1,118 @@
+[1mdiff --git a/fluxus.cabal b/fluxus.cabal[m
+[1mindex c57d8cb..73eb869 100644[m
+[1m--- a/fluxus.cabal[m
+[1m+++ b/fluxus.cabal[m
+[36m@@ -129,6 +129,7 @@[m [mtest-suite fluxus-test[m
+     Test.Fluxus.CodeGen.CPP.TypeMapping[m
+     Test.Fluxus.CodeGen.CPP.UnsupportedConstructs[m
+     Test.Fluxus.CodeGen.CPP.Python[m
+[32m+[m[32m    Test.Fluxus.CodeGen.CPP.PythonExtended[m
+     Test.Fluxus.CodeGen.CPP.Go[m
+     Test.Fluxus.Utils.GraphSpec[m
+     Test.Fluxus.Compiler.ConfigSpec[m
+[1mdiff --git a/src/Fluxus/CodeGen/CPP/Python.hs b/src/Fluxus/CodeGen/CPP/Python.hs[m
+[1mindex 31ceda4..6047712 100644[m
+[1m--- a/src/Fluxus/CodeGen/CPP/Python.hs[m
+[1m+++ b/src/Fluxus/CodeGen/CPP/Python.hs[m
+[36m@@ -129,14 +129,13 @@[m [mgeneratePythonStmt scope (Located span stmt) =[m
+           handleTupleUnpacking scope patElems locatedExpr[m
+         _ -> do[m
+           let msg = "Multiple assignment targets (other than tuple unpacking) not implemented"[m
+[31m-          reportNotImplemented msg[m
+           strict <- gets (cgcStrictMode . cgsConfig)[m
+           if strict[m
+             then do[m
+               reportFatalNotImplemented msg[m
+               return cppNoop[m
+             else do[m
+[31m-              emitWarning msg[m
+[32m+[m[32m              reportNotImplemented msg[m
+               return cppNoop[m
+     PyReturn mexpr -> do[m
+       mcppExpr <- mapM generatePythonExpr mexpr[m
+[36m@@ -1221,12 +1220,21 @@[m [mpromoteToTrueDivOperand expr = case expr of[m
+ [m
+ -- | Format an argument for printing, converting Python bool values to "True"/"False"[m
+ formatPrintArgument :: Located PythonArgument -> CppCodeGen CppExpr[m
+[31m-formatPrintArgument (Located _ argument) =[m
+[32m+[m[32mformatPrintArgument (Located span argument) =[m
+   case argument of[m
+     ArgPositional expr -> formatExpr expr[m
+[31m-    ArgKeyword _ expr -> formatExpr expr[m
+[31m-    ArgStarred expr -> generatePythonExpr expr[m
+[31m-    ArgKwStarred expr -> generatePythonExpr expr[m
+[32m+[m[32m    ArgKeyword name expr -> do[m
+[32m+[m[32m      emitWarning $ "Keyword argument '" <> (\(Identifier n) -> n) name[m
+[32m+[m[32m        <> "' at " <> formatSpan span <> " is being treated as positional argument"[m
+[32m+[m[32m      formatExpr expr[m
+[32m+[m[32m    ArgStarred expr -> do[m
+[32m+[m[32m      emitWarning $ "*args unpacking at " <> formatSpan span[m
+[32m+[m[32m        <> " is not fully supported, treating as single argument"[m
+[32m+[m[32m      generatePythonExpr expr[m
+[32m+[m[32m    ArgKwStarred expr -> do[m
+[32m+[m[32m      emitWarning $ "**kwargs unpacking at " <> formatSpan span[m
+[32m+[m[32m        <> " is not fully supported, treating as single argument"[m
+[32m+[m[32m      generatePythonExpr expr[m
+   where[m
+     formatExpr :: Located PythonExpr -> CppCodeGen CppExpr[m
+     formatExpr locatedExpr = do[m
+[1mdiff --git a/test/Test/Fluxus/CodeGen/CPP/Python.hs b/test/Test/Fluxus/CodeGen/CPP/Python.hs[m
+[1mindex b28407d..074acab 100644[m
+[1m--- a/test/Test/Fluxus/CodeGen/CPP/Python.hs[m
+[1m+++ b/test/Test/Fluxus/CodeGen/CPP/Python.hs[m
+[36m@@ -1149,6 +1149,7 @@[m [manalysisFeedbackSpec = describe "Analysis annotation integration" $ do[m
+             Right commonLocated ->[m
+               insertAnnotations (fingerprintCommonExpr commonLocated) listAnnotation emptyAnnotations[m
+ [m
+[32m+[m[32m    case generateCppWithAnnotations Shared.testCppConfig annotations (Left pythonAst) of[m
+       Right res -> do[m
+         let decls = cppDeclarations (cgrUnit res)[m
+             isValues decl = case decl of[m
+[1mdiff --git a/test/Test/Fluxus/CodeGen/CPP/PythonExtended.hs b/test/Test/Fluxus/CodeGen/CPP/PythonExtended.hs[m
+[1mindex 9189e43..302a600 100644[m
+[1m--- a/test/Test/Fluxus/CodeGen/CPP/PythonExtended.hs[m
+[1m+++ b/test/Test/Fluxus/CodeGen/CPP/PythonExtended.hs[m
+[36m@@ -9,6 +9,7 @@[m [mimport Fluxus.AST.Common[m
+ import Fluxus.AST.Python[m
+ import Fluxus.CodeGen.CPP[m
+ import Fluxus.CodeGen.CPP.AST[m
+[32m+[m[32mimport Fluxus.CodeGen.CPP.Diagnostics (diagMessage)[m
+ import Test.Hspec[m
+ [m
+ import qualified Test.Fluxus.CodeGen.CPP.Shared as Shared[m
+[36m@@ -44,7 +45,7 @@[m [mtupleUnpackingSpec = describe "Tuple unpacking" $ do[m
+     case result of[m
+       Right res -> do[m
+         let unit = cgrUnit res[m
+[31m-        cppIncludes unit `shouldContain` "<tuple>"[m
+[32m+[m[32m        cppIncludes unit `shouldSatisfy` (elem (T.pack "<tuple>"))[m
+         case find Shared.isMainFunction (cppDeclarations unit) of[m
+           Just (CppFunction _ _ _ body) -> do[m
+             let hasTie stmt = case stmt of[m
+[36m@@ -99,7 +100,7 @@[m [mcollectionLiteralsSpec = describe "Collection literals" $ do[m
+     case result of[m
+       Right res -> do[m
+         let unit = cgrUnit res[m
+[31m-        cppIncludes unit `shouldContain` "<tuple>"[m
+[32m+[m[32m        cppIncludes unit `shouldSatisfy` (elem (T.pack "<tuple>"))[m
+         let decls = cppDeclarations unit[m
+             hasMakeTuple (CppVariable _ _ (Just expr)) = containsMakeTuple expr[m
+             hasMakeTuple _ = False[m
+[36m@@ -128,7 +129,7 @@[m [mcollectionLiteralsSpec = describe "Collection literals" $ do[m
+     case result of[m
+       Right res -> do[m
+         let unit = cgrUnit res[m
+[31m-        cppIncludes unit `shouldContain` "<set>"[m
+[32m+[m[32m        cppIncludes unit `shouldSatisfy` (elem (T.pack "<set>"))[m
+       Left failure -> expectationFailure $ "Code generation failed: " <> show failure[m
+ [m
+   it "generates std::map for Python dict literals" $ do[m
+[36m@@ -151,7 +152,7 @@[m [mcollectionLiteralsSpec = describe "Collection literals" $ do[m
+     case result of[m
+       Right res -> do[m
+         let unit = cgrUnit res[m
+[31m-        cppIncludes unit `shouldContain` "<map>"[m
+[32m+[m[32m        cppIncludes unit `shouldSatisfy` (elem (T.pack "<map>"))[m
+       Left failure -> expectationFailure $ "Code generation failed: " <> show failure[m
+ [m
+ -- Test lambda expressions[m
