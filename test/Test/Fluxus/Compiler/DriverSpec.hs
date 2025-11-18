@@ -9,7 +9,7 @@ import Control.Exception (bracket_)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (get)
 import Test.Hspec
-import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, findExecutable, getPermissions, removeFile, setPermissions, Permissions(..))
+import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, findExecutable, getPermissions, removeFile, setPermissions, withCurrentDirectory, Permissions(..))
 import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.FilePath ((</>), addTrailingPathSeparator, takeDirectory, takeExtension, replaceExtension, normalise, takeFileName)
 import System.IO.Temp (withSystemTempDirectory)
@@ -150,6 +150,24 @@ spec = describe "Fluxus.Compiler.Driver" $ do
             fallbackUsed `shouldBe` False
           Left err ->
             expectationFailure $ "expected cached setup to succeed, but got " ++ show err
+
+    it "creates relative work directories based on the current working directory" $ do
+      withSystemTempDirectory "fluxus-relative-work" $ \tmpRoot -> do
+        let relativeWorkDir = "relative-work" </> "nested" </> "build"
+            config = defaultConfig
+              { ccWorkDirectory = Just relativeWorkDir
+              , ccSkipCompilerCheck = True
+              , ccVerboseLevel = 0
+              }
+        withCurrentDirectory tmpRoot $ do
+          doesDirectoryExist relativeWorkDir `shouldReturn` False
+          result <- runCompiler config setupCompilerEnvironment
+          case result of
+            Right _ -> do
+              doesDirectoryExist relativeWorkDir `shouldReturn` True
+              doesDirectoryExist (tmpRoot </> relativeWorkDir) `shouldReturn` True
+            Left err ->
+              expectationFailure $ "expected setup to succeed, but got " ++ show err
 
   describe "resolveWorkPath" $ do
     it "keeps paths within the work directory unchanged" $ do
@@ -733,6 +751,94 @@ spec = describe "Fluxus.Compiler.Driver" $ do
               csIntermediateFiles finalState `shouldBe` []
               logLines <- fmap lines (readFile logPath)
               logLines `shouldSatisfy` (\entries -> length entries == 3)
+            Left err ->
+              expectationFailure $ "Project compilation failed: " ++ show err
+
+    it "cleans up intermediate artifacts when compiling without a work directory" $ do
+      withFakeCompiler $ \compilerBinary _logPath ->
+        withSystemTempDirectory "fluxus-project-no-workdir" $ \tmpRoot -> do
+          let sourceDir = tmpRoot </> "src"
+              firstSource = sourceDir </> "alpha.py"
+              secondSource = sourceDir </> "beta.py"
+              outputPath = tmpRoot </> "bin" </> "app"
+              config = defaultConfig
+                { ccCppCompiler = T.pack compilerBinary
+                , ccSkipCompilerCheck = False
+                , ccStopAtCodegen = False
+                , ccWorkDirectory = Nothing
+                , ccOutputPath = Just outputPath
+                , ccKeepIntermediates = False
+                , ccVerboseLevel = 0
+                }
+          createDirectoryIfMissing True sourceDir
+          writeFile firstSource $ unlines
+            [ "def alpha():"
+            , "    return 1"
+            ]
+          writeFile secondSource $ unlines
+            [ "def beta():"
+            , "    return 2"
+            ]
+          result <- runCompiler config $ do
+            setupCompilerEnvironment
+            compileProject [firstSource, secondSource]
+          case result of
+            Right (finalBinary, finalState) -> do
+              finalBinary `shouldBe` outputPath
+              doesFileExist outputPath `shouldReturn` True
+              let cppPaths = map (`replaceExtension` ".cpp") [firstSource, secondSource]
+                  objPaths = map (`replaceExtension` ".o") cppPaths
+              mapM_ (\path -> doesFileExist path `shouldReturn` False) (cppPaths ++ objPaths)
+              csIntermediateFiles finalState `shouldBe` []
+              csProcessedFiles finalState `shouldBe` 2
+            Left err ->
+              expectationFailure $ "Project compilation failed: " ++ show err
+
+    it "propagates profiler flags to compile and link invocations for projects" $ do
+      withFakeCompiler $ \compilerBinary logPath ->
+        withSystemTempDirectory "fluxus-project-profiler-flags" $ \tmpRoot -> do
+          let workDir = tmpRoot </> "work"
+              sourceDir = tmpRoot </> "src"
+              outputPath = tmpRoot </> "bin" </> "app"
+              firstSource = sourceDir </> "pkg" </> "alpha.py"
+              secondSource = sourceDir </> "pkg" </> "beta.py"
+              config = defaultConfig
+                { ccCppCompiler = T.pack compilerBinary
+                , ccSkipCompilerCheck = False
+                , ccStopAtCodegen = False
+                , ccWorkDirectory = Just workDir
+                , ccOutputPath = Just outputPath
+                , ccEnableProfiler = True
+                , ccEnableDebugInfo = True
+                , ccKeepIntermediates = False
+                , ccVerboseLevel = 0
+                }
+          createDirectoryIfMissing True (takeDirectory firstSource)
+          createDirectoryIfMissing True (takeDirectory secondSource)
+          writeFile firstSource $ unlines
+            [ "def alpha():"
+            , "    return 1"
+            ]
+          writeFile secondSource $ unlines
+            [ "def beta():"
+            , "    return 2"
+            ]
+          result <- runCompiler config $ do
+            setupCompilerEnvironment
+            compileProject [firstSource, secondSource]
+          case result of
+            Right (finalBinary, finalState) -> do
+              finalBinary `shouldBe` outputPath
+              doesFileExist outputPath `shouldReturn` True
+              csIntermediateFiles finalState `shouldBe` []
+              logLines <- fmap lines (readFile logPath)
+              logLines `shouldSatisfy` (\entries -> length entries == 3)
+              let compileCommands = init logLines
+                  linkCommand = last logLines
+              length compileCommands `shouldBe` 2
+              mapM_ (\cmd -> cmd `shouldSatisfy` ("-pg" `isInfixOf`)) compileCommands
+              mapM_ (\cmd -> cmd `shouldSatisfy` ("-g" `isInfixOf`)) compileCommands
+              linkCommand `shouldSatisfy` ("-pg" `isInfixOf`)
             Left err ->
               expectationFailure $ "Project compilation failed: " ++ show err
 
