@@ -30,7 +30,6 @@ import Fluxus.CodeGen.CPP.Monad
   , CppGenState(..)
   , addDeclaration
   , addInclude
-  , cppNoop
   , emitInfo
   , emitWarning
   , generateTempVar
@@ -86,36 +85,55 @@ wrapStatements stmts = CppStmtSeq stmts
 
 reportDeclIssue :: (Text -> CppCodeGen ()) -> SourceSpan -> GoDecl -> Text -> Maybe Text -> CppCodeGen ()
 reportDeclIssue reporter span decl detail extra =
-  reporter $
-    detail
-      <> " ("
-      <> describeGoDecl decl
-      <> " at "
-      <> formatSourceSpanShort span
-      <> ")"
-      <> maybe "" (": " <>) extra
+  reporter (formatDeclIssue span decl detail extra)
 
 reportStmtIssue :: (Text -> CppCodeGen ()) -> SourceSpan -> GoStmt -> Text -> Maybe Text -> CppCodeGen ()
 reportStmtIssue reporter span stmt detail extra =
-  reporter $
-    detail
-      <> " ("
-      <> describeGoStmt stmt
-      <> " at "
-      <> formatSourceSpanShort span
-      <> ")"
-      <> maybe "" (": " <>) extra
+  reporter (formatStmtIssue span stmt detail extra)
 
 reportExprIssue :: (Text -> CppCodeGen ()) -> SourceSpan -> GoExpr -> Text -> Maybe Text -> CppCodeGen ()
 reportExprIssue reporter span expr detail extra =
-  reporter $
-    detail
-      <> " ("
-      <> describeGoExpr expr
-      <> " at "
-      <> formatSourceSpanShort span
-      <> ")"
-      <> maybe "" (": " <>) extra
+  reporter (formatExprIssue span expr detail extra)
+
+formatDeclIssue :: SourceSpan -> GoDecl -> Text -> Maybe Text -> Text
+formatDeclIssue span decl detail extra =
+  detail
+    <> " ("
+    <> describeGoDecl decl
+    <> " at "
+    <> formatSourceSpanShort span
+    <> ")"
+    <> maybe "" (": " <>) extra
+
+formatStmtIssue :: SourceSpan -> GoStmt -> Text -> Maybe Text -> Text
+formatStmtIssue span stmt detail extra =
+  detail
+    <> " ("
+    <> describeGoStmt stmt
+    <> " at "
+    <> formatSourceSpanShort span
+    <> ")"
+    <> maybe "" (": " <>) extra
+
+formatExprIssue :: SourceSpan -> GoExpr -> Text -> Maybe Text -> Text
+formatExprIssue span expr detail extra =
+  detail
+    <> " ("
+    <> describeGoExpr expr
+    <> " at "
+    <> formatSourceSpanShort span
+    <> ")"
+    <> maybe "" (": " <>) extra
+
+abortStmtIssue :: (Text -> CppCodeGen ()) -> SourceSpan -> GoStmt -> Text -> Maybe Text -> CppCodeGen CppStmt
+abortStmtIssue reporter span stmt detail extra = do
+  let message = formatStmtIssue span stmt detail extra
+  reporter message
+  abortStmt <- runtimeAbortStmt message
+  pure $ CppStmtSeq
+    [ CppComment ("unsupported: " <> detail)
+    , abortStmt
+    ]
 
 describeGoDecl :: GoDecl -> Text
 describeGoDecl = \case
@@ -304,9 +322,7 @@ generateGoStmt (Located span stmt) = case stmt of
     pure $ CppExprStmt $ CppCall (CppMember cppChannel "send") [cppValue]
   GoDefine identifiers exprs ->
     if length identifiers /= length exprs
-      then do
-        reportStmtIssue reportUnsupported span stmt "Mismatched variable definition arity" Nothing
-        pure cppNoop
+      then abortStmtIssue reportUnsupported span stmt "Mismatched variable definition arity" Nothing
       else do
         cppExprs <- mapM generateGoExpr exprs
         decls <- mapM defineBinding (zip3 identifiers exprs cppExprs)
@@ -322,9 +338,7 @@ generateGoStmt (Located span stmt) = case stmt of
             pure $ CppExprStmt (CppBinary "=" cppLeft cppRight)
       _ ->
         if length leftExprs /= length rightExprs
-          then do
-            reportStmtIssue reportUnsupported span stmt "Mismatched assignment arity" Nothing
-            pure cppNoop
+          then abortStmtIssue reportUnsupported span stmt "Mismatched assignment arity" Nothing
           else do
             prepResults <- mapM prepareAssignment (zip leftExprs rightExprs)
             let evalStmts = map fst prepResults
@@ -335,9 +349,8 @@ generateGoStmt (Located span stmt) = case stmt of
     cppExpr <- generateGoExpr expr
     let op = if isIncrement then "++" else "--"
     pure $ CppExprStmt $ CppUnary op cppExpr
-  _ -> do
-    reportStmtIssue reportNotImplemented span stmt "Unsupported Go statement" (Just (T.pack (show stmt)))
-    pure cppNoop
+  _ ->
+    abortStmtIssue reportNotImplemented span stmt "Unsupported Go statement" (Just (T.pack (show stmt)))
   where
     defineBinding (Identifier name, locatedExpr, expr)
       | name == "_" = pure $ CppExprStmt expr

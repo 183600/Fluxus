@@ -86,8 +86,17 @@ spec = describe "Fluxus.Compiler.Config" $ do
       result <- loadConfig ["--version"]
       result `shouldBe` Right (LoadConfigVersion fluxusVersionString)
 
+    it "disables interop and analysis by default" $ do
+      result <- loadConfig []
+      case result of
+        Right (LoadConfigSuccess finalConfig) -> do
+          ccEnableInterop finalConfig `shouldBe` False
+          ccEnableAnalysis finalConfig `shouldBe` False
+        Right other -> expectationFailure $ "unexpected non-success result: " ++ show other
+        Left err -> expectationFailure $ "loadConfig failed: " ++ err
+
     it "applies precedence CLI > environment > config file > defaults" $ do
-      originalCwd <- getCurrentDirectory
+
       originalCxx <- lookupEnv "CXX"
       originalVerbose <- lookupEnv "FLUXUS_VERBOSE"
       withSystemTempDirectory "fluxus-config-test" $ \tmpDir -> do

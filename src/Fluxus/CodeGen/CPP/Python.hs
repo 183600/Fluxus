@@ -131,12 +131,8 @@ generatePythonStmt scope (Located span stmt) =
           let msg = "Multiple assignment targets (other than tuple unpacking) not implemented"
           strict <- gets (cgcStrictMode . cgsConfig)
           if strict
-            then do
-              reportFatalNotImplemented msg
-              return cppNoop
-            else do
-              reportNotImplemented msg
-              return cppNoop
+            then unsupportedStatement reportFatalNotImplemented span msg
+            else unsupportedStatement reportNotImplemented span msg
     PyReturn mexpr -> do
       mcppExpr <- mapM generatePythonExpr mexpr
       return $ CppReturn mcppExpr
@@ -187,28 +183,41 @@ generatePythonStmt scope (Located span stmt) =
       buildRuntimeFallback span "Python 'yield from' expression requires runtime fallback"
     _ -> do
       let msg = "Python statement not implemented: " <> T.pack (show stmt)
-      reportFatalNotImplemented msg
-      return cppNoop
+      unsupportedStatement reportFatalNotImplemented span msg
   where
-    runtimeFallbackMessage :: SourceSpan -> Text -> CppCodeGen Text
-    runtimeFallbackMessage loc baseMessage = do
-      let message = baseMessage <> " at " <> formatSpan loc <> " (runtime fallback)"
-      strict <- gets (cgcStrictMode . cgsConfig)
-      if strict
+    runtimeFallbackMessage :: CppGenConfig -> SourceSpan -> Text -> CppCodeGen Text
+    runtimeFallbackMessage config loc baseMessage = do
+      let location = baseMessage <> " at " <> formatSpan loc
+          message
+            | not (cgcEnableInterop config) = location <> " (runtime fallback unavailable: interop runtime is disabled)"
+            | otherwise = location <> " (runtime fallback)"
+      if cgcStrictMode config
         then reportFatalNotImplemented message
         else emitWarning message
       pure message
 
     buildRuntimeFallback :: SourceSpan -> Text -> CppCodeGen CppStmt
     buildRuntimeFallback loc baseMessage = do
-      message <- runtimeFallbackMessage loc baseMessage
-      strict <- gets (cgcStrictMode . cgsConfig)
-      fallbackStmt <- if strict
+      config <- gets cgsConfig
+      message <- runtimeFallbackMessage config loc baseMessage
+      let interopAvailable = cgcEnableInterop config
+          strict = cgcStrictMode config
+      fallbackStmt <- if strict || not interopAvailable
         then runtimeAbortStmt message
         else runtimeFallbackStmt message
       pure $ CppStmtSeq
         [ CppComment ("runtime fallback: " <> baseMessage)
         , fallbackStmt
+        ]
+
+    unsupportedStatement :: (Text -> CppCodeGen ()) -> SourceSpan -> Text -> CppCodeGen CppStmt
+    unsupportedStatement reporter loc baseMessage = do
+      let message = baseMessage <> " at " <> formatSpan loc
+      reporter message
+      abortStmt <- runtimeAbortStmt message
+      pure $ CppStmtSeq
+        [ CppComment ("unsupported: " <> baseMessage)
+        , abortStmt
         ]
 
     generateAsyncFunctionFallback :: SourceSpan -> PythonFuncDef -> CppCodeGen ()

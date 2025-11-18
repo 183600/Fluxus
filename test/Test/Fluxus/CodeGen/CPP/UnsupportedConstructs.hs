@@ -243,7 +243,7 @@ pythonUnsupportedTests = describe "Python unsupported constructs" $ do
 
             isAbortCall expr = case expr of
               CppCall (CppVar "fluxus_runtime_abort") [CppLiteral (CppStringLit msg)] ->
-                msg == "Python slicing is not supported in the C++ backend"
+                T.isInfixOf "Python slicing is not supported in the C++ backend" msg
               _ -> False
 
         any isRuntimeAbortHelper decls `shouldBe` True
