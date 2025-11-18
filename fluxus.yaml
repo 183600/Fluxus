@@ -11,11 +11,11 @@ optimization_level: "O2"
 target_platform: "linux-x86_64"
 
 # Feature flags
-enable_interop: true
+enable_interop: false
 enable_debug_info: false
 enable_profiler: false
 enable_parallel: true
-enable_analysis: true
+enable_analysis: false
 enable_experimental_optimizations: false
 
 # Compilation settings

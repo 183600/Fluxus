@@ -44,9 +44,8 @@ module Fluxus.CodeGen.CPP.Monad
   , enterNamespace
   , exitNamespace
   , generateTempVar
-  , addStatement
   , addComment
-  ) where
+
 
 import Control.DeepSeq (NFData)
 import Control.Monad (unless, when)
@@ -130,7 +129,7 @@ data CppCodeGenFailure = CppCodeGenFailure
 defaultCppGenConfig :: CppGenConfig
 defaultCppGenConfig = CppGenConfig
   { cgcOptimizationLevel = 2
-  , cgcEnableInterop = True
+  , cgcEnableInterop = False
   , cgcTargetCppStd = "c++20"
   , cgcUseSmartPointers = True
   , cgcEnableParallel = True
@@ -330,9 +329,6 @@ generateTempVar = do
   modify $ \s -> s { cgsTempVarCount = count + 1 }
   pure $ "temp_" <> T.pack (show count)
 
-addStatement :: CppStmt -> CppCodeGen ()
-addStatement _ =
-  reportNotImplemented "addStatement is not yet supported; emit statements within the surrounding code generation context."
 
 addComment :: Text -> CppCodeGen ()
 addComment msg = addDeclaration (CppCommentDecl msg)

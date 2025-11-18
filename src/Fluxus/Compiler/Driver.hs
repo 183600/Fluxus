@@ -271,7 +271,7 @@ defaultConfig = CompilerConfig
   , ccOptimizationLevel = O2
   , ccTargetPlatform = Linux_x86_64
   , ccOutputPath = Nothing
-  , ccEnableInterop = True
+  , ccEnableInterop = False
   , ccEnableDebugInfo = False
   , ccEnableProfiler = False
   , ccEnableParallel = True
@@ -285,7 +285,7 @@ defaultConfig = CompilerConfig
   , ccWorkDirectory = Nothing
   , ccKeepIntermediates = False
   , ccStrictMode = False
-  , ccEnableAnalysis = True
+  , ccEnableAnalysis = False
   , ccEnableExperimentalOptimizations = False
   , ccStopAtCodegen = False
   , ccSkipCompilerCheck = False
@@ -330,6 +330,14 @@ validateConfig config = do
   -- Validate concurrency settings
   when (ccMaxConcurrency config <= 0) $
     Left $ ConfigurationError "Max concurrency must be positive"
+  
+  -- Guard unfinished subsystems that would otherwise fail at runtime
+  when (ccEnableInterop config) $
+    Left $ ConfigurationError "Python/Go interop runtime is not implemented yet; remove --enable-interop or set enable_interop: false"
+  when (ccEnableAnalysis config) $
+    Left $ ConfigurationError "Static analysis passes are experimental and currently disabled; remove --enable-analysis or set enable_analysis: false"
+  when (ccEnableExperimentalOptimizations config) $
+    Left $ ConfigurationError "Experimental optimizations depend on the analysis pipeline and are currently unavailable"
   
   return config
 
@@ -532,11 +540,15 @@ compileFileArtifacts inputFile = do
     else return ast
   
   -- Optimization passes
-  optimizedAst <- if ccOptimizationLevel config > O0
-    then do
-      setCurrentPhase "optimization"
-      optimizationStage typedAst
-    else return typedAst
+  optimizedAst <-
+    if ccEnableAnalysis config && ccOptimizationLevel config > O0
+      then do
+        setCurrentPhase "optimization"
+        optimizationStage typedAst
+      else do
+        when (ccOptimizationLevel config > O0 && not (ccEnableAnalysis config)) $
+          logInfo "Skipping optimization stage because static analysis is disabled"
+        return typedAst
   
   -- Code generation
   setCurrentPhase "code-generation"

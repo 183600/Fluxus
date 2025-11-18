@@ -251,12 +251,27 @@ spec = describe "Fluxus.Compiler.Driver" $ do
       let config = defaultConfig { ccMaxConcurrency = 0 }
       validateConfig config `shouldBe` Left (ConfigurationError "Max concurrency must be positive")
 
+    it "rejects enabling the interop runtime until it is implemented" $ do
+      let config = defaultConfig { ccEnableInterop = True }
+      validateConfig config `shouldBe`
+        Left (ConfigurationError "Python/Go interop runtime is not implemented yet; remove --enable-interop or set enable_interop: false")
+
+    it "rejects enabling static analysis while it remains disabled" $ do
+      let config = defaultConfig { ccEnableAnalysis = True }
+      validateConfig config `shouldBe`
+        Left (ConfigurationError "Static analysis passes are experimental and currently disabled; remove --enable-analysis or set enable_analysis: false")
+
+    it "rejects enabling experimental optimizations while analysis is unavailable" $ do
+      let config = defaultConfig { ccEnableExperimentalOptimizations = True }
+      validateConfig config `shouldBe`
+        Left (ConfigurationError "Experimental optimizations depend on the analysis pipeline and are currently unavailable")
+
     it "accepts valid configuration overrides" $ do
       let config = defaultConfig
-            { ccCppCompiler = "g++"
-            , ccOptimizationLevel = O1
-            , ccMaxConcurrency = 8
-            }
+        { ccCppCompiler = "g++"
+        , ccOptimizationLevel = O1
+        , ccMaxConcurrency = 8
+        }
       validateConfig config `shouldBe` Right config
 
   describe "detectCompilerBinary" $ do
