@@ -97,6 +97,7 @@ spec = describe "Fluxus.Compiler.Config" $ do
 
     it "applies precedence CLI > environment > config file > defaults" $ do
 
+      originalCwd <- getCurrentDirectory
       originalCxx <- lookupEnv "CXX"
       originalVerbose <- lookupEnv "FLUXUS_VERBOSE"
       withSystemTempDirectory "fluxus-config-test" $ \tmpDir -> do
