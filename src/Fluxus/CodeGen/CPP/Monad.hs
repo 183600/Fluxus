@@ -45,7 +45,7 @@ module Fluxus.CodeGen.CPP.Monad
   , exitNamespace
   , generateTempVar
   , addComment
-
+  ) where
 
 import Control.DeepSeq (NFData)
 import Control.Monad (unless, when)
