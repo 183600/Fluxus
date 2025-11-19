@@ -38,7 +38,6 @@ import Data.ByteString (ByteString)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Vector (Vector)
-import qualified Data.Vector as Vector
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Foreign.Ptr (Ptr)
@@ -133,19 +132,19 @@ initPythonRuntime _mode = pure (Left runtimeUnavailable)
 shutdownPythonRuntime :: PythonRuntime -> IO ()
 shutdownPythonRuntime runtime = do
   -- Decrement reference count
-  refCount <- atomically $ do
+  remainingRefs <- atomically $ do
     count <- readTVar (pyrRefCount runtime)
     let newCount = count - 1
     writeTVar (pyrRefCount runtime) newCount
     return newCount
-  
+
   -- Only finalize if this was the last reference
-  when (refCount <= 0) $ do
+  when (remainingRefs <= 0) $ do
     -- Clear caches
     atomically $ do
       writeTVar (pyrModuleCache runtime) HashMap.empty
       writeTVar (pyrObjectCache runtime) HashMap.empty
-    
+
     -- Finalize Python interpreter
     py_Finalize
 
@@ -215,24 +214,6 @@ batchCallPython _runtime calls = pure (replicate (length calls) (Left runtimeUna
 managedPythonCall :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
 managedPythonCall _runtime _funcName _args = pure (Left runtimeUnavailable)
 
--- Helper functions
-
--- | Optimized function call for static interop
-callOptimizedFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-callOptimizedFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
-
--- | Cached function call for optimized interop
-callCachedFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-callCachedFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
-
--- | Generic function call for full interop
-callGenericFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-callGenericFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
-
--- | Fallback function call that always uses Python
-callFallbackFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-callFallbackFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
-
 -- | Create type mapping from Fluxus types to Python types
 createTypeMapping :: HashMap Type Text
 createTypeMapping = HashMap.fromList
@@ -246,23 +227,3 @@ createTypeMapping = HashMap.fromList
   , (TDict TString TAny, "dict")
   , (TSet TAny, "set")
   ]
-
--- | Optimize argument based on type information
-optimizeArgument :: Type -> RuntimeValue -> RuntimeValue
-optimizeArgument (TInt _) (RVFloat f) = RVInt (round f)  -- Convert float to int if needed
-optimizeArgument (TFloat _) (RVInt i) = RVFloat (fromIntegral i)  -- Convert int to float if needed
-optimizeArgument _ value = value  -- Keep as-is for other types
-
--- | Render runtime value as Python code
-renderArgument :: RuntimeValue -> Text
-renderArgument (RVInt i) = T.pack $ show i
-renderArgument (RVFloat f) = T.pack $ show f
-renderArgument (RVString s) = "\"" <> T.replace "\"" "\\\"" s <> "\""
-renderArgument (RVBool True) = "True"
-renderArgument (RVBool False) = "False"
-renderArgument RVNone = "None"
-renderArgument (RVList vs) = "[" <> T.intercalate ", " (map renderArgument $ Vector.toList vs) <> "]"
-renderArgument (RVDict d) = "{" <> T.intercalate ", " (map renderDictPair $ HashMap.toList d) <> "}"
-  where
-    renderDictPair (k, v) = "\"" <> k <> "\": " <> renderArgument v
-renderArgument _ = "None"  -- Fallback for complex types

@@ -39,7 +39,7 @@ import qualified Control.Applicative as A
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
-import Text.Megaparsec hiding (many, some, SourcePos)
+import Text.Megaparsec hiding (many, some, SourcePos, token, tokens)
 import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
 import Data.List.NonEmpty (NonEmpty)
@@ -823,32 +823,32 @@ parseLiteralPattern = located $ PatLiteral <$> parseLiteralValue
 parseListPattern :: PythonParser (Located PythonPattern)
 parseListPattern = located $ do
   void $ delimiterP DelimLeftBracket
-  tokens <- getInput
-  case tokens of
+  lookaheadTokens <- getInput
+  case lookaheadTokens of
     (Located _ (TokenDelimiter DelimRightBracket) : _) -> do
       void $ delimiterP DelimRightBracket
       pure $ PatList []
     _ -> do
-      first <- parsePattern
+      firstPattern <- parsePattern
       (rest, _) <- parseCommaSeparatedRest DelimRightBracket parsePattern
       void $ delimiterP DelimRightBracket
-      pure $ PatList (first : rest)
+      pure $ PatList (firstPattern : rest)
 
 parseParenPattern :: PythonParser (Located PythonPattern)
 parseParenPattern = located $ do
   void $ delimiterP DelimLeftParen
-  tokens <- getInput
-  case tokens of
+  lookaheadTokens <- getInput
+  case lookaheadTokens of
     (Located _ (TokenDelimiter DelimRightParen) : _) -> do
       void $ delimiterP DelimRightParen
       pure $ PatTuple []
     _ -> do
-      first <- parsePattern
+      firstPattern <- parsePattern
       (rest, trailing) <- parseCommaSeparatedRest DelimRightParen parsePattern
       void $ delimiterP DelimRightParen
       case (rest, trailing) of
-        ([], False) -> pure $ locValue first
-        _ -> pure $ PatTuple (first : rest)
+        ([], False) -> pure $ locValue firstPattern
+        _ -> pure $ PatTuple (firstPattern : rest)
 
 parseStarPattern :: PythonParser (Located PythonPattern)
 parseStarPattern = located $ do
@@ -858,12 +858,12 @@ parseStarPattern = located $ do
 
 parsePatternTupleTail :: PythonParser ([Located PythonPattern], Bool)
 parsePatternTupleTail = do
-  tokens <- getInput
-  case tokens of
+  lookaheadTokens <- getInput
+  case lookaheadTokens of
     (Located _ (TokenDelimiter DelimComma) : _) -> do
       void $ delimiterP DelimComma
-      tokensAfter <- getInput
-      if isPatternTerminator tokensAfter
+      postCommaTokens <- getInput
+      if isPatternTerminator postCommaTokens
         then pure ([], True)
         else do
           nextPat <- parsePattern
@@ -873,7 +873,7 @@ parsePatternTupleTail = do
 
 isPatternTerminator :: [Located PythonToken] -> Bool
 isPatternTerminator [] = True
-isPatternTerminator (Located _ token : _) = case token of
+isPatternTerminator (Located _ tok : _) = case tok of
   TokenDelimiter DelimRightParen -> True
   TokenDelimiter DelimRightBracket -> True
   TokenDelimiter DelimRightBrace -> True
@@ -890,8 +890,8 @@ parseTypeExpr = located $ TypeName <$> parseQualifiedName
 -- | Parse function parameters
 parseParameters :: PythonParser [Located PythonParameter]
 parseParameters = do
-  tokens <- getInput
-  case tokens of
+  lookaheadTokens <- getInput
+  case lookaheadTokens of
     (Located _ (TokenDelimiter DelimRightParen) : _) -> pure []
     _ -> parseParamList False False
   where
@@ -969,7 +969,7 @@ parseParameters = do
       _ -> False
 
     isClosing :: Located PythonToken -> Bool
-    isClosing (Located _ token) = case token of
+    isClosing (Located _ tok) = case tok of
       TokenDelimiter DelimRightParen -> True
       _ -> False
 
@@ -1038,20 +1038,20 @@ parseBlock = do
 -- | Utility parsers
 parseIdentifier :: PythonParser Identifier
 parseIdentifier = do
-  Located _ token <- satisfy $ \case
+  Located _ tok <- satisfy $ \case
     Located _ (TokenIdent _) -> True
     _ -> False
-  case token of
+  case tok of
     TokenIdent text -> return $ Identifier text
     _ -> fail "Expected identifier"
 
 parseModuleName :: PythonParser ModuleName
 parseModuleName = do
-  first <- parseIdentifier
+  initialPart <- parseIdentifier
   rest <- many $ do
     delimiterP DelimDot
     parseIdentifier
-  let parts = first : rest
+  let parts = initialPart : rest
       moduleText = T.intercalate "." (map (\(Identifier t) -> t) parts)
   pure $ ModuleName moduleText
 
@@ -1062,8 +1062,8 @@ parseQualifiedName = do
 
 parseUnderscore :: PythonParser ()
 parseUnderscore = do
-  Located _ token <- anySingle
-  case token of
+  Located _ tok <- anySingle
+  case tok of
     TokenIdent "_" -> return ()
     _ -> fail "Expected underscore"
 
@@ -1091,11 +1091,6 @@ parseIndent = void $ satisfy $ \case
 parseDedent :: PythonParser ()
 parseDedent = void $ satisfy $ \case
   Located _ (TokenDedent _) -> True
-  _ -> False
-
-skipNewlines :: PythonParser ()
-skipNewlines = void $ many $ satisfy $ \case
-  Located _ TokenNewline -> True
   _ -> False
 
 skipComments :: PythonParser ()
@@ -1145,8 +1140,3 @@ extractDocstring (stmt:rest) = case locatedValue stmt of
   PyExprStmt (Located _ (PyLiteral (PyString text))) -> (Just text, rest)
   _ -> (Nothing, stmt:rest)
 
-convertPos :: MP.SourcePos -> Common.SourcePos
-convertPos pos = Common.SourcePos
-  { posLine = unPos (sourceLine pos)
-  , posColumn = unPos (sourceColumn pos)
-  }

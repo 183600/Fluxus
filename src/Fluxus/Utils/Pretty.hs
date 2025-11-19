@@ -101,10 +101,6 @@ _line = Prettyprinter.line
 _softline :: Doc AnsiStyle
 _softline = Prettyprinter.softline
 
--- | Horizontal composition with space
-(<++>) :: Doc AnsiStyle -> Doc AnsiStyle -> Doc AnsiStyle
-(<++>) = (Prettyprinter.<+>)
-
 -- | Vertical composition
 (</>) :: Doc AnsiStyle -> Doc AnsiStyle -> Doc AnsiStyle
 x </> y = x <> PrettyDoc.line <> y

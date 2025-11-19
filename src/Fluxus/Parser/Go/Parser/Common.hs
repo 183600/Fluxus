@@ -155,12 +155,12 @@ spanFromTokens tokens =
 spanAtOffset :: Text -> [Located a] -> Int -> SourceSpan
 spanAtOffset fallback tokens offset =
   case drop offset tokens of
-    (Located span _ : _) -> span
+    (Located locatedSpan _ : _) -> locatedSpan
     [] ->
       case reverse tokens of
-        (Located span _ : _) ->
-          let endPos = spanEnd span
-          in SourceSpan (spanFilename span) endPos endPos
+        (Located locatedSpan _ : _) ->
+          let endPos = spanEnd locatedSpan
+          in SourceSpan (spanFilename locatedSpan) endPos endPos
         [] -> defaultSpan fallback
 
 located :: GoParser m a -> GoParser m (Located a)
@@ -172,7 +172,7 @@ located parser = do
       (consumed, _) = splitAt consumedCount before
       spanLoc = case consumed of
         [] -> case before of
-          (Located span _ : _) -> zeroWidthSpan span
+          (Located locatedSpan _ : _) -> zeroWidthSpan locatedSpan
           [] -> defaultSpan "<unknown>"
         _  -> spanFromTokens consumed
   pure $ Located spanLoc result
