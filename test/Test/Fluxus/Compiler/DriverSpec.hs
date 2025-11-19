@@ -285,11 +285,12 @@ spec = describe "Fluxus.Compiler.Driver" $ do
         Left (ConfigurationError "Experimental optimizations depend on the analysis pipeline and are currently unavailable")
 
     it "accepts valid configuration overrides" $ do
-      let config = defaultConfig
-        { ccCppCompiler = "g++"
-        , ccOptimizationLevel = O1
-        , ccMaxConcurrency = 8
-        }
+      let config =
+            defaultConfig
+              { ccCppCompiler = "g++"
+              , ccOptimizationLevel = O1
+              , ccMaxConcurrency = 8
+              }
       validateConfig config `shouldBe` Right config
 
   describe "detectCompilerBinary" $ do
