@@ -349,6 +349,19 @@ generateGoStmt (Located span stmt) = case stmt of
     cppExpr <- generateGoExpr expr
     let op = if isIncrement then "++" else "--"
     pure $ CppExprStmt $ CppUnary op cppExpr
+  GoBreak mLabel -> do
+    case mLabel of
+      Just (Identifier label) ->
+        emitWarning $ "labeled break '" <> label <> "' is not supported; emitting plain break"
+      Nothing -> pure ()
+    pure CppBreak
+  GoContinue mLabel -> do
+    case mLabel of
+      Just (Identifier label) ->
+        emitWarning $ "labeled continue '" <> label <> "' is not supported; emitting plain continue"
+      Nothing -> pure ()
+    pure CppContinue
+  GoEmpty -> pure (CppStmtSeq [])
   _ ->
     abortStmtIssue reportNotImplemented span stmt "Unsupported Go statement" (Just (T.pack (show stmt)))
   where
@@ -549,6 +562,17 @@ generateGoExpr (Located span expr) = case expr of
     pure $ CppCall (CppMember cppExpr "receive") []
   GoStructLit structType fields ->
     generateGoStructLiteral span structType fields
+  GoArrayLit typeExpr elements ->
+    generateGoArrayLiteral span typeExpr elements
+  GoSliceLit typeExpr elements ->
+    generateGoSliceLiteral span typeExpr elements
+  GoMapLit typeExpr entries ->
+    generateGoMapLiteral span typeExpr entries
+  GoCompositeLit Nothing _ -> do
+    reportExprIssue reportFatalNotImplemented span expr "Composite literal requires an explicit type" Nothing
+    pure $ CppLiteral (CppIntLit 0)
+  GoCompositeLit (Just typeExpr) values ->
+    generateGoCompositeLiteral span typeExpr values
   _ -> do
     reportExprIssue reportFatalNotImplemented span expr "Unsupported Go expression" (Just (T.pack (show expr)))
     pure $ CppLiteral (CppIntLit 0)
@@ -565,6 +589,73 @@ generateGoStructLiteral span typeExpr fields = do
         emitWarning $ "struct literal at " <> formatSourceSpanShort span <> " targets a named type; field keys will be emitted in source order"
       mapM (generateGoExpr . snd) fields
   pure $ CppBracedInit cppType values
+
+generateGoCompositeLiteral :: SourceSpan -> Located GoType -> [Located GoExpr] -> CppCodeGen CppExpr
+generateGoCompositeLiteral _ typeExpr values = do
+  cppType <- generateGoType typeExpr
+  valueExprs <- mapM generateGoExpr values
+  pure (CppBracedInit cppType valueExprs)
+
+generateGoArrayLiteral :: SourceSpan -> Located GoType -> [Located GoExpr] -> CppCodeGen CppExpr
+generateGoArrayLiteral span typeExpr elements = do
+  cppType <- generateGoType typeExpr
+  cppElements <- mapM generateGoExpr elements
+  case cppType of
+    CppStdArray inner size -> do
+      filled <- padSequentialLiteral span "array" size inner cppElements
+      pure (CppBracedInit cppType filled)
+    CppArray inner size -> do
+      filled <- padSequentialLiteral span "array" size inner cppElements
+      pure (CppBracedInit cppType filled)
+    CppVector _ -> pure (CppBracedInit cppType cppElements)
+    other -> do
+      emitWarning $ "array literal at " <> formatSourceSpanShort span <> " targets unsupported type " <> T.pack (show other)
+      pure (CppBracedInit cppType cppElements)
+
+generateGoSliceLiteral :: SourceSpan -> Located GoType -> [Located GoExpr] -> CppCodeGen CppExpr
+generateGoSliceLiteral span typeExpr elements = do
+  cppType <- generateGoType typeExpr
+  cppElements <- mapM generateGoExpr elements
+  case cppType of
+    CppVector _ -> pure (CppBracedInit cppType cppElements)
+    other -> do
+      emitWarning $ "slice literal at " <> formatSourceSpanShort span <> " targets unsupported type " <> T.pack (show other)
+      pure (CppBracedInit cppType cppElements)
+
+generateGoMapLiteral :: SourceSpan -> Located GoType -> [(Located GoExpr, Located GoExpr)] -> CppCodeGen CppExpr
+generateGoMapLiteral span typeExpr entries = do
+  cppType <- generateGoType typeExpr
+  case cppType of
+    CppMap keyTy valueTy -> buildInitializer cppType keyTy valueTy
+    CppUnorderedMap keyTy valueTy -> buildInitializer cppType keyTy valueTy
+    other -> do
+      emitWarning $ "map literal at " <> formatSourceSpanShort span <> " targets unsupported type " <> T.pack (show other)
+      pure (CppBracedInit cppType [])
+  where
+    buildInitializer targetType keyTy valueTy = do
+      addInclude "<utility>"
+      pairExprs <- mapM (uncurry buildPair) entries
+      pure (CppBracedInit targetType pairExprs)
+    buildPair keyExpr valueExpr = do
+      keyCpp <- generateGoExpr keyExpr
+      valCpp <- generateGoExpr valueExpr
+      pure $ CppCall (CppVar "std::make_pair") [keyCpp, valCpp]
+
+padSequentialLiteral :: SourceSpan -> Text -> Int -> CppType -> [CppExpr] -> CppCodeGen [CppExpr]
+padSequentialLiteral span construct size innerType provided = do
+  let truncated = take size provided
+      extra = drop size provided
+  unless (null extra) $
+    emitWarning $
+      construct <> " literal at " <> formatSourceSpanShort span <> " provides "
+        <> textShow (length extra) <> " extra element(s) that will be ignored"
+  let missing = size - length truncated
+  when (missing > 0) $
+    emitWarning $
+      construct <> " literal at " <> formatSourceSpanShort span <> " is missing "
+        <> textShow missing <> " element(s); default-initializing remaining entries"
+  let defaults = replicate (max 0 missing) (defaultValueForType innerType)
+  pure (truncated ++ defaults)
 
 resolveStructLiteralValues :: SourceSpan -> [(Text, CppType)] -> [(Identifier, Located GoExpr)] -> CppCodeGen [CppExpr]
 resolveStructLiteralValues span structFields provided =
@@ -783,8 +874,11 @@ mapGoLiteral :: GoLiteral -> CppLiteral
 mapGoLiteral = \case
   GoInt i -> CppIntLit i
   GoFloat f -> CppFloatLit f
+  GoImag f -> CppFloatLit f
   GoBool b -> CppBoolLit b
   GoString s -> CppStringLit s
+  GoRawString s -> CppStringLit s
+  GoRune c -> CppCharLit c
   GoNil -> CppNullPtr
   _ -> CppIntLit 0
 
