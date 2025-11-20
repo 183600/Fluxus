@@ -45,6 +45,7 @@ typeMappingIndependentSpecs = do
   declarationGenerationSpec
   pythonGlobalSpec
   analysisFeedbackSpec
+  identifierSanitizationSpec
 
 expressionGenerationSpec :: Spec
 expressionGenerationSpec = describe "Expression generation" $ do
@@ -1205,6 +1206,51 @@ analysisFeedbackSpec = describe "Analysis annotation integration" $ do
         expectationFailure $ "Code generation failed: " <> show failure
 
 -- Runtime compilation specs ---------------------------------------------------
+
+identifierSanitizationSpec :: Spec
+identifierSanitizationSpec = describe "Identifier sanitization" $ do
+  it "renames Python identifiers that collide with C++ keywords" $ do
+    let funcDef = PythonFuncDef
+          { pyFuncName = Identifier "double"
+          , pyFuncDecorators = []
+          , pyFuncParams = []
+          , pyFuncReturns = Nothing
+          , pyFuncBody = [noLoc (PyReturn (Just (noLoc (PyLiteral (PyInt 2)))))]
+          , pyFuncDoc = Nothing
+          , pyFuncIsAsync = False
+          }
+        moduleBody =
+          [ noLoc (PyFuncDef funcDef)
+          , noLoc (PyExprStmt (noLoc (PyCall (noLoc (PyVar (Identifier "double"))) [])))
+          ]
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = moduleBody
+              }
+        sanitizedName = "double_fluxus"
+        isSanitizedFunction decl = case decl of
+          CppFunction name _ _ _ -> name == sanitizedName
+          _ -> False
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let unit = cgrUnit res
+            decls = cppDeclarations unit
+        any isSanitizedFunction decls `shouldBe` True
+        case find Shared.isMainFunction decls of
+          Just (CppFunction _ _ _ body) -> do
+            let callTargets =
+                  [ func
+                  | CppExprStmt (CppCall func args) <- body
+                  , null args
+                  ]
+            (CppVar sanitizedName `elem` callTargets) `shouldBe` True
+          _ -> expectationFailure "Expected generated main function"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
 
 pythonRuntimeSpec :: Spec
 pythonRuntimeSpec = describe "Python end-to-end compilation" $ do

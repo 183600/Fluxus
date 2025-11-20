@@ -43,6 +43,7 @@ import Fluxus.CodeGen.CPP.AST
   , CppUnit(..)
   )
 import Fluxus.CodeGen.CPP.Go (generateCppFromGo)
+import Fluxus.CodeGen.CPP.IdentifierSanitizer (sanitizeCppUnit)
 import Fluxus.CodeGen.CPP.Monad
   ( CppCodeGen
   , CppGenConfig(..)
@@ -71,7 +72,8 @@ generateCppWithAnnotations config annotations ast =
           case ast of
             Left pyAst -> generateCppFromPython pyAst
             Right goAst -> generateCppFromGo goAst
+      sanitizedUnit = sanitizeCppUnit unit
       fatalErrors = cgsFatalErrors finalState
   in if null fatalErrors
-       then Right (CppCodeGenResult unit diagnostics)
+       then Right (CppCodeGenResult sanitizedUnit diagnostics)
        else Left (CppCodeGenFailure fatalErrors diagnostics)
