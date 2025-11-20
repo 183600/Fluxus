@@ -34,6 +34,7 @@ spec = describe "Go code generation" $ do
   goPrintingSpec
   goConcurrencySpec
   goErrorReportingSpec
+  goIdentifierSpec
   goRuntimeSpec
   helperSpec
 
@@ -108,6 +109,55 @@ goErrorReportingSpec = describe "error reporting" $
             hasDescription = any (T.isInfixOf descriptionSnippet) messages
         hasLocation `shouldBe` True
         hasDescription `shouldBe` True
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+goIdentifierSpec :: Spec
+goIdentifierSpec = describe "Identifier sanitization" $
+  it "renames Go identifiers that collide with C++ keywords" $ do
+    let doubleFunc = GoFunction
+          { goFuncName = Just (Identifier "double")
+          , goFuncParams =
+              [ GoField
+                  { goFieldNames = [Identifier "x"]
+                  , goFieldType = noLoc (GoBasicType (Identifier "int"))
+                  , goFieldTag = Nothing
+                  }
+              ]
+          , goFuncResults =
+              [ GoField
+                  { goFieldNames = []
+                  , goFieldType = noLoc (GoBasicType (Identifier "int"))
+                  , goFieldTag = Nothing
+                  }
+              ]
+          , goFuncBody = Just (noLoc (GoBlock [noLoc (GoReturn [noLoc (GoBinaryOp OpAdd xExpr xExpr)])]))
+          }
+        mainFunc = GoFunction
+          { goFuncName = Just (Identifier "main")
+          , goFuncParams = []
+          , goFuncResults = []
+          , goFuncBody = Just (noLoc (GoBlock [noLoc (GoExprStmt callExpr)]))
+          }
+        xExpr = noLoc (GoIdent (Identifier "x"))
+        callExpr = noLoc (GoCall (noLoc (GoIdent (Identifier "double"))) [noLoc (GoLiteral (GoInt 21))])
+        ast = goAstWithDecls [noLoc (GoFuncDecl doubleFunc), noLoc (GoFuncDecl mainFunc)]
+        sanitizedName = "double_fluxus"
+        isSanitized decl = case decl of
+          CppFunction name _ _ _ -> name == sanitizedName
+          _ -> False
+    case generateCpp Shared.testCppConfig (Right ast) of
+      Right res -> do
+        let unit = cgrUnit res
+            decls = cppDeclarations unit
+        any isSanitized decls `shouldBe` True
+        case find Shared.isMainFunction decls of
+          Just (CppFunction _ _ _ body) -> do
+            let callTargets =
+                  [ func
+                  | CppExprStmt (CppCall func _) <- body
+                  ]
+            (CppVar sanitizedName `elem` callTargets) `shouldBe` True
+          _ -> expectationFailure "expected generated main function"
       Left failure -> expectationFailure $ "Code generation failed: " <> show failure
 
 goAstWithDecls :: [Located GoDecl] -> GoAST
@@ -267,7 +317,7 @@ goRuntimeTests =
             [ "fmt.Println(double(21))"
             ]
       , grtExpectedStdOut = "42\n"
-      , grtPendingReason = Just "C++ codegen does not yet escape Go identifiers that collide with C++ keywords"
+      , grtPendingReason = Nothing
       }
   , GoRuntimeTest
       { grtName = "compiles go nested functions"
@@ -284,7 +334,7 @@ goRuntimeTests =
             [ "fmt.Println(quad(3))"
             ]
       , grtExpectedStdOut = "12\n"
-      , grtPendingReason = Just "C++ codegen does not yet escape Go identifiers that collide with C++ keywords"
+      , grtPendingReason = Nothing
       }
   , GoRuntimeTest
       { grtName = "compiles go factorial recursion"
