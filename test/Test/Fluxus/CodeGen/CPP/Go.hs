@@ -32,6 +32,8 @@ import qualified Test.Fluxus.CodeGen.CPP.Shared as Shared
 spec :: Spec
 spec = describe "Go code generation" $ do
   goPrintingSpec
+  goLiteralSpec
+  goControlFlowSpec
   goConcurrencySpec
   goErrorReportingSpec
   goIdentifierSpec
@@ -72,6 +74,109 @@ goPrintingSpec = describe "fmt translation" $ do
               _ -> expectationFailure "expected fmt.Printf to produce expression statement"
           _ -> expectationFailure "expected generated main function"
       Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+goLiteralSpec :: Spec
+goLiteralSpec = describe "literal lowering" $ do
+  it "translates Go array composite literals" $ do
+    let intType = noLoc (GoBasicType (Identifier "int"))
+        arrayType = noLoc (GoArrayType (noLoc (GoLiteral (GoInt 3))) intType)
+        arrayLiteral = noLoc (GoCompositeLit (Just arrayType) (map (noLoc . GoLiteral . GoInt) [1, 2, 3]))
+        stmt = noLoc (GoDefine [Identifier "values"] [arrayLiteral])
+        ast = Shared.goAstWithMain [stmt]
+    case generateCpp Shared.testCppConfig (Right ast) of
+      Right res -> do
+        body <- extractMainBody (cgrUnit res)
+        let hasArrayInit = any isArrayInitializer (flattenStmts body)
+        hasArrayInit `shouldBe` True
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+  it "translates Go slice composite literals" $ do
+    let intType = noLoc (GoBasicType (Identifier "int"))
+        sliceType = noLoc (GoSliceType intType)
+        sliceLiteral = noLoc (GoCompositeLit (Just sliceType) (map (noLoc . GoLiteral . GoInt) [4, 5, 6]))
+        stmt = noLoc (GoDefine [Identifier "items"] [sliceLiteral])
+        ast = Shared.goAstWithMain [stmt]
+    case generateCpp Shared.testCppConfig (Right ast) of
+      Right res -> do
+        body <- extractMainBody (cgrUnit res)
+        let hasSliceInit = any isSliceInitializer (flattenStmts body)
+        hasSliceInit `shouldBe` True
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+  it "translates Go map literals" $ do
+    let intType = noLoc (GoBasicType (Identifier "int"))
+        mapType = noLoc (GoMapType intType intType)
+        entries =
+          [ (noLoc (GoLiteral (GoInt 1)), noLoc (GoLiteral (GoInt 10)))
+          , (noLoc (GoLiteral (GoInt 2)), noLoc (GoLiteral (GoInt 20)))
+          ]
+        mapLiteral = noLoc (GoMapLit mapType entries)
+        stmt = noLoc (GoDefine [Identifier "lookup"] [mapLiteral])
+        ast = Shared.goAstWithMain [stmt]
+    case generateCpp Shared.testCppConfig (Right ast) of
+      Right res -> do
+        body <- extractMainBody (cgrUnit res)
+        let hasMapInit = any isMapInitializer (flattenStmts body)
+        hasMapInit `shouldBe` True
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+goControlFlowSpec :: Spec
+goControlFlowSpec = describe "control flow lowering" $
+  it "emits C++ break and continue statements" $ do
+    let loopBody = noLoc (GoBlock [noLoc (GoContinue Nothing), noLoc (GoBreak Nothing)])
+        stmt = noLoc (GoFor Nothing loopBody)
+        ast = Shared.goAstWithMain [stmt]
+    case generateCpp Shared.testCppConfig (Right ast) of
+      Right res -> do
+        body <- extractMainBody (cgrUnit res)
+        let lowered = flattenStmts body
+        (CppContinue `elem` lowered) `shouldBe` True
+        (CppBreak `elem` lowered) `shouldBe` True
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+extractMainBody :: CppUnit -> Expectation [CppStmt]
+extractMainBody unit =
+  case find Shared.isMainFunction (cppDeclarations unit) of
+    Just (CppFunction _ _ _ body) -> pure body
+    _ -> do
+      expectationFailure "expected generated main function"
+      pure []
+
+flattenStmts :: [CppStmt] -> [CppStmt]
+flattenStmts = concatMap flattenStmt
+  where
+    flattenStmt stmt =
+      stmt : case stmt of
+        CppStmtSeq ss -> concatMap flattenStmt ss
+        CppBlock ss -> concatMap flattenStmt ss
+        CppIf _ thenSs elseSs -> concatMap flattenStmt (thenSs ++ elseSs)
+        CppWhile _ body -> concatMap flattenStmt body
+        CppFor mInit _ _ body -> maybe [] flattenStmt mInit ++ concatMap flattenStmt body
+        CppForRange _ _ body -> concatMap flattenStmt body
+        _ -> []
+
+isArrayInitializer :: CppStmt -> Bool
+isArrayInitializer stmt = case stmt of
+  CppDecl (CppVariable "values" _ (Just (CppBracedInit (CppStdArray CppInt 3) exprs))) ->
+    exprs == map (CppLiteral . CppIntLit) [1, 2, 3]
+  _ -> False
+
+isSliceInitializer :: CppStmt -> Bool
+isSliceInitializer stmt = case stmt of
+  CppDecl (CppVariable "items" _ (Just (CppBracedInit (CppVector CppInt) exprs))) ->
+    exprs == map (CppLiteral . CppIntLit) [4, 5, 6]
+  _ -> False
+
+isMapInitializer :: CppStmt -> Bool
+isMapInitializer stmt = case stmt of
+  CppDecl (CppVariable "lookup" _ (Just (CppBracedInit (CppUnorderedMap CppInt CppInt) pairs))) ->
+    length pairs == 2 && all isExpectedPair (zip pairs [ (1,10), (2,20) ])
+  _ -> False
+  where
+    isExpectedPair (expr, (keyVal, valueVal)) = case expr of
+      CppCall (CppVar "std::make_pair") [CppLiteral (CppIntLit key), CppLiteral (CppIntLit value)] ->
+        key == keyVal && value == valueVal
+      _ -> False
 
 goConcurrencySpec :: Spec
 goConcurrencySpec = describe "concurrency runtime selection" $ do

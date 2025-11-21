@@ -22,6 +22,9 @@
   - 影响：导致编译失败，无法正确处理`!=`运算符
   - 修复：将`OpNotEq`改为`OpNe`以匹配AST定义
 
+- **[提升]** Go → C++ 后端现已支持数组/切片/映射复合字面量以及 `break`/`continue` 语句的直接降级，
+  从而覆盖更多常见的 Go 控制流与数据构造模式。
+
 #### 代码改进
 - 在 `src/Fluxus/CodeGen/CPP.hs` 中添加了 `PyComparison` 模式匹配
 - 实现了 `mapComparisonOp` 函数用于运算符映射
