@@ -171,7 +171,29 @@ fluxus --go -O2 examples/go/fibonacci.go -o fibonacci_go
 
 ### 输出等价性验证（Python / Go）
 
-要验证 `fluxus --python -O2` 与 `python` 的执行结果一致，可以手动运行：
+#### 自动脚本（推荐）
+
+```bash
+chmod +x verify_python_to_cpp.sh
+
+# 运行默认示例矩阵（多个 Python/Go 文件）
+./verify_python_to_cpp.sh
+
+# 验证任意 Python 脚本（示例：xxx.py）
+./verify_python_to_cpp.sh path/to/xxx.py
+
+# 同时验证多个 Python / Go 文件
+./verify_python_to_cpp.sh foo.py examples/go/simple_hello.go
+```
+
+脚本会自动构建最新的 Fluxus 编译器，并针对传入的每个文件依次执行：
+1. `python3 file.py`（或 `go run file.go`）
+2. `fluxus --python -O2 file.py -o <artifact>` / `fluxus --go -O2 file.go -o <artifact>`
+3. 比较两次执行的标准输出，确保完全一致
+
+没有传入文件时会回退到仓库内置的示例列表；如果系统缺少 Go 工具链，会跳过对应测试并在摘要中提示。脚本会把完整的 Fluxus 命令打印出来，便于复现。想要保留生成的可执行文件与工作目录，可在运行前设置 `KEEP_FLUXUS_VERIFY_ARTIFACTS=1`。
+
+#### 手动比对
 
 ```bash
 python3 examples/python/fibonacci.py
@@ -179,19 +201,7 @@ fluxus --python -O2 examples/python/fibonacci.py -o fibonacci
 ./fibonacci
 ```
 
-两个命令的标准输出应当完全一致，表示 Fluxus 生成的 C++ 可执行文件与原脚本行为匹配。仓库还提供了自动化脚本来批量完成此类验证：
-
-```bash
-chmod +x verify_python_to_cpp.sh
-./verify_python_to_cpp.sh
-```
-
-该脚本会：
-1. 构建最新的 Fluxus 编译器
-2. 对多个 Python 示例依次执行 `python3 file.py` 与 `fluxus --python -O2 file.py -o <artifact>`，并比较输出
-3. 如果系统安装了 Go 工具链 (`go run` 可用)，同步验证 `fluxus --go -O2` 与 `go run` 的输出
-
-验证过程中会打印完整的 Fluxus 命令（例如 `fluxus --python -O2 simple_test.py -o simple_test_<hash>_fluxus --work-dir ...`），方便与手工执行保持一致。若希望保留生成的中间文件，可在运行脚本前设置 `KEEP_FLUXUS_VERIFY_ARTIFACTS=1`。
+将 `examples/python/fibonacci.py` 替换为任意 `xxx.py` 即可验证其它脚本；`-o fibonacci` 也可以替换成你期望的输出文件名（例如 `-o fast_fib`）。对于 Go 代码，同样可以对比 `go run file.go` 与 `fluxus --go -O2 file.go -o your_binary` 的输出，确保生成的 C++ 可执行文件与原生解释器行为一致。
 
 ### 配置选项
 

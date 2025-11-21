@@ -25,6 +25,42 @@ SKIPPED_TESTS=0
 declare -a FAILED_TEST_NAMES=()
 declare -a GENERATED_BINARIES=()
 
+declare -a DEFAULT_PYTHON_TESTS=(
+  "simple_test.py"
+  "fibonacci.py"
+  "factorial.py"
+  "simple_math.py"
+  "simple_function.py"
+  "simple_loop.py"
+  "simple_py.py"
+  "print_test.py"
+  "examples/python/fibonacci.py"
+)
+
+declare -a DEFAULT_GO_TESTS=(
+  "examples/go/simple_hello.go"
+)
+
+declare -a REQUESTED_PYTHON_TESTS=()
+declare -a REQUESTED_GO_TESTS=()
+declare -a PYTHON_TESTS=()
+declare -a GO_TESTS=()
+CUSTOM_TARGETS=0
+
+show_usage() {
+  cat <<'EOF'
+用法: ./verify_python_to_cpp.sh [files...]
+
+  ./verify_python_to_cpp.sh                   # 运行默认示例矩阵
+  ./verify_python_to_cpp.sh path/to/xxx.py    # 验证单个 Python 文件
+  ./verify_python_to_cpp.sh foo.py bar.go     # 同时验证多个 Python/Go 文件
+
+传入一个或多个 .py/.go 文件即可执行定制化的等价性验证；
+如果不提供参数，则运行仓库内置的示例集。
+可通过 PYTHON_CMD/GO_CMD/FLUXUS_BIN 环境变量覆盖默认命令。
+EOF
+}
+
 if command -v timeout >/dev/null 2>&1; then
   TIMEOUT_CMD=(timeout "${TIMEOUT_SECONDS}s")
 else
@@ -245,25 +281,68 @@ test_go_file() {
   fi
 }
 
-PYTHON_TESTS=(
-  "simple_test.py"
-  "fibonacci.py"
-  "factorial.py"
-  "simple_math.py"
-  "simple_function.py"
-  "simple_loop.py"
-  "simple_py.py"
-  "print_test.py"
-  "examples/python/fibonacci.py"
-)
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)
+      show_usage
+      exit 0
+      ;;
+    -* )
+      echo -e "${RED}未知选项: ${arg}${NC}"
+      show_usage
+      exit 1
+      ;;
+    * )
+      CUSTOM_TARGETS=1
+      if [[ "$arg" == *.py ]]; then
+        REQUESTED_PYTHON_TESTS+=("$arg")
+      elif [[ "$arg" == *.go ]]; then
+        REQUESTED_GO_TESTS+=("$arg")
+      else
+        echo -e "${RED}不支持的文件类型: ${arg}${NC}"
+        exit 1
+      fi
+      ;;
+  esac
+done
 
-GO_TESTS=(
-  "examples/go/simple_hello.go"
-)
+if [ "$CUSTOM_TARGETS" -eq 1 ]; then
+  if [ "${#REQUESTED_PYTHON_TESTS[@]}" -eq 0 ] && [ "${#REQUESTED_GO_TESTS[@]}" -eq 0 ]; then
+    echo -e "${RED}未提供可识别的 .py 或 .go 文件${NC}"
+    show_usage
+    exit 1
+  fi
+  PYTHON_TESTS=("${REQUESTED_PYTHON_TESTS[@]}")
+  GO_TESTS=("${REQUESTED_GO_TESTS[@]}")
+else
+  PYTHON_TESTS=("${DEFAULT_PYTHON_TESTS[@]}")
+  GO_TESTS=("${DEFAULT_GO_TESTS[@]}")
+fi
 
 echo "=========================================="
 echo "Fluxus Python/Go → C++ 输出等价性验证"
 echo "=========================================="
+echo
+
+if [ "$CUSTOM_TARGETS" -eq 1 ]; then
+  echo "使用自定义验证目标:"
+  if [ "${#PYTHON_TESTS[@]}" -gt 0 ]; then
+    echo "  Python (${#PYTHON_TESTS[@]} 个):"
+    for py in "${PYTHON_TESTS[@]}"; do
+      printf '    - %s\n' "$py"
+    done
+  fi
+  if [ "${#GO_TESTS[@]}" -gt 0 ]; then
+    echo "  Go (${#GO_TESTS[@]} 个):"
+    for go_file in "${GO_TESTS[@]}"; do
+      printf '    - %s\n' "$go_file"
+    done
+  fi
+else
+  echo "使用默认示例矩阵: ${#PYTHON_TESTS[@]} 个 Python 文件, ${#GO_TESTS[@]} 个 Go 文件"
+  echo "提示: 传入 .py/.go 路径可以执行定制化验证"
+fi
+
 echo
 
 echo "清理旧的工作目录..."
