@@ -880,7 +880,8 @@ declarationGenerationSpec = describe "Declaration generation" $ do
                   attrName `shouldBe` "value"
                   attrType `shouldBe` CppLongLong
                   initializer `shouldBe` CppLiteral (CppIntLit 10)
-                  methodName `shouldBe` "double"
+                  let sanitizedMethodName = "double_fluxus"
+                  methodName `shouldBe` sanitizedMethodName
                   returnType `shouldBe` CppAuto
                   params `shouldBe` [CppParam "amount" CppAuto Nothing]
                   listToMaybe [expr | CppReturn (Just expr) <- body]

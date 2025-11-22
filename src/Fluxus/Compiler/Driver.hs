@@ -338,10 +338,6 @@ platformCompilerFallbacks = \case
   Darwin_ARM64 -> map T.pack ["clang++-16", "clang++-15", "g++"]
   Windows_x86_64 -> map T.pack ["clang-cl", "cl.exe", "g++"]
 
-appendMissing :: Eq a => [a] -> [a] -> [a]
-appendMissing existing defaults =
-  existing ++ [value | value <- defaults, value `notElem` existing]
-
 applyPlatformDefaults :: CompilerConfig -> CompilerConfig
 applyPlatformDefaults config =
   let target = ccTargetPlatform config
@@ -349,12 +345,23 @@ applyPlatformDefaults config =
         if T.null (ccCppCompiler config)
           then platformPreferredCompiler target
           else ccCppCompiler config
+      resolvedIncludePaths = resolveList baseIncludeDefaults (platformIncludeDefaults target) (ccIncludePaths config)
+      resolvedLibraryPaths = resolveList baseLibraryDefaults (platformLibraryDefaults target) (ccLibraryPaths config)
+      resolvedLinkedLibs = resolveList baseLinkedDefaults (platformLinkedLibDefaults target) (ccLinkedLibraries config)
   in config
        { ccCppCompiler = resolvedCompiler
-       , ccIncludePaths = appendMissing (ccIncludePaths config) (platformIncludeDefaults target)
-       , ccLibraryPaths = appendMissing (ccLibraryPaths config) (platformLibraryDefaults target)
-       , ccLinkedLibraries = appendMissing (ccLinkedLibraries config) (platformLinkedLibDefaults target)
+       , ccIncludePaths = resolvedIncludePaths
+       , ccLibraryPaths = resolvedLibraryPaths
+       , ccLinkedLibraries = resolvedLinkedLibs
        }
+  where
+    baseIncludeDefaults = ccIncludePaths defaultConfig
+    baseLibraryDefaults = ccLibraryPaths defaultConfig
+    baseLinkedDefaults = ccLinkedLibraries defaultConfig
+
+    resolveList base defaults current
+      | current == base = defaults
+      | otherwise = current
 
 -- | Default compiler configuration
 defaultConfig :: CompilerConfig

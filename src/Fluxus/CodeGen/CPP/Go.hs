@@ -1,5 +1,5 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Fluxus.CodeGen.CPP.Go
   ( generateCppFromGo
@@ -521,7 +521,12 @@ generateGoForPost (Located span inner) = case inner of
 generateGoExpr :: Located GoExpr -> CppCodeGen CppExpr
 generateGoExpr (Located span expr) = case expr of
   GoLiteral lit -> pure $ CppLiteral $ mapGoLiteral lit
-  GoIdent (Identifier name) -> pure $ CppVar name
+  GoIdent (Identifier name) ->
+    pure $ case name of
+      "true" -> CppLiteral (CppBoolLit True)
+      "false" -> CppLiteral (CppBoolLit False)
+      "nil" -> CppLiteral CppNullPtr
+      _ -> CppVar name
   GoBinaryOp op left right -> do
     cppLeft <- generateGoExpr left
     cppRight <- generateGoExpr right
@@ -883,7 +888,6 @@ mapGoLiteral = \case
   GoRawString s -> CppStringLit s
   GoRune c -> CppCharLit c
   GoNil -> CppNullPtr
-  _ -> CppIntLit 0
 
 mapGoBinaryOp :: BinaryOp -> Text
 mapGoBinaryOp = \case
