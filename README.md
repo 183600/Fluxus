@@ -193,6 +193,27 @@ chmod +x verify_python_to_cpp.sh
 
 没有传入文件时会回退到仓库内置的示例列表；如果系统缺少 Go 工具链，会跳过对应测试并在摘要中提示。脚本会把完整的 Fluxus 命令打印出来，便于复现。想要保留生成的可执行文件与工作目录，可在运行前设置 `KEEP_FLUXUS_VERIFY_ARTIFACTS=1`。
 
+#### 快速单文件验证（镜像 `fluxus --python -O2 xxx.py -o fibonacci`）
+
+需要快速确认 `fluxus --python -O2 xxx.py -o fibonacci` 是否与 `python xxx.py` 获得完全一样的输出？可以使用提供的 **`quick_equivalence_check.sh`**：
+
+```bash
+chmod +x quick_equivalence_check.sh
+
+# 直接验证 fibonacci 示例（同时运行 python/go 版本）
+./quick_equivalence_check.sh
+
+# 针对任意 Python/Go 文件执行一次性对比
+./quick_equivalence_check.sh path/to/xxx.py other_demo.go
+```
+
+该脚本会自动执行以下流程：
+1. 运行 `python xxx.py`（或 `go run foo.go`）收集基线输出；
+2. 构建并运行 `fluxus --python -O2 xxx.py -o fibonacci`（或 `fluxus --go -O2 foo.go -o fibonacci_go`）；
+3. 将两次标准输出逐行比较，确认项目的 Python/Go→C++ 转译能力是否满足需求。
+
+默认输出二进制名称分别为 `fibonacci` 与 `fibonacci_go`，可通过环境变量 `FLUXUS_EQ_PY_OUTPUT` / `FLUXUS_EQ_GO_OUTPUT` 自定义；若希望保留生成的二进制方便后续分析，可传入 `KEEP_FLUXUS_EQ_ARTIFACTS=1`。
+
 #### 手动比对
 
 ```bash
