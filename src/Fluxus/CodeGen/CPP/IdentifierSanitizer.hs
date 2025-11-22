@@ -180,12 +180,19 @@ startsWithForbiddenUnderscore txt = case T.uncons txt of
     Nothing -> False
   _ -> False
 
+isPythonDunder :: Text -> Bool
+isPythonDunder txt =
+  T.length txt >= 4 &&
+  "__" `T.isPrefixOf` txt &&
+  "__" `T.isSuffixOf` txt
+
 -- | Sanitize a single identifier.
 sanitizeIdentifier :: Text -> Text
 sanitizeIdentifier name
   | T.null name = fallbackName
   | "::" `T.isInfixOf` name = name
   | T.any isSpace name = name
+  | isPythonDunder name = name
   | otherwise = finalize adjusted
   where
     adjusted = applyDigitRule $ applyUnderscoreRule name
