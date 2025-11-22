@@ -76,7 +76,10 @@ generateCppFromGo (GoAST goPackage) = do
 
 formatSourceSpanShort :: SourceSpan -> Text
 formatSourceSpanShort SourceSpan { spanFilename = filename, spanStart = SourcePos line col } =
-  filename <> ":" <> T.pack (show line) <> ":" <> T.pack (show col)
+  filename <> ":" <> textShow line <> ":" <> textShow col
+
+textShow :: Show a => a -> Text
+textShow = T.pack . show
 
 wrapStatements :: [CppStmt] -> CppStmt
 wrapStatements [] = CppStmtSeq []

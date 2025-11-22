@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Fluxus.CodeGen.CPP.IdentifierSanitizer
   ( sanitizeCppUnit
