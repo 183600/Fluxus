@@ -133,9 +133,19 @@ generatePythonStmt scope (Located span stmt) =
           if strict
             then unsupportedStatement reportFatalNotImplemented span msg
             else unsupportedStatement reportNotImplemented span msg
+    PyAnnAssign target typeExpr mValue ->
+      handleAnnotatedAssignment scope span target typeExpr mValue
     PyReturn mexpr -> do
       mcppExpr <- mapM generatePythonExpr mexpr
       return $ CppReturn mcppExpr
+    PyAssert condition message ->
+      generatePythonAssert span condition message
+    PyBreak ->
+      return CppBreak
+    PyContinue ->
+      return CppContinue
+    PyPass ->
+      return cppNoop
     PyIf condition thenStmts elseStmts -> do
       cppCond <- generatePythonExpr condition
       cppThen <- mapM (generatePythonStmt scope) thenStmts
@@ -168,6 +178,17 @@ generatePythonStmt scope (Located span stmt) =
       generatePythonWith scope span items bodyStmts
     PyTry tryBody excepts elseStmts finallyStmts ->
       generatePythonTry scope span tryBody excepts elseStmts finallyStmts
+    PyImport imports -> do
+      emitInfo $
+        "Ignoring Python import at " <> formatSpan span <> ": "
+        <> T.intercalate ", " (map (describeImport . locValue) imports)
+      return cppNoop
+    PyGlobal names ->
+      buildRuntimeFallback span ("Python 'global' statement (" <> renderIdentifiers names <> ") requires runtime fallback")
+    PyNonlocal names ->
+      buildRuntimeFallback span ("Python 'nonlocal' statement (" <> renderIdentifiers names <> ") requires runtime fallback")
+    PyDel _ ->
+      buildRuntimeFallback span "Python 'del' statement requires runtime fallback"
     PyAsyncWith _ _ ->
       buildRuntimeFallback span "Python 'async with' statement requires runtime fallback"
     PyAsyncFor _ _ _ _ ->
@@ -300,6 +321,36 @@ generatePythonStmt scope (Located span stmt) =
             else do
               updateSymbolTableWith refinedType
               return $ declarationStmt refinedType
+
+    handleAnnotatedAssignment :: PythonScope -> SourceSpan -> Located PythonPattern -> Located PythonTypeExpr -> Maybe (Located PythonExpr) -> CppCodeGen CppStmt
+    handleAnnotatedAssignment scope' loc target typeExpr mValue =
+      case locValue target of
+        PatVar (Identifier name) -> do
+          cppType <- mapPythonType typeExpr
+          mCppValue <- traverse generatePythonExpr mValue
+          symtab <- gets cgsSymbolTable
+          let alreadyDeclared = HM.member name symtab
+          modify $ \s -> s { cgsSymbolTable = HM.insert name cppType (cgsSymbolTable s) }
+          case scope' of
+            ScopeModule ->
+              if alreadyDeclared
+                then case mCppValue of
+                  Just expr -> pure $ CppExprStmt (CppBinary "=" (CppVar name) expr)
+                  Nothing -> pure cppNoop
+                else do
+                  recordHoistedGlobal name
+                  addDeclaration $ CppVariable name cppType mCppValue
+                  emitInfo $ "Declared annotated module-level variable " <> name
+                  pure cppNoop
+            ScopeFunction ->
+              if alreadyDeclared
+                then case mCppValue of
+                  Just expr -> pure $ CppExprStmt (CppBinary "=" (CppVar name) expr)
+                  Nothing -> pure cppNoop
+                else pure $ CppDecl (CppVariable name cppType mCppValue)
+        _ -> do
+          let message = "Annotated assignment target is not supported: " <> T.pack (show (locValue target))
+          unsupportedStatement reportNotImplemented loc message
 
     handleTupleUnpacking :: PythonScope -> [Located PythonPattern] -> Located PythonExpr -> CppCodeGen CppStmt
     handleTupleUnpacking scope' patterns locatedExpr = do
@@ -460,6 +511,21 @@ generatePythonStmt scope (Located span stmt) =
             [single] -> single
             _ -> CppStmtSeq stmts
 
+    renderIdentifiers :: [Identifier] -> Text
+    renderIdentifiers names = T.intercalate ", " (map identifierText names)
+
+    describeImport :: PythonImport -> Text
+    describeImport importStmt = case importStmt of
+      ImportModule modName alias ->
+        moduleNameText modName <> maybe "" (" as " <>) (fmap identifierText alias)
+      ImportFrom modName items ->
+        moduleNameText modName <> ": " <> T.intercalate ", " (map renderItem items)
+      ImportFromStar modName ->
+        moduleNameText modName <> ".*"
+      where
+        renderItem (ident, mAlias) =
+          identifierText ident <> maybe "" (" as " <>) (fmap identifierText mAlias)
+
 generatePythonRaise :: SourceSpan -> Maybe (Located PythonExpr) -> Maybe (Located PythonExpr) -> CppCodeGen CppStmt
 generatePythonRaise _ Nothing _ = pure (CppThrow Nothing)
 generatePythonRaise _ (Just excExpr) mFrom = do
@@ -477,6 +543,14 @@ generatePythonRaise _ (Just excExpr) mFrom = do
     Nothing -> do
       cppExpr <- generatePythonExpr excExpr
       pure (CppThrow (Just cppExpr))
+
+generatePythonAssert :: SourceSpan -> Located PythonExpr -> Maybe (Located PythonExpr) -> CppCodeGen CppStmt
+generatePythonAssert span condition mMessage = do
+  cppCond <- generatePythonExpr condition
+  let baseMessage = "Python assertion failed at " <> formatSpan span
+      fullMessage = maybe baseMessage (\expr -> baseMessage <> ": " <> T.pack (show (locValue expr))) mMessage
+  failureStmt <- runtimeAbortStmt fullMessage
+  pure $ CppIf (CppUnary "!" cppCond) [failureStmt] []
 
 extractExceptionDetails :: Located PythonExpr -> Maybe (Text, Maybe (Located PythonExpr))
 extractExceptionDetails located@(Located _ expr) =
