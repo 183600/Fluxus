@@ -134,7 +134,7 @@ goControlFlowSpec = describe "control flow lowering" $
         (CppBreak `elem` lowered) `shouldBe` True
       Left failure -> expectationFailure $ "Code generation failed: " <> show failure
 
-extractMainBody :: CppUnit -> Expectation [CppStmt]
+extractMainBody :: CppUnit -> IO [CppStmt]
 extractMainBody unit =
   case find Shared.isMainFunction (cppDeclarations unit) of
     Just (CppFunction _ _ _ body) -> pure body

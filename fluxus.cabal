@@ -61,6 +61,7 @@ library
   other-modules:
     Fluxus.Internal.Types
     Fluxus.Internal.Monad
+    Fluxus.CodeGen.CPP.Go.TypeMapping
     Fluxus.Parser.Go.Parser.Common
     Fluxus.Parser.Go.Parser.Declarations
     Fluxus.Parser.Go.Parser.Expressions
