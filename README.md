@@ -369,6 +369,12 @@ export FLUXUS_VERBOSE=2               # 详细级别
 export FLUXUS_INTEROP=1               # 启用互操作
 ```
 
+### Linux 支持
+- 默认目标平台为 **linux-x86_64**，会自动附加 `/usr/include`、`/usr/local/include` 以及 `/usr/include/x86_64-linux-gnu` 等常用系统头文件路径
+- 链接阶段会附加 `/usr/lib`、`/usr/local/lib`、`/usr/lib/x86_64-linux-gnu` 等库路径，并默认链接 `stdc++`、`pthread`、`dl`、`m`
+- 当配置中包含 `pthread` 库时，Fluxus 会在编译与链接阶段同时传递 `-pthread`，以确保启用 POSIX 线程宏
+- 若系统仅安装了 `clang++-18/17/16/15` 等带版本号的驱动，Fluxus 会在找不到 `clang++` 时自动尝试这些变体，最终再回退到 `g++` 或 `c++`
+
 ## 🔧 开发
 
 ### 运行测试

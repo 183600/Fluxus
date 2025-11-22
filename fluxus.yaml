@@ -32,17 +32,21 @@ strict_mode: false
 include_paths:
   - "/usr/include"
   - "/usr/local/include"
+  - "/usr/include/x86_64-linux-gnu"
   - "/opt/homebrew/include"  # macOS Homebrew
 
 library_paths:
   - "/usr/lib"
   - "/usr/local/lib"
+  - "/usr/lib/x86_64-linux-gnu"
   - "/opt/homebrew/lib"      # macOS Homebrew
 
 # Libraries to link
 linked_libraries:
   - "stdc++"
   - "pthread"
+  - "dl"
+  - "m"
 
 # Development profile (uncomment to use)
 # source_language: "Python"

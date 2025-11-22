@@ -32,6 +32,7 @@ module Fluxus.Compiler.Driver
   , detectCompilerBinary
   , showTargetPlatform
   , resolveWorkPath
+  , applyPlatformDefaults
   ) where
 
 import Data.List (intercalate, foldl', partition, isPrefixOf, dropWhileEnd)
@@ -264,6 +265,97 @@ data CompilerState = CompilerState
 -- | Compiler monad stack
 type CompilerM = ReaderT CompilerConfig (StateT CompilerState (ExceptT CompilerError IO))
 
+platformPreferredCompiler :: TargetPlatform -> Text
+platformPreferredCompiler = \case
+  Linux_x86_64 -> "clang++"
+  Linux_ARM64 -> "clang++"
+  Darwin_x86_64 -> "clang++"
+  Darwin_ARM64 -> "clang++"
+  Windows_x86_64 -> "clang++"
+
+platformIncludeDefaults :: TargetPlatform -> [FilePath]
+platformIncludeDefaults = \case
+  Linux_x86_64 ->
+    [ "/usr/include"
+    , "/usr/local/include"
+    , "/usr/include/x86_64-linux-gnu"
+    ]
+  Linux_ARM64 ->
+    [ "/usr/include"
+    , "/usr/local/include"
+    , "/usr/include/aarch64-linux-gnu"
+    ]
+  Darwin_x86_64 ->
+    [ "/usr/local/include"
+    , "/opt/homebrew/include"
+    ]
+  Darwin_ARM64 ->
+    [ "/opt/homebrew/include"
+    , "/usr/local/include"
+    ]
+  Windows_x86_64 ->
+    [ "C:/Program Files/LLVM/include"
+    , "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/include"
+    ]
+
+platformLibraryDefaults :: TargetPlatform -> [FilePath]
+platformLibraryDefaults = \case
+  Linux_x86_64 ->
+    [ "/usr/lib"
+    , "/usr/local/lib"
+    , "/usr/lib/x86_64-linux-gnu"
+    ]
+  Linux_ARM64 ->
+    [ "/usr/lib"
+    , "/usr/local/lib"
+    , "/usr/lib/aarch64-linux-gnu"
+    ]
+  Darwin_x86_64 ->
+    [ "/usr/local/lib"
+    , "/opt/homebrew/lib"
+    ]
+  Darwin_ARM64 ->
+    [ "/opt/homebrew/lib"
+    , "/usr/local/lib"
+    ]
+  Windows_x86_64 ->
+    [ "C:/Program Files/LLVM/lib"
+    ]
+
+platformLinkedLibDefaults :: TargetPlatform -> [Text]
+platformLinkedLibDefaults = \case
+  Linux_x86_64 -> map T.pack ["stdc++", "pthread", "dl", "m"]
+  Linux_ARM64 -> map T.pack ["stdc++", "pthread", "dl", "m"]
+  Darwin_x86_64 -> map T.pack ["c++", "pthread"]
+  Darwin_ARM64 -> map T.pack ["c++", "pthread"]
+  Windows_x86_64 -> map T.pack ["stdc++"]
+
+platformCompilerFallbacks :: TargetPlatform -> [Text]
+platformCompilerFallbacks = \case
+  Linux_x86_64 -> map T.pack ["clang++-18", "clang++-17", "clang++-16", "clang++-15", "g++", "c++"]
+  Linux_ARM64 -> map T.pack ["clang++-18", "clang++-17", "clang++-16", "clang++-15", "g++", "c++"]
+  Darwin_x86_64 -> map T.pack ["clang++-16", "clang++-15", "g++"]
+  Darwin_ARM64 -> map T.pack ["clang++-16", "clang++-15", "g++"]
+  Windows_x86_64 -> map T.pack ["clang-cl", "cl.exe", "g++"]
+
+appendMissing :: Eq a => [a] -> [a] -> [a]
+appendMissing existing defaults =
+  existing ++ [value | value <- defaults, value `notElem` existing]
+
+applyPlatformDefaults :: CompilerConfig -> CompilerConfig
+applyPlatformDefaults config =
+  let target = ccTargetPlatform config
+      resolvedCompiler =
+        if T.null (ccCppCompiler config)
+          then platformPreferredCompiler target
+          else ccCppCompiler config
+  in config
+       { ccCppCompiler = resolvedCompiler
+       , ccIncludePaths = appendMissing (ccIncludePaths config) (platformIncludeDefaults target)
+       , ccLibraryPaths = appendMissing (ccLibraryPaths config) (platformLibraryDefaults target)
+       , ccLinkedLibraries = appendMissing (ccLinkedLibraries config) (platformLinkedLibDefaults target)
+       }
+
 -- | Default compiler configuration
 defaultConfig :: CompilerConfig
 defaultConfig = CompilerConfig
@@ -276,11 +368,11 @@ defaultConfig = CompilerConfig
   , ccEnableProfiler = False
   , ccEnableParallel = True
   , ccMaxConcurrency = 4
-  , ccIncludePaths = ["/usr/include", "/usr/local/include"]
-  , ccLibraryPaths = ["/usr/lib", "/usr/local/lib"]
-  , ccLinkedLibraries = ["stdc++", "pthread"]
+  , ccIncludePaths = platformIncludeDefaults Linux_x86_64
+  , ccLibraryPaths = platformLibraryDefaults Linux_x86_64
+  , ccLinkedLibraries = platformLinkedLibDefaults Linux_x86_64
   , ccCppStandard = "c++20"
-  , ccCppCompiler = "clang++"
+  , ccCppCompiler = platformPreferredCompiler Linux_x86_64
   , ccVerboseLevel = 0
   , ccWorkDirectory = Nothing
   , ccKeepIntermediates = False
@@ -353,7 +445,8 @@ detectCompilerBinary config = do
     Nothing -> tryFallbacks (ccCppCompiler config) fallbackOptions
   where
     fallbackOptions
-      | ccCppCompiler config == ccCppCompiler defaultConfig = ["g++", "c++"]
+      | ccCppCompiler config == platformPreferredCompiler (ccTargetPlatform config) =
+          platformCompilerFallbacks (ccTargetPlatform config)
       | otherwise = []
 
     locateBinary :: Text -> IO (Maybe Text)
@@ -987,6 +1080,7 @@ buildCppCompilerArgs config cppFile objFile = concat
   , if ccEnableDebugInfo config then ["-g"] else []
   , if ccEnableProfiler config then ["-pg"] else []
   , concatMap (\path -> ["-I", T.pack path]) (ccIncludePaths config)
+  , pthreadFlag config
   , ["-Wall", "-Wextra"]
   , if ccStrictMode config then ["-Werror"] else []
   ]
@@ -998,6 +1092,7 @@ buildLinkerArgs config objFiles outputPath = concat
   , ["-o", T.pack outputPath]
   , concatMap (\path -> ["-L", T.pack path]) (ccLibraryPaths config)
   , concatMap (\lib -> ["-l" <> lib]) (ccLinkedLibraries config)
+  , pthreadFlag config
   , if ccEnableProfiler config then ["-pg"] else []
   ]
 
@@ -1009,6 +1104,15 @@ optimizationFlags = \case
   O2 -> ["-O2"]
   O3 -> ["-O3", "-march=native"]
   Os -> ["-Os"]
+
+pthreadFlag :: CompilerConfig -> [Text]
+pthreadFlag config
+  | needsPthreadOption config = ["-pthread"]
+  | otherwise = []
+
+needsPthreadOption :: CompilerConfig -> Bool
+needsPthreadOption config =
+  any (\lib -> T.toLower lib == "pthread") (ccLinkedLibraries config)
 
 -- | Utility functions
 setCurrentPhase :: Text -> CompilerM ()
