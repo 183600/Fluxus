@@ -221,7 +221,7 @@ loadConfig args =
         Left err -> pure $ Left (renderConfigFileError err)
         Right configAfterFiles -> do
           configWithEnv <- applyEnvironmentOverrides configAfterFiles
-          let finalConfig = cliModifier configWithEnv
+          let finalConfig = applyPlatformDefaults (cliModifier configWithEnv)
           pure $ Right (LoadConfigSuccess finalConfig)
   where
     loadConfigFromSources :: CompilerConfig -> [(FilePath, Bool)] -> IO (Either ConfigFileError CompilerConfig)

@@ -43,7 +43,8 @@ spec = describe "Fluxus.Compiler.Config" $ do
       case parseCommandLineArgs ["--include", "/custom", "--include", "/custom"] of
         Right (CLICommandModify modifier _) -> do
           let updated = modifier defaultConfig
-          ccIncludePaths updated `shouldBe` ["/custom", "/usr/include", "/usr/local/include"]
+          ccIncludePaths updated `shouldBe`
+            ["/custom", "/usr/include", "/usr/local/include", "/usr/include/x86_64-linux-gnu"]
         Right _ -> expectationFailure "expected CLICommandModify for --include"
         Left err -> expectationFailure $ "failed to parse CLI args: " ++ err
 
