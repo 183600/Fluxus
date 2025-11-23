@@ -127,12 +127,14 @@ generatePythonStmt scope (Located span stmt) =
           handleSimpleAssignment scope varName locatedExpr
         [Located _ (PatTuple patElems)] ->
           handleTupleUnpacking scope patElems locatedExpr
-        _ -> do
-          let msg = "Multiple assignment targets (other than tuple unpacking) not implemented"
-          strict <- gets (cgcStrictMode . cgsConfig)
-          if strict
-            then unsupportedStatement reportFatalNotImplemented span msg
-            else unsupportedStatement reportNotImplemented span msg
+        _ | length patterns > 1 ->
+              handleChainedAssignment scope span patterns locatedExpr
+          | otherwise -> do
+              let msg = "Assignment target pattern is not supported"
+              strict <- gets (cgcStrictMode . cgsConfig)
+              if strict
+                then unsupportedStatement reportFatalNotImplemented span msg
+                else unsupportedStatement reportNotImplemented span msg
     PyAnnAssign target typeExpr mValue ->
       handleAnnotatedAssignment scope span target typeExpr mValue
     PyReturn mexpr -> do
@@ -321,6 +323,71 @@ generatePythonStmt scope (Located span stmt) =
             else do
               updateSymbolTableWith refinedType
               return $ declarationStmt refinedType
+
+    handleChainedAssignment :: PythonScope -> SourceSpan -> [Located PythonPattern] -> Located PythonExpr -> CppCodeGen CppStmt
+    handleChainedAssignment scope' loc targetPatterns valueExpr = do
+      case traverse extractVarName targetPatterns of
+        Nothing ->
+          unsupportedStatement reportNotImplemented loc "Chained assignment targets must be simple names"
+        Just [] -> pure cppNoop
+        Just names -> do
+          cppValue <- generatePythonExpr valueExpr
+          let defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated valueExpr)
+              contextLabel = case reverse names of
+                (lastName:_) -> "assignment to " <> lastName <> " (chained)"
+                [] -> "chained assignment"
+          refinedType <- refinePythonExprType contextLabel valueExpr defaultType
+          case scope' of
+            ScopeModule -> do
+              stmts <- generateModuleChainAssignments names refinedType cppValue
+              pure $ finalizeChainStatements stmts
+            ScopeFunction -> do
+              stmts <- generateFunctionChainAssignments names refinedType cppValue
+              pure $ finalizeChainStatements stmts
+
+    generateModuleChainAssignments :: [Text] -> CppType -> CppExpr -> CppCodeGen [CppStmt]
+    generateModuleChainAssignments names refinedType initialExpr =
+      go initialExpr (reverse names) []
+      where
+        go _ [] acc = pure (reverse acc)
+        go current (name:rest) acc = do
+          symtab <- gets cgsSymbolTable
+          let varExpr = CppVar name
+          if HM.member name symtab
+            then do
+              let stmt = CppExprStmt (CppBinary "=" varExpr current)
+              go varExpr rest (stmt:acc)
+            else do
+              modify $ \s -> s { cgsSymbolTable = HM.insert name refinedType (cgsSymbolTable s) }
+              recordHoistedGlobal name
+              addDeclaration $ CppVariable name refinedType (Just current)
+              go varExpr rest acc
+
+    generateFunctionChainAssignments :: [Text] -> CppType -> CppExpr -> CppCodeGen [CppStmt]
+    generateFunctionChainAssignments names refinedType initialExpr =
+      go initialExpr (reverse names) []
+      where
+        go _ [] acc = pure (reverse acc)
+        go current (name:rest) acc = do
+          symtab <- gets cgsSymbolTable
+          let varExpr = CppVar name
+          if HM.member name symtab
+            then do
+              let stmt = CppExprStmt (CppBinary "=" varExpr current)
+              go varExpr rest (stmt:acc)
+            else do
+              modify $ \s -> s { cgsSymbolTable = HM.insert name refinedType (cgsSymbolTable s) }
+              let decl = CppDecl (CppVariable name refinedType (Just current))
+              go varExpr rest (decl:acc)
+
+    finalizeChainStatements :: [CppStmt] -> CppStmt
+    finalizeChainStatements [] = cppNoop
+    finalizeChainStatements [single] = single
+    finalizeChainStatements stmts = CppStmtSeq stmts
+
+    extractVarName :: Located PythonPattern -> Maybe Text
+    extractVarName (Located _ (PatVar (Identifier name))) = Just name
+    extractVarName _ = Nothing
 
     handleAnnotatedAssignment :: PythonScope -> SourceSpan -> Located PythonPattern -> Located PythonTypeExpr -> Maybe (Located PythonExpr) -> CppCodeGen CppStmt
     handleAnnotatedAssignment scope' loc target typeExpr mValue =

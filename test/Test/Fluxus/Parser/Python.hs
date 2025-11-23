@@ -507,6 +507,19 @@ parserSpec = describe "Python Parser" $ do
               other -> expectationFailure $ "Expected assignment, found " <> show other
             _ -> expectationFailure "Expected single walrus assignment"
 
+      it "parses chained assignments" $
+        withParsedModule "alpha = beta = 42\n" $ \module_ ->
+          case pyModuleBody module_ of
+            [stmt] -> case locatedValue stmt of
+              PyAssign targets valueExpr -> do
+                length targets `shouldBe` 2
+                case map locValue targets of
+                  [PatVar (Identifier "alpha"), PatVar (Identifier "beta")] -> pure ()
+                  other -> expectationFailure $ "Unexpected targets: " <> show other
+                locValue valueExpr `shouldBe` PyLiteral (PyInt 42)
+              other -> expectationFailure $ "Expected assignment, found " <> show other
+            _ -> expectationFailure "Expected single chained assignment"
+
       it "respects bitwise operator precedence" $
         withParsedModule "mask = a | b & c\n" $ \module_ ->
           case pyModuleBody module_ of
