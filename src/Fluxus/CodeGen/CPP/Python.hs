@@ -160,11 +160,12 @@ generatePythonStmt scope (Located span stmt) =
     PyFor (Located _ (PatVar (Identifier varName))) iterExpr bodyStmts _ -> do
       symtab <- gets cgsSymbolTable
       let varAlreadyDeclared = HM.member varName symtab
-      unless varAlreadyDeclared $
-        modify $ \r -> r { cgsSymbolTable = HM.insert varName CppAuto (cgsSymbolTable r) }
       cppBody <- mapM (generatePythonStmt scope) bodyStmts
       case locatedValue iterExpr of
         PyCall (Located _ (PyVar (Identifier "range"))) rangeArgs -> do
+          unless varAlreadyDeclared $
+            modify $ 
+ -> r { cgsSymbolTable = HM.insert varName CppAuto (cgsSymbolTable r) }
           mSpec <- parseRangeArgs rangeArgs
           case mSpec of
             Nothing -> do
@@ -173,9 +174,8 @@ generatePythonStmt scope (Located span stmt) =
               return cppNoop
             Just spec -> buildRangeLoop varAlreadyDeclared varName cppBody spec
         _ -> do
-          let msg = "Only range() iteration is currently supported"
-          reportFatalUnsupported msg
-          return cppNoop
+          iterableInfo <- resolveIterableInfo iterExpr
+          buildIterableLoop span varName varAlreadyDeclared iterableInfo cppBody
     PyWith items bodyStmts ->
       generatePythonWith scope span items bodyStmts
     PyTry tryBody excepts elseStmts finallyStmts ->
@@ -577,6 +577,133 @@ generatePythonStmt scope (Located span stmt) =
           return $ case stmts of
             [single] -> single
             _ -> CppStmtSeq stmts
+
+    data IterableInfo = IterableInfo
+      { iiExpr :: CppExpr
+      , iiElementType :: Maybe CppType
+      , iiDescription :: Text
+      }
+
+    buildIterableLoop :: SourceSpan -> Text -> Bool -> IterableInfo -> [CppStmt] -> CppCodeGen CppStmt
+    buildIterableLoop loc varName varAlreadyDeclared info cppBody = do
+      symtab <- gets cgsSymbolTable
+      let existingType = HM.lookup varName symtab >>= knownVarType
+          candidateType =
+            if varAlreadyDeclared
+              then maybe (iiElementType info) Just existingType
+              else iiElementType info
+      case candidateType of
+        Nothing ->
+          buildRuntimeFallback loc ("Python 'for' iteration over " <> iiDescription info <> " requires a known element type")
+        Just targetType -> do
+          when (not varAlreadyDeclared) $
+            modify $ \s -> s { cgsSymbolTable = HM.insert varName targetType (cgsSymbolTable s) }
+          let prefixDecls =
+                if varAlreadyDeclared
+                  then []
+                  else [CppDecl (CppVariable varName targetType (Just (CppBracedInit targetType [])))]
+          loopVarName <- generateTempVar
+          let assignmentStmt = CppExprStmt (CppBinary "=" (CppVar varName) (CppVar loopVarName))
+              loopBody = assignmentStmt : cppBody
+              loopStmt = CppForRange loopVarName (iiExpr info) loopBody
+          pure $ case prefixDecls of
+            [] -> loopStmt
+            _  -> CppStmtSeq (prefixDecls ++ [loopStmt])
+
+    knownVarType :: CppType -> Maybe CppType
+    knownVarType ty =
+      case stripTypeQualifiers ty of
+        CppAuto -> Nothing
+        _ -> Just ty
+
+    resolveIterableInfo :: Located PythonExpr -> CppCodeGen IterableInfo
+    resolveIterableInfo located =
+      case locValue located of
+        PyList _ -> do
+          (vectorType, vectorExpr) <- generatePythonListLiteral located
+          pure $
+            IterableInfo
+              { iiExpr = vectorExpr
+              , iiElementType = extractListElementType vectorType
+              , iiDescription = "list literal"
+              }
+        PySet elems -> do
+          (setType, setExpr) <- generatePythonSetLiteral elems
+          pure $
+            IterableInfo
+              { iiExpr = setExpr
+              , iiElementType = extractSetElementType setType
+              , iiDescription = "set literal"
+              }
+        PyVar (Identifier name) -> do
+          symtab <- gets cgsSymbolTable
+          let mType = HM.lookup name symtab >>= deriveElementTypeFromCppType
+          pure $ IterableInfo (CppVar name) mType ("variable '" <> name <> "'")
+        _ -> do
+          expr <- generatePythonExpr located
+          let containerType = inferPythonExprCppTypeLocated located
+              elementType = containerType >>= deriveElementTypeFromCppType
+          pure $
+            IterableInfo
+              { iiExpr = expr
+              , iiElementType = elementType
+              , iiDescription = describeIterableSource located
+              }
+
+    extractListElementType :: CppType -> Maybe CppType
+    extractListElementType ty =
+      case stripTypeQualifiers ty of
+        CppVector elemType -> normalizeElementType elemType
+        _ -> Nothing
+
+    extractSetElementType :: CppType -> Maybe CppType
+    extractSetElementType ty =
+      case stripTypeQualifiers ty of
+        CppClassType name [elemType]
+          | name == "std::set" || name == "std::unordered_set" ->
+              normalizeElementType elemType
+        _ -> Nothing
+
+    normalizeElementType :: CppType -> Maybe CppType
+    normalizeElementType ty =
+      case stripTypeQualifiers ty of
+        CppAuto -> Nothing
+        other -> Just other
+
+    deriveElementTypeFromCppType :: CppType -> Maybe CppType
+    deriveElementTypeFromCppType ty =
+      case stripTypeQualifiers ty of
+        CppVector elemType ->
+          normalizeElementType elemType
+        CppClassType name params ->
+          case (name, params) of
+            ("std::vector", [elemType]) -> normalizeElementType elemType
+            ("std::list", [elemType]) -> normalizeElementType elemType
+            ("std::deque", [elemType]) -> normalizeElementType elemType
+            ("std::set", [elemType]) -> normalizeElementType elemType
+            ("std::unordered_set", [elemType]) -> normalizeElementType elemType
+            ("std::basic_string", _) -> Just CppChar
+            _ -> Nothing
+        CppString -> Just CppChar
+        _ -> Nothing
+
+    describeIterableSource :: Located PythonExpr -> Text
+    describeIterableSource (Located _ expr) =
+      case expr of
+        PyList _ -> "list literal"
+        PySet _ -> "set literal"
+        PyTuple _ -> "tuple literal"
+        PyDict _ -> "dict literal"
+        PyVar (Identifier name) -> "variable '" <> name <> "'"
+        PyCall inner _ ->
+          "call to " <> describeCall inner
+        _ -> "expression '" <> T.pack (show expr) <> "'"
+      where
+        describeCall (Located _ callExpr) =
+          case callExpr of
+            PyVar (Identifier name) -> name
+            PyAttribute _ (Identifier attr) -> attr
+            _ -> T.pack (show callExpr)
 
     renderIdentifiers :: [Identifier] -> Text
     renderIdentifiers names = T.intercalate ", " (map identifierText names)
@@ -1042,7 +1169,8 @@ generatePythonExpr (Located span expr) = case expr of
   PyTuple exprs -> do
     generatePythonTupleLiteral exprs
   PySet exprs -> do
-    generatePythonSetLiteral exprs
+    (_, setExpr) <- generatePythonSetLiteral exprs
+    return setExpr
   PyDict pairs -> do
     generatePythonDictLiteral pairs
   PyLambda params body -> do
@@ -1215,7 +1343,7 @@ generatePythonTupleLiteral exprs = do
   return $ CppCall (CppVar "std::make_tuple") cppExprs
 
 -- | Generate C++ code for Python set literals  
-generatePythonSetLiteral :: [Located PythonExpr] -> CppCodeGen CppExpr
+generatePythonSetLiteral :: [Located PythonExpr] -> CppCodeGen (CppType, CppExpr)
 generatePythonSetLiteral exprs = do
   addInclude "<set>"
   cppExprs <- mapM generatePythonExpr exprs
@@ -1224,9 +1352,8 @@ generatePythonSetLiteral exprs = do
         (e:es) -> fromMaybe CppAuto $
           foldM unifyElementType (fromMaybe CppAuto $ inferPythonExprCppTypeLocated e)
             (map (fromMaybe CppAuto . inferPythonExprCppTypeLocated) es)
-  let setType = CppClassType "std::set" [elementType]
-  return $ CppBracedInit setType cppExprs
-
+      setType = CppClassType "std::set" [elementType]
+  pure (setType, CppBracedInit setType cppExprs)
 -- | Generate C++ code for Python dict literals
 generatePythonDictLiteral :: [(Located PythonExpr, Located PythonExpr)] -> CppCodeGen CppExpr
 generatePythonDictLiteral pairs = do
@@ -1578,7 +1705,9 @@ generatePythonFunction funcDef = do
       | otherwise -> inferFunctionReturnType funcName (pyFuncBody funcDef)
 
   -- Generate function body
-  bodyStmts <- mapM (generatePythonStmt ScopeFunction) (pyFuncBody funcDef)
+  bodyStmts <- withFunctionScope $ do
+    registerParameters cppParams
+    mapM (generatePythonStmt ScopeFunction) (pyFuncBody funcDef)
 
   -- Add return statement for main function if needed
   let finalBodyStmts = if funcName == "main" && returnType == CppInt
