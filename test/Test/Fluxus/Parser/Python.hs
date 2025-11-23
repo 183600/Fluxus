@@ -552,6 +552,59 @@ parserSpec = describe "Python Parser" $ do
               other -> expectationFailure $ "Expected raise statement, found " <> show other
             _ -> expectationFailure "Expected single raise statement"
 
+      it "parses async for loops" $
+        withParsedModule (T.unlines
+          [ "async for item in items:"
+          , "    pass"
+          ]) $ \module_ ->
+          case pyModuleBody module_ of
+            [stmt] -> case locatedValue stmt of
+              PyAsyncFor target iter body elseBody -> do
+                case locValue target of
+                  PatVar (Identifier name) -> name `shouldBe` "item"
+                  other -> expectationFailure $ "Unexpected async for target: " <> show other
+                locValue iter `shouldBe` PyVar (Identifier "items")
+                length body `shouldBe` 1
+                case body of
+                  [loopStmt] -> locValue loopStmt `shouldBe` PyPass
+                  _ -> expectationFailure "Expected single pass in async for body"
+                elseBody `shouldBe` []
+              other -> expectationFailure $ "Expected async for statement, found " <> show other
+            _ -> expectationFailure "Expected single async for statement"
+
+      it "parses slicing expressions with explicit step" $
+        withParsedModule "result = values[1:5:2]\n" $ \module_ ->
+          case pyModuleBody module_ of
+            [stmt] -> case locatedValue stmt of
+              PyAssign _ valueExpr -> case locValue valueExpr of
+                PySubscript _ sliceNode -> case locValue sliceNode of
+                  SliceSlice (Just start) (Just stop) (Just stepExpr) -> do
+                    locValue start `shouldBe` PyLiteral (PyInt 1)
+                    locValue stop `shouldBe` PyLiteral (PyInt 5)
+                    locValue stepExpr `shouldBe` PyLiteral (PyInt 2)
+                  other -> expectationFailure $ "Expected slice with step, found " <> show other
+                other -> expectationFailure $ "Expected subscript expression, found " <> show other
+              other -> expectationFailure $ "Expected assignment, found " <> show other
+            _ -> expectationFailure "Expected single assignment"
+      
+      it "parses multi-dimensional slicing with ellipsis" $
+        withParsedModule "element = matrix[:, index, ...]\n" $ \module_ ->
+          case pyModuleBody module_ of
+            [stmt] -> case locatedValue stmt of
+              PyAssign _ valueExpr -> case locValue valueExpr of
+                PySubscript _ sliceNode -> case locValue sliceNode of
+                  SliceExtSlice slices -> do
+                    length slices `shouldBe` 3
+                    case map locValue slices of
+                      [SliceSlice Nothing Nothing Nothing, SliceIndex idxExpr, SliceIndex ellipsisExpr] -> do
+                        locValue idxExpr `shouldBe` PyVar (Identifier "index")
+                        locValue ellipsisExpr `shouldBe` PyLiteral PyEllipsis
+                      other -> expectationFailure $ "Unexpected slice components: " <> show other
+                  other -> expectationFailure $ "Expected extended slice, found " <> show other
+                other -> expectationFailure $ "Expected subscript expression, found " <> show other
+              other -> expectationFailure $ "Expected assignment, found " <> show other
+            _ -> expectationFailure "Expected single assignment"
+
     -- Helper functions
     mockTokens :: [PythonToken] -> [Located PythonToken]
 

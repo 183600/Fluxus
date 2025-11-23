@@ -258,6 +258,7 @@ parseWhileStmt = do
 -- | Parse for statements
 parseForStmt :: PythonParser PythonStmt
 parseForStmt = do
+  isAsync <- option False (keywordP KwAsync $> True)
   void $ keywordP KwFor
   target <- parsePattern
   void $ keywordP KwIn
@@ -268,7 +269,8 @@ parseForStmt = do
     void $ keywordP KwElse
     void $ delimiterP DelimColon
     parseBlock
-  return $ PyFor target iter body elseBody
+  let constructor = if isAsync then PyAsyncFor else PyFor
+  return $ constructor target iter body elseBody
 
 -- | Parse with statements
 parseWithStmt :: PythonParser PythonStmt
@@ -1003,11 +1005,71 @@ parseCallTrailer = do
 parseSubscriptTrailer :: PythonParser (Located PythonExpr -> Located PythonExpr)
 parseSubscriptTrailer = do
   void $ delimiterP DelimLeftBracket
-  slice <- parseSliceOrIndex
+  sliceNode <- parseSliceOrIndex
   void $ delimiterP DelimRightBracket
-  return $ \expr -> located' $ PySubscript expr slice
-  where
-    parseSliceOrIndex = located $ SliceIndex <$> parseExpression  -- Simplified
+  return $ \expr -> located' $ PySubscript expr sliceNode
+
+parseSliceOrIndex :: PythonParser (Located PythonSlice)
+parseSliceOrIndex = do
+  first <- parseSliceItem
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimComma) : _) -> do
+      void $ delimiterP DelimComma
+      tokensAfter <- getInput
+      case tokensAfter of
+        (Located _ (TokenDelimiter DelimRightBracket) : _) ->
+          pure $ wrapExtSlice [first]
+        _ -> do
+          rest <- parseAdditionalSlices [first]
+          pure $ wrapExtSlice rest
+    _ -> pure first
+
+parseAdditionalSlices :: [Located PythonSlice] -> PythonParser [Located PythonSlice]
+parseAdditionalSlices acc = do
+  nextSlice <- parseSliceItem
+  let acc' = acc ++ [nextSlice]
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimComma) : _) -> do
+      void $ delimiterP DelimComma
+      tokensAfter <- getInput
+      case tokensAfter of
+        (Located _ (TokenDelimiter DelimRightBracket) : _) ->
+          pure acc'
+        _ -> parseAdditionalSlices acc'
+    _ -> pure acc'
+
+parseSliceItem :: PythonParser (Located PythonSlice)
+parseSliceItem = located $ do
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimColon) : _) ->
+      parseSliceComponents Nothing
+    _ -> do
+      expr <- parseExpression
+      tokensAfter <- getInput
+      if isColonNext tokensAfter
+        then parseSliceComponents (Just expr)
+        else pure $ SliceIndex expr
+
+parseSliceComponents :: Maybe (Located PythonExpr) -> PythonParser PythonSlice
+parseSliceComponents startExpr = do
+  void $ delimiterP DelimColon
+  stopExpr <- optional parseExpression
+  tokensAfter <- getInput
+  stepExpr <- if isColonNext tokensAfter
+    then do
+      void $ delimiterP DelimColon
+      optional parseExpression
+    else pure Nothing
+  pure $ SliceSlice startExpr stopExpr stepExpr
+
+wrapExtSlice :: [Located PythonSlice] -> Located PythonSlice
+wrapExtSlice slices =
+  let spanStart = locSpan (head slices)
+      spanEnd = locSpan (last slices)
+  in Located (mergeSpans spanStart spanEnd) (SliceExtSlice slices)
 
 parseAttributeTrailer :: PythonParser (Located PythonExpr -> Located PythonExpr)
 parseAttributeTrailer = do
