@@ -128,6 +128,15 @@
 
 > ⚠️ `enable_interop` 与 `enable_analysis` 目前都默认关闭，并会在尝试启用时触发配置错误。这些子系统仍在原型阶段，生成的 C++ 代码会在遇到需要运行时回退的语句时调用 `fluxus_runtime_abort`，以避免静默丢失语义。
 
+### 一次性安装 Haskell 工具链
+
+```bash
+./ensure_haskell_toolchain.sh
+export PATH="$HOME/.ghcup/bin:$HOME/.cabal/bin:$PATH"
+```
+
+`ensure_haskell_toolchain.sh` 会通过 ghcup 自动安装/升级到 **GHC 9.2.8** 与 **Cabal 3.10.1**，所有 `verify_*`、`comprehensive_*` 等脚本在检测到缺少 `cabal`/`ghc` 时也会自动调用该脚本。若手动运行 `cabal build`/`cabal test`，只需确保 `~/.ghcup/bin` 与 `~/.cabal/bin` 已被加入 PATH。
+
 ### 构建编译器
 
 ```bash

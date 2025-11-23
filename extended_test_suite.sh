@@ -1,4 +1,23 @@
 #!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export PATH="$HOME/.ghcup/bin:$HOME/.cabal/bin:$PATH"
+
+ensure_haskell_toolchain() {
+  if command -v cabal >/dev/null 2>&1 && command -v ghc >/dev/null 2>&1; then
+    return
+  fi
+
+  if [ -x "$SCRIPT_DIR/ensure_haskell_toolchain.sh" ]; then
+    echo "未检测到完整的 Haskell 工具链，正在运行 ensure_haskell_toolchain.sh ..." >&2
+    bash "$SCRIPT_DIR/ensure_haskell_toolchain.sh"
+  else
+    echo "未检测到 cabal/ghc，且无法在 $SCRIPT_DIR 找到 ensure_haskell_toolchain.sh。请先安装 Haskell 工具链。" >&2
+    exit 1
+  fi
+}
+
+ensure_haskell_toolchain
+
 echo "=== HyperStatic2 扩展测试套件 ==="
 
 # 测试结果统计
