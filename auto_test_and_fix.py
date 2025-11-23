@@ -3,9 +3,52 @@
 自动测试和修复Python到C++编译
 """
 
-import subprocess
 import os
+import shutil
+import subprocess
 import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+_PATH_CANDIDATES = [Path.home() / ".ghcup" / "bin", Path.home() / ".cabal" / "bin"]
+
+
+def _prepend_to_path(directory: Path) -> None:
+    directory_str = str(directory)
+    current_path = os.environ.get("PATH", "")
+    segments = current_path.split(os.pathsep) if current_path else []
+    if directory_str not in segments:
+        os.environ["PATH"] = os.pathsep.join([directory_str] + segments) if segments else directory_str
+
+
+for candidate in _PATH_CANDIDATES:
+    _prepend_to_path(candidate)
+
+
+def ensure_haskell_toolchain() -> None:
+    has_cabal = shutil.which("cabal") is not None
+    has_ghc = shutil.which("ghc") is not None
+    if has_cabal and has_ghc:
+        return
+
+    ensure_script = PROJECT_ROOT / "ensure_haskell_toolchain.sh"
+    if ensure_script.exists():
+        print("未检测到完整的 Haskell 工具链，正在执行 ensure_haskell_toolchain.sh ...")
+        subprocess.run(["bash", str(ensure_script)], check=True)
+    else:
+        missing = []
+        if not has_cabal:
+            missing.append("cabal")
+        if not has_ghc:
+            missing.append("ghc")
+        missing_text = "、".join(missing) if missing else "Haskell 工具链"
+        raise RuntimeError(f"缺少 {missing_text}，且未找到 {ensure_script}")
+
+    if shutil.which("cabal") is None or shutil.which("ghc") is None:
+        raise RuntimeError("ensure_haskell_toolchain.sh 执行后仍无法找到 cabal/ghc。")
+
+
+ensure_haskell_toolchain()
 
 # 测试用例
 TEST_CASES = [

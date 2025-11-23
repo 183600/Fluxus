@@ -2,6 +2,8 @@
 
 ## Quick Start
 
+> ⚠️ 首次在新环境中验证前，请运行 `./ensure_haskell_toolchain.sh` 并确保 `~/.ghcup/bin` 与 `~/.cabal/bin` 位于 PATH 中；仓库中的 `verify_*`/`comprehensive_*` 脚本会在检测到缺少 `cabal`/`ghc` 时自动调用该脚本。
+
 All Haskell compiler warnings have been fixed. Here's how to verify:
 
 ### Option 1: Quick Verification (Recommended)
