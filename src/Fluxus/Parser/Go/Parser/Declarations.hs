@@ -109,7 +109,7 @@ parseFuncDecl = do
       pure $ GoMethodDecl recv func
 
 -- | Parse type declarations.
-parseTypeDecl :: Monad m => GoParser m GoDecl
+parseTypeDecl :: MonadLogger m => GoParser m GoDecl
 parseTypeDecl = do
   void $ goKeywordP GoKwType
   name <- parseGoIdentifier
@@ -117,7 +117,7 @@ parseTypeDecl = do
   pure $ GoTypeDecl name typeExpr
 
 -- | Parse variable declarations.
-parseVarDecl :: Monad m => GoParser m GoDecl
+parseVarDecl :: MonadLogger m => GoParser m GoDecl
 parseVarDecl = do
   void $ goKeywordP GoKwVar
   MP.choice
@@ -140,7 +140,7 @@ parseVarDecl = do
         Just vals -> zipWith (\name val -> (name, typeExpr, Just val)) names vals
 
 -- | Parse constant declarations.
-parseConstDecl :: Monad m => GoParser m GoDecl
+parseConstDecl :: MonadLogger m => GoParser m GoDecl
 parseConstDecl = do
   void $ goKeywordP GoKwConst
   MP.choice
@@ -201,7 +201,7 @@ parseImportDecl = do
       , GoImportNormal Nothing <$> parseGoString
       ]
 
-parseReceiver :: Monad m => GoParser m GoReceiver
+parseReceiver :: MonadLogger m => GoParser m GoReceiver
 parseReceiver = do
   name <- optional parseGoIdentifier
   typeExpr <- parseGoType

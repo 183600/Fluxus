@@ -85,7 +85,7 @@ parseStatement = located $ MP.choice
   ]
 
 -- | Parse simple statements.
-parseSimpleStmt :: Monad m => GoParser m GoStmt
+parseSimpleStmt :: MonadLogger m => GoParser m GoStmt
 parseSimpleStmt = MP.choice
   [ MP.try parseAssignment
   , MP.try parseShortVarDecl
@@ -94,10 +94,10 @@ parseSimpleStmt = MP.choice
   , parseExprStmt
   ]
 
-parseExprStmt :: Monad m => GoParser m GoStmt
+parseExprStmt :: MonadLogger m => GoParser m GoStmt
 parseExprStmt = GoExprStmt <$> parseExpression
 
-parseAssignment :: Monad m => GoParser m GoStmt
+parseAssignment :: MonadLogger m => GoParser m GoStmt
 parseAssignment = do
   lhs <- parseExpressionList
   op <- parseAssignOperator
@@ -147,14 +147,14 @@ parseAssignment = do
     compoundBinary GoOpBitClearAssign = Just OpBitXor
     compoundBinary _ = Nothing
 
-parseShortVarDecl :: Monad m => GoParser m GoStmt
+parseShortVarDecl :: MonadLogger m => GoParser m GoStmt
 parseShortVarDecl = do
   names <- parseIdentifierList
   void $ goOperatorP GoOpDefine
   values <- parseExpressionList
   pure $ GoDefine names values
 
-parseIncDecStmt :: Monad m => GoParser m GoStmt
+parseIncDecStmt :: MonadLogger m => GoParser m GoStmt
 parseIncDecStmt = do
   expr <- parseExpression
   op <- MP.choice
@@ -163,7 +163,7 @@ parseIncDecStmt = do
     ]
   pure $ GoIncDec expr op
 
-parseSendStmt :: Monad m => GoParser m GoStmt
+parseSendStmt :: MonadLogger m => GoParser m GoStmt
 parseSendStmt = do
   channel <- parseExpression
   void $ goOperatorP GoOpArrow
@@ -337,13 +337,13 @@ parseGotoStmt = do
 parseFallthroughStmt :: GoParser m GoStmt
 parseFallthroughStmt = goKeywordP GoKwFallthrough $> GoFallthrough
 
-parseDeferStmt :: Monad m => GoParser m GoStmt
+parseDeferStmt :: MonadLogger m => GoParser m GoStmt
 parseDeferStmt = do
   void $ goKeywordP GoKwDefer
   expr <- parseExpression
   pure $ GoDefer expr
 
-parseGoStmt :: Monad m => GoParser m GoStmt
+parseGoStmt :: MonadLogger m => GoParser m GoStmt
 parseGoStmt = do
   void $ goKeywordP GoKwGo
   expr <- parseExpression

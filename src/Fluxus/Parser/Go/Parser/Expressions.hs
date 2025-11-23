@@ -24,6 +24,7 @@ module Fluxus.Parser.Go.Parser.Expressions
 
 import Control.Applicative (optional, many)
 import Control.Monad (void)
+import Control.Monad.Logger (MonadLogger)
 import Data.Functor (($>))
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
@@ -47,6 +48,7 @@ import Fluxus.AST.Go
   , GoSliceExpr(..)
   , GoType(..)
   , GoChannel(..)
+  , GoFunction(..)
   )
 import Fluxus.Parser.Go.Lexer
   ( GoDelimiter(..)
@@ -67,26 +69,27 @@ import Fluxus.Parser.Go.Parser.Common
   , skipCommentsAndNewlines
   , parseIdentifierList
   )
+import Fluxus.Parser.Go.Parser.Statements (parseBlockStmt')
 
 -- | Parse expressions with operator precedence.
-parseExpression :: Monad m => GoParser m (Located GoExpr)
+parseExpression :: MonadLogger m => GoParser m (Located GoExpr)
 parseExpression = parseOrExpr
 
-parseOrExpr :: Monad m => GoParser m (Located GoExpr)
+parseOrExpr :: MonadLogger m => GoParser m (Located GoExpr)
 parseOrExpr = chainl1 parseAndExpr parseOrOp
   where
     parseOrOp = do
       void $ goOperatorP GoOpOr
       pure $ \l r -> located' $ GoBinaryOp OpOr l r
 
-parseAndExpr :: Monad m => GoParser m (Located GoExpr)
+parseAndExpr :: MonadLogger m => GoParser m (Located GoExpr)
 parseAndExpr = chainl1 parseEqualityExpr parseAndOp
   where
     parseAndOp = do
       void $ goOperatorP GoOpAnd
       pure $ \l r -> located' $ GoBinaryOp OpAnd l r
 
-parseEqualityExpr :: Monad m => GoParser m (Located GoExpr)
+parseEqualityExpr :: MonadLogger m => GoParser m (Located GoExpr)
 parseEqualityExpr = chainl1 parseRelationalExpr parseEqOp
   where
     parseEqOp = MP.choice
@@ -94,7 +97,7 @@ parseEqualityExpr = chainl1 parseRelationalExpr parseEqOp
       , goOperatorP GoOpNe $> (\l r -> located' $ GoComparison OpNe l r)
       ]
 
-parseRelationalExpr :: Monad m => GoParser m (Located GoExpr)
+parseRelationalExpr :: MonadLogger m => GoParser m (Located GoExpr)
 parseRelationalExpr = chainl1 parseAdditiveExpr parseRelOp
   where
     parseRelOp = MP.choice
@@ -104,7 +107,7 @@ parseRelationalExpr = chainl1 parseAdditiveExpr parseRelOp
       , goOperatorP GoOpGe $> (\l r -> located' $ GoComparison OpGe l r)
       ]
 
-parseAdditiveExpr :: Monad m => GoParser m (Located GoExpr)
+parseAdditiveExpr :: MonadLogger m => GoParser m (Located GoExpr)
 parseAdditiveExpr = chainl1 parseMultiplicativeExpr parseAddOp
   where
     parseAddOp = MP.choice
@@ -114,7 +117,7 @@ parseAdditiveExpr = chainl1 parseMultiplicativeExpr parseAddOp
       , goOperatorP GoOpBitXor $> (\l r -> located' $ GoBinaryOp OpBitXor l r)
       ]
 
-parseMultiplicativeExpr :: Monad m => GoParser m (Located GoExpr)
+parseMultiplicativeExpr :: MonadLogger m => GoParser m (Located GoExpr)
 parseMultiplicativeExpr = chainl1 parseUnaryExpr parseMulOp
   where
     parseMulOp = MP.choice
@@ -128,25 +131,25 @@ parseMultiplicativeExpr = chainl1 parseUnaryExpr parseMulOp
       ]
 
 -- | Parse unary expressions.
-parseUnaryExpr :: Monad m => GoParser m (Located GoExpr)
+parseUnaryExpr :: MonadLogger m => GoParser m (Located GoExpr)
 parseUnaryExpr = MP.choice
   [ do
-      op <- MP.choice
-        [ goOperatorP GoOpPlus $> OpPositive
-        , goOperatorP GoOpMinus $> OpNegate
-        , goOperatorP GoOpNot $> OpNot
-        , goOperatorP GoOpBitXor $> OpBitNot
-        , goOperatorP GoOpAddress $> OpPositive
-        , goOperatorP GoOpMult $> OpNegate
-        , goOperatorP GoOpArrow $> OpPositive
+      builder <- MP.choice
+        [ goOperatorP GoOpPlus $> (\x -> GoUnaryOp OpPositive x)
+        , goOperatorP GoOpMinus $> (\x -> GoUnaryOp OpNegate x)
+        , goOperatorP GoOpNot $> (\x -> GoUnaryOp OpNot x)
+        , goOperatorP GoOpBitXor $> (\x -> GoUnaryOp OpBitNot x)
+        , goOperatorP GoOpAddress $> GoAddress
+        , goOperatorP GoOpMult $> GoDeref
+        , goOperatorP GoOpArrow $> GoReceive
         ]
       expr <- parseUnaryExpr
-      pure $ located' $ GoUnaryOp op expr
+      pure $ located' $ builder expr
   , parseAtomExpr
   ]
 
 -- | Parse atomic expressions with postfix operators.
-parseAtomExpr :: Monad m => GoParser m (Located GoExpr)
+parseAtomExpr :: MonadLogger m => GoParser m (Located GoExpr)
 parseAtomExpr = do
   atom <- parseAtom
   postfixes <- many parsePostfix
@@ -156,6 +159,7 @@ parseAtomExpr = do
       [ parseGoLiteral
       , parseGoIdentifierExpr
       , parseParenExpr
+      , parseFuncLiteral
       , parseCompositeLit
       ]
 
@@ -186,7 +190,7 @@ parseGoIdentifierExpr :: GoParser m GoExpr
 parseGoIdentifierExpr = GoIdent <$> parseGoIdentifier
 
 -- | Parse parenthesized expressions.
-parseParenExpr :: Monad m => GoParser m GoExpr
+parseParenExpr :: MonadLogger m => GoParser m GoExpr
 parseParenExpr = do
   void $ goDelimiterP GoDelimLeftParen
   expr <- parseExpression
@@ -194,16 +198,104 @@ parseParenExpr = do
   pure $ locatedValue expr
 
 -- | Parse composite literals.
-parseCompositeLit :: Monad m => GoParser m GoExpr
+parseCompositeLit :: MonadLogger m => GoParser m GoExpr
 parseCompositeLit = do
   typeExpr <- optional parseGoType
+  case typeExpr of
+    Just ty@(Located _ (GoMapType _ _)) -> GoMapLit ty <$> withBraces parseMapEntries
+    _ -> do
+      elements <- withBraces parseLiteralElements
+      pure $ buildComposite typeExpr elements
+  where
+    buildComposite mType elements =
+      case (mType, literalFieldsOnly elements) of
+        (Just ty, Just fields) -> GoStructLit ty fields
+        _ -> GoCompositeLit mType (map literalElementExpr elements)
+
+    parseMapEntries = parseMapEntry `MP.sepEndBy` commaSeparator
+
+    parseMapEntry = do
+      skipCommentsAndNewlines
+      key <- parseExpression
+      skipCommentsAndNewlines
+      void $ goDelimiterP GoDelimColon
+      skipCommentsAndNewlines
+      value <- parseExpression
+      pure (key, value)
+
+    parseLiteralElements = parseLiteralElement `MP.sepEndBy` commaSeparator
+
+    parseLiteralElement = do
+      skipCommentsAndNewlines
+      MP.try parseFieldElement <|> (LiteralValue <$> parseExpression)
+
+    parseFieldElement = do
+      fieldName <- parseGoIdentifier
+      skipCommentsAndNewlines
+      void $ goDelimiterP GoDelimColon
+      skipCommentsAndNewlines
+      expr <- parseExpression
+      pure $ LiteralField fieldName expr
+
+
+data LiteralElement
+  = LiteralField Identifier (Located GoExpr)
+  | LiteralValue (Located GoExpr)
+
+literalElementExpr :: LiteralElement -> Located GoExpr
+literalElementExpr (LiteralField _ expr) = expr
+literalElementExpr (LiteralValue expr) = expr
+
+literalFieldsOnly :: [LiteralElement] -> Maybe [(Identifier, Located GoExpr)]
+literalFieldsOnly elements =
+  let fields = [ (name, expr) | LiteralField name expr <- elements ]
+  in if length fields == length elements
+       then Just fields
+       else Nothing
+
+withBraces :: MonadLogger m => GoParser m a -> GoParser m a
+withBraces parser = do
   void $ goDelimiterP GoDelimLeftBrace
-  elements <- parseExpression `MP.sepBy` goDelimiterP GoDelimComma
+  skipCommentsAndNewlines
+  result <- parser
+  skipCommentsAndNewlines
   void $ goDelimiterP GoDelimRightBrace
-  pure $ GoCompositeLit typeExpr elements
+  pure result
+
+commaSeparator :: MonadLogger m => GoParser m ()
+commaSeparator = do
+  skipCommentsAndNewlines
+  goDelimiterP GoDelimComma
+  skipCommentsAndNewlines
+
+-- | Parse function literals.
+parseFuncLiteral :: MonadLogger m => GoParser m GoExpr
+parseFuncLiteral = do
+  void $ goKeywordP GoKwFunc
+  void $ goDelimiterP GoDelimLeftParen
+  params <- parseParameterList
+  void $ goDelimiterP GoDelimRightParen
+  results <- optional $ MP.choice
+    [ MP.try $ do
+        void $ goDelimiterP GoDelimLeftParen
+        res <- parseParameterList
+        void $ goDelimiterP GoDelimRightParen
+        pure res
+    , do
+        ty <- parseGoType
+        pure [GoField [] ty Nothing]
+    ]
+  body <- located parseBlockStmt'
+  pure $ GoFuncLit GoFunction
+    { goFuncName = Nothing
+    , goFuncParams = params
+    , goFuncResults = fromMaybe [] results
+    , goFuncBody = Just body
+    }
+
 
 -- | Parse postfix operators.
-parsePostfix :: Monad m => GoParser m (Located GoExpr -> Located GoExpr)
+parsePostfix :: MonadLogger m => GoParser m (Located GoExpr -> Located GoExpr)
 parsePostfix = MP.choice
   [ parseCall
   , parseIndex
@@ -212,21 +304,22 @@ parsePostfix = MP.choice
   , parseTypeAssertion
   ]
 
-parseCall :: Monad m => GoParser m (Located GoExpr -> Located GoExpr)
+parseCall :: MonadLogger m => GoParser m (Located GoExpr -> Located GoExpr)
 parseCall = do
   void $ goDelimiterP GoDelimLeftParen
-  args <- parseExpressionList
+  args <- optional parseExpressionList
   void $ goDelimiterP GoDelimRightParen
-  pure $ \expr -> located' $ GoCall expr args
+  let finalArgs = fromMaybe [] args
+  pure $ \expr -> located' $ GoCall expr finalArgs
 
-parseIndex :: Monad m => GoParser m (Located GoExpr -> Located GoExpr)
+parseIndex :: MonadLogger m => GoParser m (Located GoExpr -> Located GoExpr)
 parseIndex = do
   void $ goDelimiterP GoDelimLeftBracket
   index <- parseExpression
   void $ goDelimiterP GoDelimRightBracket
   pure $ \expr -> located' $ GoIndex expr index
 
-parseSlice :: Monad m => GoParser m (Located GoExpr -> Located GoExpr)
+parseSlice :: MonadLogger m => GoParser m (Located GoExpr -> Located GoExpr)
 parseSlice = do
   void $ goDelimiterP GoDelimLeftBracket
   low <- optional parseExpression
@@ -249,7 +342,7 @@ parseSelector = do
   field <- parseGoIdentifier
   pure $ \expr -> located' $ GoSelector expr field
 
-parseTypeAssertion :: Monad m => GoParser m (Located GoExpr -> Located GoExpr)
+parseTypeAssertion :: MonadLogger m => GoParser m (Located GoExpr -> Located GoExpr)
 parseTypeAssertion = do
   void $ goDelimiterP GoDelimDot
   void $ goDelimiterP GoDelimLeftParen
@@ -258,7 +351,7 @@ parseTypeAssertion = do
   pure $ \expr -> located' $ GoTypeAssert expr typeExpr
 
 -- | Parse Go types.
-parseGoType :: Monad m => GoParser m (Located GoType)
+parseGoType :: MonadLogger m => GoParser m (Located GoType)
 parseGoType = located $ MP.choice
   [ MP.try parseArrayType
   , MP.try parseSliceType
@@ -275,7 +368,7 @@ parseGoType = located $ MP.choice
 parseBasicType :: GoParser m GoType
 parseBasicType = GoBasicType <$> parseGoIdentifier
 
-parseArrayType :: Monad m => GoParser m GoType
+parseArrayType :: MonadLogger m => GoParser m GoType
 parseArrayType = do
   void $ goDelimiterP GoDelimLeftBracket
   size <- parseExpression
@@ -283,14 +376,14 @@ parseArrayType = do
   elemType <- parseGoType
   pure $ GoArrayType size elemType
 
-parseSliceType :: Monad m => GoParser m GoType
+parseSliceType :: MonadLogger m => GoParser m GoType
 parseSliceType = do
   void $ goDelimiterP GoDelimLeftBracket
   void $ goDelimiterP GoDelimRightBracket
   elemType <- parseGoType
   pure $ GoSliceType elemType
 
-parseMapType :: Monad m => GoParser m GoType
+parseMapType :: MonadLogger m => GoParser m GoType
 parseMapType = do
   void $ goKeywordP GoKwMap
   void $ goDelimiterP GoDelimLeftBracket
@@ -299,7 +392,7 @@ parseMapType = do
   valueType <- parseGoType
   pure $ GoMapType keyType valueType
 
-parseChanType :: Monad m => GoParser m GoType
+parseChanType :: MonadLogger m => GoParser m GoType
 parseChanType = MP.choice
   [ do
       void $ goOperatorP GoOpArrow
@@ -319,19 +412,19 @@ parseChanType = MP.choice
         ]
   ]
 
-parsePointerType :: Monad m => GoParser m GoType
+parsePointerType :: MonadLogger m => GoParser m GoType
 parsePointerType = do
   void $ goOperatorP GoOpMult
   baseType <- parseGoType
   pure $ GoPointerType baseType
 
-parseEllipsisType :: Monad m => GoParser m GoType
+parseEllipsisType :: MonadLogger m => GoParser m GoType
 parseEllipsisType = do
   void $ goOperatorP GoOpEllipsis
   elemType <- parseGoType
   pure $ GoEllipsisType elemType
 
-parseFuncType :: Monad m => GoParser m GoType
+parseFuncType :: MonadLogger m => GoParser m GoType
 parseFuncType = do
   void $ goKeywordP GoKwFunc
   void $ goDelimiterP GoDelimLeftParen
@@ -349,7 +442,7 @@ parseFuncType = do
     ]
   pure $ GoFuncType params (fromMaybe [] results)
 
-parseInterfaceType :: Monad m => GoParser m GoType
+parseInterfaceType :: MonadLogger m => GoParser m GoType
 parseInterfaceType = do
   void $ goKeywordP GoKwInterface
   void $ goDelimiterP GoDelimLeftBrace
@@ -362,7 +455,7 @@ parseInterfaceType = do
       typeExpr <- parseGoType
       pure $ GoMethod name typeExpr
 
-parseStructType :: Monad m => GoParser m GoType
+parseStructType :: MonadLogger m => GoParser m GoType
 parseStructType = do
   void $ goKeywordP GoKwStruct
   void $ goDelimiterP GoDelimLeftBrace
@@ -387,10 +480,10 @@ parseStructType = do
       ]
 
 -- | Parse method receivers.
-parseExpressionList :: Monad m => GoParser m [Located GoExpr]
+parseExpressionList :: MonadLogger m => GoParser m [Located GoExpr]
 parseExpressionList = parseExpression `MP.sepBy1` goDelimiterP GoDelimComma
 
-parseParameterList :: Monad m => GoParser m [GoField]
+parseParameterList :: MonadLogger m => GoParser m [GoField]
 parseParameterList = do
   mClose <- optional $ lookAhead (goDelimiterP GoDelimRightParen)
   case mClose of
