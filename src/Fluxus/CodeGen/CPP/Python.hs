@@ -1059,9 +1059,7 @@ generatePythonExpr (Located span expr) = case expr of
     cppTest <- generatePythonExpr testExpr
     cppThen <- generatePythonExpr thenExpr
     cppElse <- generatePythonExpr elseExpr
-    return $ CppCall (CppLambda []
-      [CppReturn (Just (CppBinary "?" cppTest (CppBinary ":" cppThen cppElse)))])
-      []
+    return $ CppConditional cppTest cppThen cppElse
   _ -> do
     let message = "TODO: Implement Python expression: " <> T.pack (show expr)
     reportNotImplemented message
@@ -2283,6 +2281,8 @@ replaceSelfExpr expr =
     CppVar _ -> expr
     CppLiteral _ -> expr
     CppBinary op lhs rhs -> CppBinary op (replaceSelfExpr lhs) (replaceSelfExpr rhs)
+    CppConditional cond thenExpr elseExpr ->
+      CppConditional (replaceSelfExpr cond) (replaceSelfExpr thenExpr) (replaceSelfExpr elseExpr)
     CppUnary op inner -> CppUnary op (replaceSelfExpr inner)
     CppCall func args -> CppCall (replaceSelfExpr func) (map replaceSelfExpr args)
     CppMember obj member -> CppMember (replaceSelfExpr obj) member

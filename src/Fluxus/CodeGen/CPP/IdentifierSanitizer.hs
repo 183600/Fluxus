@@ -96,6 +96,8 @@ sanitizeExpr expr = case expr of
   CppVar name -> CppVar (sanitizeIdentifier name)
   CppLiteral lit -> CppLiteral lit
   CppBinary op lhs rhs -> CppBinary op (sanitizeExpr lhs) (sanitizeExpr rhs)
+  CppConditional cond thenExpr elseExpr ->
+    CppConditional (sanitizeExpr cond) (sanitizeExpr thenExpr) (sanitizeExpr elseExpr)
   CppUnary op inner -> CppUnary op (sanitizeExpr inner)
   CppCall fun args -> CppCall (sanitizeExpr fun) (map sanitizeExpr args)
   CppMember obj member -> CppMember (sanitizeExpr obj) (sanitizeIdentifier member)

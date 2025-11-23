@@ -87,6 +87,7 @@ data CppExpr
   = CppVar !Text
   | CppLiteral !CppLiteral
   | CppBinary !Text !CppExpr !CppExpr
+  | CppConditional !CppExpr !CppExpr !CppExpr
   | CppUnary !Text !CppExpr
   | CppCall !CppExpr ![CppExpr]
   | CppMember !CppExpr !Text
@@ -270,6 +271,8 @@ renderCppExpr expr = case expr of
   CppVar name -> name
   CppLiteral lit -> renderCppLiteral lit
   CppBinary op lhs rhs -> "(" <> renderCppExpr lhs <> " " <> op <> " " <> renderCppExpr rhs <> ")"
+  CppConditional cond thenExpr elseExpr ->
+    "(" <> renderCppExpr cond <> " ? " <> renderCppExpr thenExpr <> " : " <> renderCppExpr elseExpr <> ")"
   CppUnary op inner -> op <> renderCppExpr inner
   CppCall fun args -> renderCppExpr fun <> "(" <> T.intercalate ", " (map renderCppExpr args) <> ")"
   CppMember obj member -> renderCppExpr obj <> "." <> member
