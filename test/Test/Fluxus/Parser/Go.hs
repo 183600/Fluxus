@@ -7,6 +7,7 @@ module Test.Fluxus.Parser.Go (spec) where
 import Test.Hspec
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.List (find)
 
 import Fluxus.Parser.Go.Lexer
 import Fluxus.Parser.Go.Parser
@@ -25,6 +26,7 @@ spec = describe "Go Parser" $ do
   basicTypesSpec
   importDeclSpec
   parserSpec
+  advancedGoSyntaxSpec
 
 lexerSpec :: Spec
 lexerSpec = describe "Go Lexer" $ do
@@ -1105,7 +1107,171 @@ parserSpec = describe "Go Parser" $ do
             Nothing -> expectationFailure "Function should have a name"
           _ -> expectationFailure "Expected function declaration"
 
+advancedGoSyntaxSpec :: Spec
+advancedGoSyntaxSpec = describe "Go Parser - advanced Go syntax" $ do
+  it "parses pointer-related unary expressions" $ do
+    ast <- parseGoSource pointerSource
+    file <- expectSingleFile ast
+    func <- expectFunctionDecl "main" (goFileDecls file)
+    stmts <- extractBlockStatements func
+    length stmts `shouldBe` 3
+    let [ptrStmt, derefStmt, recvStmt] = stmts
+    case locatedValue ptrStmt of
+      GoDefine [Identifier "ptr"] [expr] ->
+        case locatedValue expr of
+          GoAddress inner ->
+            case locatedValue inner of
+              GoIdent (Identifier "value") -> pure ()
+              other -> expectationFailure $ "expected address operand 'value', got " <> show other
+          other -> expectationFailure $ "expected address expression, got " <> show other
+      other -> expectationFailure $ "expected short declaration for ptr, got " <> show other
+    case locatedValue derefStmt of
+      GoDefine [Identifier "val"] [expr] ->
+        case locatedValue expr of
+          GoDeref inner ->
+            case locatedValue inner of
+              GoIdent (Identifier "ptr") -> pure ()
+              other -> expectationFailure $ "expected deref operand 'ptr', got " <> show other
+          other -> expectationFailure $ "expected dereference expression, got " <> show other
+      other -> expectationFailure $ "expected short declaration for val, got " <> show other
+    case locatedValue recvStmt of
+      GoDefine [Identifier "recv"] [expr] ->
+        case locatedValue expr of
+          GoReceive inner ->
+            case locatedValue inner of
+              GoIdent (Identifier "messages") -> pure ()
+              other -> expectationFailure $ "expected receive operand 'messages', got " <> show other
+          other -> expectationFailure $ "expected receive expression, got " <> show other
+      other -> expectationFailure $ "expected short declaration for recv, got " <> show other
+
+  it "parses map composite literals" $ do
+    ast <- parseGoSource mapLiteralSource
+    file <- expectSingleFile ast
+    expr <- expectVarExpr "lookup" (goFileDecls file)
+    case locatedValue expr of
+      GoMapLit _ entries -> do
+        length entries `shouldBe` 2
+        let rendered = [ (locatedValue k, locatedValue v) | (k, v) <- entries ]
+        rendered `shouldSatisfy` (elem (GoLiteral (GoString "a"), GoLiteral (GoInt 1)))
+        rendered `shouldSatisfy` (elem (GoLiteral (GoString "b"), GoLiteral (GoInt 2)))
+      other -> expectationFailure $ "expected GoMapLit, got " <> show other
+
+  it "parses struct literals with keyed fields" $ do
+    ast <- parseGoSource structLiteralSource
+    file <- expectSingleFile ast
+    expr <- expectVarExpr "p" (goFileDecls file)
+    case locatedValue expr of
+      GoStructLit _ fields -> do
+        case fields of
+          [(Identifier "X", xExpr), (Identifier "Y", yExpr)] -> do
+            locatedValue xExpr `shouldBe` GoLiteral (GoInt 10)
+            locatedValue yExpr `shouldBe` GoLiteral (GoInt 20)
+          other -> expectationFailure $ "unexpected struct field layout: " <> show other
+      other -> expectationFailure $ "expected GoStructLit, got " <> show other
+
+  it "parses function literals with bodies" $ do
+    ast <- parseGoSource funcLiteralSource
+    file <- expectSingleFile ast
+    expr <- expectVarExpr "inc" (goFileDecls file)
+    case locatedValue expr of
+      GoFuncLit func -> do
+        length (goFuncParams func) `shouldBe` 1
+        case goFuncResults func of
+          [GoField [] ty Nothing] -> locatedValue ty `shouldBe` GoBasicType (Identifier "int")
+          other -> expectationFailure $ "unexpected function literal return annotation: " <> show other
+        bodyStmts <- extractBlockStatements func
+        length bodyStmts `shouldBe` 1
+        case locatedValue (head bodyStmts) of
+          GoReturn [retExpr] ->
+            case locatedValue retExpr of
+              GoBinaryOp OpAdd left right -> do
+                locatedValue left `shouldBe` GoIdent (Identifier "x")
+                locatedValue right `shouldBe` GoLiteral (GoInt 1)
+              other -> expectationFailure $ "expected addition expression, got " <> show other
+          other -> expectationFailure $ "expected return statement, got " <> show other
+      other -> expectationFailure $ "expected GoFuncLit, got " <> show other
+  where
+    pointerSource = T.unlines
+      [ "package main"
+      , "func main() {"
+      , "  ptr := &value"
+      , "  val := *ptr"
+      , "  recv := <-messages"
+      , "}"
+      ]
+    mapLiteralSource = T.unlines
+      [ "package main"
+      , "var lookup = map[string]int{"
+      , "  \"a\": 1,"
+      , "  \"b\": 2,"
+      , "}"
+      ]
+    structLiteralSource = T.unlines
+      [ "package main"
+      , "type Point struct {"
+      , "  X int"
+      , "  Y int"
+      , "}"
+      , "var p = Point{"
+      , "  X: 10,"
+      , "  Y: 20,"
+      , "}"
+      ]
+    funcLiteralSource = T.unlines
+      [ "package main"
+      , "var inc = func(x int) int {"
+      , "  return x + 1"
+      , "}"
+      ]
+
 -- Helper functions
+parseGoSource :: Text -> IO GoAST
+parseGoSource source = do
+  tokens <- case runGoLexer "test.go" source of
+    Left err -> expectationFailure ("Lexer failed: " ++ show err) >> fail "lexer failure"
+    Right ts -> pure ts
+  case runGoParser "test.go" tokens of
+    Left err -> expectationFailure ("Parser failed: " ++ T.unpack (peMessage err)) >> fail "parser failure"
+    Right ast -> pure ast
+
+expectSingleFile :: GoAST -> IO GoFile
+expectSingleFile (GoAST pkg) = case goPackageFiles pkg of
+  (file:_) -> pure file
+  _ -> expectationFailure "expected at least one file in package" >> fail "missing file"
+
+expectFunctionDecl :: Text -> [Located GoDecl] -> IO GoFunction
+expectFunctionDecl name decls = case find matches decls of
+  Just (Located _ (GoFuncDecl func)) -> pure func
+  _ -> expectationFailure ("expected function " ++ T.unpack name ++ " to be declared") >> fail "missing function"
+  where
+    matches (Located _ (GoFuncDecl func)) = goFuncName func == Just (Identifier name)
+    matches _ = False
+
+extractBlockStatements :: GoFunction -> IO [Located GoStmt]
+extractBlockStatements func = do
+  body <- expectJust "function body" (goFuncBody func)
+  case locatedValue body of
+    GoBlock stmts -> pure stmts
+    _ -> expectationFailure "expected function body block" >> fail "non-block body"
+
+expectVarExpr :: Text -> [Located GoDecl] -> IO (Located GoExpr)
+expectVarExpr name decls = case firstMatch of
+  Just expr -> pure expr
+  Nothing -> expectationFailure ("expected var declaration for " ++ T.unpack name) >> fail "missing var"
+  where
+    matchesDecl (Located _ (GoVarDecl bindings)) = go bindings
+    matchesDecl _ = Nothing
+    go [] = Nothing
+    go ((Identifier ident, _, value):rest)
+      | ident == name = value
+      | otherwise = go rest
+    firstMatch = foldr (\decl acc -> case matchesDecl decl of
+      Just expr -> Just expr
+      Nothing -> acc) Nothing decls
+
+expectJust :: String -> Maybe a -> IO a
+expectJust msg = maybe (expectationFailure msg >> fail msg) pure
+
 mockGoTokens :: [GoToken] -> [Located GoToken]
 mockGoTokens = map mockGoToken
 
