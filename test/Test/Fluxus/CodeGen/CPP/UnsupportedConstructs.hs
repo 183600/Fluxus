@@ -67,26 +67,6 @@ strictModeTests = describe "Strict mode behavior" $ do
       Left failure ->
         expectationFailure $ "Expected strict mode to support try statements, but compilation failed: " <> show failure
 
-  it "fails compilation on unsupported multiple assignment in strict mode" $ do
-    let moduleBody = [noLoc (PyAssign 
-          [noLoc (PatVar (Identifier "x")), noLoc (PatVar (Identifier "y"))]
-          (noLoc (PyTuple [noLoc (PyLiteral (PyInt 1)), noLoc (PyLiteral (PyInt 2))])))]
-        pythonAst = PythonAST PythonModule
-          { pyModuleName = Nothing
-          , pyModuleDoc = Nothing
-          , pyModuleImports = []
-          , pyModuleBody = moduleBody
-          }
-        result = generateCpp strictConfig (Left pythonAst)
-    case result of
-      Left failure ->
-        case cgfErrors failure of
-          [CppNotImplemented msg] -> 
-            msg `shouldSatisfy` T.isInfixOf "Multiple assignment"
-          errors ->
-            expectationFailure $ "Expected single CppNotImplemented error, got: " <> show errors
-      Right _ ->
-        expectationFailure "Expected compilation to fail in strict mode"
 
 pythonUnsupportedTests :: Spec
 pythonUnsupportedTests = describe "Python unsupported constructs" $ do

@@ -157,14 +157,32 @@ parseAssignment = do
       [ void $ delimiterP DelimComma  -- x, y = ...
       , void $ satisfy isAssignOp      -- x = ...  
       ]
-  -- Now actually parse the assignment
-  targets <- parsePattern `sepBy1` delimiterP DelimComma
-  void $ satisfy isAssignOp
-  value <- parseExpression
-  return $ PyAssign targets value
+  -- Parse the first target group (which may itself be a tuple pattern)
+  firstTargetGroup <- coalescePatterns =<< parsePattern `sepBy1` delimiterP DelimComma
+  void $ operator' Lexer.OpAssign
+  parseAssignmentChain [firstTargetGroup]
   where
     isAssignOp (Located _ (TokenOperator Lexer.OpAssign)) = True
     isAssignOp _ = False
+
+    coalescePatterns :: [Located PythonPattern] -> Located PythonPattern
+    coalescePatterns [single] = single
+    coalescePatterns pats =
+      let combinedSpan = mergeSpans (locSpan (head pats)) (locSpan (last pats))
+      in Located combinedSpan (PatTuple pats)
+
+    parseAssignmentChain :: [Located PythonPattern] -> PythonParser PythonStmt
+    parseAssignmentChain acc = do
+      valueExpr <- parseExpression
+      tokensAfter <- getInput
+      case tokensAfter of
+        (Located _ (TokenOperator Lexer.OpAssign) : _) ->
+          case exprToPattern valueExpr of
+            Just pat -> do
+              void $ operator' Lexer.OpAssign
+              parseAssignmentChain (acc ++ [pat])
+            Nothing -> fail "Invalid assignment target in chained assignment"
+        _ -> pure $ PyAssign acc valueExpr
 
 -- | Parse annotated assignment statements
 parseAnnAssign :: PythonParser PythonStmt

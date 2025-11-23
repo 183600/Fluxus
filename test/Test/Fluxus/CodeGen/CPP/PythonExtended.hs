@@ -21,6 +21,7 @@ spec = describe "Extended Python code generation" $ do
   lambdaExpressionSpec
   rangeHelperSpec
   keywordArgumentsSpec
+  chainedAssignmentSpec
 
 -- Test tuple unpacking in assignments
 tupleUnpackingSpec :: Spec
@@ -287,4 +288,85 @@ keywordArgumentsSpec = describe "Keyword arguments" $ do
       Right res -> do
         let warnings = cgrDiagnostics res
         warnings `shouldSatisfy` any (T.isInfixOf "**kwargs" . diagMessage)
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+chainedAssignmentSpec :: Spec
+chainedAssignmentSpec = describe "Chained assignments" $ do
+  it "hoists module-level chains while evaluating the RHS once" $ do
+    let moduleBody =
+          [ noLoc
+              ( PyAssign
+                  [ noLoc (PatVar (Identifier "first"))
+                  , noLoc (PatVar (Identifier "second"))
+                  ]
+                  (noLoc (PyLiteral (PyInt 7)))
+              )
+          ]
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = moduleBody
+              }
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+            lookupVar name = [decl | decl@(CppVariable varName _ _) <- decls, varName == name]
+        case lookupVar "second" of
+          [CppVariable _ ty (Just initExpr)] -> do
+            ty `shouldBe` CppLongLong
+            initExpr `shouldBe` CppLiteral (CppIntLit 7)
+          other -> expectationFailure $ "Expected declaration for 'second', found " <> show other
+        case lookupVar "first" of
+          [CppVariable _ ty (Just initExpr)] -> do
+            ty `shouldBe` CppLongLong
+            initExpr `shouldBe` CppVar "second"
+          other -> expectationFailure $ "Expected declaration for 'first', found " <> show other
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+  it "lowers chained assignments inside functions" $ do
+    let assignStmt =
+          noLoc
+            ( PyAssign
+                [ noLoc (PatVar (Identifier "outer"))
+                , noLoc (PatVar (Identifier "inner"))
+                ]
+                (noLoc (PyLiteral (PyInt 99)))
+            )
+        funcDef = PythonFuncDef
+          { pyFuncName = Identifier "assign_chain"
+          , pyFuncDecorators = []
+          , pyFuncParams = []
+          , pyFuncReturns = Nothing
+          , pyFuncBody = [assignStmt]
+          , pyFuncDoc = Nothing
+          , pyFuncIsAsync = False
+          }
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [noLoc (PyFuncDef funcDef)]
+              }
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+        case [body | CppFunction "assign_chain" _ _ body <- decls] of
+          [body] -> do
+            let chainDecls = [decl | CppDecl decl <- body]
+            chainDecls `shouldSatisfy` ((>= 2) . length)
+            case chainDecls of
+              (CppVariable name1 ty1 (Just init1) : CppVariable name2 ty2 (Just init2) : _) -> do
+                name1 `shouldBe` "inner"
+                ty1 `shouldBe` CppLongLong
+                init1 `shouldBe` CppLiteral (CppIntLit 99)
+                name2 `shouldBe` "outer"
+                ty2 `shouldBe` CppLongLong
+                init2 `shouldBe` CppVar "inner"
+              other -> expectationFailure $ "Unexpected declaration sequence: " <> show other
+          _ -> expectationFailure "Expected generated function 'assign_chain'"
       Left failure -> expectationFailure $ "Code generation failed: " <> show failure
