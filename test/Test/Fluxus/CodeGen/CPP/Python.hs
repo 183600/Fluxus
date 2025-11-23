@@ -81,6 +81,47 @@ expressionGenerationSpec = describe "Expression generation" $ do
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
+  it "emits the C++ conditional operator for Python ternary expressions" $ do
+    let moduleBody =
+          [ noLoc (PyAssign [noLoc (PatVar (Identifier "cond"))] (noLoc (PyLiteral (PyBool True))))
+          , noLoc
+              ( PyAssign
+                  [noLoc (PatVar (Identifier "value"))]
+                  ( noLoc
+                      ( PyIfExp
+                          (noLoc (PyVar (Identifier "cond")))
+                          (noLoc (PyLiteral (PyInt 1)))
+                          (noLoc (PyLiteral (PyInt 2)))
+                      )
+                  )
+              )
+          ]
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = moduleBody
+              }
+        result = generateCpp Shared.testCppConfig (Left pythonAst)
+        isValueVar decl = case decl of
+          CppVariable name _ _ -> name == "value"
+          _ -> False
+    case result of
+      Right res ->
+        case find isValueVar (cppDeclarations (cgrUnit res)) of
+          Just (CppVariable _ _ (Just initializer)) ->
+            initializer `shouldBe`
+              CppConditional
+                (CppVar "cond")
+                (CppLiteral (CppIntLit 1))
+                (CppLiteral (CppIntLit 2))
+          _ ->
+            expectationFailure "Expected hoisted declaration for variable 'value'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
   it "turns Python print into std::cout streaming" $ do
     let moduleBody =
           [ noLoc
