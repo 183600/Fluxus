@@ -16,9 +16,16 @@ module Fluxus.Parser.Python.Parser
   , parseStatement
   , parseExprStmt
   , parseAssignment
+  , parseAnnAssign
   , parseIfStmt
   , parseWhileStmt
   , parseForStmt
+  , parseYieldStmt
+  , parseRaiseStmt
+  , parseAssertStmt
+  , parseDelStmt
+  , parseGlobalStmt
+  , parseNonlocalStmt
   , parseFuncDef
   , parseClassDef
     -- * Expression parsers
@@ -118,11 +125,18 @@ parseStatement = located $ choice
   , try parseWithStmt
   , try parseTryStmt
   , try parseReturnStmt
+  , try parseYieldStmt
   , try parseBreakStmt
   , try parseContinueStmt
   , try parsePassStmt
+  , try parseRaiseStmt
+  , try parseAssertStmt
+  , try parseDelStmt
+  , try parseGlobalStmt
+  , try parseNonlocalStmt
   , try parseImportStmt'
   , try parseAugAssignment
+  , try parseAnnAssign
   , try parseAssignment
   , parseExprStmt
   ]
@@ -151,6 +165,17 @@ parseAssignment = do
   where
     isAssignOp (Located _ (TokenOperator Lexer.OpAssign)) = True
     isAssignOp _ = False
+
+-- | Parse annotated assignment statements
+parseAnnAssign :: PythonParser PythonStmt
+parseAnnAssign = do
+  target <- parsePattern
+  void $ delimiterP DelimColon
+  annotation <- parseTypeExpr
+  value <- optional $ do
+    void $ operator' Lexer.OpAssign
+    parseExpression
+  pure $ PyAnnAssign target annotation value
 
 -- | Parse augmented assignment
 parseAugAssignment :: PythonParser PythonStmt
@@ -407,6 +432,58 @@ parseContinueStmt = keywordP KwContinue $> PyContinue
 parsePassStmt :: PythonParser PythonStmt
 parsePassStmt = keywordP KwPass $> PyPass
 
+-- | Parse yield statements
+parseYieldStmt :: PythonParser PythonStmt
+parseYieldStmt = do
+  void $ keywordP KwYield
+  isFrom <- optional (keywordP KwFrom)
+  case isFrom of
+    Just _ -> PyYieldFrom <$> parseExpression
+    Nothing -> PyYield <$> optional parseExpression
+
+-- | Parse raise statements
+parseRaiseStmt :: PythonParser PythonStmt
+parseRaiseStmt = do
+  void $ keywordP KwRaise
+  exc <- optional parseExpression
+  cause <- case exc of
+    Nothing -> pure Nothing
+    Just _ -> optional $ do
+      void $ keywordP KwFrom
+      parseExpression
+  pure $ PyRaise exc cause
+
+-- | Parse assert statements
+parseAssertStmt :: PythonParser PythonStmt
+parseAssertStmt = do
+  void $ keywordP KwAssert
+  testExpr <- parseExpression
+  messageExpr <- optional $ do
+    void $ delimiterP DelimComma
+    parseExpression
+  pure $ PyAssert testExpr messageExpr
+
+-- | Parse delete statements
+parseDelStmt :: PythonParser PythonStmt
+parseDelStmt = do
+  void $ keywordP KwDel
+  targets <- parseExpression `sepBy1` delimiterP DelimComma
+  pure $ PyDel targets
+
+-- | Parse global statements
+parseGlobalStmt :: PythonParser PythonStmt
+parseGlobalStmt = do
+  void $ keywordP KwGlobal
+  names <- parseIdentifier `sepBy1` delimiterP DelimComma
+  pure $ PyGlobal names
+
+-- | Parse nonlocal statements
+parseNonlocalStmt :: PythonParser PythonStmt
+parseNonlocalStmt = do
+  void $ keywordP KwNonlocal
+  names <- parseIdentifier `sepBy1` delimiterP DelimComma
+  pure $ PyNonlocal names
+
 -- | Parse import statements
 parseImportStmt :: PythonParser (Located PythonImport)
 parseImportStmt = located $ choice
@@ -453,7 +530,110 @@ parseImportItem = do
 
 -- | Parse expressions
 parseExpression :: PythonParser (Located PythonExpr)
-parseExpression = parseOrExpr
+parseExpression = parseLambdaExpr
+
+parseLambdaExpr :: PythonParser (Located PythonExpr)
+parseLambdaExpr = do
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenKeyword KwLambda) : _) -> located parseLambdaBody
+    _ -> parseNamedExpr
+
+parseLambdaBody :: PythonParser PythonExpr
+parseLambdaBody = do
+  void $ keywordP KwLambda
+  params <- parseLambdaParameters
+  void $ delimiterP DelimColon
+  body <- parseExpression
+  pure $ PyLambda params body
+
+parseLambdaParameters :: PythonParser [Located PythonParameter]
+parseLambdaParameters = do
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimColon) : _) -> pure []
+    _ -> parseParamList False False
+  where
+    parseParamList seenVarArgs seenKwArgs = do
+      param <- parseLambdaParam seenVarArgs seenKwArgs
+      tokensAfter <- getInput
+      let seenVarNext = seenVarArgs || isVarParam param
+          seenKwNext = seenKwArgs || isKwParam param
+      case tokensAfter of
+        (Located _ (TokenDelimiter DelimComma) : _) -> do
+          void $ delimiterP DelimComma
+          tokensNext <- getInput
+          case tokensNext of
+            (Located _ (TokenDelimiter DelimColon) : _) -> pure [param]
+            _ -> do
+              rest <- parseParamList seenVarNext seenKwNext
+              pure (param : rest)
+        _ -> pure [param]
+
+    parseLambdaParam seenVarArgs seenKwArgs = choice
+      [ parseLambdaKwVarArg seenKwArgs
+      , parseLambdaVarArg seenVarArgs
+      , parseLambdaStandard seenVarArgs
+      ]
+
+    parseLambdaStandard seenVarArgs = located $ do
+      name <- parseIdentifier
+      defaultValue <- optional parseDefault
+      if seenVarArgs
+        then pure $ ParamKwOnly name Nothing defaultValue
+        else pure $ ParamNormal name Nothing defaultValue
+
+    parseLambdaVarArg seenVarArgs = located $ do
+      if seenVarArgs
+        then fail "Multiple var-positional parameters in lambda"
+        else do
+          operator' Lexer.OpMult
+          name <- parseIdentifier
+          pure $ ParamVarArgs name Nothing
+
+    parseLambdaKwVarArg seenKwArgs = located $ do
+      if seenKwArgs
+        then fail "Multiple var-keyword parameters in lambda"
+        else do
+          operator' Lexer.OpPower
+          name <- parseIdentifier
+          pure $ ParamKwArgs name Nothing
+
+    parseDefault = do
+      void $ operator' Lexer.OpAssign
+      parseExpression
+
+    isVarParam (Located _ ParamVarArgs{}) = True
+    isVarParam _ = False
+
+    isKwParam (Located _ ParamKwArgs{}) = True
+    isKwParam _ = False
+
+parseNamedExpr :: PythonParser (Located PythonExpr)
+parseNamedExpr = do
+  expr <- parseConditionalExpr
+  parseWalrus expr
+  where
+    parseWalrus expr =
+      (do
+        operator' Lexer.OpWalrus
+        target <- case exprToPattern expr of
+          Just pat -> pure pat
+          Nothing -> fail "Invalid assignment expression target"
+        value <- parseNamedExpr
+        pure $ located' $ PyNamedExpr target value
+      ) <|> pure expr
+
+parseConditionalExpr :: PythonParser (Located PythonExpr)
+parseConditionalExpr = do
+  thenExpr <- parseOrExpr
+  option thenExpr $ do
+    try $ do
+      void $ keywordP KwIf
+      condition <- parseOrExpr
+      void $ keywordP KwElse
+      elseExpr <- parseConditionalExpr
+      pure $ located' $ PyIfExp condition thenExpr elseExpr
 
 parseOrExpr :: PythonParser (Located PythonExpr)
 parseOrExpr = do
@@ -477,19 +657,47 @@ parseNotExpr = choice
       void $ keywordP KwNot
       expr <- parseNotExpr
       return $ located' $ PyUnaryOp OpNot expr
-  , parseComparison
+  , parseAwaitExpr
   ]
+
+parseAwaitExpr :: PythonParser (Located PythonExpr)
+parseAwaitExpr = do
+  isAwait <- optional (keywordP KwAwait)
+  expr <- parseComparison
+  case isAwait of
+    Just _ -> pure $ located' $ PyAwait expr
+    Nothing -> pure expr
 
 parseComparison :: PythonParser (Located PythonExpr)
 parseComparison = do
-  first <- parseArithExpr
+  first <- parseBitOrExpr
   rest <- many $ do
     op <- parseCompOp
-    expr <- parseArithExpr
+    expr <- parseBitOrExpr
     return (op, expr)
   case rest of
     [] -> return first
     _ -> return $ located' $ PyComparison (map fst rest) (first : map snd rest)
+
+parseBitOrExpr :: PythonParser (Located PythonExpr)
+parseBitOrExpr = chainl1 parseBitXorExpr (operator' Lexer.OpBitOr $> mkBinary OpBitOr)
+
+parseBitXorExpr :: PythonParser (Located PythonExpr)
+parseBitXorExpr = chainl1 parseBitAndExpr (operator' Lexer.OpBitXor $> mkBinary OpBitXor)
+
+parseBitAndExpr :: PythonParser (Located PythonExpr)
+parseBitAndExpr = chainl1 parseShiftExpr (operator' Lexer.OpBitAnd $> mkBinary OpBitAnd)
+
+parseShiftExpr :: PythonParser (Located PythonExpr)
+parseShiftExpr = chainl1 parseArithExpr parseShiftOp
+  where
+    parseShiftOp = choice
+      [ operator' Lexer.OpLeftShift $> mkBinary OpShiftL
+      , operator' Lexer.OpRightShift $> mkBinary OpShiftR
+      ]
+
+mkBinary :: BinaryOp -> (Located PythonExpr -> Located PythonExpr -> Located PythonExpr)
+mkBinary op = \l r -> located' $ PyBinaryOp op l r
 
 parseCompOp :: PythonParser ComparisonOp
 parseCompOp = choice
@@ -788,6 +996,17 @@ parseAttributeTrailer = do
   void $ delimiterP DelimDot
   attr <- parseIdentifier
   return $ \expr -> located' $ PyAttribute expr attr
+
+exprToPattern :: Located PythonExpr -> Maybe (Located PythonPattern)
+exprToPattern (Located span expr) = case expr of
+  PyVar ident -> Just (Located span (PatVar ident))
+  PyTuple elems -> do
+    pats <- traverse exprToPattern elems
+    Just (Located span (PatTuple pats))
+  PyList elems -> do
+    pats <- traverse exprToPattern elems
+    Just (Located span (PatList pats))
+  _ -> Nothing
 
 -- | Parse patterns
 parsePattern :: PythonParser (Located PythonPattern)

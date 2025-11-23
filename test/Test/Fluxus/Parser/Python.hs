@@ -462,9 +462,86 @@ parserSpec = describe "Python Parser" $ do
             other -> expectationFailure $ "Expected from-import, found " <> show other
           _ -> expectationFailure "Expected single import"
 
--- Helper functions
-mockTokens :: [PythonToken] -> [Located PythonToken]
-mockTokens = map mockToken
+    describe "advanced statements and expressions" $ do
+      it "parses annotated assignments with type hints" $
+        withParsedModule "value: int = 42\n" $ \module_ ->
+          case pyModuleBody module_ of
+            [stmt] -> case locatedValue stmt of
+              PyAnnAssign target typeExpr mValue -> do
+                locValue target `shouldBe` PatVar (Identifier "value")
+                locValue typeExpr `shouldBe` TypeName (QualifiedName [] (Identifier "int"))
+                case mValue of
+                  Just expr -> locValue expr `shouldBe` PyLiteral (PyInt 42)
+                  Nothing -> expectationFailure "Expected initializer for annotated assignment"
+              other -> expectationFailure $ "Expected annotated assignment, found " <> show other
+            _ -> expectationFailure "Expected single annotated assignment"
+
+      it "parses lambda expressions inline" $
+        withParsedModule "square = lambda x: x * x\n" $ \module_ ->
+          case pyModuleBody module_ of
+            [stmt] -> case locatedValue stmt of
+              PyAssign _ valueExpr -> case locValue valueExpr of
+                PyLambda params bodyExpr -> do
+                  length params `shouldBe` 1
+                  case map locValue params of
+                    [ParamNormal (Identifier name) _ _] -> name `shouldBe` "x"
+                    other -> expectationFailure $ "Unexpected lambda params: " <> show other
+                  case locValue bodyExpr of
+                    PyBinaryOp OpMul left right -> do
+                      locValue left `shouldBe` PyVar (Identifier "x")
+                      locValue right `shouldBe` PyVar (Identifier "x")
+                    other -> expectationFailure $ "Expected multiplication body, found " <> show other
+                other -> expectationFailure $ "Expected lambda expression, found " <> show other
+              other -> expectationFailure $ "Expected assignment, found " <> show other
+            _ -> expectationFailure "Expected single lambda assignment"
+
+      it "parses assignment expressions (walrus operator)" $
+        withParsedModule "result = (n := 5)\n" $ \module_ ->
+          case pyModuleBody module_ of
+            [stmt] -> case locatedValue stmt of
+              PyAssign _ valueExpr -> case locValue valueExpr of
+                PyNamedExpr pat expr -> do
+                  locValue pat `shouldBe` PatVar (Identifier "n")
+                  locValue expr `shouldBe` PyLiteral (PyInt 5)
+                other -> expectationFailure $ "Expected named expression, found " <> show other
+              other -> expectationFailure $ "Expected assignment, found " <> show other
+            _ -> expectationFailure "Expected single walrus assignment"
+
+      it "respects bitwise operator precedence" $
+        withParsedModule "mask = a | b & c\n" $ \module_ ->
+          case pyModuleBody module_ of
+            [stmt] -> case locatedValue stmt of
+              PyAssign _ valueExpr -> case locValue valueExpr of
+                PyBinaryOp OpBitOr left right -> do
+                  locValue left `shouldBe` PyVar (Identifier "a")
+                  case locValue right of
+                    PyBinaryOp OpBitAnd innerLeft innerRight -> do
+                      locValue innerLeft `shouldBe` PyVar (Identifier "b")
+                      locValue innerRight `shouldBe` PyVar (Identifier "c")
+                    other -> expectationFailure $ "Expected bitwise and on RHS, found " <> show other
+                other -> expectationFailure $ "Expected bitwise or expression, found " <> show other
+              other -> expectationFailure $ "Expected assignment, found " <> show other
+            _ -> expectationFailure "Expected single bitwise assignment"
+
+      it "parses raise statements with causes" $
+        withParsedModule "raise ValueError('boom') from err\n" $ \module_ ->
+          case pyModuleBody module_ of
+            [stmt] -> case locatedValue stmt of
+              PyRaise mExc mCause -> do
+                case mExc of
+                  Just excExpr -> case locValue excExpr of
+                    PyCall (Located _ (PyVar (Identifier "ValueError"))) _ -> pure ()
+                    other -> expectationFailure $ "Unexpected raise target: " <> show other
+                  Nothing -> expectationFailure "Expected exception expression"
+                case mCause of
+                  Just causeExpr -> locValue causeExpr `shouldBe` PyVar (Identifier "err")
+                  Nothing -> expectationFailure "Expected raise cause"
+              other -> expectationFailure $ "Expected raise statement, found " <> show other
+            _ -> expectationFailure "Expected single raise statement"
+
+    -- Helper functions
+    mockTokens :: [PythonToken] -> [Located PythonToken]
+
 
 mockToken :: PythonToken -> Located PythonToken
 mockToken token = Located mockSpan token
