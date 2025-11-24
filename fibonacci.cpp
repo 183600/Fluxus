@@ -2,11 +2,10 @@
 #include <string>
 #include <iostream>
 
-// TODO: Implement Python expression: PyComparison [OpLe] [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "n")},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 1)}]
 auto fib(auto n) {
-    if (0) {
-    return n;
-}
+    if (n <= 1) {
+        return n;
+    }
     return fib(n - 1) + fib(n - 2);
 }
 
@@ -15,4 +14,3 @@ int main() {
     std::cout << result << std::endl;
     return 0;
 }
-
