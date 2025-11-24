@@ -2,21 +2,17 @@
 #include <string>
 #include <iostream>
 
-// TODO: Implement Python expression: PyComparison [OpLe] [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "n")},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyInt 1)}]
 auto fibonacci(auto n) {
-    if (0) {
-    return n;
-} else {
+    if (n <= 1) {
+        return n;
+    }
     return fibonacci(n - 1) + fibonacci(n - 2);
-}
 }
 
 int main() {
-    for (i = 0;; i < 10; ++i) {
-    auto result = fibonacci(i);
-    std::cout << "fib({i}) = {result}" << std::endl;
-}
+    for (int i = 0; i < 10; ++i) {
+        auto result = fibonacci(i);
+        std::cout << "fib(" << i << ") = " << result << std::endl;
+    }
     return 0;
 }
-
-// TODO: Implement Python expression: PyComparison [OpEq] [Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyVar (Identifier "__name__")},Located {locSpan = SourceSpan {spanFilename = "<input>", spanStart = SourcePos {posLine = 0, posColumn = 0}, spanEnd = SourcePos {posLine = 0, posColumn = 0}}, locValue = PyLiteral (PyString "__main__")}]
