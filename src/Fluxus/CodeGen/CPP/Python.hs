@@ -182,6 +182,8 @@ generatePythonStmt scope (Located span stmt) =
       generatePythonWith scope span items bodyStmts
     PyTry tryBody excepts elseStmts finallyStmts ->
       generatePythonTry scope span tryBody excepts elseStmts finallyStmts
+    PyMatch _ _ ->
+      buildRuntimeFallback span "Python 'match' statement requires runtime fallback"
     PyImport imports -> do
       emitInfo $
         "Ignoring Python import at " <> formatSpan span <> ": "
