@@ -49,6 +49,10 @@ diff py_out.txt cpp_out.txt
 | 循环 | `for i in range(10): ...` | ✅ |
 | 函数 | `def add(a, b): return a + b` | ✅ |
 | 递归 | `factorial(n)` | ✅ |
+| 列表推导 | `[x * 2 for x in values if x % 2 == 0]` | ✅ |
+| 集合推导 | `{x * 2 for x in values}` | ✅ |
+| 字典推导 | `{x: x * 2 for x in values}` | ✅ |
+| 增强赋值 | `total += delta` | ✅ |
 
 ## 测试脚本
 
