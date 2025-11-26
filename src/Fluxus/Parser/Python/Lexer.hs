@@ -96,6 +96,7 @@ data Keyword
   | KwAsync
   | KwAwait
   | KwBreak
+  | KwCase
   | KwClass
   | KwContinue
   | KwDef
@@ -113,6 +114,7 @@ data Keyword
   | KwIn
   | KwIs
   | KwLambda
+  | KwMatch
   | KwNone
   | KwNonlocal
   | KwNot
@@ -664,6 +666,7 @@ keywordToText = \case
   KwAsync -> "async"
   KwAwait -> "await"
   KwBreak -> "break"
+  KwCase -> "case"
   KwClass -> "class"
   KwContinue -> "continue"
   KwDef -> "def"
@@ -681,6 +684,7 @@ keywordToText = \case
   KwIn -> "in"
   KwIs -> "is"
   KwLambda -> "lambda"
+  KwMatch -> "match"
   KwNone -> "None"
   KwNonlocal -> "nonlocal"
   KwNot -> "not"

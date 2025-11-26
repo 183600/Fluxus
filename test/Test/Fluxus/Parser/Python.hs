@@ -7,6 +7,7 @@ module Test.Fluxus.Parser.Python (spec) where
 import Test.Hspec
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.List.NonEmpty as NE
 
 import Fluxus.Parser.Python.Lexer
 import Fluxus.Parser.Python.Parser
@@ -93,7 +94,7 @@ lexerTokensSpec = describe "Python Lexer - tokens coverage" $ do
           ]
 
   it "tokenizes common keywords" $ do
-    let input = "def class if else for while return import from"
+    let input = "def class if else for while return import from match case"
     case runPythonLexer "test.py" input of
       Left _ -> expectationFailure "Lexer failed"
       Right toks -> do
@@ -604,6 +605,119 @@ parserSpec = describe "Python Parser" $ do
                 other -> expectationFailure $ "Expected subscript expression, found " <> show other
               other -> expectationFailure $ "Expected assignment, found " <> show other
             _ -> expectationFailure "Expected single assignment"
+
+  describe "match statements" $ do
+    it "parses match statements with literal and capture patterns" $
+      withParsedModule (T.unlines
+        [ "match value:"
+        , "    case 0:"
+        , "        pass"
+        , "    case other:"
+        , "        pass"
+        ]) $ \module_ ->
+        case pyModuleBody module_ of
+          [matchStmt] -> case locatedValue matchStmt of
+            PyMatch subject cases -> do
+              locValue subject `shouldBe` PyVar (Identifier "value")
+              length cases `shouldBe` 2
+              let firstClause = locatedValue (head cases)
+                  secondClause = locatedValue (cases !! 1)
+              case locValue (pyCasePattern firstClause) of
+                PatLiteral (PyInt 0) -> pure ()
+                other -> expectationFailure $ "Expected literal pattern, found " <> show other
+              case locValue (pyCasePattern secondClause) of
+                PatVar (Identifier name) -> name `shouldBe` "other"
+                other -> expectationFailure $ "Expected capture pattern, found " <> show other
+              map (length . pyCaseBody . locatedValue) cases `shouldSatisfy` all (>= 1)
+            other -> expectationFailure $ "Expected match statement, found " <> show other
+          _ -> expectationFailure "Expected single statement"
+
+    it "parses match statements with OR patterns" $
+      withParsedModule (T.unlines
+        [ "match status:"
+        , "    case \"ready\" | \"ok\":"
+        , "        pass"
+        ]) $ \module_ ->
+        case pyModuleBody module_ of
+          [matchStmt] -> case locatedValue matchStmt of
+            PyMatch _ [caseClause] ->
+              case locValue (pyCasePattern caseClause) of
+                PatOr alts -> do
+                  let literalPatterns = map locValue (NE.toList alts)
+                  literalPatterns `shouldSatisfy` all (\p -> case p of
+                    PatLiteral (PyString _) -> True
+                    _ -> False)
+                other -> expectationFailure $ "Expected OR pattern, found " <> show other
+            other -> expectationFailure $ "Expected single case match, found " <> show other
+          _ -> expectationFailure "Expected single match statement"
+
+    it "supports guards and sequence patterns with starred targets" $
+      withParsedModule (T.unlines
+        [ "match data:"
+        , "    case [head, *tail] if head > 0:"
+        , "        pass"
+        ]) $ \module_ ->
+        case pyModuleBody module_ of
+          [matchStmt] -> case locatedValue matchStmt of
+            PyMatch _ [caseClause] -> do
+              case locValue (pyCasePattern caseClause) of
+                PatList patterns -> do
+                  length patterns `shouldBe` 2
+                  case map locValue patterns of
+                    [PatVar (Identifier "head"), PatStarred inner] ->
+                      locValue inner `shouldBe` PatVar (Identifier "tail")
+                    other -> expectationFailure $ "Unexpected sequence layout: " <> show other
+                other -> expectationFailure $ "Expected list pattern, found " <> show other
+              case pyCaseGuard (locatedValue caseClause) of
+                Just guardExpr -> case locValue guardExpr of
+                  PyComparison [OpGt] [lhs, rhs] -> do
+                    locValue lhs `shouldBe` PyVar (Identifier "head")
+                    locValue rhs `shouldBe` PyLiteral (PyInt 0)
+                  other -> expectationFailure $ "Unexpected guard expression: " <> show other
+                Nothing -> expectationFailure "Expected guard expression"
+            other -> expectationFailure $ "Expected single case match, found " <> show other
+          _ -> expectationFailure "Expected single match statement"
+
+    it "parses class patterns with positional and keyword subpatterns" $
+      withParsedModule (T.unlines
+        [ "match point:"
+        , "    case Point(x, y=y_val):"
+        , "        pass"
+        ]) $ \module_ ->
+        case pyModuleBody module_ of
+          [matchStmt] -> case locatedValue matchStmt of
+            PyMatch _ [caseClause] ->
+              case locValue (pyCasePattern caseClause) of
+                PatClass classExpr posArgs kwArgs -> do
+                  locValue classExpr `shouldBe` PyVar (Identifier "Point")
+                  map locValue posArgs `shouldBe` [PatVar (Identifier "x")]
+                  length kwArgs `shouldBe` 1
+                  let (kwName, kwPattern) = head kwArgs
+                  kwName `shouldBe` Identifier "y"
+                  locValue kwPattern `shouldBe` PatVar (Identifier "y_val")
+                other -> expectationFailure $ "Expected class pattern, found " <> show other
+            other -> expectationFailure $ "Expected single case match, found " <> show other
+          _ -> expectationFailure "Expected single match statement"
+
+    it "parses value patterns with dotted names" $
+      withParsedModule (T.unlines
+        [ "match color:"
+        , "    case Palette.PRIMARY:"
+        , "        pass"
+        ]) $ \module_ ->
+        case pyModuleBody module_ of
+          [matchStmt] -> case locatedValue matchStmt of
+            PyMatch _ [caseClause] ->
+              case locValue (pyCasePattern caseClause) of
+                PatValue expr ->
+                  case locValue expr of
+                    PyAttribute base attrName -> do
+                      locValue base `shouldBe` PyVar (Identifier "Palette")
+                      attrName `shouldBe` Identifier "PRIMARY"
+                    other -> expectationFailure $ "Unexpected value expression: " <> show other
+                other -> expectationFailure $ "Expected value pattern, found " <> show other
+            other -> expectationFailure $ "Expected match statement, found " <> show other
+          _ -> expectationFailure "Expected single match statement"
 
     -- Helper functions
     mockTokens :: [PythonToken] -> [Located PythonToken]

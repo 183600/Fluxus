@@ -18,6 +18,7 @@ module Fluxus.AST.Python
   , PythonImport(..)
   , PythonExcept(..)
   , PythonWithItem(..)
+  , PythonCase(..)
     -- * Python literals and constants
   , PythonLiteral(..)
   , PythonFStringSegment(..)
@@ -35,6 +36,7 @@ module Fluxus.AST.Python
 
 import Data.Text (Text)
 import Data.Hashable (Hashable)
+import Data.List.NonEmpty (NonEmpty)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 
@@ -80,6 +82,7 @@ data PythonStmt
   | PyFor !(Located PythonPattern) !(Located PythonExpr) ![Located PythonStmt] ![Located PythonStmt]
   | PyWith ![Located PythonWithItem] ![Located PythonStmt]
   | PyTry ![Located PythonStmt] ![Located PythonExcept] ![Located PythonStmt] ![Located PythonStmt]
+  | PyMatch !(Located PythonExpr) ![Located PythonCase]
   | PyRaise !(Maybe (Located PythonExpr)) !(Maybe (Located PythonExpr))
   
   -- Function and class definitions
@@ -154,6 +157,11 @@ data PythonPattern
   | PatList ![Located PythonPattern]
   | PatStarred !(Located PythonPattern)
   | PatWildcard                         -- _
+  | PatOr !(NonEmpty (Located PythonPattern))
+  | PatAs !(Located PythonPattern) !Identifier
+  | PatValue !(Located PythonExpr)
+  | PatMapping ![(Located PythonExpr, Located PythonPattern)] !(Maybe Identifier)
+  | PatClass !(Located PythonExpr) ![Located PythonPattern] ![(Identifier, Located PythonPattern)]
   deriving stock (Eq, Show, Generic)
     deriving anyclass (Hashable, NFData)
 
@@ -263,6 +271,14 @@ data PythonExcept = PythonExcept
 data PythonWithItem = PythonWithItem
   { pyWithContext :: !(Located PythonExpr)
   , pyWithVar     :: !(Maybe (Located PythonPattern))
+  } deriving stock (Eq, Show, Generic)
+    deriving anyclass (Hashable, NFData)
+
+-- | Case clause inside a match statement
+data PythonCase = PythonCase
+  { pyCasePattern :: !(Located PythonPattern)
+  , pyCaseGuard   :: !(Maybe (Located PythonExpr))
+  , pyCaseBody    :: ![Located PythonStmt]
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (Hashable, NFData)
 

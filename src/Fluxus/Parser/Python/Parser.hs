@@ -124,6 +124,7 @@ parseStatement = located $ choice
   , try parseForStmt
   , try parseWithStmt
   , try parseTryStmt
+  , try parseMatchStmt
   , try parseReturnStmt
   , try parseYieldStmt
   , try parseBreakStmt
@@ -329,6 +330,48 @@ parseExceptClause = located $ do
     , pyExceptName = exceptName
     , pyExceptBody = clauseBody
     }
+
+parseMatchStmt :: PythonParser PythonStmt
+parseMatchStmt = do
+  void $ keywordP KwMatch
+  subject <- parseExpression
+  void $ delimiterP DelimColon
+  cases <- parseMatchCaseBlock
+  when (null cases) $
+    fail "match statement requires at least one case clause"
+  pure $ PyMatch subject cases
+
+parseMatchCaseBlock :: PythonParser [Located PythonCase]
+parseMatchCaseBlock = do
+  void parseNewlineToken
+  void parseIndent
+  skipNewlinesAndComments
+  cases <- some $ do
+    clause <- parseCaseClause
+    skipNewlinesAndComments
+    pure clause
+  void parseDedent
+  pure cases
+
+parseCaseClause :: PythonParser (Located PythonCase)
+parseCaseClause = located $ do
+  void $ keywordP KwCase
+  pattern <- parseMatchPattern
+  guardExpr <- optional $ do
+    void $ keywordP KwIf
+    parseExpression
+  void $ delimiterP DelimColon
+  body <- parseBlock
+  pure $ PythonCase
+    { pyCasePattern = pattern
+    , pyCaseGuard = guardExpr
+    , pyCaseBody = body
+    }
+
+parseNewlineToken :: PythonParser ()
+parseNewlineToken = void $ satisfy $ \case
+  Located _ TokenNewline -> True
+  _ -> False
 
 parseDecorators :: PythonParser [Located PythonDecorator]
 parseDecorators = many (try parseDecorator)
@@ -1076,6 +1119,243 @@ parseAttributeTrailer = do
   void $ delimiterP DelimDot
   attr <- parseIdentifier
   return $ \expr -> located' $ PyAttribute expr attr
+
+-- | Structural pattern parsing for match statements
+parseMatchPattern :: PythonParser (Located PythonPattern)
+parseMatchPattern = located parseMatchPatternBody
+
+parseMatchPatternBody :: PythonParser PythonPattern
+parseMatchPatternBody = do
+  first <- parseMatchAsPattern
+  rest <- many (operator' Lexer.OpBitOr *> parseMatchAsPattern)
+  case rest of
+    [] -> pure (locValue first)
+    _ -> pure $ PatOr (NE.fromList (first : rest))
+
+parseMatchAsPattern :: PythonParser (Located PythonPattern)
+parseMatchAsPattern = do
+  base <- parseMatchPrimaryPattern
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenKeyword KwAs) : _) -> do
+      void $ keywordP KwAs
+      alias <- located parseIdentifier
+      let combined = mergeSpans (locSpan base) (locSpan alias)
+      pure $ Located combined (PatAs base (locValue alias))
+    _ -> pure base
+
+parseMatchPrimaryPattern :: PythonParser (Located PythonPattern)
+parseMatchPrimaryPattern = do
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenOperator Lexer.OpMult) : _) -> parseMatchStarPattern
+    (Located _ (TokenDelimiter DelimLeftBracket) : _) -> parseMatchListPattern
+    (Located _ (TokenDelimiter DelimLeftParen) : _) -> parseMatchParenPattern
+    (Located _ (TokenDelimiter DelimLeftBrace) : _) -> parseMatchMappingPattern
+    (Located _ (TokenIdent "_") : _) -> parseWildcardPattern
+    (Located _ tok : _)
+      | isLiteralStart tok -> parseMatchLiteralPattern
+    (Located _ (TokenIdent _) : _) -> parseMatchNamePattern
+    _ -> fail "Unexpected token in match pattern"
+
+isLiteralStart :: PythonToken -> Bool
+isLiteralStart = \case
+  TokenOperator Lexer.OpPlus -> True
+  TokenOperator Lexer.OpMinus -> True
+  tok -> isLiteralToken tok
+
+parseMatchLiteralPattern :: PythonParser (Located PythonPattern)
+parseMatchLiteralPattern = located $ do
+  literal <- parsePatternLiteralValue
+  pure $ PatLiteral literal
+
+parseMatchStarPattern :: PythonParser (Located PythonPattern)
+parseMatchStarPattern = located $ do
+  operator' Lexer.OpMult
+  target <- parseCapturePattern
+  pure $ PatStarred target
+
+parseCapturePattern :: PythonParser (Located PythonPattern)
+parseCapturePattern = choice
+  [ parseWildcardPattern
+  , located $ PatVar <$> parseIdentifier
+  ]
+
+parseMatchListPattern :: PythonParser (Located PythonPattern)
+parseMatchListPattern = located $ do
+  void $ delimiterP DelimLeftBracket
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimRightBracket) : _) -> do
+      void $ delimiterP DelimRightBracket
+      pure $ PatList []
+    _ -> do
+      first <- parseMatchSequenceElement
+      (rest, _) <- parseCommaSeparatedRest DelimRightBracket parseMatchSequenceElement
+      void $ delimiterP DelimRightBracket
+      pure $ PatList (first : rest)
+
+parseMatchSequenceElement :: PythonParser (Located PythonPattern)
+parseMatchSequenceElement = do
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenOperator Lexer.OpMult) : _) -> parseMatchStarPattern
+    _ -> parseMatchPattern
+
+parseMatchParenPattern :: PythonParser (Located PythonPattern)
+parseMatchParenPattern = located $ do
+  void $ delimiterP DelimLeftParen
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimRightParen) : _) -> do
+      void $ delimiterP DelimRightParen
+      pure $ PatTuple []
+    _ -> do
+      first <- parseMatchPattern
+      (rest, trailing) <- parseCommaSeparatedRest DelimRightParen parseMatchPattern
+      void $ delimiterP DelimRightParen
+      case (rest, trailing) of
+        ([], False) -> pure $ locValue first
+        _ -> pure $ PatTuple (first : rest)
+
+parseMatchMappingPattern :: PythonParser (Located PythonPattern)
+parseMatchMappingPattern = located $ do
+  void $ delimiterP DelimLeftBrace
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimRightBrace) : _) -> do
+      void $ delimiterP DelimRightBrace
+      pure $ PatMapping [] Nothing
+    _ -> do
+      (pairs, restName) <- parseMappingItems [] Nothing
+      void $ delimiterP DelimRightBrace
+      pure $ PatMapping pairs restName
+  where
+    parseMappingItems acc restName = do
+      entry <- parseMatchMappingEntry restName
+      let (acc', restName') = case entry of
+            Left pair -> (pair : acc, restName)
+            Right name -> (acc, Just name)
+      tokensAfter <- getInput
+      case tokensAfter of
+        (Located _ (TokenDelimiter DelimComma) : _) -> do
+          void $ delimiterP DelimComma
+          tokensNext <- getInput
+          case tokensNext of
+            (Located _ (TokenDelimiter DelimRightBrace) : _) -> pure (reverse acc', restName')
+            _ -> parseMappingItems acc' restName'
+        _ -> pure (reverse acc', restName')
+
+parseMatchMappingEntry :: Maybe Identifier -> PythonParser (Either (Located PythonExpr, Located PythonPattern) Identifier)
+parseMatchMappingEntry restName = do
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenOperator Lexer.OpPower) : _) -> do
+      void $ operator' Lexer.OpPower
+      name <- parseIdentifier
+      case restName of
+        Just _ -> fail "Multiple ** captures in mapping pattern"
+        Nothing -> pure $ Right name
+    _ -> do
+      keyExpr <- parseMappingKeyExpr
+      void $ delimiterP DelimColon
+      valuePattern <- parseMatchPattern
+      pure $ Left (keyExpr, valuePattern)
+
+parseMappingKeyExpr :: PythonParser (Located PythonExpr)
+parseMappingKeyExpr = located $ do
+  literal <- parsePatternLiteralValue
+  pure $ PyLiteral literal
+
+parseMatchNamePattern :: PythonParser (Located PythonPattern)
+parseMatchNamePattern = located parseMatchNamePatternBody
+
+parseMatchNamePatternBody :: PythonParser PythonPattern
+parseMatchNamePatternBody = do
+  nameLoc <- located parseIdentifier
+  let baseExpr = Located (locSpan nameLoc) (PyVar (locValue nameLoc))
+  (qualifiedExpr, sawDot) <- parseAttributeChain baseExpr False
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimLeftParen) : _) -> do
+      (posArgs, kwArgs) <- parseClassPatternArgs
+      pure $ PatClass qualifiedExpr posArgs kwArgs
+    _ | sawDot -> pure $ PatValue qualifiedExpr
+      | otherwise -> pure $ PatVar (locValue nameLoc)
+
+parseClassPatternArgs :: PythonParser ([Located PythonPattern], [(Identifier, Located PythonPattern)])
+parseClassPatternArgs = do
+  void $ delimiterP DelimLeftParen
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimRightParen) : _) -> do
+      void $ delimiterP DelimRightParen
+      pure ([], [])
+    _ -> do
+      first <- parseClassPatternArg
+      (rest, _) <- parseCommaSeparatedRest DelimRightParen parseClassPatternArg
+      void $ delimiterP DelimRightParen
+      collectArgs (first : rest)
+  where
+    collectArgs args = go [] [] False args
+    go pos kw _ [] = pure (reverse pos, reverse kw)
+    go pos kw seenKw (arg:rest) = case arg of
+      Left pat -> do
+        when seenKw $ fail "Positional subpatterns must precede keyword subpatterns"
+        go (pat:pos) kw seenKw rest
+      Right (name, pat) -> go pos ((name, pat):kw) True rest
+
+parseClassPatternArg :: PythonParser (Either (Located PythonPattern) (Identifier, Located PythonPattern))
+parseClassPatternArg = choice
+  [ try $ do
+      name <- parseIdentifier
+      void $ operator' Lexer.OpAssign
+      pat <- parseMatchPattern
+      pure $ Right (name, pat)
+  , Left <$> parseMatchPattern
+  ]
+
+parsePatternLiteralValue :: PythonParser PythonLiteral
+parsePatternLiteralValue = do
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenOperator Lexer.OpPlus) : _) -> do
+      void $ operator' Lexer.OpPlus
+      parseLiteralValue
+    (Located _ (TokenOperator Lexer.OpMinus) : _) -> do
+      void $ operator' Lexer.OpMinus
+      literal <- parseLiteralValue
+      case literal of
+        PyInt n -> pure $ PyInt (negate n)
+        PyFloat f -> pure $ PyFloat (negate f)
+        PyComplex real imag -> pure $ PyComplex (negate real) (negate imag)
+        _ -> fail "Unary minus is only allowed on numeric literals in patterns"
+    (Located _ tok : _) | isLiteralToken tok -> parseLiteralValue
+    _ -> fail "Expected literal in pattern"
+
+parseAttributeChain :: Located PythonExpr -> Bool -> PythonParser (Located PythonExpr, Bool)
+parseAttributeChain expr seenDot = do
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimDot) : _) -> do
+      void $ delimiterP DelimDot
+      attr <- located parseIdentifier
+      let span' = mergeSpans (locSpan expr) (locSpan attr)
+          newExpr = Located span' (PyAttribute expr (locValue attr))
+      parseAttributeChain newExpr True
+    _ -> pure (expr, seenDot)
+
+isLiteralToken :: PythonToken -> Bool
+isLiteralToken = \case
+  TokenString _ -> True
+  TokenBytes _ -> True
+  TokenFString _ -> True
+  TokenNumber _ _ -> True
+  TokenOperator Lexer.OpEllipsis -> True
+  TokenKeyword KwTrue -> True
+  TokenKeyword KwFalse -> True
+  TokenKeyword KwNone -> True
+  _ -> False
 
 exprToPattern :: Located PythonExpr -> Maybe (Located PythonPattern)
 exprToPattern (Located span expr) = case expr of

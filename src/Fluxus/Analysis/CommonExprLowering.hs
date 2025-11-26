@@ -23,6 +23,7 @@ module Fluxus.Analysis.CommonExprLowering
 import Data.Either (partitionEithers)
 import Data.Int (Int64)
 import Data.List (foldl')
+import qualified Data.List.NonEmpty as NE
 import Data.Maybe (maybeToList, catMaybes)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -88,6 +89,7 @@ collectPythonStmt (Located _ stmt) = case stmt of
   PyAsyncWith items body -> concatMap collectPythonWithItem items ++ collectNested body
   PyTry body excepts orelse finally ->
     collectNested body ++ concatMap collectPythonExcept excepts ++ collectNested orelse ++ collectNested finally
+  PyMatch subject cases -> subject : concatMap collectPythonCase cases
   PyRaise maybeExc maybeFrom -> catMaybes [maybeExc, maybeFrom]
   PyFuncDef func -> collectPythonFunc func
   PyAsyncFuncDef func -> collectPythonFunc func
@@ -107,6 +109,25 @@ collectPythonWithItem (Located _ item) = [pyWithContext item]
 collectPythonExcept :: Located PythonExcept -> [Located PythonExpr]
 collectPythonExcept (Located _ except) =
   maybeToList (pyExceptType except) ++ concatMap collectPythonStmt (pyExceptBody except)
+
+collectPythonCase :: Located PythonCase -> [Located PythonExpr]
+collectPythonCase (Located _ clause) =
+  collectPatternExprs (pyCasePattern clause)
+    ++ maybeToList (pyCaseGuard clause)
+    ++ concatMap collectPythonStmt (pyCaseBody clause)
+
+collectPatternExprs :: Located PythonPattern -> [Located PythonExpr]
+collectPatternExprs (Located _ pat) = case pat of
+  PatTuple pats -> concatMap collectPatternExprs pats
+  PatList pats -> concatMap collectPatternExprs pats
+  PatStarred inner -> collectPatternExprs inner
+  PatOr alts -> concatMap collectPatternExprs (NE.toList alts)
+  PatAs inner _ -> collectPatternExprs inner
+  PatValue expr -> [expr]
+  PatMapping entries _ -> map fst entries ++ concatMap (collectPatternExprs . snd) entries
+  PatClass classExpr posArgs kwArgs ->
+    classExpr : concatMap collectPatternExprs posArgs ++ concatMap (collectPatternExprs . snd) kwArgs
+  _ -> []
 
 collectPythonFunc :: PythonFuncDef -> [Located PythonExpr]
 collectPythonFunc func =
@@ -344,6 +365,11 @@ pythonPatternBindings (Located span pat) = case pat of
   PatWildcard -> Right []
   PatLiteral _ -> Right []
   PatStarred{} -> Left $ unsupportedAt span "Starred patterns in comprehensions are not supported in common expression lowering"
+  PatOr alts -> fmap concat $ traverse pythonPatternBindings (NE.toList alts)
+  PatAs inner _ -> pythonPatternBindings inner
+  PatValue _ -> Left $ unsupportedAt span "Value patterns in comprehensions are not supported in common expression lowering"
+  PatMapping _ _ -> Left $ unsupportedAt span "Mapping patterns in comprehensions are not supported in common expression lowering"
+  PatClass _ _ _ -> Left $ unsupportedAt span "Class patterns in comprehensions are not supported in common expression lowering"
 
 goExprToCommon :: Located GoExpr -> Either LoweringIssue CommonExpr
 goExprToCommon located@(Located span expr) = case expr of
