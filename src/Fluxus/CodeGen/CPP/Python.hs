@@ -1295,10 +1295,31 @@ generatePythonExpr (Located span expr) = case expr of
         return $ CppBinary cppOp cppLeft cppRight
 
     generateMembershipComparison leftExpr rightExpr isNegated = do
-      needleExpr <- generatePythonExpr leftExpr
+      let defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated rightExpr)
+          contextLabel = "membership haystack at " <> formatSpan (locSpan rightExpr)
+      haystackType <- refinePythonExprType contextLabel rightExpr defaultType
+      let classification = classifyMembershipTarget (stripTypeQualifiers haystackType)
       haystackExpr <- generatePythonExpr rightExpr
+      case classification of
+        Just MembershipStringCategory ->
+          lowerStringMembership leftExpr haystackExpr
+        Just MembershipSequenceCategory -> do
+          needleExpr <- generatePythonExpr leftExpr
+          lowerSequenceMembership needleExpr haystackExpr
+        Just (MembershipMapCategory mapKind) -> do
+          needleExpr <- generatePythonExpr leftExpr
+          lowerMapMembership needleExpr haystackExpr mapKind
+        Nothing -> do
+          needleExpr <- generatePythonExpr leftExpr
+          membershipFallback haystackType needleExpr haystackExpr
+
+    membershipFallback resolvedType needleValue haystackValue = do
       let operatorLabel = if isNegated then "not in" else "in"
-          baseMessage = "Python membership operator '" <> operatorLabel <> "' requires runtime fallback"
+          renderedType = case stripTypeQualifiers resolvedType of
+            CppAuto -> "unknown type"
+            actual -> renderCppType actual
+          baseMessage = "Python membership operator '" <> operatorLabel
+                        <> "' over " <> renderedType <> " requires runtime fallback"
           message = baseMessage <> " at " <> formatSpan span
       strict <- gets (cgcStrictMode . cgsConfig)
       action <- if strict
@@ -1307,12 +1328,84 @@ generatePythonExpr (Located span expr) = case expr of
       let resultLiteral = CppLiteral (CppBoolLit (if isNegated then True else False))
           lambdaBody =
             [ CppComment ("runtime fallback: membership comparison '" <> operatorLabel <> "'")
-            , CppExprStmt needleExpr
-            , CppExprStmt haystackExpr
+            , CppExprStmt needleValue
+            , CppExprStmt haystackValue
             , action
             , CppReturn (Just resultLiteral)
             ]
       return $ CppCall (CppLambda [] lambdaBody) []
+
+    lowerStringMembership needleSource haystackValue = do
+      addInclude "<string>"
+      haystackVar <- generateTempVar
+      needleVar <- generateTempVar
+      needleString <- renderExprAsString needleSource
+      let haystackDecl = bindConstRef haystackVar haystackValue
+          needleDecl = bindConstRef needleVar needleString
+          findCall = CppCall (CppMember (CppVar haystackVar) "find") [CppVar needleVar]
+          membership = CppBinary "!=" findCall (CppVar "std::string::npos")
+      pure $ wrapLambda [haystackDecl, needleDecl] (applyNegation membership)
+
+    lowerSequenceMembership needleValue haystackValue = do
+      addInclude "<algorithm>"
+      addInclude "<iterator>"
+      haystackVar <- generateTempVar
+      needleVar <- generateTempVar
+      endVar <- generateTempVar
+      let haystackDecl = bindConstRef haystackVar haystackValue
+          needleDecl = bindConstRef needleVar needleValue
+          endDecl = CppDecl (CppVariable endVar CppAuto (Just (CppCall (CppVar "std::end") [CppVar haystackVar])))
+          beginCall = CppCall (CppVar "std::begin") [CppVar haystackVar]
+          findCall = CppCall (CppVar "std::find") [beginCall, CppVar endVar, CppVar needleVar]
+          membership = CppBinary "!=" findCall (CppVar endVar)
+      pure $ wrapLambda [haystackDecl, needleDecl, endDecl] (applyNegation membership)
+
+    lowerMapMembership needleValue haystackValue mapKind = do
+      case mapKind of
+        OrderedMap -> addInclude "<map>"
+        UnorderedMap -> addInclude "<unordered_map>"
+      haystackVar <- generateTempVar
+      needleVar <- generateTempVar
+      endVar <- generateTempVar
+      let haystackDecl = bindConstRef haystackVar haystackValue
+          needleDecl = bindConstRef needleVar needleValue
+          endDecl = CppDecl (CppVariable endVar CppAuto (Just (CppCall (CppMember (CppVar haystackVar) "end") [])))
+          findCall = CppCall (CppMember (CppVar haystackVar) "find") [CppVar needleVar]
+          membership = CppBinary "!=" findCall (CppVar endVar)
+      pure $ wrapLambda [haystackDecl, needleDecl, endDecl] (applyNegation membership)
+
+    bindConstRef name expr =
+      CppDecl (CppVariable name (CppConst (CppReference CppAuto)) (Just expr))
+
+    wrapLambda bindings resultExpr =
+      CppCall (CppLambda [] (bindings ++ [CppReturn (Just resultExpr)])) []
+
+    applyNegation expr
+      | isNegated = CppUnary "!" expr
+      | otherwise = expr
+
+    classifyMembershipTarget ty = case ty of
+      CppString -> Just MembershipStringCategory
+      CppClassType name _
+        | name == "std::string" || name == "std::basic_string" -> Just MembershipStringCategory
+      CppVector _ -> Just MembershipSequenceCategory
+      CppStdArray _ _ -> Just MembershipSequenceCategory
+      CppClassType name _
+        | name `elem` ["std::vector", "std::list", "std::deque", "std::set", "std::unordered_set"] ->
+            Just MembershipSequenceCategory
+      CppMap _ _ -> Just (MembershipMapCategory OrderedMap)
+      CppUnorderedMap _ _ -> Just (MembershipMapCategory UnorderedMap)
+      CppClassType name _
+        | name == "std::map" -> Just (MembershipMapCategory OrderedMap)
+        | name == "std::unordered_map" -> Just (MembershipMapCategory UnorderedMap)
+      _ -> Nothing
+
+    data MembershipCategory
+      = MembershipStringCategory
+      | MembershipSequenceCategory
+      | MembershipMapCategory MapKind
+
+    data MapKind = OrderedMap | UnorderedMap
 
 -- | Materialize a Python list literal into a C++ vector expression
 data ListFallback
