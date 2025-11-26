@@ -1109,6 +1109,27 @@ generateFStringExpr segments = do
     compileSegment (PythonFStringExpr expr) = generatePythonExpr expr
 
 
+generateJoinedStringExpr :: SourceSpan -> [Located PythonExpr] -> CppCodeGen CppExpr
+generateJoinedStringExpr span segments = do
+  addInclude "<sstream>"
+  addInclude "<string>"
+  compiled <- mapM segmentToString segments
+  builderName <- generateTempVar
+  let builderVar = CppVar builderName
+      builderType = CppClassType "std::ostringstream" []
+      decl = CppDecl (CppVariable builderName builderType Nothing)
+      streamStmt expr = CppExprStmt (CppBinary "<<" builderVar expr)
+      body = decl : map streamStmt compiled ++ [CppReturn (Just (CppCall (CppMember builderVar "str") []))]
+  emitInfo $ "Joined string at " <> formatSpan span <> " lowered via std::ostringstream"
+  pure $ CppCall (CppLambda [] body) []
+  where
+    segmentToString located =
+      case locValue located of
+        PyLiteral (PyString text) -> pure (CppLiteral (CppStringLit text))
+        PyFormatSpec inner -> renderExprAsString inner
+        _ -> renderExprAsString located
+
+
 generatePythonExpr :: Located PythonExpr -> CppCodeGen CppExpr
 generatePythonExpr (Located span expr) = case expr of
   PyLiteral lit -> case lit of
@@ -1209,6 +1230,11 @@ generatePythonExpr (Located span expr) = case expr of
         cppFunc <- generatePythonExpr func
         cppArgs <- mapM generatePythonArgument args
         return $ CppCall cppFunc cppArgs
+  PyAsyncCall func args -> do
+    emitWarning $ "'async' call at " <> formatSpan span <> " is lowered to a synchronous call"
+    cppFunc <- generatePythonExpr func
+    cppArgs <- mapM generatePythonArgument args
+    return $ CppCall cppFunc cppArgs
   PyList _ -> do
     (_, vectorExpr) <- generatePythonListLiteral (Located span expr)
     return vectorExpr
@@ -1227,6 +1253,20 @@ generatePythonExpr (Located span expr) = case expr of
     generatePythonSetComprehension span element comprehensions
   PyDictComp keyExpr valueExpr comprehensions -> do
     generatePythonDictComprehension span keyExpr valueExpr comprehensions
+  PyGenComp element comprehensions -> do
+    generatePythonGeneratorExpression span element comprehensions
+  PyNamedExpr target valueExpr ->
+    generateWalrusExpr span target valueExpr
+  PyJoinedStr segments ->
+    generateJoinedStringExpr span segments
+  PyFormatSpec inner ->
+    renderExprAsString inner
+  PyStarred inner -> do
+    emitWarning $ "Unpacking expression at " <> formatSpan span <> " is treated as a plain value"
+    generatePythonExpr inner
+  PyAwait awaitedExpr -> do
+    emitWarning $ "Python 'await' expression at " <> formatSpan span <> " is executed synchronously"
+    generatePythonExpr awaitedExpr
   PyIfExp testExpr thenExpr elseExpr -> do
     -- Python ternary: `thenExpr if testExpr else elseExpr`
     -- C++ ternary: `testExpr ? thenExpr : elseExpr`
@@ -1525,6 +1565,45 @@ applyComprehensionFilters (cond:conds) body =
 describePattern :: PythonPattern -> Text
 describePattern pat = T.pack (show pat)
 
+
+generateWalrusExpr :: SourceSpan -> Located PythonPattern -> Located PythonExpr -> CppCodeGen CppExpr
+generateWalrusExpr span target valueExpr =
+  case locValue target of
+    PatVar (Identifier name) -> lowerNamed name
+    _ -> do
+      let message =
+            "Assignment expression target '"
+            <> describePattern (locValue target)
+            <> "' at "
+            <> formatSpan span
+            <> " is not supported"
+      reportNotImplemented message
+      generatePythonExpr valueExpr
+  where
+    lowerNamed name = do
+      symtab <- gets cgsSymbolTable
+      let defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated valueExpr)
+          context = "assignment expression to " <> name <> " at " <> formatSpan span
+      refinedType <- refinePythonExprType context valueExpr defaultType
+      case HM.lookup name symtab of
+        Nothing -> do
+          let message =
+                "Assignment expression introduces new name '"
+                <> name
+                <> "' at "
+                <> formatSpan span
+                <> " which is not yet supported"
+          reportNotImplemented message
+          generatePythonExpr valueExpr
+        Just _ -> do
+          cppValue <- generatePythonExpr valueExpr
+          tempName <- generateTempVar
+          let decl = CppDecl (CppVariable tempName refinedType (Just cppValue))
+              assignStmt = CppExprStmt (CppBinary "=" (CppVar name) (CppVar tempName))
+              returnStmt = CppReturn (Just (CppVar tempName))
+          modify $ \s -> s { cgsSymbolTable = HM.insert name refinedType (cgsSymbolTable s) }
+          pure $ CppCall (CppLambda [] [decl, assignStmt, returnStmt]) []
+
 comprehensionFallback :: SourceSpan -> Text -> Maybe CppExpr -> CppCodeGen CppExpr
 comprehensionFallback span baseMessage defaultExpr = do
   let message = baseMessage <> " at " <> formatSpan span
@@ -1596,6 +1675,15 @@ dictComprehensionFallback span reason = do
   let defaultExpr = CppBracedInit (CppClassType "std::map" [CppString, CppAuto]) []
   comprehensionFallback span ("Python dict comprehension " <> reason) (Just defaultExpr)
 
+
+generatePythonGeneratorExpression :: SourceSpan -> Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
+generatePythonGeneratorExpression span element comps = do
+  emitWarning $
+    "Python generator expression at "
+    <> formatSpan span
+    <> " is eagerly materialized into std::vector"
+  generatePythonListComprehension span element comps
+
 inferPythonExprCppTypeLocated :: Located PythonExpr -> Maybe CppType
 inferPythonExprCppTypeLocated (Located _ e) = inferPythonExprCppType e
 
@@ -1615,6 +1703,12 @@ inferPythonExprCppType = \case
     unifyElementType t1 t2
   PyBoolOp _ _ -> Just CppBool
   PyComparison _ _ -> Just CppBool
+  PyNamedExpr _ valueExpr -> inferPythonExprCppTypeLocated valueExpr
+  PyAwait awaitedExpr -> inferPythonExprCppTypeLocated awaitedExpr
+  PyStarred inner -> inferPythonExprCppTypeLocated inner
+  PyJoinedStr _ -> Just CppString
+  PyFormatSpec _ -> Just CppString
+  PyGenComp _ _ -> Just (CppVector CppAuto)
   _ -> Nothing
 
 inferPythonLiteralType :: PythonLiteral -> Maybe CppType

@@ -22,6 +22,9 @@ spec = describe "Extended Python code generation" $ do
   rangeHelperSpec
   keywordArgumentsSpec
   chainedAssignmentSpec
+  generatorExpressionSpec
+  joinedStringSpec
+  walrusExpressionSpec
 
 -- Test tuple unpacking in assignments
 tupleUnpackingSpec :: Spec
@@ -370,3 +373,121 @@ chainedAssignmentSpec = describe "Chained assignments" $ do
               other -> expectationFailure $ "Unexpected declaration sequence: " <> show other
           _ -> expectationFailure "Expected generated function 'assign_chain'"
       Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+generatorExpressionSpec :: Spec
+generatorExpressionSpec = describe "Generator expressions" $ do
+  it "materializes generator expressions eagerly" $ do
+    let sourceAssign =
+          noLoc
+            ( PyAssign
+                [noLoc (PatVar (Identifier "source"))]
+                (noLoc (PyList (map (noLoc . PyLiteral . PyInt) [1, 2, 3])))
+            )
+        comp = PythonComprehension
+          { pyCompTarget = noLoc (PatVar (Identifier "item"))
+          , pyCompIter = noLoc (PyVar (Identifier "source"))
+          , pyCompFilters = []
+          , pyCompAsync = False
+          }
+        generatorAssign =
+          noLoc
+            ( PyAssign
+                [noLoc (PatVar (Identifier "result"))]
+                (noLoc (PyGenComp (noLoc (PyVar (Identifier "item"))) [comp]))
+            )
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [sourceAssign, generatorAssign]
+              }
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let warnings = cgrDiagnostics res
+        warnings `shouldSatisfy` any (T.isInfixOf "generator expression" . diagMessage)
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+joinedStringSpec :: Spec
+joinedStringSpec = describe "Joined strings" $ do
+  it "lowers PyJoinedStr via stringstreams" $ do
+    let moduleBody =
+          [ noLoc
+              ( PyAssign
+                  [noLoc (PatVar (Identifier "name"))]
+                  (noLoc (PyLiteral (PyString "Fluxus")))
+              )
+          , noLoc
+              ( PyAssign
+                  [noLoc (PatVar (Identifier "message"))]
+                  (noLoc (PyJoinedStr
+                    [ noLoc (PyLiteral (PyString "Hello "))
+                    , noLoc (PyVar (Identifier "name"))
+                    ]))
+              )
+          ]
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = moduleBody
+              }
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let includes = cppIncludes (cgrUnit res)
+        includes `shouldSatisfy` (elem "<sstream>")
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+walrusExpressionSpec :: Spec
+walrusExpressionSpec = describe "Assignment expressions" $ do
+  it "reuses existing bindings for walrus assignments" $ do
+    let moduleBody =
+          [ noLoc
+              ( PyAssign
+                  [noLoc (PatVar (Identifier "existing"))]
+                  (noLoc (PyLiteral (PyInt 0)))
+              )
+          , noLoc
+              ( PyAssign
+                  [noLoc (PatVar (Identifier "result"))]
+                  (noLoc (PyNamedExpr
+                    (noLoc (PatVar (Identifier "existing")))
+                    (noLoc (PyLiteral (PyInt 5)))))
+          ]
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = moduleBody
+              }
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+            resultDecl = listToMaybe [decl | decl@(CppVariable name _ _) <- decls, name == "result"]
+        case resultDecl of
+          Just (CppVariable _ _ (Just initExpr)) ->
+            initExpr `shouldSatisfy` exprContainsLambda
+          other -> expectationFailure $ "Expected hoisted declaration for 'result', found " <> show other
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+exprContainsLambda :: CppExpr -> Bool
+exprContainsLambda expr = case expr of
+  CppLambda {} -> True
+  CppCall func args ->
+    isLambda func
+      || exprContainsLambda func
+      || any exprContainsLambda args
+  CppBinary _ lhs rhs -> exprContainsLambda lhs || exprContainsLambda rhs
+  CppConditional a b c -> any exprContainsLambda [a, b, c]
+  CppUnary _ inner -> exprContainsLambda inner
+  CppIndex base idx -> exprContainsLambda base || exprContainsLambda idx
+  CppBracedInit _ exprs -> any exprContainsLambda exprs
+  _ -> False
+  where
+    isLambda (CppLambda _ _) = True
+    isLambda _ = False
