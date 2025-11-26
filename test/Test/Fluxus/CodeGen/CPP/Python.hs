@@ -249,6 +249,129 @@ expressionGenerationSpec = describe "Expression generation" $ do
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
+  it "lowers Python set comprehensions into lambda-built sets" $ do
+    let numbersLiteral = noLoc (PyList (map (noLoc . PyLiteral . PyInt) [1, 2, 3]))
+        numbersAssign = noLoc (PyAssign [noLoc (PatVar (Identifier "numbers"))] numbersLiteral)
+        comprehension = PythonComprehension
+          { pyCompTarget = noLoc (PatVar (Identifier "n"))
+          , pyCompIter = noLoc (PyVar (Identifier "numbers"))
+          , pyCompFilters = []
+          , pyCompAsync = False
+          }
+        doubledExpr =
+          noLoc
+            ( PyBinaryOp
+                OpMul
+                (noLoc (PyVar (Identifier "n")))
+                (noLoc (PyLiteral (PyInt 2)))
+            )
+        setCompExpr = noLoc (PySetComp doubledExpr [comprehension])
+        doubledAssign = noLoc (PyAssign [noLoc (PatVar (Identifier "doubled"))] setCompExpr)
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [numbersAssign, doubledAssign]
+              }
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+            isDoubled decl = case decl of
+              CppVariable name _ _ -> name == "doubled"
+              _ -> False
+        case find isDoubled decls of
+          Just (CppVariable _ (CppClassType "std::set" [elemType]) (Just initializer)) -> do
+            elemType `shouldBe` CppLongLong
+            case initializer of
+              CppCall (CppLambda [] lambdaBody) [] ->
+                case lambdaBody of
+                  CppDecl (CppVariable builderName builderType (Just (CppBracedInit _ [])))
+                    : [ CppForRange loopVar rangeExpr loopBody
+                      , CppReturn (Just (CppVar retVar))
+                      ] -> do
+                      builderType `shouldBe` CppClassType "std::set" [CppLongLong]
+                      loopVar `shouldBe` "n"
+                      rangeExpr `shouldBe` CppVar "numbers"
+                      retVar `shouldBe` builderName
+                      loopBody `shouldBe`
+                        [ CppExprStmt
+                            ( CppCall
+                                (CppMember (CppVar builderName) "insert")
+                                [ CppBinary "*"
+                                    (CppVar "n")
+                                    (CppLiteral (CppIntLit 2))
+                                ]
+                            )
+                        ]
+                  _ -> expectationFailure "Unexpected lambda body emitted for set comprehension"
+              _ -> expectationFailure "Expected set comprehension initializer to be a lambda call"
+          _ -> expectationFailure "Expected hoisted declaration for 'doubled' set comprehension"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  it "lowers Python dict comprehensions into lambda-built maps" $ do
+    let numbersLiteral = noLoc (PyList (map (noLoc . PyLiteral . PyInt) [1, 2]))
+        numbersAssign = noLoc (PyAssign [noLoc (PatVar (Identifier "numbers"))] numbersLiteral)
+        comprehension = PythonComprehension
+          { pyCompTarget = noLoc (PatVar (Identifier "n"))
+          , pyCompIter = noLoc (PyVar (Identifier "numbers"))
+          , pyCompFilters = []
+          , pyCompAsync = False
+          }
+        keyExpr = noLoc (PyVar (Identifier "n"))
+        valueExpr =
+          noLoc
+            ( PyBinaryOp
+                OpMul
+                (noLoc (PyVar (Identifier "n")))
+                (noLoc (PyVar (Identifier "n")))
+            )
+        dictCompExpr = noLoc (PyDictComp keyExpr valueExpr [comprehension])
+        squaresAssign = noLoc (PyAssign [noLoc (PatVar (Identifier "squares"))] dictCompExpr)
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [numbersAssign, squaresAssign]
+              }
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+            isSquares decl = case decl of
+              CppVariable name _ _ -> name == "squares"
+              _ -> False
+        case find isSquares decls of
+          Just (CppVariable _ (CppClassType "std::map" [keyType, valueType]) (Just initializer)) -> do
+            keyType `shouldBe` CppLongLong
+            valueType `shouldBe` CppLongLong
+            case initializer of
+              CppCall (CppLambda [] lambdaBody) [] ->
+                case lambdaBody of
+                  CppDecl (CppVariable builderName builderType (Just (CppBracedInit _ [])))
+                    : [ CppForRange loopVar rangeExpr loopBody
+                      , CppReturn (Just (CppVar retVar))
+                      ] -> do
+                      builderType `shouldBe` CppClassType "std::map" [CppLongLong, CppLongLong]
+                      loopVar `shouldBe` "n"
+                      rangeExpr `shouldBe` CppVar "numbers"
+                      retVar `shouldBe` builderName
+                      let expectedAssignment =
+                            CppBinary "="
+                              (CppIndex (CppVar builderName) (CppVar "n"))
+                              (CppBinary "*"
+                                (CppVar "n")
+                                (CppVar "n"))
+                      loopBody `shouldBe` [CppExprStmt expectedAssignment]
+                  _ -> expectationFailure "Unexpected lambda body emitted for dict comprehension"
+              _ -> expectationFailure "Expected dict comprehension initializer to be a lambda call"
+          _ -> expectationFailure "Expected hoisted declaration for 'squares' dict comprehension"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
 statementGenerationSpec :: Spec
 statementGenerationSpec = describe "Statement generation" $ do
   it "lowers Python if statements to CppIf" $ do
@@ -374,6 +497,34 @@ statementGenerationSpec = describe "Statement generation" $ do
                 expectationFailure "Expected a while loop in generated main body"
           _ ->
             expectationFailure "Expected generated main function"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  it "lowers Python augmented assignments to compound updates" $ do
+    let moduleBody =
+          [ noLoc (PyAssign [noLoc (PatVar (Identifier "total"))] (noLoc (PyLiteral (PyInt 10))))
+          , noLoc (PyAugAssign (noLoc (PatVar (Identifier "total"))) OpAdd (noLoc (PyLiteral (PyInt 5))))
+          ]
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = moduleBody
+              }
+        result = generateCpp Shared.testCppConfig (Left pythonAst)
+    case result of
+      Right res ->
+        case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
+          Just (CppFunction _ _ _ body) -> do
+            let matchesAugmented stmt = case stmt of
+                  CppExprStmt (CppBinary "+=" (CppVar "total") (CppLiteral (CppIntLit 5))) -> True
+                  CppStmtSeq inner -> any matchesAugmented inner
+                  CppBlock inner -> any matchesAugmented inner
+                  _ -> False
+            any matchesAugmented body `shouldBe` True
+          _ -> expectationFailure "Expected generated main function"
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 

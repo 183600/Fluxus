@@ -135,6 +135,8 @@ generatePythonStmt scope (Located span stmt) =
               if strict
                 then unsupportedStatement reportFatalNotImplemented span msg
                 else unsupportedStatement reportNotImplemented span msg
+    PyAugAssign target op valueExpr ->
+      handleAugmentedAssignment scope span target op valueExpr
     PyAnnAssign target typeExpr mValue ->
       handleAnnotatedAssignment scope span target typeExpr mValue
     PyReturn mexpr -> do
@@ -324,8 +326,50 @@ generatePythonStmt scope (Located span stmt) =
               updateSymbolTableWith refinedType
               return $ declarationStmt refinedType
 
+    handleAugmentedAssignment :: PythonScope -> SourceSpan -> Located PythonPattern -> BinaryOp -> Located PythonExpr -> CppCodeGen CppStmt
+    handleAugmentedAssignment _ loc target op valueExpr =
+      case locValue target of
+        PatVar (Identifier name) -> do
+          symtab <- gets cgsSymbolTable
+          if HM.member name symtab
+            then buildAugmentedAssignmentStmt loc name op valueExpr
+            else unsupportedStatement reportFatalUnsupported loc
+                  ("Augmented assignment to '" <> name <> "' references an undefined name")
+        _ ->
+          unsupportedStatement reportFatalUnsupported loc
+            "Augmented assignment targets other than simple names are not supported"
+
+    buildAugmentedAssignmentStmt :: SourceSpan -> Text -> BinaryOp -> Located PythonExpr -> CppCodeGen CppStmt
+    buildAugmentedAssignmentStmt loc name op valueExpr = do
+      cppValue <- generatePythonExpr valueExpr
+      let targetExpr = CppVar name
+      case op of
+        OpPow -> do
+          addInclude "<cmath>"
+          let powCall = CppCall (CppVar "std::pow") [targetExpr, cppValue]
+          pure $ CppExprStmt (CppBinary "=" targetExpr powCall)
+        OpDiv -> do
+          let numerator = promoteToTrueDivOperand targetExpr
+              denominator = promoteToTrueDivOperand cppValue
+              division = CppBinary "/" numerator denominator
+          pure $ CppExprStmt (CppBinary "=" targetExpr division)
+        OpFloorDiv -> do
+          addInclude "<cmath>"
+          let numerator = promoteToTrueDivOperand targetExpr
+              denominator = promoteToTrueDivOperand cppValue
+              division = CppBinary "/" numerator denominator
+              floored = CppCall (CppVar "std::floor") [division]
+          pure $ CppExprStmt (CppBinary "=" targetExpr floored)
+        _ ->
+          case mapAugmentedAssignmentOp op of
+            Just compound ->
+              pure $ CppExprStmt (CppBinary compound targetExpr cppValue)
+            Nothing ->
+              unsupportedStatement reportFatalUnsupported loc
+                ("Augmented assignment using operator '" <> T.pack (show op) <> "' is not supported")
+
     handleChainedAssignment :: PythonScope -> SourceSpan -> [Located PythonPattern] -> Located PythonExpr -> CppCodeGen CppStmt
-    handleChainedAssignment scope' loc targetPatterns valueExpr = do
+
       case traverse extractVarName targetPatterns of
         Nothing ->
           unsupportedStatement reportNotImplemented loc "Chained assignment targets must be simple names"
@@ -1404,13 +1448,33 @@ generatePythonListComprehension span element comps
           pure $ CppCall (CppLambda [] lambdaBody) []
 
 inferListElementType :: SourceSpan -> Located PythonExpr -> CppCodeGen CppType
-inferListElementType span element = do
-  let context = "list comprehension result at " <> formatSpan span
+inferListElementType span element =
+  inferComprehensionElementType "list comprehension result" span element ensureStdAny
+
+inferSetElementType :: SourceSpan -> Located PythonExpr -> CppCodeGen CppType
+inferSetElementType span element =
+  inferComprehensionElementType "set comprehension element" span element (pure CppLongLong)
+
+inferDictKeyType :: SourceSpan -> Located PythonExpr -> CppCodeGen CppType
+inferDictKeyType span keyExpr =
+  inferComprehensionElementType "dict comprehension key" span keyExpr fallback
+  where
+    fallback = do
+      addInclude "<string>"
+      pure CppString
+
+inferDictValueType :: SourceSpan -> Located PythonExpr -> CppCodeGen CppType
+inferDictValueType span valueExpr =
+  inferComprehensionElementType "dict comprehension value" span valueExpr ensureStdAny
+
+inferComprehensionElementType :: Text -> SourceSpan -> Located PythonExpr -> CppCodeGen CppType -> CppCodeGen CppType
+inferComprehensionElementType label span element fallbackAction = do
+  let context = label <> " at " <> formatSpan span
       defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated element)
   refined <- refinePythonExprType context element defaultType
   let coreType = stripTypeQualifiers refined
   if coreType == CppAuto
-    then ensureStdAny
+    then fallbackAction
     else pure coreType
 
 listComprehensionFallback :: SourceSpan -> Text -> CppCodeGen CppExpr
@@ -1472,8 +1536,26 @@ comprehensionFallback span baseMessage defaultExpr = do
 
 -- | Generate C++ code for Python set comprehensions
 generatePythonSetComprehension :: SourceSpan -> Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
-generatePythonSetComprehension span _ _ =
-  setComprehensionFallback span "requires runtime fallback"
+generatePythonSetComprehension span element comps
+  | null comps =
+      setComprehensionFallback span "requires at least one comprehension clause"
+  | otherwise = do
+      addInclude "<set>"
+      elementType <- inferSetElementType span element
+      builderName <- generateTempVar
+      elementExpr <- generatePythonExpr element
+      let builderType = CppClassType "std::set" [elementType]
+          builderVar = CppVar builderName
+          insertStmt = CppExprStmt (CppCall (CppMember builderVar "insert") [elementExpr])
+      bodyResult <- buildComprehensionStmts span comps [insertStmt]
+      case bodyResult of
+        Left reason ->
+          setComprehensionFallback span reason
+        Right stmtBody -> do
+          let initExpr = CppBracedInit builderType []
+              builderDecl = CppDecl (CppVariable builderName builderType (Just initExpr))
+              lambdaBody = builderDecl : stmtBody ++ [CppReturn (Just builderVar)]
+          pure $ CppCall (CppLambda [] lambdaBody) []
 
 setComprehensionFallback :: SourceSpan -> Text -> CppCodeGen CppExpr
 setComprehensionFallback span reason = do
@@ -1483,8 +1565,28 @@ setComprehensionFallback span reason = do
 
 -- | Generate C++ code for Python dict comprehensions
 generatePythonDictComprehension :: SourceSpan -> Located PythonExpr -> Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
-generatePythonDictComprehension span _ _ _ =
-  dictComprehensionFallback span "requires runtime fallback"
+generatePythonDictComprehension span keyExpr valueExpr comps
+  | null comps =
+      dictComprehensionFallback span "requires at least one comprehension clause"
+  | otherwise = do
+      addInclude "<map>"
+      keyType <- inferDictKeyType span keyExpr
+      valueType <- inferDictValueType span valueExpr
+      builderName <- generateTempVar
+      cppKey <- generatePythonExpr keyExpr
+      cppValue <- generatePythonExpr valueExpr
+      let builderType = CppClassType "std::map" [keyType, valueType]
+          builderVar = CppVar builderName
+          assignment = CppExprStmt (CppBinary "=" (CppIndex builderVar cppKey) cppValue)
+      bodyResult <- buildComprehensionStmts span comps [assignment]
+      case bodyResult of
+        Left reason ->
+          dictComprehensionFallback span reason
+        Right stmtBody -> do
+          let initExpr = CppBracedInit builderType []
+              builderDecl = CppDecl (CppVariable builderName builderType (Just initExpr))
+              lambdaBody = builderDecl : stmtBody ++ [CppReturn (Just builderVar)]
+          pure $ CppCall (CppLambda [] lambdaBody) []
 
 dictComprehensionFallback :: SourceSpan -> Text -> CppCodeGen CppExpr
 dictComprehensionFallback span reason = do
@@ -1913,6 +2015,20 @@ mapPythonBinaryOp = \case
   OpOr -> "||"
   OpConcat -> "+"
   _ -> "+"  -- Fallback
+
+mapAugmentedAssignmentOp :: BinaryOp -> Maybe Text
+mapAugmentedAssignmentOp = \case
+  OpAdd -> Just "+="
+  OpSub -> Just "-="
+  OpMul -> Just "*="
+  OpMod -> Just "%="
+  OpBitAnd -> Just "&="
+  OpBitOr -> Just "|="
+  OpBitXor -> Just "^="
+  OpShiftL -> Just "<<="
+  OpShiftR -> Just ">>="
+  OpConcat -> Just "+="
+  _ -> Nothing
 
 mapComparisonOp :: ComparisonOp -> Text
 mapComparisonOp = \case
