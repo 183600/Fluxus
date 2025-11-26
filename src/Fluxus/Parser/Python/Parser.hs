@@ -1464,7 +1464,151 @@ isPatternTerminator (Located _ token : _) = case token of
 
 -- | Parse type expressions
 parseTypeExpr :: PythonParser (Located PythonTypeExpr)
-parseTypeExpr = located $ TypeName <$> parseQualifiedName
+parseTypeExpr = parseTypeUnionExpr
+
+parseTypeUnionExpr :: PythonParser (Located PythonTypeExpr)
+parseTypeUnionExpr = do
+  first <- parseTypePostfixExpr
+  rest <- many $ do
+    operator' Lexer.OpBitOr
+    parseTypePostfixExpr
+  case rest of
+    [] -> pure first
+    _  -> pure $ wrapUnion (first : rest)
+  where
+    wrapUnion types =
+      let startSpan = locSpan (head types)
+          endSpan = locSpan (last types)
+      in Located (mergeSpans startSpan endSpan) (TypeUnion types)
+
+parseTypePostfixExpr :: PythonParser (Located PythonTypeExpr)
+parseTypePostfixExpr = do
+  base <- parseTypePrimaryExpr
+  parseTypeSuffix base
+  where
+    parseTypeSuffix current = do
+      tokens <- getInput
+      case tokens of
+        (Located _ (TokenDelimiter DelimLeftBracket) : _) ->
+          case locValue current of
+            TypeName qn | isLiteralQualified qn -> do
+              literalType <- parseLiteralTypeSubscript current
+              parseTypeSuffix literalType
+            _ -> do
+              args <- parseTypeArgumentList
+              let nextSpan = case reverse args of
+                    (lastArg:_) -> mergeSpans (locSpan current) (locSpan lastArg)
+                    [] -> locSpan current
+                  nextNode = Located nextSpan (TypeSubscript current args)
+              parseTypeSuffix nextNode
+        _ -> pure current
+
+parseTypePrimaryExpr :: PythonParser (Located PythonTypeExpr)
+parseTypePrimaryExpr = choice
+  [ parseParenTypeExpr
+  , parseBracketTupleTypeExpr
+  , parseEllipsisTypeExpr
+  , located $ TypeName <$> parseQualifiedName
+  ]
+
+parseParenTypeExpr :: PythonParser (Located PythonTypeExpr)
+parseParenTypeExpr = located $ do
+  void $ delimiterP DelimLeftParen
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimRightParen) : _) -> do
+      void $ delimiterP DelimRightParen
+      pure $ TypeTuple []
+    _ -> do
+      first <- parseTypeExpr
+      (rest, trailing) <- parseCommaSeparatedRest DelimRightParen parseTypeExpr
+      void $ delimiterP DelimRightParen
+      case (rest, trailing) of
+        ([], False) -> pure (locValue first)
+        _ -> pure $ TypeTuple (first : rest)
+
+parseBracketTupleTypeExpr :: PythonParser (Located PythonTypeExpr)
+parseBracketTupleTypeExpr = located $ do
+  void $ delimiterP DelimLeftBracket
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimRightBracket) : _) -> do
+      void $ delimiterP DelimRightBracket
+      pure $ TypeTuple []
+    _ -> do
+      first <- parseTypeExpr
+      (rest, _) <- parseCommaSeparatedRest DelimRightBracket parseTypeExpr
+      void $ delimiterP DelimRightBracket
+      pure $ TypeTuple (first : rest)
+
+parseEllipsisTypeExpr :: PythonParser (Located PythonTypeExpr)
+parseEllipsisTypeExpr = located $ do
+  operator' Lexer.OpEllipsis
+  pure $ TypeName (QualifiedName [] (Identifier "..."))
+
+parseTypeArgumentList :: PythonParser [Located PythonTypeExpr]
+parseTypeArgumentList = do
+  void $ delimiterP DelimLeftBracket
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimRightBracket) : _) -> do
+      void $ delimiterP DelimRightBracket
+      pure []
+    _ -> do
+      first <- parseTypeExpr
+      (rest, _) <- parseCommaSeparatedRest DelimRightBracket parseTypeExpr
+      void $ delimiterP DelimRightBracket
+      pure (first : rest)
+
+parseLiteralTypeSubscript :: Located PythonTypeExpr -> PythonParser (Located PythonTypeExpr)
+parseLiteralTypeSubscript base = do
+  literalExprs <- parseLiteralArgumentList
+  when (null literalExprs) $
+    fail "typing.Literal requires at least one literal argument"
+  let literalNodes = map wrapLiteral literalExprs
+      endSpan = locSpan (last literalExprs)
+      combinedSpan = mergeSpans (locSpan base) endSpan
+  case literalNodes of
+    [single] -> pure single { locSpan = combinedSpan }
+    _ -> pure $ Located combinedSpan (TypeUnion literalNodes)
+  where
+    wrapLiteral exprLoc = Located (locSpan exprLoc) (TypeLiteral exprLoc)
+
+parseLiteralArgumentList :: PythonParser [Located PythonExpr]
+parseLiteralArgumentList = do
+  void $ delimiterP DelimLeftBracket
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimRightBracket) : _) ->
+      fail "typing.Literal cannot be empty"
+    _ -> do
+      first <- parseLiteralConstantExpr
+      (rest, _) <- parseCommaSeparatedRest DelimRightBracket parseLiteralConstantExpr
+      void $ delimiterP DelimRightBracket
+      pure (first : rest)
+
+parseLiteralConstantExpr :: PythonParser (Located PythonExpr)
+parseLiteralConstantExpr = located $ do
+  literal <- parsePatternLiteralValue
+  pure $ PyLiteral literal
+
+isLiteralQualified :: QualifiedName -> Bool
+isLiteralQualified qn =
+  let simple = T.toLower (identifierToText (qnName qn))
+      canonical = canonicalQualifiedName qn
+  in simple == "literal" || canonical == "typing.literal"
+
+identifierToText :: Identifier -> Text
+identifierToText (Identifier txt) = txt
+
+moduleNameToText :: ModuleName -> Text
+moduleNameToText (ModuleName txt) = txt
+
+canonicalQualifiedName :: QualifiedName -> Text
+canonicalQualifiedName qn =
+  let modules = map (T.toLower . moduleNameToText) (qnModule qn)
+      nameTxt = T.toLower (identifierToText (qnName qn))
+  in T.intercalate "." (modules ++ [nameTxt])
 
 -- | Parse function parameters
 parseParameters :: PythonParser [Located PythonParameter]
@@ -1636,8 +1780,27 @@ parseModuleName = do
 
 parseQualifiedName :: PythonParser QualifiedName
 parseQualifiedName = do
-  name <- parseIdentifier
-  return $ QualifiedName [] name
+  first <- parseTypeIdentifier
+  rest <- many $ do
+    delimiterP DelimDot
+    parseTypeIdentifier
+  let idents = first : rest
+      modules = map (ModuleName . identifierToText) (init idents)
+      finalName = last idents
+  pure $ QualifiedName modules finalName
+
+parseTypeIdentifier :: PythonParser Identifier
+parseTypeIdentifier = parseIdentifier <|> parseKeywordIdentifier
+  where
+    parseKeywordIdentifier = do
+      Located _ token <- satisfy isTypeKeywordToken
+      case token of
+        TokenKeyword KwNone -> pure (Identifier "None")
+        TokenKeyword KwTrue -> pure (Identifier "True")
+        TokenKeyword KwFalse -> pure (Identifier "False")
+        _ -> fail "Unsupported keyword in type expression"
+    isTypeKeywordToken (Located _ (TokenKeyword kw)) = kw `elem` [KwNone, KwTrue, KwFalse]
+    isTypeKeywordToken _ = False
 
 parseUnderscore :: PythonParser ()
 parseUnderscore = do

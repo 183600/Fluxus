@@ -477,6 +477,90 @@ parserSpec = describe "Python Parser" $ do
               other -> expectationFailure $ "Expected annotated assignment, found " <> show other
             _ -> expectationFailure "Expected single annotated assignment"
 
+    describe "type annotation parsing" $ do
+      it "parses generic annotations on parameters and returns" $
+        withParsedModule (T.unlines
+          [ "def summarize(values: list[int]) -> tuple[int, str]:"
+          , "    return values[0], \"\""
+          ]) $ \module_ ->
+            case pyModuleBody module_ of
+              [funcStmt] -> case locatedValue funcStmt of
+                PyFuncDef funcDef -> do
+                  case pyFuncParams funcDef of
+                    [param] -> case locValue param of
+                      ParamNormal _ (Just ann) _ ->
+                        case locValue ann of
+                          TypeSubscript base [inner] -> do
+                            expectSimpleTypeName base [] "list"
+                            expectSimpleTypeName inner [] "int"
+                          other -> expectationFailure $ "Expected list subscript, found " <> show other
+                      other -> expectationFailure $ "Expected normal parameter annotation, found " <> show other
+                    _ -> expectationFailure "Expected single function parameter"
+                  case pyFuncReturns funcDef of
+                    Just retAnn -> case locValue retAnn of
+                      TypeSubscript base elems -> do
+                        expectSimpleTypeName base [] "tuple"
+                        length elems `shouldBe` 2
+                        expectSimpleTypeName (head elems) [] "int"
+                        expectSimpleTypeName (elems !! 1) [] "str"
+                      other -> expectationFailure $ "Expected tuple return annotation, found " <> show other
+                    Nothing -> expectationFailure "Expected return annotation"
+                other -> expectationFailure $ "Expected function definition, found " <> show other
+              _ -> expectationFailure "Expected single function definition"
+
+      it "supports typing-qualified dictionary annotations" $
+        withParsedModule (T.unlines
+          [ "import typing"
+          , "mapping: typing.Dict[str, int] = {}"
+          ]) $ \module_ ->
+            case pyModuleBody module_ of
+              [_importStmt, annStmt] -> case locatedValue annStmt of
+                PyAnnAssign _ annType _ ->
+                  case locValue annType of
+                    TypeSubscript base [keyType, valueType] -> do
+                      expectSimpleTypeName base ["typing"] "Dict"
+                      expectSimpleTypeName keyType [] "str"
+                      expectSimpleTypeName valueType [] "int"
+                    other -> expectationFailure $ "Expected Dict annotation, found " <> show other
+                other -> expectationFailure $ "Expected annotated assignment, found " <> show other
+              other -> expectationFailure $ "Unexpected module body: " <> show (length other)
+
+      it "parses union annotations using the | operator" $
+        withParsedModule "maybe_value: int | None = 0\n" $ \module_ ->
+          case pyModuleBody module_ of
+            [annStmt] -> case locatedValue annStmt of
+              PyAnnAssign _ annType _ ->
+                case locValue annType of
+                  TypeUnion members -> do
+                    length members `shouldBe` 2
+                    expectSimpleTypeName (head members) [] "int"
+                    expectSimpleTypeName (members !! 1) [] "None"
+                  other -> expectationFailure $ "Expected TypeUnion, found " <> show other
+              other -> expectationFailure $ "Expected annotated assignment, found " <> show other
+            _ -> expectationFailure "Expected single annotated assignment"
+
+      it "parses Callable annotations with tuple arguments" $
+        withParsedModule (T.unlines
+          [ "from typing import Callable"
+          , "callback: Callable[[int, str], bool] = lambda a, b: True"
+          ]) $ \module_ ->
+            case pyModuleBody module_ of
+              [_importStmt, annStmt] -> case locatedValue annStmt of
+                PyAnnAssign _ annType _ ->
+                  case locValue annType of
+                    TypeSubscript base [argsNode, retNode] -> do
+                      expectSimpleTypeName base [] "Callable"
+                      case locValue argsNode of
+                        TypeTuple elems -> do
+                          length elems `shouldBe` 2
+                          expectSimpleTypeName (head elems) [] "int"
+                          expectSimpleTypeName (elems !! 1) [] "str"
+                        other -> expectationFailure $ "Expected tuple argument list, found " <> show other
+                      expectSimpleTypeName retNode [] "bool"
+                    other -> expectationFailure $ "Expected Callable annotation, found " <> show other
+                other -> expectationFailure $ "Expected annotated assignment, found " <> show other
+              other -> expectationFailure $ "Unexpected module body: " <> show (length other)
+
       it "parses lambda expressions inline" $
         withParsedModule "square = lambda x: x * x\n" $ \module_ ->
           case pyModuleBody module_ of
@@ -763,3 +847,18 @@ tokenValue = \case
     DelimColon -> ":"
     _ -> "delim"
   _ -> "token"
+expectSimpleTypeName :: Located PythonTypeExpr -> [Text] -> Text -> Expectation
+expectSimpleTypeName located expectedModules expectedName =
+  case locValue located of
+    TypeName qn -> do
+      let modules = map moduleNameTextTest (qnModule qn)
+      modules `shouldBe` expectedModules
+      identifierTextTest (qnName qn) `shouldBe` expectedName
+    other ->
+      expectationFailure $ "Expected simple type name, found " <> show other
+
+moduleNameTextTest :: ModuleName -> Text
+moduleNameTextTest (ModuleName txt) = txt
+
+identifierTextTest :: Identifier -> Text
+identifierTextTest (Identifier txt) = txt
