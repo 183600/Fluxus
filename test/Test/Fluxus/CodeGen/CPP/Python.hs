@@ -11,7 +11,7 @@ import Fluxus.AST.Python
 import qualified Fluxus.AST.Python as Py
 import Fluxus.Analysis.CommonExprLowering (pythonExprToLocatedCommon, fingerprintCommonExpr)
 import Fluxus.CodeGen.CPP
-import Fluxus.CodeGen.CPP.AST (CppCatch(..), CppType(..), renderCppExpr)
+import Fluxus.CodeGen.CPP.AST (CppCatch(..), CppDecl(..), CppExpr(..), CppLiteral(..), CppStmt(..), CppType(..), renderCppExpr)
 import Fluxus.CodeGen.CPP.Diagnostics (CppDiagnostic(..), DiagnosticSeverity(..))
 import Fluxus.Compiler.Driver
   ( CompilerConfig(..)
@@ -157,6 +157,95 @@ expressionGenerationSpec = describe "Expression generation" $ do
                 expectationFailure "Expected print statement in generated main body"
           _ ->
             expectationFailure "Expected generated main function"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  it "lowers Python list comprehensions into lambda-built vectors" $ do
+    let numbersLiteral = noLoc (PyList (map (noLoc . PyLiteral . PyInt) [1, 2, 3, 4]))
+        numbersAssign = noLoc (PyAssign [noLoc (PatVar (Identifier "numbers"))] numbersLiteral)
+        filterExpr =
+          noLoc
+            ( PyComparison
+                [OpEq]
+                [ noLoc
+                    ( PyBinaryOp
+                        OpMod
+                        (noLoc (PyVar (Identifier "n")))
+                        (noLoc (PyLiteral (PyInt 2)))
+                    )
+                , noLoc (PyLiteral (PyInt 0))
+                ]
+            )
+        comprehension = PythonComprehension
+          { pyCompTarget = noLoc (PatVar (Identifier "n"))
+          , pyCompIter = noLoc (PyVar (Identifier "numbers"))
+          , pyCompFilters = [filterExpr]
+          , pyCompAsync = False
+          }
+        listCompExpr =
+          noLoc
+            ( PyListComp
+                ( noLoc
+                    ( PyBinaryOp
+                        OpMul
+                        (noLoc (PyVar (Identifier "n")))
+                        (noLoc (PyLiteral (PyInt 2)))
+                    )
+                )
+                [comprehension]
+            )
+        evensAssign = noLoc (PyAssign [noLoc (PatVar (Identifier "evens"))] listCompExpr)
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [numbersAssign, evensAssign]
+              }
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+            isEvensDecl decl = case decl of
+              CppVariable name _ _ -> name == "evens"
+              _ -> False
+        case find isEvensDecl decls of
+          Just (CppVariable _ (CppVector elemType) (Just initializer)) -> do
+            elemType `shouldBe` CppClassType "std::any" []
+            case initializer of
+              CppCall (CppLambda [] lambdaBody) [] ->
+                case lambdaBody of
+                  CppDecl (CppVariable builderName _ (Just (CppBracedInit _ [])))
+                    : [ CppForRange loopVar rangeExpr loopBody
+                      , CppReturn (Just (CppVar retVar))
+                      ] -> do
+                      loopVar `shouldBe` "n"
+                      rangeExpr `shouldBe` CppVar "numbers"
+                      retVar `shouldBe` builderName
+                      case loopBody of
+                        [CppIf cond thenStmts []] -> do
+                          let expectedCond =
+                                CppBinary "=="
+                                  (CppBinary "%"
+                                    (CppVar "n")
+                                    (CppLiteral (CppIntLit 2)))
+                                  (CppLiteral (CppIntLit 0))
+                          cond `shouldBe` expectedCond
+                          case thenStmts of
+                            [CppExprStmt pushExpr] -> do
+                              let expectedPush =
+                                    CppCall
+                                      (CppMember (CppVar builderName) "push_back")
+                                      [ CppBinary "*"
+                                          (CppVar "n")
+                                          (CppLiteral (CppIntLit 2))
+                                      ]
+                              pushExpr `shouldBe` expectedPush
+                            _ -> expectationFailure "Expected single push statement inside comprehension body"
+                        _ -> expectationFailure "Expected filter guard inside comprehension body"
+                  _ -> expectationFailure "Unexpected lambda body emitted for list comprehension"
+              _ -> expectationFailure "Expected list comprehension initializer to be a lambda call"
+          _ -> expectationFailure "Expected hoisted declaration for 'evens' list comprehension"
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 

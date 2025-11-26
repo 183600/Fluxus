@@ -1382,48 +1382,115 @@ generatePythonLambda params bodyExpr = do
 
 -- | Generate C++ code for Python list comprehensions
 generatePythonListComprehension :: SourceSpan -> Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
-generatePythonListComprehension span element comprehensions = do
-  let message = "Python list comprehension requires runtime fallback at " <> formatSpan span
+generatePythonListComprehension span element comps
+  | null comps =
+      listComprehensionFallback span "requires at least one comprehension clause"
+  | otherwise = do
+      addInclude "<vector>"
+      elementType <- inferListElementType span element
+      builderName <- generateTempVar
+      elementExpr <- generatePythonExpr element
+      let builderType = CppVector elementType
+          builderVar = CppVar builderName
+          pushStmt = CppExprStmt (CppCall (CppMember builderVar "push_back") [elementExpr])
+      bodyResult <- buildComprehensionStmts span comps [pushStmt]
+      case bodyResult of
+        Left reason ->
+          listComprehensionFallback span reason
+        Right stmtBody -> do
+          let initExpr = CppBracedInit builderType []
+              builderDecl = CppDecl (CppVariable builderName builderType (Just initExpr))
+              lambdaBody = builderDecl : stmtBody ++ [CppReturn (Just builderVar)]
+          pure $ CppCall (CppLambda [] lambdaBody) []
+
+inferListElementType :: SourceSpan -> Located PythonExpr -> CppCodeGen CppType
+inferListElementType span element = do
+  let context = "list comprehension result at " <> formatSpan span
+      defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated element)
+  refined <- refinePythonExprType context element defaultType
+  let coreType = stripTypeQualifiers refined
+  if coreType == CppAuto
+    then ensureStdAny
+    else pure coreType
+
+listComprehensionFallback :: SourceSpan -> Text -> CppCodeGen CppExpr
+listComprehensionFallback span reason = do
+  addInclude "<vector>"
+  let defaultExpr = CppBracedInit (CppVector CppAuto) []
+  comprehensionFallback span ("Python list comprehension " <> reason) (Just defaultExpr)
+
+buildComprehensionStmts :: SourceSpan -> [PythonComprehension] -> [CppStmt] -> CppCodeGen (Either Text [CppStmt])
+buildComprehensionStmts _ [] terminalBody = pure (Right terminalBody)
+buildComprehensionStmts span (comp:rest) terminalBody
+  | pyCompAsync comp =
+      let locText = formatSpan (locSpan (pyCompIter comp))
+      in pure (Left ("contains 'async for' clause near " <> locText))
+  | otherwise = do
+      innerResult <- buildComprehensionStmts span rest terminalBody
+      case innerResult of
+        Left err -> pure (Left err)
+        Right innerBody ->
+          case extractComprehensionTargetName (pyCompTarget comp) of
+            Left err -> pure (Left err)
+            Right targetName -> do
+              iterExpr <- generatePythonExpr (pyCompIter comp)
+              filterExprs <- mapM generatePythonExpr (pyCompFilters comp)
+              let filteredBody = applyComprehensionFilters filterExprs innerBody
+              pure (Right [CppForRange targetName iterExpr filteredBody])
+
+extractComprehensionTargetName :: Located PythonPattern -> Either Text Text
+extractComprehensionTargetName locatedPattern =
+  case locValue locatedPattern of
+    PatVar (Identifier name) -> Right name
+    _ ->
+      let desc = describePattern (locValue locatedPattern)
+          message =
+            "uses unsupported target pattern '"
+            <> desc
+            <> "' at "
+            <> formatSpan (locSpan locatedPattern)
+      in Left message
+
+applyComprehensionFilters :: [CppExpr] -> [CppStmt] -> [CppStmt]
+applyComprehensionFilters [] body = body
+applyComprehensionFilters (cond:conds) body =
+  [CppIf cond (applyComprehensionFilters conds body) []]
+
+describePattern :: PythonPattern -> Text
+describePattern pat = T.pack (show pat)
+
+comprehensionFallback :: SourceSpan -> Text -> Maybe CppExpr -> CppCodeGen CppExpr
+comprehensionFallback span baseMessage defaultExpr = do
+  let message = baseMessage <> " at " <> formatSpan span
   reportNotImplemented message
   strict <- gets (cgcStrictMode . cgsConfig)
   if strict
     then do
       abortExpr <- runtimeAbortCall message
-      return $ CppBinary "," abortExpr (CppLiteral (CppIntLit 0))
-    else do
-      emitWarning message
-      addInclude "<vector>"
-      return $ CppBracedInit (CppVector CppAuto) []
+      pure $ CppBinary "," abortExpr (CppLiteral (CppIntLit 0))
+    else pure (fromMaybe (CppLiteral (CppIntLit 0)) defaultExpr)
 
 -- | Generate C++ code for Python set comprehensions
 generatePythonSetComprehension :: SourceSpan -> Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
-generatePythonSetComprehension span element comprehensions = do
-  let message = "Python set comprehension requires runtime fallback at " <> formatSpan span
-  reportNotImplemented message
-  strict <- gets (cgcStrictMode . cgsConfig)
-  if strict
-    then do
-      abortExpr <- runtimeAbortCall message
-      return $ CppBinary "," abortExpr (CppLiteral (CppIntLit 0))
-    else do
-      emitWarning message
-      addInclude "<set>"
-      return $ CppBracedInit (CppClassType "std::set" [CppAuto]) []
+generatePythonSetComprehension span _ _ =
+  setComprehensionFallback span "requires runtime fallback"
+
+setComprehensionFallback :: SourceSpan -> Text -> CppCodeGen CppExpr
+setComprehensionFallback span reason = do
+  addInclude "<set>"
+  let defaultExpr = CppBracedInit (CppClassType "std::set" [CppAuto]) []
+  comprehensionFallback span ("Python set comprehension " <> reason) (Just defaultExpr)
 
 -- | Generate C++ code for Python dict comprehensions
 generatePythonDictComprehension :: SourceSpan -> Located PythonExpr -> Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
-generatePythonDictComprehension span keyExpr valueExpr comprehensions = do
-  let message = "Python dict comprehension requires runtime fallback at " <> formatSpan span
-  reportNotImplemented message
-  strict <- gets (cgcStrictMode . cgsConfig)
-  if strict
-    then do
-      abortExpr <- runtimeAbortCall message
-      return $ CppBinary "," abortExpr (CppLiteral (CppIntLit 0))
-    else do
-      emitWarning message
-      addInclude "<map>"
-      return $ CppBracedInit (CppClassType "std::map" [CppString, CppAuto]) []
+generatePythonDictComprehension span _ _ _ =
+  dictComprehensionFallback span "requires runtime fallback"
+
+dictComprehensionFallback :: SourceSpan -> Text -> CppCodeGen CppExpr
+dictComprehensionFallback span reason = do
+  addInclude "<map>"
+  let defaultExpr = CppBracedInit (CppClassType "std::map" [CppString, CppAuto]) []
+  comprehensionFallback span ("Python dict comprehension " <> reason) (Just defaultExpr)
 
 inferPythonExprCppTypeLocated :: Located PythonExpr -> Maybe CppType
 inferPythonExprCppTypeLocated (Located _ e) = inferPythonExprCppType e
