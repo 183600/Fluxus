@@ -661,6 +661,177 @@ expressionGenerationSpec = describe "Expression generation" $ do
           _ -> expectationFailure "Expected generated main function"
       Left failure -> expectationFailure $ "Code generation failed: " <> show failure
 
+  it "lowers match statements on literals into nested conditionals" $ do
+    let readyCase = PythonCase
+          { pyCasePattern = noLoc (PatLiteral (PyString "ready"))
+          , pyCaseGuard = Nothing
+          , pyCaseBody = [noLoc (PyReturn (Just (noLoc (PyLiteral (PyInt 1)))))]
+          }
+        fallbackCase = PythonCase
+          { pyCasePattern = noLoc PatWildcard
+          , pyCaseGuard = Nothing
+          , pyCaseBody = [noLoc (PyReturn (Just (noLoc (PyLiteral (PyInt 0)))))]
+          }
+        matchStmt = noLoc (PyMatch (noLoc (PyVar (Identifier "status"))) [noLoc readyCase, noLoc fallbackCase])
+        funcDef = PythonFuncDef
+          { pyFuncName = Identifier "classify"
+          , pyFuncDecorators = []
+          , pyFuncParams = [noLoc (ParamNormal (Identifier "status") Nothing Nothing)]
+          , pyFuncReturns = Nothing
+          , pyFuncBody = [matchStmt]
+          , pyFuncDoc = Nothing
+          , pyFuncIsAsync = False
+          }
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [noLoc (PyFuncDef funcDef)]
+              }
+        initializesSubject name stmt = case stmt of
+          CppDecl (CppVariable _ _ (Just (CppVar source))) -> source == name
+          _ -> False
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        cgrDiagnostics res `shouldBe` []
+        let decls = cppDeclarations (cgrUnit res)
+        case [body | CppFunction "classify" _ _ body <- decls] of
+          [body] -> do
+            let seqs = [stmts | CppStmtSeq stmts <- body, any (initializesSubject "status") stmts]
+            case seqs of
+              [subjectDecl, matchNode] : _ ->
+                case (subjectDecl, matchNode) of
+                  (CppDecl (CppVariable tmpName _ (Just (CppVar "status"))), CppIf cond thenStmts elseStmts) -> do
+                    cond `shouldBe` CppBinary "==" (CppVar tmpName) (CppLiteral (CppStringLit "ready"))
+                    thenStmts `shouldBe` [CppReturn (Just (CppLiteral (CppIntLit 1)))]
+                    case elseStmts of
+                      [CppIf finalCond finalBody []] -> do
+                        finalCond `shouldBe` CppLiteral (CppBoolLit True)
+                        finalBody `shouldBe` [CppReturn (Just (CppLiteral (CppIntLit 0)))]
+                      other -> expectationFailure $ "Unexpected else branch: " <> show other
+                  _ -> expectationFailure "Expected match lowering sequence"
+              _ -> expectationFailure "Expected lowered match sequence"
+          _ -> expectationFailure "Expected classify function in output"
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+  it "binds capture patterns inside match cases" $ do
+    let captureCase = PythonCase
+          { pyCasePattern = noLoc (PatVar (Identifier "value"))
+          , pyCaseGuard = Nothing
+          , pyCaseBody = [noLoc (PyReturn (Just (noLoc (PyVar (Identifier "value")))))]
+          }
+        matchStmt = noLoc (PyMatch (noLoc (PyVar (Identifier "metric"))) [noLoc captureCase])
+        funcDef = PythonFuncDef
+          { pyFuncName = Identifier "extract"
+          , pyFuncDecorators = []
+          , pyFuncParams = [noLoc (ParamNormal (Identifier "metric") Nothing Nothing)]
+          , pyFuncReturns = Nothing
+          , pyFuncBody = [matchStmt]
+          , pyFuncDoc = Nothing
+          , pyFuncIsAsync = False
+          }
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [noLoc (PyFuncDef funcDef)]
+              }
+        initializesSubject name stmt = case stmt of
+          CppDecl (CppVariable _ _ (Just (CppVar source))) -> source == name
+          _ -> False
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+        case [body | CppFunction "extract" _ _ body <- decls] of
+          [body] -> do
+            let seqs = [stmts | CppStmtSeq stmts <- body, any (initializesSubject "metric") stmts]
+            case seqs of
+              [subjectDecl, CppIf cond thenStmts []] : _ ->
+                case subjectDecl of
+                  CppDecl (CppVariable tmpName _ (Just (CppVar "metric"))) -> do
+                    cond `shouldBe` CppLiteral (CppBoolLit True)
+                    case thenStmts of
+                      (CppDecl (CppVariable boundName _ (Just (CppVar source))):CppReturn (Just (CppVar varName)):_)
+                        | boundName == "value"
+                        , source == tmpName
+                        , varName == "value" -> pure ()
+                      other -> expectationFailure $ "Unexpected match body: " <> show other
+                  _ -> expectationFailure "Expected subject binding declaration"
+              _ -> expectationFailure "Expected lowered match sequence"
+          _ -> expectationFailure "Expected extract function in output"
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+  it "evaluates match guards after binding capture variables" $ do
+    let guardExpr = noLoc
+          ( PyComparison
+              [OpGt]
+              [ noLoc (PyVar (Identifier "value"))
+              , noLoc (PyLiteral (PyInt 0))
+              ]
+          )
+        guardedCase = PythonCase
+          { pyCasePattern = noLoc (PatVar (Identifier "value"))
+          , pyCaseGuard = Just guardExpr
+          , pyCaseBody = [noLoc (PyReturn (Just (noLoc (PyVar (Identifier "value")))))]
+          }
+        defaultCase = PythonCase
+          { pyCasePattern = noLoc PatWildcard
+          , pyCaseGuard = Nothing
+          , pyCaseBody = [noLoc (PyReturn (Just (noLoc (PyLiteral (PyInt 0)))))]
+          }
+        matchStmt = noLoc (PyMatch (noLoc (PyVar (Identifier "metric"))) [noLoc guardedCase, noLoc defaultCase])
+        funcDef = PythonFuncDef
+          { pyFuncName = Identifier "limit_check"
+          , pyFuncDecorators = []
+          , pyFuncParams = [noLoc (ParamNormal (Identifier "metric") Nothing Nothing)]
+          , pyFuncReturns = Nothing
+          , pyFuncBody = [matchStmt]
+          , pyFuncDoc = Nothing
+          , pyFuncIsAsync = False
+          }
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [noLoc (PyFuncDef funcDef)]
+              }
+        initializesSubject name stmt = case stmt of
+          CppDecl (CppVariable _ _ (Just (CppVar source))) -> source == name
+          _ -> False
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+        case [body | CppFunction "limit_check" _ _ body <- decls] of
+          [body] -> do
+            let seqs = [stmts | CppStmtSeq stmts <- body, any (initializesSubject "metric") stmts]
+            case seqs of
+              [subjectDecl, CppIf cond thenStmts elseStmts] : _ ->
+                case subjectDecl of
+                  CppDecl (CppVariable tmpName _ (Just (CppVar "metric"))) -> do
+                    cond `shouldBe` CppLiteral (CppBoolLit True)
+                    case thenStmts of
+                      (CppDecl (CppVariable boundName _ (Just (CppVar source))):CppIf guard body []:_) -> do
+                        boundName `shouldBe` "value"
+                        source `shouldBe` tmpName
+                        guard `shouldBe` CppBinary ">" (CppVar "value") (CppLiteral (CppIntLit 0))
+                        body `shouldBe` [CppReturn (Just (CppVar "value"))]
+                      other -> expectationFailure $ "Unexpected guarded body: " <> show other
+                    case elseStmts of
+                      [CppIf fallbackCond fallbackBody []] -> do
+                        fallbackCond `shouldBe` CppLiteral (CppBoolLit True)
+                        fallbackBody `shouldBe` [CppReturn (Just (CppLiteral (CppIntLit 0)))]
+                      other -> expectationFailure $ "Unexpected fallback branch: " <> show other
+                  _ -> expectationFailure "Expected subject binding declaration"
+              _ -> expectationFailure "Expected lowered match sequence"
+          _ -> expectationFailure "Expected limit_check function in output"
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
   it "emits CppWhile nodes for Python while loops" $ do
     let moduleBody =
           [ noLoc (PyAssign [noLoc (PatVar (Identifier "n"))] (noLoc (PyLiteral (PyInt 0))))
