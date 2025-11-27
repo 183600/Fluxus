@@ -234,14 +234,37 @@ parseAugAssignment = do
 parseIfStmt :: PythonParser PythonStmt
 parseIfStmt = do
   void $ keywordP KwIf
-  condition <- parseExpression
-  void $ delimiterP DelimColon
-  thenBody <- parseBlock
-  elseBody <- option [] $ do
-    void $ keywordP KwElse
-    void $ delimiterP DelimColon
-    parseBlock
-  return $ PyIf condition thenBody elseBody
+  parseIfChain
+  where
+    parseIfChain = do
+      condition <- parseExpression
+      void $ delimiterP DelimColon
+      thenBody <- parseBlock
+      skipNewlinesAndComments
+      elseBody <- parseIfOrelse
+      pure $ PyIf condition thenBody elseBody
+
+    parseIfOrelse = choice
+      [ try parseElifClause
+      , parseElseClause
+      , pure []
+      ]
+
+    parseElifClause = do
+      clause <- located $ do
+        void $ keywordP KwElif
+        condition <- parseExpression
+        void $ delimiterP DelimColon
+        body <- parseBlock
+        skipNewlinesAndComments
+        nestedElse <- parseIfOrelse
+        pure $ PyIf condition body nestedElse
+      pure [clause]
+
+    parseElseClause = do
+      void $ keywordP KwElse
+      void $ delimiterP DelimColon
+      parseBlock
 
 -- | Parse while statements
 parseWhileStmt :: PythonParser PythonStmt

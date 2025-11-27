@@ -361,6 +361,26 @@ parserSpec = describe "Python Parser" $ do
         case locatedValue (safeHead (pyModuleBody module_)) of
           PyIf _ _ _ -> return ()
           _ -> expectationFailure "Expected if statement"
+
+  it "parses if/elif/else chains" $
+    withParsedModule (T.unlines
+      [ "if value > 0:"
+      , "    pass"
+      , "elif value == 0:"
+      , "    pass"
+      , "else:"
+      , "    pass"
+      ]) $ \module_ ->
+      case pyModuleBody module_ of
+        [stmt] ->
+          case locatedValue stmt of
+            PyIf _ _ elifBranch -> do
+              length elifBranch `shouldBe` 1
+              case locatedValue (head elifBranch) of
+                PyIf _ _ finalElse -> finalElse `shouldSatisfy` (not . null)
+                other -> expectationFailure $ "Expected nested if for elif branch, found " <> show other
+            other -> expectationFailure $ "Expected top-level if statement, found " <> show other
+        _ -> expectationFailure "Expected single statement"
   
   describe "enhanced constructs" $ do
     it "parses list literals with elements" $

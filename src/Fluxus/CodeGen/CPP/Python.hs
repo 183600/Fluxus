@@ -1142,8 +1142,16 @@ generatePythonExpr (Located span expr) = case expr of
     _        -> return $ CppVar name
   PyVar (Identifier name) -> return $ CppVar name
   PyBinaryOp op left right -> do
+    let leftDefault = fromMaybe CppAuto (inferPythonExprCppTypeLocated left)
+        rightDefault = fromMaybe CppAuto (inferPythonExprCppTypeLocated right)
+        leftContext = "left operand of '" <> renderBinaryOpLabel op <> "' at " <> formatSpan (locSpan left)
+        rightContext = "right operand of '" <> renderBinaryOpLabel op <> "' at " <> formatSpan (locSpan right)
+    leftType <- refinePythonExprType leftContext left leftDefault
+    rightType <- refinePythonExprType rightContext right rightDefault
     cppLeft <- generatePythonExpr left
     cppRight <- generatePythonExpr right
+    let leftInfo = (left, leftType, cppLeft)
+        rightInfo = (right, rightType, cppRight)
     case op of
       OpPow -> do
         addInclude "<cmath>"
@@ -1152,6 +1160,11 @@ generatePythonExpr (Located span expr) = case expr of
         let leftDiv = promoteToTrueDivOperand cppLeft
             rightDiv = promoteToTrueDivOperand cppRight
         return $ CppBinary "/" leftDiv rightDiv
+      OpMul -> do
+        stringResult <- lowerStringMultiplication leftInfo rightInfo
+        case stringResult of
+          Just lowered -> pure lowered
+          Nothing -> pure (CppBinary "*" cppLeft cppRight)
       _ -> do
         let cppOp = mapPythonBinaryOp op
         return $ CppBinary cppOp cppLeft cppRight
@@ -1404,6 +1417,86 @@ generatePythonExpr (Located span expr) = case expr of
       | MembershipMapCategory MapKind
 
     data MapKind = OrderedMap | UnorderedMap
+
+    type OperandInfo = (Located PythonExpr, CppType, CppExpr)
+
+    renderBinaryOpLabel :: BinaryOp -> Text
+    renderBinaryOpLabel = T.pack . show
+
+    lowerStringMultiplication :: OperandInfo -> OperandInfo -> CppCodeGen (Maybe CppExpr)
+    lowerStringMultiplication primary secondary = do
+      firstAttempt <- attempt primary secondary
+      case firstAttempt of
+        Just expr -> pure (Just expr)
+        Nothing -> attempt secondary primary
+      where
+        attempt (stringExpr, stringType, stringValue) (countExpr, countType, countValue)
+          | isStringOperand stringExpr stringType
+          , isIntegralOperand countExpr countType = do
+              ensureStringRepeatHelper
+              materialized <- materializeStringOperand stringExpr stringType stringValue
+              let countArg = CppCast CppLongLong countValue
+              pure $ Just (CppCall (CppVar stringRepeatHelperName) [materialized, countArg])
+          | otherwise = pure Nothing
+
+    materializeStringOperand :: Located PythonExpr -> CppType -> CppExpr -> CppCodeGen CppExpr
+    materializeStringOperand locatedExpr inferredType valueExpr =
+      case stripTypeQualifiers inferredType of
+        ty | isStdStringType ty -> pure valueExpr
+        CppPointer inner
+          | isCharLikeType inner -> do
+              addInclude "<string>"
+              pure (CppCall (CppVar "std::string") [valueExpr])
+        CppBool ->
+          pure (wrapBoolForPrint valueExpr)
+        ty | isFloatingCppType ty ->
+          pure (wrapFloatForPrint valueExpr)
+        ty | isIntegralCppType ty -> do
+          addInclude "<string>"
+          pure (CppCall (CppVar "std::to_string") [valueExpr])
+        _ -> do
+          addInclude "<sstream>"
+          tempValue <- generateTempVar
+          streamName <- generateTempVar
+          let valueDecl = CppDecl (CppVariable tempValue CppAuto (Just valueExpr))
+              streamDecl = CppDecl (CppVariable streamName (CppClassType "std::ostringstream" []) Nothing)
+              streamStmt = CppExprStmt (CppBinary "<<" (CppVar streamName) (CppVar tempValue))
+              returnStmt = CppReturn (Just (CppCall (CppMember (CppVar streamName) "str") []))
+          pure $ CppCall (CppLambda [] [valueDecl, streamDecl, streamStmt, returnStmt]) []
+
+    isStdStringType :: CppType -> Bool
+    isStdStringType ty = case stripTypeQualifiers ty of
+      CppString -> True
+      CppClassType name _
+        | name == "std::string" || name == "std::basic_string" -> True
+      _ -> False
+
+    isCharLikeType :: CppType -> Bool
+    isCharLikeType ty = case stripTypeQualifiers ty of
+      CppChar -> True
+      CppUChar -> True
+      _ -> False
+
+    isStringOperand :: Located PythonExpr -> CppType -> Bool
+    isStringOperand locatedExpr inferredType =
+      let coreType = stripTypeQualifiers inferredType
+      in isStdStringType coreType
+         || case coreType of
+              CppPointer inner -> isCharLikeType inner
+              _ -> case locValue locatedExpr of
+                     PyLiteral (PyString _) -> True
+                     PyLiteral (PyFString _) -> True
+                     PyJoinedStr _ -> True
+                     PyFormatSpec _ -> True
+                     _ -> False
+
+    isIntegralOperand :: Located PythonExpr -> CppType -> Bool
+    isIntegralOperand locatedExpr inferredType =
+      let coreType = stripTypeQualifiers inferredType
+      in isIntegralCppType coreType
+         || case locValue locatedExpr of
+              PyLiteral (PyInt _) -> True
+              _ -> False
 
 -- | Materialize a Python list literal into a C++ vector expression
 data ListFallback
@@ -1897,6 +1990,21 @@ isNumericType = \case
   CppLongDouble -> True
   _ -> False
 
+isIntegralCppType :: CppType -> Bool
+isIntegralCppType = \case
+  CppBool -> True
+  CppChar -> True
+  CppUChar -> True
+  CppShort -> True
+  CppUShort -> True
+  CppInt -> True
+  CppUInt -> True
+  CppLong -> True
+  CppULong -> True
+  CppLongLong -> True
+  CppULongLong -> True
+  _ -> False
+
 promoteNumericType :: CppType -> CppType -> CppType
 promoteNumericType t1 t2
   | t1 `elem` floatingTypes || t2 `elem` floatingTypes = CppDouble
@@ -2026,6 +2134,36 @@ ensureRangeHelper = do
             (Just (CppBinary "<" (CppVar "i") (CppVar "n")))
             (Just (CppUnary "++" (CppVar "i")))
             [CppExprStmt (CppCall (CppMember (CppVar "result") "push_back") [CppVar "i"])]
+        , CppReturn (Just (CppVar "result"))
+        ]
+
+stringRepeatHelperName :: Text
+stringRepeatHelperName = "fluxus_repeat_string"
+
+ensureStringRepeatHelper :: CppCodeGen ()
+ensureStringRepeatHelper = do
+  addInclude "<string>"
+  existing <- gets cgsDeclarations
+  unless (any isRepeatHelper existing) $
+    addDeclaration repeatHelperDecl
+  where
+    isRepeatHelper (CppFunction name _ _ _) = name == stringRepeatHelperName
+    isRepeatHelper _ = False
+
+    repeatHelperDecl =
+      CppFunction stringRepeatHelperName CppString
+        [ CppParam "value" (CppConst (CppReference CppString)) Nothing
+        , CppParam "count" CppLongLong Nothing
+        ]
+        [ CppIf (CppBinary "<=" (CppVar "count") (CppLiteral (CppIntLit 0)))
+            [CppReturn (Just (CppLiteral (CppStringLit "")))]
+            []
+        , CppDecl (CppVariable "result" CppString (Just (CppLiteral (CppStringLit ""))))
+        , CppFor
+            (Just (CppDecl (CppVariable "i" CppLongLong (Just (CppLiteral (CppIntLit 0))))))
+            (Just (CppBinary "<" (CppVar "i") (CppVar "count")))
+            (Just (CppUnary "++" (CppVar "i")))
+            [CppExprStmt (CppBinary "+=" (CppVar "result") (CppVar "value"))]
         , CppReturn (Just (CppVar "result"))
         ]
 
