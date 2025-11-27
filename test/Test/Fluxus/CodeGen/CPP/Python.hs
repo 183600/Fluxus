@@ -483,6 +483,45 @@ expressionGenerationSpec = describe "Expression generation" $ do
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
+  it "lowers Python string multiplication into helper calls" $ do
+    let moduleBody =
+          [ noLoc
+              ( PyAssign
+                  [noLoc (PatVar (Identifier "repeated"))]
+                  ( noLoc
+                      ( PyBinaryOp
+                          OpMul
+                          (noLoc (PyLiteral (PyString "ha")))
+                          (noLoc (PyLiteral (PyInt 3)))
+                      )
+                  )
+              )
+          ]
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = moduleBody
+              }
+        isRepeated decl = case decl of
+          CppVariable name _ _ -> name == "repeated"
+          _ -> False
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+        case find isRepeated decls of
+          Just (CppVariable _ _ (Just initializer)) ->
+            initializer `shouldBe`
+              CppCall (CppVar "fluxus_repeat_string")
+                [ CppLiteral (CppStringLit "ha")
+                , CppCast CppLongLong (CppLiteral (CppIntLit 3))
+                ]
+          _ -> expectationFailure "Expected declaration for 'repeated'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
   statementGenerationSpec :: Spec
   statementGenerationSpec = describe "Statement generation" $ do
 
@@ -542,6 +581,85 @@ expressionGenerationSpec = describe "Expression generation" $ do
             expectationFailure "Expected generated main function"
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
+
+  it "lowers Python if/elif/else chains" $ do
+    let valueIdent = Identifier "value"
+        zeroLiteral = noLoc (PyLiteral (PyInt 0))
+        valueVar = noLoc (PyVar valueIdent)
+        makePrint text =
+          noLoc
+            ( PyExprStmt
+                ( noLoc
+                    ( PyCall
+                        (noLoc (PyVar (Identifier "print")))
+                        [noLoc (ArgPositional (noLoc (PyLiteral (PyString text))))]
+                    )
+                )
+            )
+        positiveCond =
+          noLoc
+            ( PyComparison
+                [OpGt]
+                [ valueVar
+                , zeroLiteral
+                ]
+            )
+        zeroCond =
+          noLoc
+            ( PyComparison
+                [OpEq]
+                [ valueVar
+                , zeroLiteral
+                ]
+            )
+        elifBranch =
+          noLoc
+            ( PyIf
+                zeroCond
+                [makePrint "zero"]
+                [makePrint "negative"]
+            )
+        moduleBody =
+          [ noLoc (PyAssign [noLoc (PatVar valueIdent)] zeroLiteral)
+          , noLoc (PyIf positiveCond [makePrint "positive"] [elifBranch])
+          ]
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = moduleBody
+              }
+        expectedStream text =
+          CppBinary "<<"
+            (CppBinary "<<" (CppVar "std::cout") (CppLiteral (CppStringLit text)))
+            (CppVar "std::endl")
+        expectedPositiveCond =
+          CppBinary ">" (CppVar "value") (CppLiteral (CppIntLit 0))
+        expectedZeroCond =
+          CppBinary "==" (CppVar "value") (CppLiteral (CppIntLit 0))
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res ->
+        case find Shared.isMainFunction (cppDeclarations (cgrUnit res)) of
+          Just (CppFunction _ _ _ body) ->
+            case listToMaybe [(cond, thenStmts, elseStmts) | CppIf cond thenStmts elseStmts <- body] of
+              Just (cond, thenStmts, elseBranch) -> do
+                cond `shouldBe` expectedPositiveCond
+                listToMaybe [expr | CppExprStmt expr <- thenStmts]
+                  `shouldBe` Just (expectedStream "positive")
+                case elseBranch of
+                  [CppIf elifCond elifThen elifElse] -> do
+                    elifCond `shouldBe` expectedZeroCond
+                    listToMaybe [expr | CppExprStmt expr <- elifThen]
+                      `shouldBe` Just (expectedStream "zero")
+                    case listToMaybe [expr | CppExprStmt expr <- elifElse] of
+                      Just expr -> expr `shouldBe` expectedStream "negative"
+                      Nothing -> expectationFailure "Expected final else print"
+                  _ -> expectationFailure "Expected nested if for elif branch"
+              Nothing -> expectationFailure "Expected top-level if statement"
+          _ -> expectationFailure "Expected generated main function"
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
 
   it "emits CppWhile nodes for Python while loops" $ do
     let moduleBody =
@@ -2044,7 +2162,7 @@ pythonRuntimeTests =
           , "    print(\"negative\")"
           ]
       , prtExpectedStdOut = "zero\n"
-      , prtPendingReason = Just "Python elif chain lowering is not yet implemented in the C++ backend"
+      , prtPendingReason = Nothing
       }
   , PythonRuntimeTest
       { prtName = "compiles string multiplication"
@@ -2052,7 +2170,7 @@ pythonRuntimeTests =
           [ "print(\"ha\" * 3)"
           ]
       , prtExpectedStdOut = "hahaha\n"
-      , prtPendingReason = Just "Python string multiplication code generation is not yet implemented in the C++ backend"
+      , prtPendingReason = Nothing
       }
   , PythonRuntimeTest
       { prtName = "compiles boolean list counting"
