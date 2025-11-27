@@ -372,9 +372,120 @@ expressionGenerationSpec = describe "Expression generation" $ do
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
-statementGenerationSpec :: Spec
-statementGenerationSpec = describe "Statement generation" $ do
-  it "lowers Python if statements to CppIf" $ do
+  it "lowers string membership comparisons using std::string::find" $ do
+    let vowelsAssign =
+          noLoc
+            ( PyAssign
+                [noLoc (PatVar (Identifier "vowels"))]
+                (noLoc (PyLiteral (PyString "aeiou")))
+            )
+        membershipExpr =
+          noLoc
+            ( PyComparison
+                [OpIn]
+                [ noLoc (PyLiteral (PyString "e"))
+                , noLoc (PyVar (Identifier "vowels"))
+                ]
+            )
+        resultAssign =
+          noLoc
+            ( PyAssign
+                [noLoc (PatVar (Identifier "contains_vowel"))]
+                membershipExpr
+            )
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [vowelsAssign, resultAssign]
+              }
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+            isTarget decl = case decl of
+              CppVariable name _ _ -> name == "contains_vowel"
+              _ -> False
+        case find isTarget decls of
+          Just (CppVariable _ _ (Just (CppCall (CppLambda [] lambdaBody) []))) ->
+            case lambdaBody of
+              [ CppDecl (CppVariable haystackName haystackType (Just (CppVar "vowels")))
+              , CppDecl (CppVariable needleName needleType (Just needleInit))
+              , CppReturn (Just resultExpr)
+              ] -> do
+                haystackType `shouldBe` CppConst (CppReference CppAuto)
+                needleType `shouldBe` CppConst (CppReference CppAuto)
+                needleInit `shouldBe`
+                  CppCall (CppVar "std::string") [CppLiteral (CppStringLit "e")]
+                let expectedResult =
+                      CppBinary "!="
+                        (CppCall (CppMember (CppVar haystackName) "find") [CppVar needleName])
+                        (CppVar "std::string::npos")
+                resultExpr `shouldBe` expectedResult
+              _ -> expectationFailure "Expected lambda with two bindings and a return"
+          _ -> expectationFailure "Expected hoisted declaration for 'contains_vowel'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  it "translates list membership into std::find searches" $ do
+    let numbersLiteral = noLoc (PyList (map (noLoc . PyLiteral . PyInt) [1, 2, 3]))
+        numbersAssign = noLoc (PyAssign [noLoc (PatVar (Identifier "numbers"))] numbersLiteral)
+        membershipExpr =
+          noLoc
+            ( PyComparison
+                [OpIn]
+                [ noLoc (PyLiteral (PyInt 2))
+                , noLoc (PyVar (Identifier "numbers"))
+                ]
+            )
+        resultAssign =
+          noLoc
+            ( PyAssign
+                [noLoc (PatVar (Identifier "has_two"))]
+                membershipExpr
+            )
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [numbersAssign, resultAssign]
+              }
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+            isTarget decl = case decl of
+              CppVariable name _ _ -> name == "has_two"
+              _ -> False
+        case find isTarget decls of
+          Just (CppVariable _ _ (Just (CppCall (CppLambda [] lambdaBody) []))) ->
+            case lambdaBody of
+              [ CppDecl (CppVariable haystackName haystackType (Just (CppVar "numbers")))
+              , CppDecl (CppVariable needleName needleType (Just (CppLiteral (CppIntLit 2))))
+              , CppDecl (CppVariable endName CppAuto (Just endInit))
+              , CppReturn (Just resultExpr)
+              ] -> do
+                haystackType `shouldBe` CppConst (CppReference CppAuto)
+                needleType `shouldBe` CppConst (CppReference CppAuto)
+                endInit `shouldBe` CppCall (CppVar "std::end") [CppVar haystackName]
+                let expectedFind =
+                      CppCall (CppVar "std::find")
+                        [ CppCall (CppVar "std::begin") [CppVar haystackName]
+                        , CppVar endName
+                        , CppVar needleName
+                        ]
+                    expectedResult = CppBinary "!=" expectedFind (CppVar endName)
+                resultExpr `shouldBe` expectedResult
+              _ -> expectationFailure "Expected lambda with three bindings and a return"
+          _ -> expectationFailure "Expected hoisted declaration for 'has_two'"
+      Left failure ->
+        expectationFailure $ "Code generation failed: " <> show failure
+
+  statementGenerationSpec :: Spec
+  statementGenerationSpec = describe "Statement generation" $ do
+
     let moduleBody =
           [ noLoc
               ( PyIf
