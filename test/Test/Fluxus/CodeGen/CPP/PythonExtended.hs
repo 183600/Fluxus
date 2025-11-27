@@ -25,6 +25,7 @@ spec = describe "Extended Python code generation" $ do
   generatorExpressionSpec
   joinedStringSpec
   walrusExpressionSpec
+  slicingSpec
 
 -- Test tuple unpacking in assignments
 tupleUnpackingSpec :: Spec
@@ -474,6 +475,87 @@ walrusExpressionSpec = describe "Assignment expressions" $ do
             initExpr `shouldSatisfy` exprContainsLambda
           other -> expectationFailure $ "Expected hoisted declaration for 'result', found " <> show other
       Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+slicingSpec :: Spec
+slicingSpec = describe "Sequence slicing" $ do
+  it "lowers list slicing via fluxus_slice" $ do
+    let valuesAssign =
+          noLoc
+            ( PyAssign
+                [noLoc (PatVar (Identifier "values"))]
+                (noLoc (PyList (map literalInt [1, 2, 3, 4])))
+            )
+        sliceAssign =
+          noLoc
+            ( PyAssign
+                [noLoc (PatVar (Identifier "middle"))]
+                (noLoc (PySubscript
+                  (noLoc (PyVar (Identifier "values")))
+                  (sliceRange 1 3)))
+            )
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [valuesAssign, sliceAssign]
+              }
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+        decls `shouldSatisfy` any isSliceHelperDecl
+        case lookupInitializer decls "middle" of
+          Just expr -> expr `shouldSatisfy` isSliceHelperCall
+          Nothing -> expectationFailure "Expected initializer for 'middle'"
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+
+  it "materializes string slicing without runtime fallback" $ do
+    let stringAssign =
+          noLoc
+            ( PyAssign
+                [noLoc (PatVar (Identifier "word"))]
+                (noLoc (PyLiteral (PyString "fluxus")))
+            )
+        chunkAssign =
+          noLoc
+            ( PyAssign
+                [noLoc (PatVar (Identifier "chunk"))]
+                (noLoc (PySubscript
+                  (noLoc (PyVar (Identifier "word")))
+                  (sliceRange 0 3)))
+            )
+        pythonAst =
+          PythonAST
+            PythonModule
+              { pyModuleName = Nothing
+              , pyModuleDoc = Nothing
+              , pyModuleImports = []
+              , pyModuleBody = [stringAssign, chunkAssign]
+              }
+    case generateCpp Shared.testCppConfig (Left pythonAst) of
+      Right res -> do
+        let decls = cppDeclarations (cgrUnit res)
+        case lookupInitializer decls "chunk" of
+          Just expr -> expr `shouldSatisfy` isSliceHelperCall
+          Nothing -> expectationFailure "Expected initializer for 'chunk'"
+      Left failure -> expectationFailure $ "Code generation failed: " <> show failure
+  where
+    isSliceHelperDecl decl = case decl of
+      CppTemplate _ (CppFunction name _ _ _) -> name == "fluxus_slice"
+      _ -> False
+
+    lookupInitializer decls name =
+      listToMaybe [expr | CppVariable varName _ (Just expr) <- decls, varName == name]
+
+    isSliceHelperCall expr = case expr of
+      CppCall (CppVar name) args -> name == "fluxus_slice" && length args == 4
+      _ -> False
+
+    literalInt n = noLoc (PyLiteral (PyInt n))
+
+    sliceRange start stop =
+      noLoc (SliceSlice (Just (literalInt start)) (Just (literalInt stop)) Nothing)
 
 exprContainsLambda :: CppExpr -> Bool
 exprContainsLambda expr = case expr of

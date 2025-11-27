@@ -175,18 +175,26 @@ pythonUnsupportedTests = describe "Python unsupported constructs" $ do
       Right _ ->
         expectationFailure "Expected compilation to fail for async for statement"
 
-  it "falls back to runtime abort for slicing in non-strict mode" $ do
+  it "falls back to runtime abort for multi-dimensional slicing in non-strict mode" $ do
     let sliceExpr =
           noLoc $
             PySubscript
-              (noLoc (PyVar (Identifier "values")))
-              (noLoc (SliceSlice
-                       (Just (noLoc (PyLiteral (PyInt 1))))
-                       (Just (noLoc (PyLiteral (PyInt 3))))
-                       Nothing))
-        valuesList = map (noLoc . PyLiteral . PyInt) [1, 2, 3, 4]
+              (noLoc (PyVar (Identifier "matrix")))
+              (noLoc (SliceExtSlice
+                       [ noLoc (SliceSlice
+                           (Just (noLoc (PyLiteral (PyInt 0))))
+                           (Just (noLoc (PyLiteral (PyInt 2))))
+                           Nothing)
+                       , noLoc (SliceSlice
+                           (Just (noLoc (PyLiteral (PyInt 1))))
+                           (Just (noLoc (PyLiteral (PyInt 3))))
+                           Nothing)
+                       ]))
+        rowValues = map (noLoc . PyLiteral . PyInt) [1, 2, 3, 4]
+        rowLiteral = noLoc (PyList rowValues)
+        matrixLiteral = noLoc (PyList [rowLiteral, rowLiteral])
         moduleBody =
-          [ noLoc (PyAssign [noLoc (PatVar (Identifier "values"))] (noLoc (PyList valuesList)))
+          [ noLoc (PyAssign [noLoc (PatVar (Identifier "matrix"))] matrixLiteral)
           , noLoc (PyExprStmt sliceExpr)
           ]
         pythonAst = PythonAST PythonModule
@@ -223,7 +231,7 @@ pythonUnsupportedTests = describe "Python unsupported constructs" $ do
 
             isAbortCall expr = case expr of
               CppCall (CppVar "fluxus_runtime_abort") [CppLiteral (CppStringLit msg)] ->
-                T.isInfixOf "Python slicing is not supported in the C++ backend" msg
+                T.isInfixOf "multiple indices" msg
               _ -> False
 
         any isRuntimeAbortHelper decls `shouldBe` True

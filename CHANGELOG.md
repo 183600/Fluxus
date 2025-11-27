@@ -26,6 +26,7 @@
   从而覆盖更多常见的 Go 控制流与数据构造模式。
 - **[平台]** 改进了 Linux 工具链支持：默认附带 `/usr/include/x86_64-linux-gnu`、`/usr/lib/x86_64-linux-gnu` 等路径，
   自动链接 `stdc++`、`pthread`、`dl`、`m` 并在需要时传递 `-pthread`，同时在缺少 `clang++` 时会依次尝试 `clang++-18/17/16/15` 以及 `g++/c++`
+- **[增强]** Python 列表和字符串的一维切片现在会通过 `fluxus_slice` 辅助函数生成 C++ 代码，避免简单切片触发运行时回退
 
 #### 代码改进
 - 在 `src/Fluxus/CodeGen/CPP.hs` 中添加了 `PyComparison` 模式匹配

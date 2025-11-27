@@ -1185,14 +1185,12 @@ generatePythonExpr (Located span expr) = case expr of
         return $ CppLiteral $ CppBoolLit False
   PySubscript obj sliceExpr -> do
     cppObj <- generatePythonExpr obj
-    case sliceExpr of
-      Located _ (SliceIndex idx) -> do
+    case locValue sliceExpr of
+      SliceIndex idx -> do
         cppIdx <- generatePythonExpr idx
         return $ CppIndex cppObj cppIdx
-      _ -> do
-        reportUnsupported "Unsupported slice expression"
-        abortExpr <- runtimeAbortCall "Python slicing is not supported in the C++ backend"
-        return $ CppBinary "," abortExpr (CppLiteral (CppIntLit 0))
+      _ ->
+        generateSliceAccess obj cppObj sliceExpr
   PyAttribute obj (Identifier member) -> do
     cppObj <- generatePythonExpr obj
     return $ CppMember cppObj member
@@ -1777,6 +1775,67 @@ generatePythonGeneratorExpression span element comps = do
     <> " is eagerly materialized into std::vector"
   generatePythonListComprehension span element comps
 
+generateSliceAccess :: Located PythonExpr -> CppExpr -> Located PythonSlice -> CppCodeGen CppExpr
+generateSliceAccess targetExpr cppTarget locatedSlice =
+  case locValue locatedSlice of
+    SliceSlice start stop step ->
+      generateLinearSlice targetExpr cppTarget (locSpan locatedSlice) start stop step
+    SliceExtSlice [single] ->
+      generateSliceAccess targetExpr cppTarget single
+    SliceExtSlice _ ->
+      sliceFallback (locSpan locatedSlice) "with multiple indices requires runtime fallback"
+    SliceIndex idx -> do
+      cppIdx <- generatePythonExpr idx
+      pure $ CppIndex cppTarget cppIdx
+
+generateLinearSlice
+  :: Located PythonExpr
+  -> CppExpr
+  -> SourceSpan
+  -> Maybe (Located PythonExpr)
+  -> Maybe (Located PythonExpr)
+  -> Maybe (Located PythonExpr)
+  -> CppCodeGen CppExpr
+generateLinearSlice targetExpr cppTarget sliceSpan startExpr stopExpr stepExpr = do
+  let contextLabel = "slice target at " <> formatSpan (locSpan targetExpr)
+      defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated targetExpr)
+  resolvedType <- refinePythonExprType contextLabel targetExpr defaultType
+  let coreType = stripTypeQualifiers resolvedType
+  case coreType of
+    CppVector _ -> do
+      addInclude "<vector>"
+      lowerSequenceSlice
+    CppString -> do
+      addInclude "<string>"
+      lowerSequenceSlice
+    _ ->
+      let typeLabel = renderCppType coreType
+      in sliceFallback sliceSpan ("over type '" <> typeLabel <> "' requires runtime fallback")
+  where
+    lowerSequenceSlice = do
+      ensureSliceHelper
+      startOpt <- buildSliceOptional startExpr
+      stopOpt <- buildSliceOptional stopExpr
+      stepOpt <- buildSliceOptional stepExpr
+      pure $ CppCall (CppVar sliceHelperName) [cppTarget, startOpt, stopOpt, stepOpt]
+
+buildSliceOptional :: Maybe (Located PythonExpr) -> CppCodeGen CppExpr
+buildSliceOptional Nothing = pure (CppBracedInit sliceOptionalType [])
+buildSliceOptional (Just expr) = do
+  value <- generatePythonExpr expr
+  pure (CppBracedInit sliceOptionalType [CppCast CppLongLong value])
+
+sliceOptionalType :: CppType
+sliceOptionalType = CppOptional CppLongLong
+
+sliceFallback :: SourceSpan -> Text -> CppCodeGen CppExpr
+sliceFallback sliceSpan reason = do
+  let baseMessage = "Python slicing " <> reason
+      message = baseMessage <> " at " <> formatSpan sliceSpan
+  reportUnsupported message
+  abortExpr <- runtimeAbortCall message
+  pure $ CppBinary "," abortExpr (CppLiteral (CppIntLit 0))
+
 inferPythonExprCppTypeLocated :: Located PythonExpr -> Maybe CppType
 inferPythonExprCppTypeLocated (Located _ e) = inferPythonExprCppType e
 
@@ -1969,6 +2028,128 @@ ensureRangeHelper = do
             [CppExprStmt (CppCall (CppMember (CppVar "result") "push_back") [CppVar "i"])]
         , CppReturn (Just (CppVar "result"))
         ]
+
+sliceHelperName :: Text
+sliceHelperName = "fluxus_slice"
+
+ensureSliceHelper :: CppCodeGen ()
+ensureSliceHelper = do
+  addInclude "<optional>"
+  addInclude "<cstddef>"
+  ensureRuntimeAbortHelper
+  existing <- gets cgsDeclarations
+  unless (any isSliceHelper existing) $ do
+    abortExpr <- runtimeAbortCall "Python slice step cannot be zero"
+    addDeclaration (sliceHelperDecl abortExpr)
+  where
+    isSliceHelper (CppTemplate _ (CppFunction name _ _ _)) = name == sliceHelperName
+    isSliceHelper _ = False
+
+    sliceHelperDecl abortExpr =
+      let seqType = CppTemplateType "Seq" []
+          seqParam = CppParam "seq" (CppConst (CppReference seqType)) Nothing
+          optionalParam name = CppParam name sliceOptionalType Nothing
+          sizeVar = "size_"
+          stepVar = "step_"
+          forwardVar = "forward_"
+          startVar = "start_"
+          stopVar = "stop_"
+          indexVar = "idx_"
+          resultVar = "result_"
+          hasValue name = CppCall (CppMember (CppVar name) "has_value") []
+          optionalValue name = CppCall (CppMember (CppVar name) "value") []
+          assign name expr = CppExprStmt (CppBinary "=" (CppVar name) expr)
+          adjustNegative name =
+            CppIf (CppBinary "<" (CppVar name) (CppLiteral (CppIntLit 0)))
+              [CppExprStmt (CppBinary "+=" (CppVar name) (CppVar sizeVar))]
+              []
+          clampWith name op test replacement =
+            CppIf (CppBinary op (CppVar name) test)
+              [assign name replacement]
+              []
+          stepExpr =
+            CppConditional (hasValue "step")
+              (CppCast CppLongLong (optionalValue "step"))
+              (CppLiteral (CppIntLit 1))
+          startFallback =
+            CppConditional (CppVar forwardVar)
+              (CppLiteral (CppIntLit 0))
+              (CppBinary "-" (CppVar sizeVar) (CppLiteral (CppIntLit 1)))
+          stopFallback =
+            CppConditional (CppVar forwardVar)
+              (CppVar sizeVar)
+              (CppLiteral (CppIntLit (-1)))
+          startValue =
+            CppConditional (hasValue "start")
+              (CppCast CppLongLong (optionalValue "start"))
+              startFallback
+          stopValue =
+            CppConditional (hasValue "stop")
+              (CppCast CppLongLong (optionalValue "stop"))
+              stopFallback
+          startClamp =
+            CppIf (CppVar forwardVar)
+              [ clampWith startVar "<" (CppLiteral (CppIntLit 0)) (CppLiteral (CppIntLit 0))
+              , clampWith startVar ">" (CppVar sizeVar) (CppVar sizeVar)
+              ]
+              [ clampWith startVar "<" (CppLiteral (CppIntLit (-1))) (CppLiteral (CppIntLit (-1)))
+              , clampWith startVar ">=" (CppVar sizeVar) (CppBinary "-" (CppVar sizeVar) (CppLiteral (CppIntLit 1)))
+              ]
+          stopClamp =
+            CppIf (CppVar forwardVar)
+              [ clampWith stopVar "<" (CppLiteral (CppIntLit 0)) (CppLiteral (CppIntLit 0))
+              , clampWith stopVar ">" (CppVar sizeVar) (CppVar sizeVar)
+              ]
+              [ clampWith stopVar "<" (CppLiteral (CppIntLit (-1))) (CppLiteral (CppIntLit (-1)))
+              , clampWith stopVar ">=" (CppVar sizeVar) (CppBinary "-" (CppVar sizeVar) (CppLiteral (CppIntLit 1)))
+              ]
+          boundsCheck =
+            CppIf
+              (CppBinary "||"
+                (CppBinary "<" (CppVar indexVar) (CppLiteral (CppIntLit 0)))
+                (CppBinary ">=" (CppVar indexVar) (CppVar sizeVar)))
+              [CppBreak]
+              []
+          pushBack =
+            CppExprStmt
+              (CppCall (CppMember (CppVar resultVar) "push_back")
+                [CppIndex (CppVar "seq") (CppCast CppSizeT (CppVar indexVar))])
+          loopBody = [boundsCheck, pushBack]
+          positiveLoop =
+            CppFor
+              (Just (CppDecl (CppVariable indexVar CppLongLong (Just (CppVar startVar)))))
+              (Just (CppBinary "<" (CppVar indexVar) (CppVar stopVar)))
+              (Just (CppBinary "+=" (CppVar indexVar) (CppVar stepVar)))
+              loopBody
+          negativeLoop =
+            CppFor
+              (Just (CppDecl (CppVariable indexVar CppLongLong (Just (CppVar startVar)))))
+              (Just (CppBinary ">" (CppVar indexVar) (CppVar stopVar)))
+              (Just (CppBinary "+=" (CppVar indexVar) (CppVar stepVar)))
+              loopBody
+          helperBody =
+            [ CppDecl (CppVariable sizeVar CppLongLong (Just (CppCast CppLongLong (CppCall (CppMember (CppVar "seq") "size") []))))
+            , CppDecl (CppVariable stepVar CppLongLong (Just stepExpr))
+            , CppIf (CppBinary "==" (CppVar stepVar) (CppLiteral (CppIntLit 0)))
+                [ CppExprStmt abortExpr
+                , CppReturn (Just (CppVar "seq"))
+                ]
+                []
+            , CppDecl (CppVariable forwardVar CppBool (Just (CppBinary ">" (CppVar stepVar) (CppLiteral (CppIntLit 0)))))
+            , CppDecl (CppVariable startVar CppLongLong (Just startValue))
+            , adjustNegative startVar
+            , startClamp
+            , CppDecl (CppVariable stopVar CppLongLong (Just stopValue))
+            , adjustNegative stopVar
+            , stopClamp
+            , CppDecl (CppVariable resultVar seqType (Just (CppBracedInit seqType [])))
+            , CppIf (CppVar forwardVar) [positiveLoop] [negativeLoop]
+            , CppReturn (Just (CppVar resultVar))
+            ]
+      in CppTemplate ["typename Seq"]
+           (CppFunction sliceHelperName seqType
+             [seqParam, optionalParam "start", optionalParam "stop", optionalParam "step"]
+             helperBody)
 
 finallyGuardStructName :: Text
 finallyGuardStructName = "FluxusFinallyGuard"
