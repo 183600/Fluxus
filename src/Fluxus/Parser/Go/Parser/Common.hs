@@ -25,6 +25,7 @@ module Fluxus.Parser.Go.Parser.Common
   , parseGoString
   , parseIdentifierList
   , textShow
+  , parseBlockStmt'
   ) where
 
 import Control.Monad (void)
@@ -44,6 +45,9 @@ import Text.Megaparsec
   , VisualStream(..)
   , getInput
   , satisfy
+  , many
+  , lookAhead
+  , anySingle
   )
 import qualified Text.Megaparsec as MP
 import qualified Text.Megaparsec.Pos as MPP
@@ -56,6 +60,9 @@ import Fluxus.AST.Common
   , locSpan
   , locValue
   , noLoc
+  )
+import Fluxus.AST.Go
+  ( GoStmt(..)
   )
 import Fluxus.Parser.Go.Lexer
   ( GoDelimiter(..)
@@ -261,3 +268,19 @@ showGoToken tok = case tok of
   GoTokenNewline -> T.pack "\\n"
   GoTokenEOF -> T.pack "<EOF>"
   GoTokenError e -> T.pack "<ERROR:" <> e <> T.pack ">"
+
+parseBlockStmt' :: (MonadLogger m) => GoParser m GoStmt
+parseBlockStmt' = do
+  logDebug "parseBlockStmt': entering"
+  void $ goDelimiterP GoDelimLeftBrace
+  skipCommentsAndNewlines
+  stmts <- many (parseStatement <* skipCommentsAndNewlines)
+  logDebug $ "parseBlockStmt': statements parsed = " <> textShow (length stmts)
+  nextToken <- MP.optional $ lookAhead anySingle
+  logDebug $ "parseBlockStmt': next token before closing = " <> maybe "<none>" textShow nextToken
+  void $ goDelimiterP GoDelimRightBrace
+  logDebug "parseBlockStmt': exiting"
+  pure $ GoBlock stmts
+
+parseStatement :: GoParser m (Located GoStmt)
+parseStatement = error "parseStatement: should be provided by Statements module"

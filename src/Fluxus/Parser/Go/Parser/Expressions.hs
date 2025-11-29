@@ -69,7 +69,7 @@ import Fluxus.Parser.Go.Parser.Common
   , skipCommentsAndNewlines
   , parseIdentifierList
   )
-import Fluxus.Parser.Go.Parser.Statements (parseBlockStmt')
+import Fluxus.Parser.Go.Parser.Common (parseBlockStmt')
 
 -- | Parse expressions with operator precedence.
 parseExpression :: MonadLogger m => GoParser m (Located GoExpr)
@@ -227,7 +227,7 @@ parseCompositeLit = do
 
     parseLiteralElement = do
       skipCommentsAndNewlines
-      MP.try parseFieldElement <|> (LiteralValue <$> parseExpression)
+      MP.try parseFieldElement MP.<|> (LiteralValue <$> parseExpression)
 
     parseFieldElement = do
       fieldName <- parseGoIdentifier

@@ -166,11 +166,11 @@ parseAssignment = do
     isAssignOp (Located _ (TokenOperator Lexer.OpAssign)) = True
     isAssignOp _ = False
 
-    coalescePatterns :: [Located PythonPattern] -> Located PythonPattern
-    coalescePatterns [single] = single
-    coalescePatterns pats =
+    coalescePatterns :: [Located PythonPattern] -> PythonParser PythonPattern
+    coalescePatterns [single] = pure single
+    coalescePatterns pats = do
       let combinedSpan = mergeSpans (locSpan (head pats)) (locSpan (last pats))
-      in Located combinedSpan (PatTuple pats)
+      pure $ Located combinedSpan (PatTuple pats)
 
     parseAssignmentChain :: [Located PythonPattern] -> PythonParser PythonStmt
     parseAssignmentChain acc = do

@@ -14,7 +14,6 @@ module Fluxus.Parser.Go.Parser.Statements
   , parseSwitchStmt
   , parseSelectStmt
   , parseBlockStmt
-  , parseBlockStmt'
   , parseReturnStmt
   , parseBreakStmt
   , parseContinueStmt
@@ -59,6 +58,7 @@ import Fluxus.Parser.Go.Parser.Common
   , parseGoIdentifier
   , parseIdentifierList
   , textShow
+  , parseBlockStmt'
   )
 import Fluxus.Parser.Go.Parser.Expressions
   ( parseExpression
@@ -289,19 +289,6 @@ parseSelectStmt = do
 
 parseBlockStmt :: MonadLogger m => GoParser m (Located GoStmt)
 parseBlockStmt = located parseBlockStmt'
-
-parseBlockStmt' :: MonadLogger m => GoParser m GoStmt
-parseBlockStmt' = do
-  logDebug "parseBlockStmt': entering"
-  void $ goDelimiterP GoDelimLeftBrace
-  skipCommentsAndNewlines
-  stmts <- many (parseStatement <* skipCommentsAndNewlines)
-  logDebug $ "parseBlockStmt': statements parsed = " <> textShow (length stmts)
-  nextToken <- MP.optional $ lookAhead anySingle
-  logDebug $ "parseBlockStmt': next token before closing = " <> maybe "<none>" textShow nextToken
-  void $ goDelimiterP GoDelimRightBrace
-  logDebug "parseBlockStmt': exiting"
-  pure $ GoBlock stmts
 
 parseReturnStmt :: MonadLogger m => GoParser m GoStmt
 parseReturnStmt = do
