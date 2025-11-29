@@ -11,10 +11,11 @@ import Control.Monad.State (gets, modify)
 import Data.Bifunctor (first)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
-import Data.List (intercalate, nub, partition)
+import Data.List (foldl', intercalate, nub, partition)
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.List.NonEmpty as NE
 import qualified Text.Megaparsec as MP
 
 import Fluxus.AST.Common hiding (TypeVar)
@@ -182,8 +183,8 @@ generatePythonStmt scope (Located span stmt) =
       generatePythonWith scope span items bodyStmts
     PyTry tryBody excepts elseStmts finallyStmts ->
       generatePythonTry scope span tryBody excepts elseStmts finallyStmts
-    PyMatch _ _ ->
-      buildRuntimeFallback span "Python 'match' statement requires runtime fallback"
+    PyMatch subject cases ->
+      generatePythonMatch scope span subject cases
     PyImport imports -> do
       emitInfo $
         "Ignoring Python import at " <> formatSpan span <> ": "
@@ -262,6 +263,119 @@ generatePythonStmt scope (Located span stmt) =
       let body = [fallbackStmt]
       addDeclaration $ CppFunction funcName returnType cppParams body
       emitInfo $ "Generated fallback stub for async function " <> funcName
+
+    generatePythonMatch :: PythonScope -> SourceSpan -> Located PythonExpr -> [Located PythonCase] -> CppCodeGen CppStmt
+    generatePythonMatch scope span subject cases
+      | null cases =
+          buildRuntimeFallback span "match statement requires at least one case clause"
+      | otherwise = do
+          subjectVar <- generateTempVar
+          subjectExpr <- generatePythonExpr subject
+          loweredCases <- mapM (lowerMatchCase subjectVar) cases
+          case sequence loweredCases of
+            Left reason -> buildRuntimeFallback span reason
+            Right lowered -> do
+              let matchStmt = buildCaseChain lowered
+              pure $ CppStmtSeq
+                [ CppDecl (CppVariable subjectVar CppAuto (Just subjectExpr))
+                , matchStmt
+                ]
+
+    type LoweredCase = (CppExpr, [CppStmt])
+
+    lowerMatchCase :: Text -> Located PythonCase -> CppCodeGen (Either Text LoweredCase)
+    lowerMatchCase subjectVar (Located _ caseNode) = do
+      patternResult <- lowerPattern subjectVar (pyCasePattern caseNode)
+      case patternResult of
+        Left err -> pure $ Left err
+        Right lowering -> do
+          (guardExpr, bodyStmts) <- withPatternBindings (mlBindings lowering) $ do
+            guardExpr <- traverse generatePythonExpr (pyCaseGuard caseNode)
+            body <- mapM (generatePythonStmt scope) (pyCaseBody caseNode)
+            pure (guardExpr, body)
+          let bindingStmts = map pbStmt (mlBindings lowering)
+              guardedBody =
+                case guardExpr of
+                  Nothing -> bindingStmts ++ bodyStmts
+                  Just guardCond -> bindingStmts ++ [CppIf guardCond bodyStmts []]
+          pure $ Right (mlCondition lowering, guardedBody)
+
+    buildCaseChain :: [LoweredCase] -> CppStmt
+    buildCaseChain [] = cppNoop
+    buildCaseChain ((cond, body):rest) =
+      let elseBranch = case rest of
+            [] -> []
+            _ -> [buildCaseChain rest]
+      in CppIf cond body elseBranch
+
+    data MatchLowering = MatchLowering
+      { mlCondition :: CppExpr
+      , mlBindings :: [PatternBinding]
+      }
+
+    data PatternBinding = PatternBinding
+      { pbName :: Text
+      , pbType :: CppType
+      , pbStmt :: CppStmt
+      }
+
+    lowerPattern :: Text -> Located PythonPattern -> CppCodeGen (Either Text MatchLowering)
+    lowerPattern subjectVar locatedPattern =
+      case locValue locatedPattern of
+        PatWildcard ->
+          pure $ Right $ MatchLowering (CppLiteral (CppBoolLit True)) []
+        PatVar (Identifier name) ->
+          pure $ Right $ MatchLowering (CppLiteral (CppBoolLit True)) [bindingFor name]
+        PatLiteral lit ->
+          pure $ Right $ MatchLowering (CppBinary "==" subjectExpr (CppLiteral (mapPythonLiteral lit))) []
+        PatValue expr -> do
+          valueExpr <- generatePythonExpr expr
+          pure $ Right $ MatchLowering (CppBinary "==" subjectExpr valueExpr) []
+        PatAs inner (Identifier aliasName) -> do
+          lowered <- lowerPattern subjectVar inner
+          case lowered of
+            Left err -> pure $ Left err
+            Right res ->
+              let aliasBinding = bindingFor aliasName
+              in pure $ Right res { mlBindings = mlBindings res ++ [aliasBinding] }
+        PatOr patterns -> do
+          lowered <- traverse (lowerPattern subjectVar) (NE.toList patterns)
+          case sequence lowered of
+            Left err -> pure $ Left err
+            Right options ->
+              if any (not . null . mlBindings) options
+                then pure $ Left (unsupportedPattern "alternatives that bind names are not supported")
+                else
+                  let condExprs = map mlCondition options
+                      combinedCond = foldl1 (\acc expr -> CppBinary "||" acc expr) condExprs
+                  in pure $ Right $ MatchLowering combinedCond []
+        _ ->
+          pure $ Left (unsupportedPattern "is not supported")
+      where
+        subjectExpr = CppVar subjectVar
+        bindingFor name =
+          PatternBinding
+            { pbName = name
+            , pbType = CppAuto
+            , pbStmt = CppDecl (CppVariable name CppAuto (Just subjectExpr))
+            }
+        unsupportedPattern detail =
+          "match pattern '" <> describePattern (locValue locatedPattern) <> "' at "
+          <> formatSpan (locSpan locatedPattern) <> " " <> detail
+
+    withPatternBindings :: [PatternBinding] -> CppCodeGen a -> CppCodeGen a
+    withPatternBindings [] action = action
+    withPatternBindings bindings action = do
+      modify $ \s ->
+        let table = cgsSymbolTable s
+            updated = foldl' (\acc binding -> HM.insert (pbName binding) (pbType binding) acc) table bindings
+        in s { cgsSymbolTable = updated }
+      result <- action
+      modify $ \s ->
+        let table = cgsSymbolTable s
+            cleaned = foldl' (flip HM.delete) table (map pbName bindings)
+        in s { cgsSymbolTable = cleaned }
+      pure result
 
     handleSimpleAssignment :: PythonScope -> Text -> Located PythonExpr -> CppCodeGen CppStmt
     handleSimpleAssignment scope' varName locatedExpr = do
