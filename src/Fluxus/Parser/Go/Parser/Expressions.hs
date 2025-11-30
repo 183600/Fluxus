@@ -69,7 +69,7 @@ import Fluxus.Parser.Go.Parser.Common
   , skipCommentsAndNewlines
   , parseIdentifierList
   )
-import Fluxus.Parser.Go.Parser.Statements (parseBlockStmt')
+import {-# SOURCE #-} Fluxus.Parser.Go.Parser.Statements (parseBlockStmt')
 
 -- | Parse expressions with operator precedence.
 parseExpression :: MonadLogger m => GoParser m (Located GoExpr)
