@@ -167,8 +167,8 @@ generatePythonStmt scope (Located span stmt) =
       case locatedValue iterExpr of
         PyCall (Located _ (PyVar (Identifier "range"))) rangeArgs -> do
           unless varAlreadyDeclared $
-            modify $ 
- -> r { cgsSymbolTable = HM.insert varName CppAuto (cgsSymbolTable r) }
+            modify $ \r ->
+              r { cgsSymbolTable = HM.insert varName CppAuto (cgsSymbolTable r) }
           mSpec <- parseRangeArgs rangeArgs
           case mSpec of
             Nothing -> do
