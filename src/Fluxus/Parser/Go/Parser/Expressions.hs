@@ -22,7 +22,7 @@ module Fluxus.Parser.Go.Parser.Expressions
   , parseParameterList
   ) where
 
-import Control.Applicative (optional, many)
+import Control.Applicative (optional, many, (<|>))
 import Control.Monad (void)
 import Control.Monad.Logger (MonadLogger)
 import Data.Functor (($>))
