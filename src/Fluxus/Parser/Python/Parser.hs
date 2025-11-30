@@ -159,7 +159,7 @@ parseAssignment = do
       , void $ satisfy isAssignOp      -- x = ...  
       ]
   -- Parse the first target group (which may itself be a tuple pattern)
-  firstTargetGroup <- coalescePatterns =<< parsePattern `sepBy1` delimiterP DelimComma
+  firstTargetGroup <- coalescePatterns <$> (parsePattern `sepBy1` delimiterP DelimComma)
   void $ operator' Lexer.OpAssign
   parseAssignmentChain [firstTargetGroup]
   where
