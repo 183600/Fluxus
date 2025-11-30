@@ -107,6 +107,21 @@ data PythonScope
   | ScopeFunction
   deriving (Eq, Show)
 
+type LoweredCase = (CppExpr, [CppStmt])
+
+data MatchLowering = MatchLowering
+  { mlCondition :: CppExpr
+  , mlBindings :: [PatternBinding]
+  }
+
+data PatternBinding = PatternBinding
+  { pbName :: Text
+  , pbType :: CppType
+  , pbStmt :: CppStmt
+  }
+
+type OperandInfo = (Located PythonExpr, CppType, CppExpr)
+
 -- | Generate C++ from Python statements
 generatePythonStmt :: PythonScope -> Located PythonStmt -> CppCodeGen CppStmt
 generatePythonStmt scope (Located span stmt) =
@@ -281,8 +296,6 @@ generatePythonStmt scope (Located span stmt) =
                 , matchStmt
                 ]
 
-    type LoweredCase = (CppExpr, [CppStmt])
-
     lowerMatchCase :: Text -> Located PythonCase -> CppCodeGen (Either Text LoweredCase)
     lowerMatchCase subjectVar (Located _ caseNode) = do
       patternResult <- lowerPattern subjectVar (pyCasePattern caseNode)
@@ -307,17 +320,6 @@ generatePythonStmt scope (Located span stmt) =
             [] -> []
             _ -> [buildCaseChain rest]
       in CppIf cond body elseBranch
-
-    data MatchLowering = MatchLowering
-      { mlCondition :: CppExpr
-      , mlBindings :: [PatternBinding]
-      }
-
-    data PatternBinding = PatternBinding
-      { pbName :: Text
-      , pbType :: CppType
-      , pbStmt :: CppStmt
-      }
 
     lowerPattern :: Text -> Located PythonPattern -> CppCodeGen (Either Text MatchLowering)
     lowerPattern subjectVar locatedPattern =
@@ -485,7 +487,7 @@ generatePythonStmt scope (Located span stmt) =
                 ("Augmented assignment using operator '" <> T.pack (show op) <> "' is not supported")
 
     handleChainedAssignment :: PythonScope -> SourceSpan -> [Located PythonPattern] -> Located PythonExpr -> CppCodeGen CppStmt
-
+    handleChainedAssignment scope' loc targetPatterns valueExpr = do
       case traverse extractVarName targetPatterns of
         Nothing ->
           unsupportedStatement reportNotImplemented loc "Chained assignment targets must be simple names"
@@ -1531,8 +1533,6 @@ generatePythonExpr (Located span expr) = case expr of
       | MembershipMapCategory MapKind
 
     data MapKind = OrderedMap | UnorderedMap
-
-    type OperandInfo = (Located PythonExpr, CppType, CppExpr)
 
     renderBinaryOpLabel :: BinaryOp -> Text
     renderBinaryOpLabel = T.pack . show
