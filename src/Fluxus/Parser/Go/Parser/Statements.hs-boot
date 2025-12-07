@@ -1,4 +1,4 @@
-module Fluxus.Parser.Go.Parser.Statements where
+module Fluxus.Parser.Go.Parser.Statements (parseBlockStmt') where
 
 import Control.Monad.Logger (MonadLogger)
 
