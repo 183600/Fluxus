@@ -301,7 +301,7 @@ parserSpec = describe "Python Parser" $ do
         length (pyModuleBody module_) `shouldBe` 1
   
   it "parses function definitions" $ do
-    let tokens = mockTokens 
+    let tokens = mockToken 
           [ TokenKeyword KwDef
           , TokenIdent "test_func"
           , TokenDelimiter DelimLeftParen
@@ -323,7 +323,7 @@ parserSpec = describe "Python Parser" $ do
           _ -> expectationFailure "Expected function definition"
   
   it "parses class definitions" $ do
-    let tokens = mockTokens 
+    let tokens = mockToken 
           [ TokenKeyword KwClass
           , TokenIdent "TestClass"
           , TokenDelimiter DelimColon
@@ -343,7 +343,7 @@ parserSpec = describe "Python Parser" $ do
           _ -> expectationFailure "Expected class definition"
   
   it "parses if statements" $ do
-    let tokens = mockTokens 
+    let tokens = mockToken 
           [ TokenKeyword KwIf
           , TokenKeyword KwTrue
           , TokenDelimiter DelimColon
@@ -630,10 +630,10 @@ parserSpec = describe "Python Parser" $ do
           case pyModuleBody module_ of
             [stmt] -> case locatedValue stmt of
               PyAssign _ valueExpr -> case locValue valueExpr of
-                PyBinaryOp OpBitOr left right -> do
+                PyBinaryOp Fluxus.AST.Common.OpBitOr left right -> do
                   locValue left `shouldBe` PyVar (Identifier "a")
                   case locValue right of
-                    PyBinaryOp OpBitAnd innerLeft innerRight -> do
+                    PyBinaryOp Fluxus.AST.Common.OpBitAnd innerLeft innerRight -> do
                       locValue innerLeft `shouldBe` PyVar (Identifier "b")
                       locValue innerRight `shouldBe` PyVar (Identifier "c")
                     other -> expectationFailure $ "Expected bitwise and on RHS, found " <> show other
@@ -745,7 +745,7 @@ parserSpec = describe "Python Parser" $ do
         case pyModuleBody module_ of
           [matchStmt] -> case locatedValue matchStmt of
             PyMatch _ [caseClause] ->
-              case locValue (pyCasePattern caseClause) of
+              case locValue (pyCasePattern (locatedValue caseClause)) of
                 PatOr alts -> do
                   let literalPatterns = map locValue (NE.toList alts)
                   literalPatterns `shouldSatisfy` all (\p -> case p of
@@ -764,7 +764,7 @@ parserSpec = describe "Python Parser" $ do
         case pyModuleBody module_ of
           [matchStmt] -> case locatedValue matchStmt of
             PyMatch _ [caseClause] -> do
-              case locValue (pyCasePattern caseClause) of
+              case locValue (pyCasePattern (locatedValue caseClause)) of
                 PatList patterns -> do
                   length patterns `shouldBe` 2
                   case map locValue patterns of
@@ -774,7 +774,7 @@ parserSpec = describe "Python Parser" $ do
                 other -> expectationFailure $ "Expected list pattern, found " <> show other
               case pyCaseGuard (locatedValue caseClause) of
                 Just guardExpr -> case locValue guardExpr of
-                  PyComparison [OpGt] [lhs, rhs] -> do
+                  PyComparison [Fluxus.AST.Common.OpGt] [lhs, rhs] -> do
                     locValue lhs `shouldBe` PyVar (Identifier "head")
                     locValue rhs `shouldBe` PyLiteral (PyInt 0)
                   other -> expectationFailure $ "Unexpected guard expression: " <> show other
@@ -791,7 +791,7 @@ parserSpec = describe "Python Parser" $ do
         case pyModuleBody module_ of
           [matchStmt] -> case locatedValue matchStmt of
             PyMatch _ [caseClause] ->
-              case locValue (pyCasePattern caseClause) of
+              case locValue (pyCasePattern (locatedValue caseClause)) of
                 PatClass classExpr posArgs kwArgs -> do
                   locValue classExpr `shouldBe` PyVar (Identifier "Point")
                   map locValue posArgs `shouldBe` [PatVar (Identifier "x")]
@@ -812,7 +812,7 @@ parserSpec = describe "Python Parser" $ do
         case pyModuleBody module_ of
           [matchStmt] -> case locatedValue matchStmt of
             PyMatch _ [caseClause] ->
-              case locValue (pyCasePattern caseClause) of
+              case locValue (pyCasePattern (locatedValue caseClause)) of
                 PatValue expr ->
                   case locValue expr of
                     PyAttribute base attrName -> do
@@ -824,7 +824,7 @@ parserSpec = describe "Python Parser" $ do
           _ -> expectationFailure "Expected single match statement"
 
     -- Helper functions
-    mockTokens :: [PythonToken] -> [Located PythonToken]
+mockTokens tokens = map mockToken tokens
 
 
 mockToken :: PythonToken -> Located PythonToken

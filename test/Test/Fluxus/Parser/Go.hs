@@ -1115,10 +1115,11 @@ advancedGoSyntaxSpec = describe "Go Parser - advanced Go syntax" $ do
     func <- expectFunctionDecl "main" (goFileDecls file)
     stmts <- extractBlockStatements func
     length stmts `shouldBe` 3
-    let [ptrStmt, derefStmt, recvStmt] = stmts
-    case locatedValue ptrStmt of
-      GoDefine [Identifier "ptr"] [expr] ->
-        case locatedValue expr of
+    case stmts of
+      [ptrStmt, derefStmt, recvStmt] -> do
+        case locatedValue ptrStmt of
+          GoDefine [Identifier "ptr"] [expr] ->
+            case locatedValue expr of
           GoAddress inner ->
             case locatedValue inner of
               GoIdent (Identifier "value") -> pure ()

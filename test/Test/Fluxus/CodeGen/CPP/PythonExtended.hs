@@ -456,7 +456,7 @@ walrusExpressionSpec = describe "Assignment expressions" $ do
                   [noLoc (PatVar (Identifier "result"))]
                   (noLoc (PyNamedExpr
                     (noLoc (PatVar (Identifier "existing")))
-                    (noLoc (PyLiteral (PyInt 5)))))
+                    (noLoc (PyLiteral (PyInt 5))))))
           ]
         pythonAst =
           PythonAST
