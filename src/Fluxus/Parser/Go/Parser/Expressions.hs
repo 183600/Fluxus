@@ -253,7 +253,7 @@ literalFieldsOnly elements =
        then Just fields
        else Nothing
 
-withBraces :: MonadLogger m => GoParser m a -> GoParser m a
+withBraces :: GoParser m a -> GoParser m a
 withBraces parser = do
   void $ goDelimiterP GoDelimLeftBrace
   skipCommentsAndNewlines
@@ -262,7 +262,7 @@ withBraces parser = do
   void $ goDelimiterP GoDelimRightBrace
   pure result
 
-commaSeparator :: MonadLogger m => GoParser m ()
+commaSeparator :: GoParser m ()
 commaSeparator = do
   skipCommentsAndNewlines
   goDelimiterP GoDelimComma
