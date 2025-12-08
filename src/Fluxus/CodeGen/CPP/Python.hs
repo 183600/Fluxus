@@ -403,6 +403,7 @@ generatePythonStmt scope (Located span stmt) =
 
     handleListAssignment :: PythonScope -> HashMap Text CppType -> Text -> Located PythonExpr -> CppCodeGen CppStmt
     handleListAssignment scope' symtab varName listExpr = do
+      emitInfo $ "handleListAssignment for " <> varName <> " with expression type: " <> T.pack (show (locValue listExpr))
       (vectorType, vectorExpr) <- generatePythonListLiteral listExpr
       let updateSymbolTable = modify $ \s -> s { cgsSymbolTable = HM.insert varName vectorType (cgsSymbolTable s) }
           assignmentExpr = CppExprStmt (CppBinary "=" (CppVar varName) vectorExpr)
@@ -430,9 +431,13 @@ generatePythonStmt scope (Located span stmt) =
 
     handleRegularAssignment :: PythonScope -> HashMap Text CppType -> Text -> Located PythonExpr -> CppCodeGen CppStmt
     handleRegularAssignment scope' symtab varName locatedExpr = do
+      emitInfo $ "handleRegularAssignment for " <> varName <> " with expression type: " <> T.pack (show (locValue locatedExpr))
       cppExpr <- generatePythonExpr locatedExpr
       let defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated locatedExpr)
-      refinedType <- refinePythonExprType ("assignment to " <> varName) locatedExpr defaultType
+      refinedType <- do
+        t <- refinePythonExprType ("assignment to " <> varName) locatedExpr defaultType
+        emitInfo $ "refinedType for " <> varName <> " is " <> T.pack (show t)
+        pure t
       let updateSymbolTableWith t = modify $ \s -> s { cgsSymbolTable = HM.insert varName t (cgsSymbolTable s) }
           assignmentStmt = CppExprStmt (CppBinary "=" (CppVar varName) cppExpr)
           declarationStmt t = CppDecl (CppVariable varName t (Just cppExpr))
@@ -1384,6 +1389,7 @@ generatePythonExpr (Located span expr) = case expr of
   PyListComp element comprehensions -> do
     generatePythonListComprehension span element comprehensions
   PySetComp element comprehensions -> do
+    emitWarning "PySetComp branch reached!"
     generatePythonSetComprehension span element comprehensions
   PyDictComp keyExpr valueExpr comprehensions -> do
     generatePythonDictComprehension span keyExpr valueExpr comprehensions
@@ -2044,7 +2050,18 @@ sliceFallback sliceSpan reason = do
   pure $ CppBinary "," abortExpr (CppLiteral (CppIntLit 0))
 
 inferPythonExprCppTypeLocated :: Located PythonExpr -> Maybe CppType
-inferPythonExprCppTypeLocated (Located _ e) = inferPythonExprCppType e
+inferPythonExprCppTypeLocated expr = do
+  -- First try to infer from the expression itself
+  case inferPythonExprCppType (locValue expr) of
+    Just t -> Just t
+    Nothing -> do
+      -- If that fails, try to look up in the symbol table for variables
+      case locValue expr of
+        PyVar (Identifier name) -> do
+          -- Note: We can't access the symbol table here since this is a pure function
+          -- This will be handled in refinePythonExprType instead
+          Nothing
+        _ -> Nothing
 
 inferPythonExprCppType :: PythonExpr -> Maybe CppType
 inferPythonExprCppType = \case
@@ -2053,6 +2070,7 @@ inferPythonExprCppType = \case
     "True" -> Just CppBool
     "False" -> Just CppBool
     _ -> Nothing
+  PyVar (Identifier _) -> Nothing -- Will be handled in refinePythonExprType
   PyUnaryOp op inner -> case op of
     OpNot -> Just CppBool
     _ -> inferPythonExprCppTypeLocated inner
@@ -2601,14 +2619,51 @@ generatePythonClass classDef = do
 
 
 refinePythonExprType :: Text -> Located PythonExpr -> CppType -> CppCodeGen CppType
-refinePythonExprType context locatedExpr defaultType =
-  case pythonExprToLocatedCommon locatedExpr of
-    Left err -> do
-      emitInfo $ context <> ": unable to fingerprint expression for annotations - " <> renderLoweringIssue err
-      pure defaultType
-    Right commonLocated ->
-      let exprKey = fingerprintCommonExpr commonLocated
-      in lookupAndApplyAnnotations context exprKey defaultType
+refinePythonExprType context locatedExpr defaultType = do
+  -- First check if this is a variable and look up its type in the symbol table
+  case locValue locatedExpr of
+    PyVar (Identifier name) -> do
+      symtab <- gets cgsSymbolTable
+      case HM.lookup name symtab of
+        Just varType -> do
+          emitInfo $ context <> ": found variable '" <> name <> "' with type " <> T.pack (show varType) <> " in symbol table"
+          pure varType
+        Nothing -> do
+          emitInfo $ context <> ": variable '" <> name <> "' not found in symbol table, using default type " <> T.pack (show defaultType)
+          -- Continue with annotation lookup
+          lookupAnnotationsIfNeeded
+    PyListComp element comps -> do
+      -- Handle list comprehensions explicitly
+      addInclude "<vector>"
+      elementType <- inferListElementType (locSpan locatedExpr) element
+      let listType = CppVector elementType
+      emitInfo $ context <> ": list comprehension detected, using type " <> T.pack (show listType)
+      pure listType
+    PySetComp element comps -> do
+      -- Handle set comprehensions explicitly  
+      addInclude "<unordered_set>"
+      elementType <- inferSetElementType (locSpan locatedExpr) element
+      let setType = CppTemplateType "std::unordered_set" [elementType]
+      emitInfo $ context <> ": set comprehension detected, using type " <> T.pack (show setType)
+      pure setType
+    PyDictComp keyExpr valueExpr comps -> do
+      -- Handle dict comprehensions explicitly
+      addInclude "<unordered_map>"
+      keyType <- inferDictKeyType (locSpan locatedExpr) keyExpr
+      valueType <- inferDictValueType (locSpan locatedExpr) valueExpr
+      let dictType = CppTemplateType "std::unordered_map" [keyType, valueType]
+      emitInfo $ context <> ": dict comprehension detected, using type " <> T.pack (show dictType)
+      pure dictType
+    _ -> lookupAnnotationsIfNeeded
+  where
+    lookupAnnotationsIfNeeded = do
+      case pythonExprToLocatedCommon locatedExpr of
+        Left err -> do
+          emitInfo $ context <> ": unable to fingerprint expression for annotations - " <> renderLoweringIssue err
+          pure defaultType
+        Right commonLocated ->
+          let exprKey = fingerprintCommonExpr commonLocated
+          in lookupAndApplyAnnotations context exprKey defaultType
 
 mapPythonLiteral :: PythonLiteral -> CppLiteral
 mapPythonLiteral = \case

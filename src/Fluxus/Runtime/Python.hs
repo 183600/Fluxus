@@ -122,8 +122,13 @@ runtimeUnavailable :: Text
 runtimeUnavailable = "Python runtime interop is not implemented yet"
 
 -- Foreign function declarations (would interface with CPython C API)
-foreign import ccall unsafe "Py_Finalize" 
-  py_Finalize :: IO ()
+-- Note: These are stubs for now - Python C API linking is disabled
+-- foreign import ccall unsafe "Py_Finalize" 
+--   py_Finalize :: IO ()
+
+-- Stub implementation for now
+py_Finalize :: IO ()
+py_Finalize = return ()
 
 -- | Initialize Python runtime with specified mode
 initPythonRuntime :: InteropMode -> IO (Either Text PythonRuntime)

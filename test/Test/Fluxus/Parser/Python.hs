@@ -301,7 +301,7 @@ parserSpec = describe "Python Parser" $ do
         length (pyModuleBody module_) `shouldBe` 1
   
   it "parses function definitions" $ do
-    let tokens = mockToken 
+    let tokens = mockTokens 
           [ TokenKeyword KwDef
           , TokenIdent "test_func"
           , TokenDelimiter DelimLeftParen
@@ -323,7 +323,7 @@ parserSpec = describe "Python Parser" $ do
           _ -> expectationFailure "Expected function definition"
   
   it "parses class definitions" $ do
-    let tokens = mockToken 
+    let tokens = mockTokens 
           [ TokenKeyword KwClass
           , TokenIdent "TestClass"
           , TokenDelimiter DelimColon
@@ -343,7 +343,7 @@ parserSpec = describe "Python Parser" $ do
           _ -> expectationFailure "Expected class definition"
   
   it "parses if statements" $ do
-    let tokens = mockToken 
+    let tokens = mockTokens 
           [ TokenKeyword KwIf
           , TokenKeyword KwTrue
           , TokenDelimiter DelimColon
@@ -475,9 +475,9 @@ parserSpec = describe "Python Parser" $ do
     
     it "parses from-import statements with aliases" $
       withParsedModule "from package.sub import name as alias, other\n" $ \module_ -> do
-        case pyModuleImports module_ of
-          [Located _ importStmt] -> case importStmt of
-            ImportFrom moduleName items -> do
+        case pyModuleBody module_ of
+          [importStmt] -> case locatedValue importStmt of
+            PyImport [Located _ (ImportFrom moduleName items)] -> do
               moduleName `shouldBe` ModuleName "package.sub"
               items `shouldBe` [(Identifier "name", Just (Identifier "alias")), (Identifier "other", Nothing)]
             other -> expectationFailure $ "Expected from-import, found " <> show other
@@ -824,6 +824,7 @@ parserSpec = describe "Python Parser" $ do
           _ -> expectationFailure "Expected single match statement"
 
     -- Helper functions
+mockTokens :: [PythonToken] -> [Located PythonToken]
 mockTokens tokens = map mockToken tokens
 
 

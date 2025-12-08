@@ -157,10 +157,10 @@ parseAtomExpr = do
   where
     parseAtom = located $ MP.choice
       [ parseGoLiteral
+      , MP.try parseCompositeLit
       , parseGoIdentifierExpr
       , parseParenExpr
       , parseFuncLiteral
-      , parseCompositeLit
       ]
 
 -- | Parse Go literals.
@@ -201,6 +201,8 @@ parseParenExpr = do
 parseCompositeLit :: MonadLogger m => GoParser m GoExpr
 parseCompositeLit = do
   typeExpr <- optional parseGoType
+  -- Look ahead to ensure we have a brace
+  _ <- MP.lookAhead $ goDelimiterP GoDelimLeftBrace
   case typeExpr of
     Just ty@(Located _ (GoMapType _ _)) -> GoMapLit ty <$> withBraces parseMapEntries
     _ -> do

@@ -93,16 +93,15 @@ parsePython = do
 parseModule :: PythonParser PythonModule
 parseModule = do
   skipNewlinesAndComments
-  imports <- many (try parseImportStmt <* skipNewlinesAndComments)
   body <- parseModuleBody
   
-  -- Extract docstring from module body
-  let (docstring, bodyStmts) = extractDocstring body
+  -- Extract docstring from module body and separate imports
+  let (docstring, bodyStmts) = extractDocstringAndImports body
   
   return $ PythonModule
     { pyModuleName = Nothing  -- Will be filled in later
     , pyModuleDoc = docstring
-    , pyModuleImports = imports
+    , pyModuleImports = []  -- Imports are now part of the body
     , pyModuleBody = bodyStmts
     }
 
@@ -503,8 +502,26 @@ parseClassArgument = do
 parseReturnStmt :: PythonParser PythonStmt
 parseReturnStmt = do
   void $ keywordP KwReturn
-  value <- optional parseExpression
+  value <- optional parseReturnExpr
   return $ PyReturn value
+
+-- | Parse return expressions (can be tuples)
+parseReturnExpr :: PythonParser (Located PythonExpr)
+parseReturnExpr = do
+  first <- parseExpression
+  tokens <- getInput
+  case tokens of
+    (Located _ (TokenDelimiter DelimComma) : _) -> do
+      void $ delimiterP DelimComma
+      rest <- many $ do
+        expr <- parseExpression
+        void $ optional (delimiterP DelimComma)
+        pure expr
+      let endSpan = case reverse rest of
+            (lastExpr:_) -> mergeSpans (locSpan first) (locSpan lastExpr)
+            [] -> locSpan first
+      pure $ Located endSpan (PyTuple (first : rest))
+    _ -> pure first
 
 -- | Parse break statements
 parseBreakStmt :: PythonParser PythonStmt
@@ -1200,7 +1217,7 @@ parseMatchStarPattern = located $ do
 
 parseCapturePattern :: PythonParser (Located PythonPattern)
 parseCapturePattern = choice
-  [ parseWildcardPattern
+  [ try parseWildcardPattern
   , located $ PatVar <$> parseIdentifier
   ]
 
@@ -1219,11 +1236,10 @@ parseMatchListPattern = located $ do
       pure $ PatList (first : rest)
 
 parseMatchSequenceElement :: PythonParser (Located PythonPattern)
-parseMatchSequenceElement = do
-  tokens <- getInput
-  case tokens of
-    (Located _ (TokenOperator Lexer.OpMult) : _) -> parseMatchStarPattern
-    _ -> parseMatchPattern
+parseMatchSequenceElement = choice
+  [ try parseMatchStarPattern
+  , parseMatchPattern
+  ]
 
 parseMatchParenPattern :: PythonParser (Located PythonPattern)
 parseMatchParenPattern = located $ do
@@ -1907,6 +1923,13 @@ located' = noLoc
 extractDocstring :: [Located PythonStmt] -> (Maybe Text, [Located PythonStmt])
 extractDocstring [] = (Nothing, [])
 extractDocstring (stmt:rest) = case locatedValue stmt of
+  PyExprStmt (Located _ (PyLiteral (PyString text))) -> (Just text, rest)
+  _ -> (Nothing, stmt:rest)
+
+-- | Extract docstring from a list of statements (imports stay in body)
+extractDocstringAndImports :: [Located PythonStmt] -> (Maybe Text, [Located PythonStmt])
+extractDocstringAndImports [] = (Nothing, [])
+extractDocstringAndImports (stmt:rest) = case locatedValue stmt of
   PyExprStmt (Located _ (PyLiteral (PyString text))) -> (Just text, rest)
   _ -> (Nothing, stmt:rest)
 

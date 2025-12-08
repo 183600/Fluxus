@@ -411,9 +411,9 @@ expressionGenerationSpec = describe "Expression generation" $ do
           Just (CppVariable _ _ (Just (CppCall (CppLambda [] lambdaBody) []))) ->
             case lambdaBody of
               [ CppDecl (CppVariable haystackName haystackType (Just (CppVar "vowels")))
-              , CppDecl (CppVariable needleName needleType (Just needleInit))
-              , CppReturn (Just resultExpr)
-              ] -> do
+                , CppDecl (CppVariable needleName needleType (Just needleInit))
+                , CppReturn (Just resultExpr)
+                ] -> do
                 haystackType `shouldBe` CppConst (CppReference CppAuto)
                 needleType `shouldBe` CppConst (CppReference CppAuto)
                 needleInit `shouldBe`
@@ -463,10 +463,10 @@ expressionGenerationSpec = describe "Expression generation" $ do
           Just (CppVariable _ _ (Just (CppCall (CppLambda [] lambdaBody) []))) ->
             case lambdaBody of
               [ CppDecl (CppVariable haystackName haystackType (Just (CppVar "numbers")))
-              , CppDecl (CppVariable needleName needleType (Just (CppLiteral (CppIntLit 2))))
-              , CppDecl (CppVariable endName CppAuto (Just endInit))
-              , CppReturn (Just resultExpr)
-              ] -> do
+                , CppDecl (CppVariable needleName needleType (Just (CppLiteral (CppIntLit 2))))
+                , CppDecl (CppVariable endName CppAuto (Just endInit))
+                , CppReturn (Just resultExpr)
+                ] -> do
                 haystackType `shouldBe` CppConst (CppReference CppAuto)
                 needleType `shouldBe` CppConst (CppReference CppAuto)
                 endInit `shouldBe` CppCall (CppVar "std::end") [CppVar haystackName]
@@ -522,9 +522,9 @@ expressionGenerationSpec = describe "Expression generation" $ do
       Left failure ->
         expectationFailure $ "Code generation failed: " <> show failure
 
-  statementGenerationSpec :: Spec
-  statementGenerationSpec = describe "Statement generation" $ do
-
+statementGenerationSpec :: Spec
+statementGenerationSpec = describe "Statement generation" $ do
+  it "lowers Python if statements" $ do
     let moduleBody =
           [ noLoc
               ( PyIf

@@ -1120,30 +1120,31 @@ advancedGoSyntaxSpec = describe "Go Parser - advanced Go syntax" $ do
         case locatedValue ptrStmt of
           GoDefine [Identifier "ptr"] [expr] ->
             case locatedValue expr of
-          GoAddress inner ->
-            case locatedValue inner of
-              GoIdent (Identifier "value") -> pure ()
-              other -> expectationFailure $ "expected address operand 'value', got " <> show other
-          other -> expectationFailure $ "expected address expression, got " <> show other
-      other -> expectationFailure $ "expected short declaration for ptr, got " <> show other
-    case locatedValue derefStmt of
-      GoDefine [Identifier "val"] [expr] ->
-        case locatedValue expr of
-          GoDeref inner ->
-            case locatedValue inner of
-              GoIdent (Identifier "ptr") -> pure ()
-              other -> expectationFailure $ "expected deref operand 'ptr', got " <> show other
-          other -> expectationFailure $ "expected dereference expression, got " <> show other
-      other -> expectationFailure $ "expected short declaration for val, got " <> show other
-    case locatedValue recvStmt of
-      GoDefine [Identifier "recv"] [expr] ->
-        case locatedValue expr of
-          GoReceive inner ->
-            case locatedValue inner of
-              GoIdent (Identifier "messages") -> pure ()
-              other -> expectationFailure $ "expected receive operand 'messages', got " <> show other
-          other -> expectationFailure $ "expected receive expression, got " <> show other
-      other -> expectationFailure $ "expected short declaration for recv, got " <> show other
+              GoAddress inner ->
+                case locatedValue inner of
+                  GoIdent (Identifier "value") -> pure ()
+                  other -> expectationFailure $ "expected address operand 'value', got " <> show other
+              other -> expectationFailure $ "expected address expression, got " <> show other
+          other -> expectationFailure $ "expected short declaration for ptr, got " <> show other
+        case locatedValue derefStmt of
+          GoDefine [Identifier "val"] [expr] ->
+            case locatedValue expr of
+              GoDeref inner ->
+                case locatedValue inner of
+                  GoIdent (Identifier "ptr") -> pure ()
+                  other -> expectationFailure $ "expected deref operand 'ptr', got " <> show other
+              other -> expectationFailure $ "expected dereference expression, got " <> show other
+          other -> expectationFailure $ "expected short declaration for val, got " <> show other
+        case locatedValue recvStmt of
+          GoDefine [Identifier "recv"] [expr] ->
+            case locatedValue expr of
+              GoReceive inner ->
+                case locatedValue inner of
+                  GoIdent (Identifier "messages") -> pure ()
+                  other -> expectationFailure $ "expected receive operand 'messages', got " <> show other
+              other -> expectationFailure $ "expected receive expression, got " <> show other
+          other -> expectationFailure $ "expected short declaration for recv, got " <> show other
+      other -> expectationFailure $ "expected 3 statements, got " <> show (length other)
 
   it "parses map composite literals" $ do
     ast <- parseGoSource mapLiteralSource
