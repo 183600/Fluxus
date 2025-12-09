@@ -181,7 +181,7 @@ typeToString _ = "any"
 
 -- | Transform expression to use specialized functions
 transformExpression :: CommonExpr -> MonomorphizationM CommonExpr
-transformExpression expr@(CECall func args) = do
+transformExpression (CECall func args) = do
   case locatedValue func of
     CEVar (Identifier funcName) -> do
       -- Look up specialized version

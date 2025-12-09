@@ -361,7 +361,11 @@ chainedAssignmentSpec = describe "Chained assignments" $ do
         let decls = cppDeclarations (cgrUnit res)
         case [body | CppFunction "assign_chain" _ _ body <- decls] of
           [body] -> do
-            let chainDecls = [decl | CppDecl decl <- body]
+            let extractDecls stmt = case stmt of
+                            CppDecl decl -> [decl]
+                            CppStmtSeq stmts -> concatMap extractDecls stmts
+                            _ -> []
+                chainDecls = concatMap extractDecls body
             chainDecls `shouldSatisfy` ((>= 2) . length)
             case chainDecls of
               (CppVariable name1 ty1 (Just init1) : CppVariable name2 ty2 (Just init2) : _) -> do

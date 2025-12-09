@@ -416,7 +416,7 @@ unifyTypes t1 t2 = do
   result <- unify t1 t2
   case result of
     Left _ -> return Nothing
-    Right constraints -> return (Just constraints)
+    Right cs -> return (Just cs)
 
 -- | Core unification algorithm
 unify :: Type -> Type -> TypeInferenceM (Either Text TypeConstraints)
@@ -430,10 +430,10 @@ unify (TList t1) (TList t2) = unify t1 t2
 unify (TTuple ts1) (TTuple ts2)
   | length ts1 == length ts2 = do
       results <- mapM (uncurry unify) (zip ts1 ts2)
-      let constraints = concat [cs | Right cs <- results]
+      let cs = concat [c | Right c <- results]
       if any isLeft results
         then return $ Left "Tuple unification failed"
-        else return $ Right constraints
+        else return $ Right cs
   | otherwise = return $ Left "Tuple arity mismatch"
 unify (TDict k1 v1) (TDict k2 v2) = do
   keyResult <- unify k1 k2
@@ -445,9 +445,9 @@ unify (TFunction args1 ret1) (TFunction args2 ret2)
   | length args1 == length args2 = do
       argResults <- mapM (uncurry unify) (zip args1 args2)
       retResult <- unify ret1 ret2
-      let argConstraints = concat [cs | Right cs <- argResults]
+      let argCs = concat [c | Right c <- argResults]
       case retResult of
-        Right retConstraints -> return $ Right (argConstraints ++ retConstraints)
+        Right retCs -> return $ Right (argCs ++ retCs)
         Left err -> return $ Left err
   | otherwise = return $ Left "Function arity mismatch"
 unify (TOptional t1) (TOptional t2) = unify t1 t2
@@ -540,7 +540,7 @@ solveConstraints = do
 
 -- | Instantiate a polymorphic type with fresh type variables
 instantiate :: Type -> TypeInferenceM Type
-instantiate (TForall vars constraints t) = do
+instantiate (TForall vars _ t) = do
   freshVars <- mapM (const freshTypeVar) vars
   let varMap = HashMap.fromList (zip vars (map extractTypeVar freshVars))
   let substitution = HashMap.mapKeys (\(TypeVar name) -> TypeVar name) 
@@ -561,11 +561,11 @@ generalize env t =
   where
     freeVarsInType :: Type -> Set TypeVar
     freeVarsInType (TVar v) = Set.singleton v
-    freeVarsInType (TList t) = freeVarsInType t
+    freeVarsInType (TList t') = freeVarsInType t'
     freeVarsInType (TTuple ts) = Set.unions (map freeVarsInType ts)
     freeVarsInType (TDict k v) = freeVarsInType k `Set.union` freeVarsInType v
-    freeVarsInType (TSet t) = freeVarsInType t
-    freeVarsInType (TOptional t) = freeVarsInType t
+    freeVarsInType (TSet t') = freeVarsInType t'
+    freeVarsInType (TOptional t') = freeVarsInType t'
     freeVarsInType (TFunction args ret) = Set.unions (map freeVarsInType (ret:args))
     freeVarsInType (TMethod rec args ret) = Set.unions (map freeVarsInType (rec:ret:args))
     freeVarsInType (TStruct _ args) = Set.unions (map freeVarsInType args)
@@ -573,11 +573,11 @@ generalize env t =
     freeVarsInType (TInterface _ args) = Set.unions (map freeVarsInType args)
     freeVarsInType (TUnion ts) = Set.unions (map freeVarsInType ts)
     freeVarsInType (TGeneric _ args) = Set.unions (map freeVarsInType args)
-    freeVarsInType (TForall vars _ t) = freeVarsInType t `Set.difference` Set.fromList vars
-    freeVarsInType (TOwned t) = freeVarsInType t
-    freeVarsInType (TShared t) = freeVarsInType t
-    freeVarsInType (TBorrowed t) = freeVarsInType t
-    freeVarsInType (TMutable t) = freeVarsInType t
+    freeVarsInType (TForall vars _ t') = freeVarsInType t' `Set.difference` Set.fromList vars
+    freeVarsInType (TOwned t') = freeVarsInType t'
+    freeVarsInType (TShared t') = freeVarsInType t'
+    freeVarsInType (TBorrowed t') = freeVarsInType t'
+    freeVarsInType (TMutable t') = freeVarsInType t'
     freeVarsInType _ = Set.empty
     
     freeVarsInEnv :: TypeEnvironment -> Set TypeVar

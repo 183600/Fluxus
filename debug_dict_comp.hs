@@ -21,10 +21,11 @@ main = do
           , pyCompFilters = []
           , pyCompAsync = False
           }
-        doubledExpr = noLoc (PyBinaryOp OpMul (noLoc (PyVar (Identifier "n"))) (noLoc (PyLiteral (PyInt 2))))
-        setCompExpr = noLoc (PySetComp doubledExpr [comprehension])
-        doubledAssign = noLoc (PyAssign [noLoc (PatVar (Identifier "doubled"))] setCompExpr)
-        pythonAst = PythonAST PythonModule { pyModuleName = Nothing, pyModuleDoc = Nothing, pyModuleImports = [], pyModuleBody = [numbersAssign, doubledAssign] }
+        keyExpr = noLoc (PyVar (Identifier "n"))
+        valueExpr = noLoc (PyBinaryOp OpMul (noLoc (PyVar (Identifier "n"))) (noLoc (PyVar (Identifier "n"))))
+        dictCompExpr = noLoc (PyDictComp keyExpr valueExpr [comprehension])
+        squaresAssign = noLoc (PyAssign [noLoc (PatVar (Identifier "squares"))] dictCompExpr)
+        pythonAst = PythonAST PythonModule { pyModuleName = Nothing, pyModuleDoc = Nothing, pyModuleImports = [], pyModuleBody = [numbersAssign, squaresAssign] }
         testConfig = CppGenConfig
             { cgcOptimizationLevel = 0
             , cgcEnableInterop = False
@@ -46,6 +47,11 @@ main = do
             TIO.putStrLn $ renderCppUnit (cgrUnit res)
             putStrLn "\n=== Declarations ==="
             mapM_ print (cppDeclarations (cgrUnit res))
+            putStrLn "\n=== Squares Variable ==="
+            let squaresVar = [decl | decl@(CppVariable "squares" _ _) <- cppDeclarations (cgrUnit res)]
+            case squaresVar of
+                [var] -> print var
+                _ -> putStrLn "Squares variable not found or multiple found"
         Left failure -> do
             putStrLn "\n=== Generation Failed ==="
             print failure

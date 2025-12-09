@@ -262,18 +262,4 @@ resolveMethodForType methodName receiverType = do
       return Nothing
     _ -> return Nothing
 
--- | Record an optimization for reporting
-recordOptimization :: Text -> DevirtualizationM ()
-recordOptimization opt = do
-  modify $ \s -> s { dsOptimizations = opt : dsOptimizations s }
 
--- | Add type constraint for a variable
-addTypeConstraint :: Identifier -> Type -> DevirtualizationM ()
-addTypeConstraint var constraintType = do
-  modify $ \s -> s { dsTypeConstraints = HashMap.insertWith Set.union var (Set.singleton constraintType) (dsTypeConstraints s) }
-
--- | Get possible types for a variable
-getPossibleTypes :: Identifier -> DevirtualizationM (Set Type)
-getPossibleTypes var = do
-  constraints <- gets dsTypeConstraints
-  return $ HashMap.lookupDefault Set.empty var constraints

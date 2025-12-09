@@ -273,26 +273,3 @@ optimizeStatically (CECall func args) = do
   return $ CECall (Located (locSpan func) optimizedFunc) optimizedArgs
 
 optimizeStatically expr = return expr  -- Keep other expressions as-is
-
--- | Set dynamism level for a variable
-setVariableDynamism :: Identifier -> DynamismLevel -> SmartFallbackM ()
-setVariableDynamism var level = do
-  modify $ \s -> s { fsDynamismMap = HashMap.insert var level (fsDynamismMap s) }
-
--- | Mark expression as exceeding static analysis limits
-markStaticAnalysisLimit :: CommonExpr -> SmartFallbackM ()
-markStaticAnalysisLimit expr = do
-  modify $ \s -> s { fsStaticAnalysisLimits = Set.insert expr (fsStaticAnalysisLimits s) }
-
--- | Get all fallback decisions made
-getFallbackDecisions :: SmartFallbackM [FallbackDecision]
-getFallbackDecisions = gets fsFallbackDecisions
-
--- | Get statistics about fallback usage
-getFallbackStats :: SmartFallbackM (Int, Int, Double)
-getFallbackStats = do
-  decisions <- gets fsFallbackDecisions
-  let total = length decisions
-  let fallbacks = length $ filter fdShouldFallback decisions
-  let percentage = if total > 0 then fromIntegral fallbacks / fromIntegral total * 100 else 0
-  return (total, fallbacks, percentage)

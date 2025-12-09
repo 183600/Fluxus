@@ -440,14 +440,14 @@ segmentToToken filename rawContent offsets positions = \case
   SegmentLiteralRecord text startIdx endIdx ->
     let startRaw = offsets UV.! startIdx
         endRaw = offsets UV.! endIdx
-        span = SourceSpan filename (positions V.! startRaw) (positions V.! endRaw)
-    in FStringLiteralSegment text span
+        sp = SourceSpan filename (positions V.! startRaw) (positions V.! endRaw)
+    in FStringLiteralSegment text sp
   SegmentExpressionRecord startIdx endIdx ->
     let startRaw = offsets UV.! startIdx
         endRaw = offsets UV.! endIdx
         exprText = T.take (endRaw - startRaw) (T.drop startRaw rawContent)
-        span = SourceSpan filename (positions V.! startRaw) (positions V.! endRaw)
-    in FStringExpressionSegment exprText span
+        sp = SourceSpan filename (positions V.! startRaw) (positions V.! endRaw)
+    in FStringExpressionSegment exprText sp
 
 decodeRawStringWithMap :: Text -> Either Text (Text, UV.Vector Int)
 decodeRawStringWithMap input = do

@@ -30,12 +30,11 @@ module Fluxus.Parser.Go.Parser.Common
 import Control.Monad (void)
 import Control.Monad.Logger (MonadLogger, logDebugNS)
 import Control.Monad.Trans.Class (lift)
-import Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NE
 import Data.Proxy (Proxy(..))
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
+import qualified Data.List.NonEmpty as NE
 import Text.Megaparsec
   ( ParsecT
   , PosState(..)
@@ -96,7 +95,7 @@ instance Stream GoTokenStream where
 
 instance VisualStream GoTokenStream where
   showTokens _ ts =
-    unwords . NE.toList $ fmap (T.unpack . showGoToken . locValue) ts
+    unwords . map (T.unpack . showGoToken . locValue) . NE.toList $ ts
   tokensLength _ = length
 
 instance TraversableStream GoTokenStream where

@@ -129,8 +129,8 @@ propagateEscapes = do
         Nothing -> currentEscape
         Just deps -> 
           let depEscapes = map (\dep -> HashMap.lookupDefault NoEscape dep escapesMap) (Set.toList deps)
-              maxEscape = maximum (currentEscape : depEscapes)
-          in maxEscape
+              maxEscape' = maximum (currentEscape : depEscapes)
+          in maxEscape'
 
 -- | Main escape analysis function for expressions
 analyzeEscape :: CommonExpr -> EscapeAnalysisM EscapeResult

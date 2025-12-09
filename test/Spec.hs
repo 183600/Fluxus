@@ -1,8 +1,13 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Main (main) where
 
 import Data.List (isPrefixOf)
+import Data.Text (Text)
+import qualified Data.Text as T
 import System.Environment (getArgs, withArgs)
 import Test.Hspec
+import Control.Monad (when)
 
 import qualified Test.Fluxus.Parser.Python as PythonTests
 import qualified Test.Fluxus.Parser.Go as GoTests
@@ -17,9 +22,21 @@ import qualified Test.Fluxus.Utils.GraphSpec as GraphUtilsTests
 import qualified Test.Fluxus.Compiler.ConfigSpec as ConfigTests
 import qualified Test.Fluxus.Compiler.DriverSpec as DriverTests
 
+import Fluxus.Utils.Debug (DebugLevel(..), setDebugLevel, getDebugLevel, debugLog, debugBreak)
+
 main :: IO ()
 main = do
+  -- Check for debug environment variable
+  debugLevel <- getDebugLevel
+  when (debugLevel >= Info) $ do
+    debugLog Info "Starting Fluxus test suite"
+    debugLog Info $ "Debug level set to: " <> T.pack (show debugLevel)
+  
+  -- Check for breakpoint request
   args <- getArgs
+  when ("--break" `elem` args) $ do
+    debugBreak "Test suite breakpoint - press Enter to continue"
+  
   let args' = ensureProgressFormat args
   withArgs args' $ hspec fullSpec
 

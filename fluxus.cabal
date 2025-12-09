@@ -58,6 +58,7 @@ library
     Fluxus.Compiler.Config
     Fluxus.Utils.Pretty
     Fluxus.Utils.Graph
+    Fluxus.Utils.Debug
   other-modules:
     Fluxus.Internal.Types
     Fluxus.Internal.Monad
@@ -148,7 +149,8 @@ test-suite fluxus-test
     text,
     unordered-containers,
     mtl >= 2.3,
-    vector
+    vector,
+    time
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
 
 benchmark fluxus-bench

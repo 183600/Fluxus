@@ -49,26 +49,26 @@ isUnsupportedIssue = \case
   LoweringFailure _ -> False
 
 unsupportedAt :: SourceSpan -> Text -> LoweringIssue
-unsupportedAt span msg = LoweringUnsupported (msg <> " at " <> formatSpan span)
+unsupportedAt sp msg = LoweringUnsupported (msg <> " at " <> formatSpan sp)
 
 failureAt :: SourceSpan -> Text -> LoweringIssue
-failureAt span msg = LoweringFailure (msg <> " at " <> formatSpan span)
+failureAt sp msg = LoweringFailure (msg <> " at " <> formatSpan sp)
 
 -- | Collect analyzable expressions that can be fed into the shared analysis passes.
 collectCommonExpressions :: Either PythonAST GoAST -> ([Located CommonExpr], [LoweringIssue])
 collectCommonExpressions = \case
-  Left (PythonAST pyModule) ->
-    let pythonExprs = collectPythonExpressions pyModule
+  Left (PythonAST pyMod) ->
+    let pythonExprs = collectPythonExpressions pyMod
         (issues, commons) = partitionEithers (map pythonExprToLocatedCommon pythonExprs)
     in (commons, issues)
-  Right (GoAST goPackage) ->
-    let goExprs = collectGoExpressions goPackage
+  Right (GoAST goPkg) ->
+    let goExprs = collectGoExpressions goPkg
         (issues, commons) = partitionEithers (map goExprToLocatedCommon goExprs)
     in (commons, issues)
 
 collectPythonExpressions :: PythonModule -> [Located PythonExpr]
-collectPythonExpressions pyModule =
-  concatMap collectPythonStmt (pyModuleBody pyModule)
+collectPythonExpressions pyMod =
+  concatMap collectPythonStmt (pyModuleBody pyMod)
 
 collectPythonStmt :: Located PythonStmt -> [Located PythonExpr]
 collectPythonStmt (Located _ stmt) = case stmt of
@@ -165,8 +165,8 @@ collectPythonClass cls =
     ]
 
 collectGoExpressions :: GoPackage -> [Located GoExpr]
-collectGoExpressions goPackage =
-  concatMap collectGoFile (goPackageFiles goPackage)
+collectGoExpressions goPkg =
+  concatMap (concatMap collectGoDecl . goFileDecls) (goPackageFiles goPkg)
 
 collectGoFile :: GoFile -> [Located GoExpr]
 collectGoFile goFile = concatMap collectGoDecl (goFileDecls goFile)
@@ -233,8 +233,8 @@ collectGoCommClause (Located _ clause) =
   collectGoStmtMaybe (goCommStmt clause) ++ concatMap collectGoStmt (goCommBody clause)
 
 pythonExprToCommon :: Located PythonExpr -> Either LoweringIssue CommonExpr
-pythonExprToCommon located@(Located span expr) = case expr of
-  PyLiteral lit -> CELiteral <$> pythonLiteralToLiteral span lit
+pythonExprToCommon located = case locValue located of
+  PyLiteral lit -> CELiteral <$> pythonLiteralToLiteral (locSpan located) lit
   PyVar ident -> Right $ CEVar ident
   PyConst qn -> Right $ CEVar (qnName qn)
   PyBinaryOp op left right -> do
@@ -248,11 +248,11 @@ pythonExprToCommon located@(Located span expr) = case expr of
     left' <- pythonExprToLocatedCommon left
     right' <- pythonExprToLocatedCommon right
     pure $ CEComparison op left' right'
-  PyComparison _ _ -> Left $ unsupportedAt span "Chained comparisons are not supported in common expression lowering"
+  PyComparison _ _ -> Left $ unsupportedAt (locSpan located) "Chained comparisons are not supported in common expression lowering"
   PyBoolOp op operands -> do
     locatedOperands <- traverse pythonExprToLocatedCommon operands
     case locatedOperands of
-      [] -> Left $ failureAt span "Empty boolean operation in common expression lowering"
+      [] -> Left $ failureAt (locSpan located) "Empty boolean operation in common expression lowering"
       (firstOperand:restOperands) ->
         let combined = foldl'
               (\acc next -> Located (mergeSpans (locSpan acc) (locSpan next)) (CEBinaryOp op acc next))
@@ -266,12 +266,12 @@ pythonExprToCommon located@(Located span expr) = case expr of
         idx' <- pythonExprToLocatedCommon idx
         pure $ CEIndex value' idx'
       SliceSlice start end step -> case step of
-        Just _ -> Left $ unsupportedAt span "Slice step is not supported in common expression lowering"
+        Just _ -> Left $ unsupportedAt (locSpan located) "Slice step is not supported in common expression lowering"
         Nothing -> do
           start' <- traverse pythonExprToLocatedCommon start
           end' <- traverse pythonExprToLocatedCommon end
           pure $ CESlice value' start' end'
-      SliceExtSlice _ -> Left $ unsupportedAt span "Extended slicing is not supported in common expression lowering"
+      SliceExtSlice _ -> Left $ unsupportedAt (locSpan located) "Extended slicing is not supported in common expression lowering"
   PyCall func args -> do
     func' <- pythonExprToLocatedCommon func
     args' <- traverse pythonArgumentToCommon args
@@ -279,7 +279,7 @@ pythonExprToCommon located@(Located span expr) = case expr of
   PyAttribute obj attr -> do
     obj' <- pythonExprToLocatedCommon obj
     pure $ CEAttribute obj' attr
-  PySlice _ _ _ -> Left $ unsupportedAt span "Standalone slice expressions are not supported in common expression lowering"
+  PySlice _ _ _ -> Left $ unsupportedAt (locSpan located) "Standalone slice expressions are not supported in common expression lowering"
   PyList elems -> CEList <$> traverse pythonExprToLocatedCommon elems
   PyTuple elems -> CETuple <$> traverse pythonExprToLocatedCommon elems
   PySet elems -> CESet <$> traverse pythonExprToLocatedCommon elems
@@ -304,46 +304,43 @@ pythonExprToCommon located@(Located span expr) = case expr of
     value' <- pythonExprToLocatedCommon value
     comps' <- traverse pythonComprehensionToCommon comps
     pure $ CEDictComp key' value' comps'
-  PyGenComp value comps -> do
-    value' <- pythonExprToLocatedCommon value
-    comps' <- traverse pythonComprehensionToCommon comps
-    pure $ CEGeneratorComp value' comps'
-  PyLambda _ _ -> Left $ unsupportedAt span "Lambda expressions are not supported in common expression lowering"
+  PyAwait _ -> Left $ unsupportedAt (locSpan located) "Await expressions are not supported in common expression lowering"
   PyIfExp test body orelse -> do
     test' <- pythonExprToLocatedCommon test
     body' <- pythonExprToLocatedCommon body
     orelse' <- pythonExprToLocatedCommon orelse
     pure $ CEConditional test' body' orelse'
-  PyStarred{} -> Left $ unsupportedAt span "Starred expressions are not supported in common expression lowering"
-  PyNamedExpr{} -> Left $ unsupportedAt span "Walrus operator expressions are not supported in common expression lowering"
-  PyAwait{} -> Left $ unsupportedAt span "Await expressions are not supported in common expression lowering"
-  PyAsyncCall{} -> Left $ unsupportedAt span "Async call expressions are not supported in common expression lowering"
-  PyJoinedStr{} -> Left $ unsupportedAt span "Formatted string expressions are not supported in common expression lowering"
-  PyFormatSpec{} -> Left $ unsupportedAt span "Format specifier expressions are not supported in common expression lowering"
+  PyNamedExpr _ _ -> Left $ unsupportedAt (locSpan located) "Named expressions are not supported in common expression lowering"
+  PyLambda _ _ -> Left $ unsupportedAt (locSpan located) "Lambda expressions are not supported in common expression lowering"
+  PyGenComp _ _ -> Left $ unsupportedAt (locSpan located) "Generator expressions are not supported in common expression lowering"
+  PyStarred{} -> Left $ unsupportedAt (locSpan located) "Starred expressions are not supported in common expression lowering"
+  PyAsyncCall{} -> Left $ unsupportedAt (locSpan located) "Async call expressions are not supported in common expression lowering"
+  PyJoinedStr{} -> Left $ unsupportedAt (locSpan located) "Formatted string expressions are not supported in common expression lowering"
+  PyFormatSpec{} -> Left $ unsupportedAt (locSpan located) "Format specifier expressions are not supported in common expression lowering"
 
 pythonExprToLocatedCommon :: Located PythonExpr -> Either LoweringIssue (Located CommonExpr)
-pythonExprToLocatedCommon located@(Located span _) = do
+pythonExprToLocatedCommon located@(Located sp _) = do
   converted <- pythonExprToCommon located
-  pure $ Located span converted
+  pure $ Located sp converted
 
 pythonLiteralToLiteral :: SourceSpan -> PythonLiteral -> Either LoweringIssue Literal
-pythonLiteralToLiteral span = \case
+pythonLiteralToLiteral sp = \case
   PyInt n -> Right $ LInt (fromIntegral n :: Int64)
   PyFloat f -> Right $ LFloat f
   PyString s -> Right $ LString s
-  PyFString _ -> Left $ unsupportedAt span "F-string literals are not supported in common expression lowering"
+  PyFString _ -> Left $ unsupportedAt sp "F-string literals are not supported in common expression lowering"
   PyBytes b -> Right $ LBytes b
   PyBool b -> Right $ LBool b
   PyNone -> Right LNone
-  PyEllipsis -> Left $ unsupportedAt span "Ellipsis literal is not supported in common expression lowering"
-  PyComplex _ _ -> Left $ unsupportedAt span "Complex literals are not supported in common expression lowering"
+  PyEllipsis -> Left $ unsupportedAt sp "Ellipsis literal is not supported in common expression lowering"
+  PyComplex _ _ -> Left $ unsupportedAt sp "Complex literals are not supported in common expression lowering"
 
 pythonArgumentToCommon :: Located PythonArgument -> Either LoweringIssue (Located CommonExpr)
-pythonArgumentToCommon argLocated@(Located span arg) = case arg of
+pythonArgumentToCommon arg = case locValue arg of
   ArgPositional expr -> pythonExprToLocatedCommon expr
   ArgKeyword _ expr -> pythonExprToLocatedCommon expr
-  ArgStarred _ -> Left $ unsupportedAt span "Starred positional arguments are not supported in common expression lowering"
-  ArgKwStarred _ -> Left $ unsupportedAt span "Starred keyword arguments are not supported in common expression lowering"
+  ArgStarred _ -> Left $ unsupportedAt (locSpan arg) "Starred positional arguments are not supported in common expression lowering"
+  ArgKwStarred _ -> Left $ unsupportedAt (locSpan arg) "Starred keyword arguments are not supported in common expression lowering"
 
 pythonComprehensionToCommon :: PythonComprehension -> Either LoweringIssue CommonCompClause
 pythonComprehensionToCommon comp = do
@@ -358,25 +355,25 @@ pythonComprehensionToCommon comp = do
     }
 
 pythonPatternBindings :: Located PythonPattern -> Either LoweringIssue [Identifier]
-pythonPatternBindings (Located span pat) = case pat of
+pythonPatternBindings pat = case locValue pat of
   PatVar ident -> Right [ident]
   PatTuple pats -> fmap concat $ traverse pythonPatternBindings pats
   PatList pats -> fmap concat $ traverse pythonPatternBindings pats
   PatWildcard -> Right []
   PatLiteral _ -> Right []
-  PatStarred{} -> Left $ unsupportedAt span "Starred patterns in comprehensions are not supported in common expression lowering"
+  PatStarred{} -> Left $ unsupportedAt (locSpan pat) "Starred patterns in comprehensions are not supported in common expression lowering"
   PatOr alts -> fmap concat $ traverse pythonPatternBindings (NE.toList alts)
   PatAs inner _ -> pythonPatternBindings inner
-  PatValue _ -> Left $ unsupportedAt span "Value patterns in comprehensions are not supported in common expression lowering"
-  PatMapping _ _ -> Left $ unsupportedAt span "Mapping patterns in comprehensions are not supported in common expression lowering"
-  PatClass _ _ _ -> Left $ unsupportedAt span "Class patterns in comprehensions are not supported in common expression lowering"
+  PatValue _ -> Left $ unsupportedAt (locSpan pat) "Value patterns in comprehensions are not supported in common expression lowering"
+  PatMapping _ _ -> Left $ unsupportedAt (locSpan pat) "Mapping patterns in comprehensions are not supported in common expression lowering"
+  PatClass _ _ _ -> Left $ unsupportedAt (locSpan pat) "Class patterns in comprehensions are not supported in common expression lowering"
 
 goExprToCommon :: Located GoExpr -> Either LoweringIssue CommonExpr
-goExprToCommon located@(Located span expr) = case expr of
-  GoLiteral lit -> CELiteral <$> goLiteralToLiteral span lit
+goExprToCommon located = case locValue located of
+  GoLiteral lit -> CELiteral <$> goLiteralToLiteral (locSpan located) lit
   GoIdent ident -> Right $ CEVar ident
   GoQualifiedIdent pkg ident ->
-    let pkgVar = Located span (CEVar pkg)
+    let pkgVar = Located (locSpan located) (CEVar pkg)
     in Right $ CEAttribute pkgVar ident
   GoBinaryOp op left right -> do
     left' <- goExprToLocatedCommon left
@@ -400,7 +397,7 @@ goExprToCommon located@(Located span expr) = case expr of
   GoSlice container sliceExpr -> do
     container' <- goExprToLocatedCommon container
     case goSliceMax sliceExpr of
-      Just _ -> Left $ unsupportedAt span "Three-index slices are not supported in common expression lowering"
+      Just _ -> Left $ unsupportedAt (locSpan located) "Three-index slices are not supported in common expression lowering"
       Nothing -> do
         low' <- traverse goExprToLocatedCommon (goSliceLow sliceExpr)
         high' <- traverse goExprToLocatedCommon (goSliceHigh sliceExpr)
@@ -408,7 +405,7 @@ goExprToCommon located@(Located span expr) = case expr of
   GoSelector obj ident -> do
     obj' <- goExprToLocatedCommon obj
     pure $ CEAttribute obj' ident
-  GoTypeConversion _ _ -> Left $ unsupportedAt span "Type conversions are not supported in common expression lowering"
+  GoTypeConversion _ _ -> Left $ unsupportedAt (locSpan located) "Type conversions are not supported in common expression lowering"
   GoCompositeLit _ elems -> CEList <$> traverse goExprToLocatedCommon elems
   GoArrayLit _ elems -> CEList <$> traverse goExprToLocatedCommon elems
   GoSliceLit _ elems -> CEList <$> traverse goExprToLocatedCommon elems
@@ -429,22 +426,22 @@ goExprToCommon located@(Located span expr) = case expr of
          pure (keyExpr, value))
       fields
     pure $ CEDict converted
-  GoAddress{} -> Left $ unsupportedAt span "Address-of expressions are not supported in common expression lowering"
-  GoDeref{} -> Left $ unsupportedAt span "Pointer dereference expressions are not supported in common expression lowering"
-  GoReceive{} -> Left $ unsupportedAt span "Channel receive expressions are not supported in common expression lowering"
-  GoTypeAssert{} -> Left $ unsupportedAt span "Type assertions are not supported in common expression lowering"
-  GoFuncLit{} -> Left $ unsupportedAt span "Function literals are not supported in common expression lowering"
+  GoAddress{} -> Left $ unsupportedAt (locSpan located) "Address-of expressions are not supported in common expression lowering"
+  GoDeref{} -> Left $ unsupportedAt (locSpan located) "Pointer dereference expressions are not supported in common expression lowering"
+  GoReceive{} -> Left $ unsupportedAt (locSpan located) "Channel receive expressions are not supported in common expression lowering"
+  GoTypeAssert{} -> Left $ unsupportedAt (locSpan located) "Type assertions are not supported in common expression lowering"
+  GoFuncLit{} -> Left $ unsupportedAt (locSpan located) "Function literals are not supported in common expression lowering"
 
 goExprToLocatedCommon :: Located GoExpr -> Either LoweringIssue (Located CommonExpr)
-goExprToLocatedCommon located@(Located span _) = do
+goExprToLocatedCommon located = do
   converted <- goExprToCommon located
-  pure $ Located span converted
+  pure $ Located (locSpan located) converted
 
 goLiteralToLiteral :: SourceSpan -> GoLiteral -> Either LoweringIssue Literal
-goLiteralToLiteral span = \case
+goLiteralToLiteral sp = \case
   GoInt n -> Right $ LInt (fromIntegral n :: Int64)
   GoFloat f -> Right $ LFloat f
-  GoImag _ -> Left $ unsupportedAt span "Imaginary literals are not supported in common expression lowering"
+  GoImag _ -> Left $ unsupportedAt sp "Imaginary literals are not supported in common expression lowering"
   GoRune c -> Right $ LChar c
   GoString s -> Right $ LString s
   GoRawString s -> Right $ LString s
@@ -465,16 +462,16 @@ renderCommonExpr :: CommonExpr -> Text
 renderCommonExpr = textShow
 
 renderLocatedCommonExpr :: Located CommonExpr -> Text
-renderLocatedCommonExpr (Located span expr) =
-  renderCommonExpr expr <> "@" <> formatSpan span
+renderLocatedCommonExpr (Located sp expr) =
+  renderCommonExpr expr <> "@" <> formatSpan sp
 
 fingerprintCommonExpr :: Located CommonExpr -> Text
-fingerprintCommonExpr (Located span expr) =
-  renderCommonExpr expr <> "#" <> fingerprintSpan span
+fingerprintCommonExpr (Located sp expr) =
+  renderCommonExpr expr <> "#" <> fingerprintSpan sp
 
 fingerprintSpan :: SourceSpan -> Text
-fingerprintSpan span =
-  let SourceSpan file start end = span
+fingerprintSpan sp =
+  let SourceSpan file start end = sp
       startText = posText start
       endText = posText end
   in file <> ":" <> startText <> "-" <> endText

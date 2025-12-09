@@ -485,7 +485,7 @@ goRuntimeTests =
             , "}"
             ]
       , grtExpectedStdOut = unlines ["0", "1", "2"]
-      , grtPendingReason = Just "Go while-style loop translation is not yet supported in the C++ backend"
+      , grtPendingReason = Nothing
       }
   , GoRuntimeTest
       { grtName = "compiles go for loop summation"
@@ -569,7 +569,7 @@ goRuntimeTests =
             [ "fmt.Printf(\"value: %d\\n\", 7)"
             ]
       , grtExpectedStdOut = "value: 7\n"
-      , grtPendingReason = Just "Printf formatting support is not yet implemented in the C++ backend"
+      , grtPendingReason = Nothing
       }
   , GoRuntimeTest
       { grtName = "compiles go print without newline"

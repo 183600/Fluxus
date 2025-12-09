@@ -9,6 +9,7 @@ module Fluxus.CodeGen.CPP.Python
 import Control.Monad (unless, when, foldM)
 import Control.Monad.State (gets, modify)
 import Data.Bifunctor (first)
+import Data.Foldable (traverse_)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.List (foldl', intercalate, nub, partition)
@@ -1811,7 +1812,7 @@ inferDictKeyType span keyExpr =
 
 inferDictValueType :: SourceSpan -> Located PythonExpr -> CppCodeGen CppType
 inferDictValueType span valueExpr =
-  inferComprehensionElementType "dict comprehension value" span valueExpr ensureStdAny
+  inferComprehensionElementType "dict comprehension value" span valueExpr (pure CppLongLong)
 
 inferComprehensionElementType :: Text -> SourceSpan -> Located PythonExpr -> CppCodeGen CppType -> CppCodeGen CppType
 inferComprehensionElementType label span element fallbackAction = do
@@ -1955,6 +1956,23 @@ generatePythonDictComprehension span keyExpr valueExpr comps
       dictComprehensionFallback span "requires at least one comprehension clause"
   | otherwise = do
       addInclude "<map>"
+      
+      -- Pre-populate symbol table with loop variables
+      traverse_ (\comp -> 
+        case extractComprehensionTargetName (pyCompTarget comp) of
+          Right targetName -> do
+            -- Try to infer the type from the iterator
+            iterType <- case locValue (pyCompIter comp) of
+              PyVar (Identifier iterName) -> do
+                symtab <- gets cgsSymbolTable
+                case HM.lookup iterName symtab of
+                  Just (CppVector elemType) -> pure elemType
+                  _ -> pure CppLongLong -- Default fallback
+              _ -> pure CppLongLong -- Default fallback
+            modify $ \s -> s { cgsSymbolTable = HM.insert targetName iterType (cgsSymbolTable s) }
+          Left _ -> pure ()
+        ) comps
+      
       keyType <- inferDictKeyType span keyExpr
       valueType <- inferDictValueType span valueExpr
       builderName <- generateTempVar
@@ -2641,17 +2659,17 @@ refinePythonExprType context locatedExpr defaultType = do
       pure listType
     PySetComp element comps -> do
       -- Handle set comprehensions explicitly  
-      addInclude "<unordered_set>"
+      addInclude "<set>"
       elementType <- inferSetElementType (locSpan locatedExpr) element
-      let setType = CppTemplateType "std::unordered_set" [elementType]
+      let setType = CppClassType "std::set" [elementType]
       emitInfo $ context <> ": set comprehension detected, using type " <> T.pack (show setType)
       pure setType
     PyDictComp keyExpr valueExpr comps -> do
       -- Handle dict comprehensions explicitly
-      addInclude "<unordered_map>"
+      addInclude "<map>"
       keyType <- inferDictKeyType (locSpan locatedExpr) keyExpr
       valueType <- inferDictValueType (locSpan locatedExpr) valueExpr
-      let dictType = CppTemplateType "std::unordered_map" [keyType, valueType]
+      let dictType = CppClassType "std::map" [keyType, valueType]
       emitInfo $ context <> ": dict comprehension detected, using type " <> T.pack (show dictType)
       pure dictType
     _ -> lookupAnnotationsIfNeeded

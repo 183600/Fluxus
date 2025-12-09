@@ -1,4 +1,4 @@
-def test():
-    i = 5
-    result = 8
-    print(f"fib({i}) = {result}")
+def greet(name):
+    return f"Hello {name}"
+
+print(greet("Fluxus"))

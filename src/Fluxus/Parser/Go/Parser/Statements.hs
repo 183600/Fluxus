@@ -25,12 +25,12 @@ module Fluxus.Parser.Go.Parser.Statements
   , parseEmptyStmt
   ) where
 
-import Control.Applicative (optional, many)
+import Control.Applicative (optional, many, (<|>))
 import Control.Monad (void)
 import Control.Monad.Logger (MonadLogger)
 import Data.Functor (($>))
-import qualified Data.Text as T
-import Text.Megaparsec (anySingle, lookAhead)
+import Data.Maybe (fromMaybe, maybeToList)
+import Text.Megaparsec (lookAhead, anySingle)
 import qualified Text.Megaparsec as MP
 
 import Fluxus.AST.Common (Located(..), BinaryOp(..))
@@ -193,6 +193,7 @@ parseForStmt = do
   MP.choice
     [ MP.try parseRangeFor
     , MP.try parseForClause
+    , MP.try parseConditionOnlyFor
     , parseInfiniteFor
     ]
   where
@@ -231,6 +232,17 @@ parseForStmt = do
             { goForInit = initClause
             , goForCond = condition
             , goForPost = post
+            }
+      pure $ GoFor clause body
+
+    parseConditionOnlyFor = do
+      -- Check if this is a condition-only for loop (no semicolons)
+      condition <- parseExpression
+      body <- located parseBlockStmt'
+      let clause = Just $ GoForClause
+            { goForInit = Nothing
+            , goForCond = Just condition
+            , goForPost = Nothing
             }
       pure $ GoFor clause body
 

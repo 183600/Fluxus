@@ -12,6 +12,7 @@ import System.Environment (getArgs)
 import Fluxus.Parser.Go.Lexer
 import Fluxus.Parser.Go.Parser
 import Fluxus.AST.Go
+import Fluxus.AST.Common (Located(..))
 
 -- | Debug the Go parser with a specific file
 debugGoParser :: FilePath -> IO ()
@@ -20,13 +21,14 @@ debugGoParser filename = do
     
     -- Read the file
     content <- TIO.readFile filename
+    let filenameText = T.pack filename
     putStrLn "=== Input Go Code ==="
     TIO.putStrLn content
     putStrLn ""
     
     -- Step 1: Test lexer
     putStrLn "=== Lexer Phase ==="
-    case runGoLexer filename content of
+    case runGoLexer filenameText content of
         Left lexErr -> do
             putStrLn $ "❌ Lexer failed: " ++ show lexErr
             return ()
@@ -41,7 +43,7 @@ debugGoParser filename = do
             
             -- Step 2: Test parser
             putStrLn "=== Parser Phase ==="
-            case runGoParser filename tokens of
+            case runGoParser filenameText tokens of
                 Left parseErr -> do
                     putStrLn $ "❌ Parser failed: " ++ show parseErr
                 Right ast -> do

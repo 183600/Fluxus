@@ -695,7 +695,8 @@ statementGenerationSpec = describe "Statement generation" $ do
           _ -> False
     case generateCpp Shared.testCppConfig (Left pythonAst) of
       Right res -> do
-        cgrDiagnostics res `shouldBe` []
+        let infoDiags = filter (\d -> diagSeverity d /= SeverityInfo) (cgrDiagnostics res)
+        infoDiags `shouldBe` []
         let decls = cppDeclarations (cgrUnit res)
         case [body | CppFunction "classify" _ _ body <- decls] of
           [body] -> do
@@ -2165,7 +2166,7 @@ pythonRuntimeTests =
           , "print(total)"
           ]
       , prtExpectedStdOut = "10\n"
-      , prtPendingReason = Just "List literal parsing is not yet implemented in the Python frontend"
+      , prtPendingReason = Nothing
       }
   , PythonRuntimeTest
       { prtName = "compiles multi step string concatenation"

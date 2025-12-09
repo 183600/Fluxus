@@ -42,18 +42,15 @@ import Control.Monad (void, when)
 import Control.Applicative ((<|>), optional, many, some)
 import Data.Bifunctor (first)
 import Data.Functor (($>))
-import qualified Control.Applicative as A
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
+import qualified Data.List.NonEmpty as NE
 import Text.Megaparsec hiding (many, some, SourcePos)
 import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
-import Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NE
 
-import Fluxus.AST.Common (SourcePos(..), SourceSpan(..), Located(..))
-import Fluxus.AST.Common as Common
+import Fluxus.AST.Common (SourceSpan(..), Located(..), BinaryOp(..), Identifier(..), ComparisonOp(..), UnaryOp(..), SourcePos(..), QualifiedName(..), ModuleName(..), locatedValue, noLoc)
 import Fluxus.AST.Python
 import qualified Fluxus.Parser.Python.Lexer as Lexer
 import Fluxus.Parser.Python.Lexer (PythonToken(..), Keyword(..), Delimiter(..))
@@ -223,10 +220,15 @@ parseAugAssignment = do
         TokenOperator Lexer.OpPlusAssign -> return OpAdd
         TokenOperator Lexer.OpMinusAssign -> return OpSub
         TokenOperator Lexer.OpMultAssign -> return OpMul
-        TokenOperator Lexer.OpDivAssign -> return Common.OpDiv
-        TokenOperator Lexer.OpModAssign -> return Common.OpMod
+        TokenOperator Lexer.OpDivAssign -> return OpDiv
+        TokenOperator Lexer.OpModAssign -> return OpMod
         TokenOperator Lexer.OpPowerAssign -> return OpPow
-        TokenOperator Lexer.OpFloorDivAssign -> return Common.OpFloorDiv
+        TokenOperator Lexer.OpLeftShiftAssign -> return OpShiftL
+        TokenOperator Lexer.OpRightShiftAssign -> return OpShiftR
+        TokenOperator Lexer.OpBitAndAssign -> return OpBitAnd
+        TokenOperator Lexer.OpBitXorAssign -> return OpBitXor
+        TokenOperator Lexer.OpBitOrAssign -> return OpBitOr
+        TokenOperator Lexer.OpFloorDivAssign -> return OpFloorDiv
         _ -> fail "Expected augmented assignment operator"
 
 -- | Parse if statements
@@ -829,9 +831,9 @@ parseTermExpr = chainl1 parseFactorExpr parseMulOp
   where
     parseMulOp = choice
       [ operator' Lexer.OpMult $> (\l r -> located' $ PyBinaryOp OpMul l r)
-      , operator' Lexer.OpDiv $> (\l r -> located' $ PyBinaryOp Common.OpDiv l r)
-      , operator' Lexer.OpMod $> (\l r -> located' $ PyBinaryOp Common.OpMod l r)
-      , operator' Lexer.OpFloorDiv $> (\l r -> located' $ PyBinaryOp Common.OpFloorDiv l r)
+      , operator' Lexer.OpDiv $> (\l r -> located' $ PyBinaryOp OpDiv l r)
+      , operator' Lexer.OpMod $> (\l r -> located' $ PyBinaryOp OpMod l r)
+      , operator' Lexer.OpFloorDiv $> (\l r -> located' $ PyBinaryOp OpFloorDiv l r)
       ]
 
 parseFactorExpr :: PythonParser (Located PythonExpr)
@@ -840,7 +842,7 @@ parseFactorExpr = choice
       op <- choice
         [ operator' Lexer.OpPlus $> OpPositive
         , operator' Lexer.OpMinus $> OpNegate
-        , operator' Lexer.OpBitNot $> Common.OpBitNot
+        , operator' Lexer.OpBitNot $> OpBitNot
         ]
       expr <- parseFactorExpr
       return $ located' $ PyUnaryOp op expr
@@ -1874,21 +1876,7 @@ parseDedent = void $ satisfy $ \case
   Located _ (TokenDedent _) -> True
   _ -> False
 
-skipNewlines :: PythonParser ()
-skipNewlines = void $ many $ satisfy $ \case
-  Located _ TokenNewline -> True
-  _ -> False
 
-skipComments :: PythonParser ()
-skipComments = void $ many $ satisfy $ \case
-  Located _ (TokenComment _) -> True
-  _ -> False
-
-skipNewlinesAndComments :: PythonParser ()
-skipNewlinesAndComments = void $ many $ satisfy $ \case
-  Located _ TokenNewline -> True
-  Located _ (TokenComment _) -> True
-  _ -> False
 
 -- | Helper for creating located expressions
 located :: PythonParser a -> PythonParser (Located a)
@@ -1914,7 +1902,7 @@ zeroWidthSpan :: SourceSpan -> SourceSpan
 zeroWidthSpan (SourceSpan file start _) = SourceSpan file start start
 
 defaultSpan :: Text -> SourceSpan
-defaultSpan file = SourceSpan file (Common.SourcePos 0 0) (Common.SourcePos 0 0)
+defaultSpan file = SourceSpan file (SourcePos 0 0) (SourcePos 0 0)
 
 located' :: a -> Located a
 located' = noLoc
@@ -1933,8 +1921,22 @@ extractDocstringAndImports (stmt:rest) = case locatedValue stmt of
   PyExprStmt (Located _ (PyLiteral (PyString text))) -> (Just text, rest)
   _ -> (Nothing, stmt:rest)
 
-convertPos :: MP.SourcePos -> Common.SourcePos
-convertPos pos = Common.SourcePos
+
+convertPos :: MP.SourcePos -> SourcePos
+convertPos pos = SourcePos
   { posLine = unPos (sourceLine pos)
   , posColumn = unPos (sourceColumn pos)
   }
+
+-- | Skip newlines and comments
+skipNewlinesAndComments :: PythonParser ()
+skipNewlinesAndComments = void $ many $ satisfy $ \case
+  Located _ TokenNewline -> True
+  Located _ (TokenComment _) -> True
+  _ -> False
+
+-- | Skip comments
+skipComments :: PythonParser ()
+skipComments = void $ many $ satisfy $ \case
+  Located _ (TokenComment _) -> True
+  _ -> False
