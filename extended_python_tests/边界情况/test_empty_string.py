@@ -1,0 +1,2 @@
+s = ""
+print(len(s))

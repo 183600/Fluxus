@@ -1,0 +1,2 @@
+s = "world"
+print(s)
