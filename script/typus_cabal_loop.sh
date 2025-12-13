@@ -71,6 +71,8 @@ run_with_heartbeat() {
 # ==================== 主循环 ====================
 trap 'echo; echo "已终止."; exit 0' INT TERM
 
+run_with_heartbeat iflow "给这个项目增加大量的cabal test测试用例，要使用QuickCheck think:high" --yolo || true
+
 while true; do
   touch "$HEARTBEAT_FILE"
 
@@ -118,9 +120,7 @@ while true; do
   touch "$HEARTBEAT_FILE"
 
   if [[ $CABAL_STATUS -eq 0 && $HAS_WARNINGS -eq 0 ]]; then
-    echo "✅ 未发现任何问题（包括 warning）——进行提交并增加测试用例"
-
-    run_with_heartbeat iflow "给这个项目增加大量的测试用例，要使用QuickCheck think:high" --yolo || true
+    echo "✅ 未发现任何问题（包括 warning）——进行提交"
 
     # 在 git add . 之前，先用 iflow 清理根目录多余的 .md/.txt 文件
     echo "🧹 正在清理项目根目录多余的 .md/.txt 文件（如 TEST_ENHANCEMENT_SUMMARY.md、test_wall_production.txt）..."
