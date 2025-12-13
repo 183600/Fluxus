@@ -1,0 +1,96 @@
+name: iflow-cabal-autoloop
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master   # 连续运行依赖 push 到 master 再次触发
+
+concurrency:
+  group: iflow-autoflow
+  cancel-in-progress: true
+
+# 这里的 permissions 仅影响 GITHUB_TOKEN；我们实际用 PAT 推送，但保留 contents: write 更稳妥
+permissions:
+  contents: write
+
+jobs:
+  run-5h:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360   # 6 小时上限，主任务跑 5 小时，留 1 小时提交/收尾
+    env:
+      RUN_HOURS: 5
+      WORK_BRANCH: master
+      # iFlow CLI 的无交互认证
+      IFLOW_API_KEY: ${{ secrets.IFLOW_API_KEY }}
+      IFLOW_BASE_URL: https://apis.iflow.cn/v1
+      IFLOW_MODEL_NAME: glm-4.6
+    steps:
+      - name: Checkout with PAT
+        uses: actions/checkout@v4
+        with:
+          # 必须用 PAT，这样 push 才会再次触发工作流
+          token: ${{ secrets.IFLOW_PAT }}
+          fetch-depth: 0
+
+      - name: Ensure master branch and git identity
+        shell: bash
+        run: |
+          git switch master || git checkout -b master
+          git pull --ff-only || true
+          git config user.name "iflow-bot"
+          git config user.email "iflow-bot@users.noreply.github.com"
+
+      - name: Setup Node (for iFlow CLI)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install iFlow CLI
+        run: |
+          npm i -g @iflow-ai/iflow-cli@latest
+          iflow --version
+
+      - name: Verify IFLOW_API_KEY is present
+        run: |
+          test -n "$IFLOW_API_KEY" || { echo "Missing IFLOW_API_KEY secret"; exit 1; }
+
+      - name: Setup Haskell (GHC + Cabal)
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: 'latest'
+          cabal-version: 'latest'
+
+      - name: Cache cabal store
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cabal
+            dist-newstyle
+          key: cabal-${{ runner.os }}-${{ hashFiles('**/*.cabal','cabal.project*') }}
+          restore-keys: |
+            cabal-${{ runner.os }}-
+
+      - name: Make loop script executable
+        run: |
+          chmod +x scripts/typus_cabal_loop.sh
+
+      - name: Run for ${{ env.RUN_HOURS }} hours
+        shell: bash
+        run: |
+          # 运行 5 小时，到点给脚本发 TERM；你的脚本会清理并退出
+          timeout --signal=TERM $(( ${RUN_HOURS} * 3600 )) bash scripts/typus_cabal_loop.sh || true
+
+      - name: Commit & push after ${RUN_HOURS}h
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "ci: ${RUN_HOURS}h batch update (run $GITHUB_RUN_ID)"
+            # 使用 checkout 时注入的 PAT 远端凭据推送到 master
+            git push origin HEAD:master
+          fi
