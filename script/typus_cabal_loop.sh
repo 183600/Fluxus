@@ -71,7 +71,7 @@ run_with_heartbeat() {
 # ==================== 主循环 ====================
 trap 'echo; echo "已终止."; exit 0' INT TERM
 
-run_with_heartbeat iflow "给这个项目增加大量的cabal test测试用例，要使用QuickCheck think:high" --yolo || true
+run_with_heartbeat iflow "给这个项目增加一些cabal test测试用例，不要超过10个，要使用QuickCheck think:high" --yolo || true
 
 while true; do
   touch "$HEARTBEAT_FILE"
@@ -122,10 +122,6 @@ while true; do
   if [[ $CABAL_STATUS -eq 0 && $HAS_WARNINGS -eq 0 ]]; then
     echo "✅ 未发现任何问题（包括 warning）——进行提交"
 
-    # 在 git add . 之前，先用 iflow 清理根目录多余的 .md/.txt 文件
-    echo "🧹 正在清理项目根目录多余的 .md/.txt 文件（如 TEST_ENHANCEMENT_SUMMARY.md、test_wall_production.txt）..."
-    run_with_heartbeat iflow '删除项目根目录多余的.md文件或者.txt文件（像TEST_ENHANCEMENT_SUMMARY.md和test_wall_production.txt这样的）' --yolo || true
-
     git add .
     if git diff --cached --quiet; then
       echo "ℹ️ 没有文件变化可提交"
@@ -135,6 +131,7 @@ while true; do
   else
     echo "⚠️ 发现问题或 warning（退出码=$CABAL_STATUS），调用 iflow 修复..."
     run_with_heartbeat iflow '解决cabal test --flags="-fast production" --test-show-details=direct显示的所有问题（包括warning），除非测试用例本身有编译错误，否则只修改测试用例以外的代码，debug时可通过加日志和打断点 think:high' --yolo || true
+    run_with_heartbeat iflow '删除项目根目录多余的.md文件或者.txt文件（像TEST_ENHANCEMENT_SUMMARY.md和test_wall_production.txt这样的） think:high' --yolo || true
   fi
 
   echo "🔁 回到第 1 步..."
