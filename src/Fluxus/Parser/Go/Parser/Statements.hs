@@ -25,11 +25,10 @@ module Fluxus.Parser.Go.Parser.Statements
   , parseEmptyStmt
   ) where
 
-import Control.Applicative (optional, many, (<|>))
+import Control.Applicative (optional, many)
 import Control.Monad (void)
 import Control.Monad.Logger (MonadLogger)
 import Data.Functor (($>))
-import Data.Maybe (fromMaybe, maybeToList)
 import Text.Megaparsec (lookAhead, anySingle)
 import qualified Text.Megaparsec as MP
 

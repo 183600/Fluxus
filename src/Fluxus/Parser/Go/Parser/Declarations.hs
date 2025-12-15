@@ -11,13 +11,10 @@ module Fluxus.Parser.Go.Parser.Declarations
   , parseImportDeclStmt
   ) where
 
-import Control.Applicative (optional, many, (<|>))
+import Control.Applicative (optional, many)
 import Control.Monad (void)
 import Control.Monad.Logger (MonadLogger)
-import Data.Maybe (fromMaybe, maybeToList, isJust)
-import Data.Text (Text)
-import qualified Data.Text as T
-import Text.Megaparsec (lookAhead)
+import Data.Maybe (fromMaybe, isJust)
 import qualified Text.Megaparsec as MP
 
 import Fluxus.AST.Common (Located(..), Identifier(..))

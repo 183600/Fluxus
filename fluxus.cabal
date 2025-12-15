@@ -21,7 +21,7 @@ common shared-properties
                -Wincomplete-uni-patterns -Wmissing-export-lists
                -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
                -Wno-unused-imports -Wno-unused-top-binds -Wno-unused-matches
-               -Wno-unused-local-binds -Wno-name-shadowing -Wno-unused-do-bind
+               -Wno-unused-local-binds -Wno-unused-do-bind
                -O2
 
 library

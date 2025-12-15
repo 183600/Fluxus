@@ -8,7 +8,7 @@ module Main (main) where
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
-import Text.Megaparsec hiding (many, some, eof)
+import Text.Megaparsec hiding (many, some, eof, token, errorOffset)
 import qualified Text.Megaparsec as MP
 
 import Fluxus.AST.Common as Common
@@ -58,10 +58,10 @@ testCases =
 printTokens :: [Located PythonToken] -> IO ()
 printTokens tokens = do
   putStrLn "Tokens:"
-  mapM_ printToken tokens
+  mapM_ printSingleToken tokens
   where
-    printToken (Located span token) = do
-      putStrLn $ "  " ++ show token ++ " at " ++ show span
+    printSingleToken (Located span_ tok) = do
+      putStrLn $ "  " ++ show tok ++ " at " ++ show span_
 
 -- | Test lexer functionality
 testLexer :: TestCase -> IO ()
@@ -73,12 +73,12 @@ testLexer testCase = do
     Left err -> do
       putStrLn "LEXER ERROR:"
       putStrLn $ "Lexer error: " ++ show err
-    Right tokens -> do
+    Right lexedTokens -> do
       putStrLn "LEXER SUCCESS:"
-      printTokens tokens
+      printTokens lexedTokens
       
       -- Compare with expected tokens
-      let actualTokens = map locValue tokens
+      let actualTokens = map locValue lexedTokens
           expectedTokensList = expectedTokens testCase
       if actualTokens == expectedTokensList
         then putStrLn "✓ Tokens match expected output"
@@ -98,12 +98,12 @@ testParser testCase = do
     Left err -> do
       putStrLn "LEXER ERROR (before parser):"
       putStrLn $ "Lexer error: " ++ show err
-    Right tokens -> do
+    Right parsedTokens -> do
       putStrLn "Tokens to parse:"
-      printTokens tokens
+      printTokens parsedTokens
       
       -- Now try to parse
-      let result = runPythonParser "test" tokens
+      let result = runPythonParser "test" parsedTokens
       case result of
         Left err -> do
           putStrLn "PARSER ERROR:"
@@ -111,34 +111,34 @@ testParser testCase = do
           
           -- Try to get more detailed error information
           putStrLn "\nDetailed error analysis:"
-          analyzeParseError err tokens
+          analyzeParseError err parsedTokens
         Right ast -> do
           putStrLn "PARSER SUCCESS:"
           putStrLn $ "AST: " ++ show ast
 
 -- | Analyze parse error to provide more debugging information
 analyzeParseError :: ParseErrorBundle [Located PythonToken] Void -> [Located PythonToken] -> IO ()
-analyzeParseError err tokens = do
+analyzeParseError parseErr tokenList = do
   putStrLn $ "Error details:"
-  putStrLn $ "Parse error: " ++ show err
+  putStrLn $ "Parse error: " ++ show parseErr
   
   putStrLn "\nTokens being parsed:"
-  mapM_ (\(i, token) -> putStrLn $ "  [" ++ show i ++ "] " ++ show token) (zip [0 :: Int ..] tokens)
+  mapM_ (\(i, tok) -> putStrLn $ "  [" ++ show i ++ "] " ++ show tok) (zip [0 :: Int ..] tokenList)
   
   -- Check for common issues
   putStrLn "\nCommon issue checks:"
-  checkForCommonIssues tokens 0
+  checkForCommonIssues tokenList 0
 
 -- | Check for common parsing issues
 checkForCommonIssues :: [Located PythonToken] -> Int -> IO ()
-checkForCommonIssues tokens errorOffset = do
+checkForCommonIssues tokenSeq errorOffset = do
   -- Check if error occurs at a literal position
-  if errorOffset < length tokens
-    then case locValue (tokens !! errorOffset) of
+  if errorOffset < length tokenSeq
+    then case locValue (tokenSeq !! errorOffset) of
       TokenNumber _ _ -> putStrLn "  - Error at number literal - parseLiteral should handle this"
       TokenString _ -> putStrLn "  - Error at string literal - parseLiteral should handle this"
-      TokenKeyword kw -> 
-        case kw of
+      TokenKeyword keyword -> 
+        case keyword of
           Lexer.KwTrue -> putStrLn "  - Error at True keyword - parseLiteral should handle this"
           Lexer.KwFalse -> putStrLn "  - Error at False keyword - parseLiteral should handle this"
           Lexer.KwNone -> putStrLn "  - Error at None keyword - parseLiteral should handle this"
@@ -171,9 +171,9 @@ testFullPipeline = do
       putStrLn $ "\nTesting simple expression: " ++ code
       case runPythonLexer "test" (T.pack code) of
         Left err -> putStrLn $ "  LEXER ERROR: " ++ MP.errorBundlePretty err
-        Right tokens -> do
-          putStrLn $ "  Tokens: " ++ show (map locValue tokens)
-          let result = runPythonParser "test" tokens
+        Right simpleLexedTokens -> do
+          putStrLn $ "  Tokens: " ++ show (map locValue simpleLexedTokens)
+          let result = runPythonParser "test" simpleLexedTokens
           case result of
             Left err -> putStrLn $ "  PARSER ERROR: " ++ show err
             Right ast -> putStrLn $ "  SUCCESS: " ++ show ast

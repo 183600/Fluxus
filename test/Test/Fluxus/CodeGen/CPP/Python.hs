@@ -817,17 +817,17 @@ statementGenerationSpec = describe "Statement generation" $ do
                   CppDecl (CppVariable tmpName _ (Just (CppVar "metric"))) -> do
                     cond `shouldBe` CppLiteral (CppBoolLit True)
                     case thenStmts of
-                      (CppDecl (CppVariable boundName _ (Just (CppVar source))):CppIf guard body []:_) -> do
+                      (CppDecl (CppVariable boundName _ (Just (CppVar source))):CppIf guard guardBody []:_) -> do
                         boundName `shouldBe` "value"
                         source `shouldBe` tmpName
                         guard `shouldBe` CppBinary ">" (CppVar "value") (CppLiteral (CppIntLit 0))
-                        body `shouldBe` [CppReturn (Just (CppVar "value"))]
-                      other -> expectationFailure $ "Unexpected guarded body: " <> show other
+                        guardBody `shouldBe` [CppReturn (Just (CppVar "value"))]
+                      unexpectedGuardedBody -> expectationFailure $ "Unexpected guarded body: " <> show unexpectedGuardedBody
                     case elseStmts of
                       [CppIf fallbackCond fallbackBody []] -> do
                         fallbackCond `shouldBe` CppLiteral (CppBoolLit True)
                         fallbackBody `shouldBe` [CppReturn (Just (CppLiteral (CppIntLit 0)))]
-                      other -> expectationFailure $ "Unexpected fallback branch: " <> show other
+                      unexpectedFallbackBranch -> expectationFailure $ "Unexpected fallback branch: " <> show unexpectedFallbackBranch
                   _ -> expectationFailure "Expected subject binding declaration"
               _ -> expectationFailure "Expected lowered match sequence"
           _ -> expectationFailure "Expected limit_check function in output"

@@ -8,39 +8,35 @@ module Fluxus.CodeGen.CPP.Python
 
 import Control.Monad (unless, when, foldM)
 import Control.Monad.State (gets, modify)
-import Data.Bifunctor (first)
 import Data.Foldable (traverse_)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
-import Data.List (foldl', intercalate, nub, partition)
+import Data.List (nub, partition)
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.List.NonEmpty as NE
-import qualified Text.Megaparsec as MP
 
 import Fluxus.AST.Common hiding (TypeVar)
 import Fluxus.AST.Python
-import Fluxus.Analysis.CommonExprLowering (pythonExprToLocatedCommon, renderLocatedCommonExpr, fingerprintCommonExpr, renderLoweringIssue, formatSpan)
+import Fluxus.Analysis.CommonExprLowering (pythonExprToLocatedCommon, fingerprintCommonExpr, renderLoweringIssue, formatSpan)
 import Fluxus.CodeGen.CPP.AST
 import Fluxus.CodeGen.CPP.Monad
 import Fluxus.CodeGen.CPP.Shared
-import Fluxus.Parser.Python.Lexer (runPythonLexer, PythonToken(..))
-import Fluxus.Parser.Python.Parser (parseExpression)
 
 -- | Generate C++ from Python AST
 generateCppFromPython :: PythonAST -> CppCodeGen CppUnit
-generateCppFromPython (PythonAST pyModule) = do
+generateCppFromPython (PythonAST pythonModule) = do
   -- Add basic C++ includes
   addInclude "<iostream>"
   addInclude "<string>"
   ensurePythonHelpers
   
   -- Generate module namespace (reserved for future use)
-  let _moduleName = maybe "main" (\(ModuleName n) -> n) (pyModuleName pyModule)
+  let _moduleName = maybe "main" (\(ModuleName n) -> n) (pyModuleName pythonModule)
   
   -- Process module body sequentially, capturing declarations and runtime statements
-  moduleStmtsCpp <- mapM (generatePythonStmt ScopeModule) (pyModuleBody pyModule)
+  moduleStmtsCpp <- mapM (generatePythonStmt ScopeModule) (pyModuleBody pythonModule)
   -- Filter out comment statements that don't generate actual code
   let isActualStatement stmt = case stmt of
         CppComment _ -> False
@@ -138,7 +134,7 @@ type OperandInfo = (Located PythonExpr, CppType, CppExpr)
 
 -- | Generate C++ from Python statements
 generatePythonStmt :: PythonScope -> Located PythonStmt -> CppCodeGen CppStmt
-generatePythonStmt scope (Located span stmt) =
+generatePythonStmt scope (Located spanInfo stmt) =
   case stmt of
     PyFuncDef funcDef -> do
       generatePythonFunction funcDef
@@ -158,22 +154,22 @@ generatePythonStmt scope (Located span stmt) =
         [Located _ (PatTuple patElems)] ->
           handleTupleUnpacking scope patElems locatedExpr
         _ | length patterns > 1 ->
-              handleChainedAssignment scope span patterns locatedExpr
+              handleChainedAssignment scope spanInfo patterns locatedExpr
           | otherwise -> do
               let msg = "Assignment target pattern is not supported"
               strict <- gets (cgcStrictMode . cgsConfig)
               if strict
-                then unsupportedStatement reportFatalNotImplemented span msg
-                else unsupportedStatement reportNotImplemented span msg
+                then unsupportedStatement reportFatalNotImplemented spanInfo msg
+                else unsupportedStatement reportNotImplemented spanInfo msg
     PyAugAssign target op valueExpr ->
-      handleAugmentedAssignment scope span target op valueExpr
+      handleAugmentedAssignment scope spanInfo target op valueExpr
     PyAnnAssign target typeExpr mValue ->
-      handleAnnotatedAssignment scope span target typeExpr mValue
+      handleAnnotatedAssignment scope spanInfo target typeExpr mValue
     PyReturn mexpr -> do
       mcppExpr <- mapM generatePythonExpr mexpr
       return $ CppReturn mcppExpr
     PyAssert condition message ->
-      generatePythonAssert span condition message
+      generatePythonAssert spanInfo condition message
     PyBreak ->
       return CppBreak
     PyContinue ->
@@ -216,40 +212,40 @@ generatePythonStmt scope (Located span stmt) =
             Just spec -> buildRangeLoop varAlreadyDeclared varName cppBody spec
         _ -> do
           iterableInfo <- resolveIterableInfo iterExpr
-          buildIterableLoop span varName varAlreadyDeclared iterableInfo cppBody
+          buildIterableLoop spanInfo varName varAlreadyDeclared iterableInfo cppBody
     PyWith items bodyStmts ->
-      generatePythonWith scope span items bodyStmts
+      generatePythonWith scope spanInfo items bodyStmts
     PyTry tryBody excepts elseStmts finallyStmts ->
-      generatePythonTry scope span tryBody excepts elseStmts finallyStmts
+      generatePythonTry scope spanInfo tryBody excepts elseStmts finallyStmts
     PyMatch subject cases ->
-      generatePythonMatch scope span subject cases
+      generatePythonMatch scope spanInfo subject cases
     PyImport imports -> do
       emitInfo $
-        "Ignoring Python import at " <> formatSpan span <> ": "
+        "Ignoring Python import at " <> formatSpan spanInfo <> ": "
         <> T.intercalate ", " (map (describeImport . locValue) imports)
       return cppNoop
     PyGlobal names ->
-      buildRuntimeFallback span ("Python 'global' statement (" <> renderIdentifiers names <> ") requires runtime fallback")
+      buildRuntimeFallback spanInfo ("Python 'global' statement (" <> renderIdentifiers names <> ") requires runtime fallback")
     PyNonlocal names ->
-      buildRuntimeFallback span ("Python 'nonlocal' statement (" <> renderIdentifiers names <> ") requires runtime fallback")
+      buildRuntimeFallback spanInfo ("Python 'nonlocal' statement (" <> renderIdentifiers names <> ") requires runtime fallback")
     PyDel _ ->
-      buildRuntimeFallback span "Python 'del' statement requires runtime fallback"
+      buildRuntimeFallback spanInfo "Python 'del' statement requires runtime fallback"
     PyAsyncWith _ _ ->
-      buildRuntimeFallback span "Python 'async with' statement requires runtime fallback"
+      buildRuntimeFallback spanInfo "Python 'async with' statement requires runtime fallback"
     PyAsyncFor _ _ _ _ ->
-      buildRuntimeFallback span "Python 'async for' statement requires runtime fallback"
+      buildRuntimeFallback spanInfo "Python 'async for' statement requires runtime fallback"
     PyAsyncFuncDef funcDef -> do
-      generateAsyncFunctionFallback span funcDef
+      generateAsyncFunctionFallback spanInfo funcDef
       return cppNoop
     PyRaise excExpr causeExpr ->
-      generatePythonRaise span excExpr causeExpr
+      generatePythonRaise spanInfo excExpr causeExpr
     PyYield _ ->
-      buildRuntimeFallback span "Python 'yield' expression requires runtime fallback"
+      buildRuntimeFallback spanInfo "Python 'yield' expression requires runtime fallback"
     PyYieldFrom _ ->
-      buildRuntimeFallback span "Python 'yield from' expression requires runtime fallback"
+      buildRuntimeFallback spanInfo "Python 'yield from' expression requires runtime fallback"
     _ -> do
       let msg = "Python statement not implemented: " <> T.pack (show stmt)
-      unsupportedStatement reportFatalNotImplemented span msg
+      unsupportedStatement reportFatalNotImplemented spanInfo msg
   where
     runtimeFallbackMessage :: CppGenConfig -> SourceSpan -> Text -> CppCodeGen Text
     runtimeFallbackMessage config loc baseMessage = do
@@ -303,15 +299,15 @@ generatePythonStmt scope (Located span stmt) =
       emitInfo $ "Generated fallback stub for async function " <> funcName
 
     generatePythonMatch :: PythonScope -> SourceSpan -> Located PythonExpr -> [Located PythonCase] -> CppCodeGen CppStmt
-    generatePythonMatch scope span subject cases
+    generatePythonMatch _matchScope matchSpanInfo subject cases
       | null cases =
-          buildRuntimeFallback span "match statement requires at least one case clause"
+          buildRuntimeFallback matchSpanInfo "match statement requires at least one case clause"
       | otherwise = do
           subjectVar <- generateTempVar
           subjectExpr <- generatePythonExpr subject
           loweredCases <- mapM (lowerMatchCase subjectVar) cases
           case sequence loweredCases of
-            Left reason -> buildRuntimeFallback span reason
+            Left reason -> buildRuntimeFallback matchSpanInfo reason
             Right lowered -> do
               let matchStmt = buildCaseChain lowered
               pure $ CppStmtSeq
@@ -560,17 +556,17 @@ generatePythonStmt scope (Located span stmt) =
       go initialExpr (reverse names) []
       where
         go _ [] acc = pure (reverse acc)
-        go current (name:rest) acc = do
+        go current (varName:rest) acc = do
           symtab <- gets cgsSymbolTable
-          let varExpr = CppVar name
-          if HM.member name symtab
+          let varExpr = CppVar varName
+          if HM.member varName symtab
             then do
-              let stmt = CppExprStmt (CppBinary "=" varExpr current)
-              go varExpr rest (stmt:acc)
+              let assignStmt = CppExprStmt (CppBinary "=" varExpr current)
+              go varExpr rest (assignStmt:acc)
             else do
-              modify $ \s -> s { cgsSymbolTable = HM.insert name refinedType (cgsSymbolTable s) }
-              recordHoistedGlobal name
-              addDeclaration $ CppVariable name refinedType (Just current)
+              modify $ \s -> s { cgsSymbolTable = HM.insert varName refinedType (cgsSymbolTable s) }
+              recordHoistedGlobal varName
+              addDeclaration $ CppVariable varName refinedType (Just current)
               go varExpr rest acc
 
     generateFunctionChainAssignments :: [Text] -> CppType -> CppExpr -> CppCodeGen [CppStmt]
@@ -578,16 +574,16 @@ generatePythonStmt scope (Located span stmt) =
       go initialExpr (reverse names) []
       where
         go _ [] acc = pure (reverse acc)
-        go current (name:rest) acc = do
+        go current (varName:rest) acc = do
           symtab <- gets cgsSymbolTable
-          let varExpr = CppVar name
-          if HM.member name symtab
+          let varExpr = CppVar varName
+          if HM.member varName symtab
             then do
-              let stmt = CppExprStmt (CppBinary "=" varExpr current)
-              go varExpr rest (stmt:acc)
+              let assignStmt = CppExprStmt (CppBinary "=" varExpr current)
+              go varExpr rest (assignStmt:acc)
             else do
-              modify $ \s -> s { cgsSymbolTable = HM.insert name refinedType (cgsSymbolTable s) }
-              let decl = CppDecl (CppVariable name refinedType (Just current))
+              modify $ \s -> s { cgsSymbolTable = HM.insert varName refinedType (cgsSymbolTable s) }
+              let decl = CppDecl (CppVariable varName refinedType (Just current))
               go varExpr rest (decl:acc)
 
     finalizeChainStatements :: [CppStmt] -> CppStmt
@@ -636,9 +632,9 @@ generatePythonStmt scope (Located span stmt) =
       symtab <- gets cgsSymbolTable
       
       -- Extract variable names from patterns
-      let extractVarName (Located _ (PatVar (Identifier name))) = Just name
-          extractVarName _ = Nothing
-          varNames = catMaybes (map extractVarName patterns)
+      let extractVarName' (Located _ (PatVar (Identifier varName))) = Just varName
+          extractVarName' _ = Nothing
+          varNames = catMaybes (map extractVarName' patterns)
       
       -- Check if all patterns are simple variables
       if length varNames /= length patterns
@@ -943,9 +939,9 @@ generatePythonRaise _ (Just excExpr) mFrom = do
       pure (CppThrow (Just cppExpr))
 
 generatePythonAssert :: SourceSpan -> Located PythonExpr -> Maybe (Located PythonExpr) -> CppCodeGen CppStmt
-generatePythonAssert span condition mMessage = do
+generatePythonAssert spanInfo condition mMessage = do
   cppCond <- generatePythonExpr condition
-  let baseMessage = "Python assertion failed at " <> formatSpan span
+  let baseMessage = "Python assertion failed at " <> formatSpan spanInfo
       fullMessage = maybe baseMessage (\expr -> baseMessage <> ": " <> T.pack (show (locValue expr))) mMessage
   failureStmt <- runtimeAbortStmt fullMessage
   pure $ CppIf (CppUnary "!" cppCond) [failureStmt] []
@@ -1114,9 +1110,9 @@ finallyBlockSupportsRAII = all stmtSupported
     catchSupported (CppCatch _ _ stmts) = all stmtSupported stmts
 
 finallyUnsupportedFallback :: SourceSpan -> Text -> CppCodeGen CppStmt
-finallyUnsupportedFallback span reason = do
+finallyUnsupportedFallback spanInfo reason = do
   let baseMessage = "Python 'finally' block " <> reason
-      message = baseMessage <> " at " <> formatSpan span <> " (runtime fallback)"
+      message = baseMessage <> " at " <> formatSpan spanInfo <> " (runtime fallback)"
   reportFatalUnsupported message
   abortStmt <- runtimeAbortStmt message
   pure $ CppStmtSeq
@@ -1127,7 +1123,7 @@ finallyUnsupportedFallback span reason = do
 bindWithTarget :: SourceSpan -> Maybe (Located PythonPattern) -> Text -> CppCodeGen [CppStmt]
 bindWithTarget _ Nothing contextVar =
   pure [CppExprStmt (CppCall (CppMember (CppVar contextVar) "__enter__") [])]
-bindWithTarget span (Just locatedPattern) contextVar = do
+bindWithTarget spanInfo (Just locatedPattern) contextVar = do
   let enterCall = CppCall (CppMember (CppVar contextVar) "__enter__") []
   case locValue locatedPattern of
     PatVar (Identifier name) -> do
@@ -1140,11 +1136,11 @@ bindWithTarget span (Just locatedPattern) contextVar = do
     _ -> do
       reportFatalUnsupported $
         "Python 'with' statement binding pattern at "
-        <> formatSpan span <> " is not supported"
+        <> formatSpan spanInfo <> " is not supported"
       pure [CppExprStmt enterCall]
 
 generatePythonTry :: PythonScope -> SourceSpan -> [Located PythonStmt] -> [Located PythonExcept] -> [Located PythonStmt] -> [Located PythonStmt] -> CppCodeGen CppStmt
-generatePythonTry scope span tryStmts excepts elseStmts finallyStmts = do
+generatePythonTry scope spanInfo tryStmts excepts elseStmts finallyStmts = do
   tryBody <- mapM (generatePythonStmt scope) tryStmts
   catches <- mapM (generateExceptHandler scope) excepts
   elseBody <- mapM (generatePythonStmt scope) elseStmts
@@ -1166,7 +1162,7 @@ generatePythonTry scope span tryStmts excepts elseStmts finallyStmts = do
                     (Just (CppCall (CppVar finallyGuardStructName) [guardLambda])))
               scoped = CppBlock [guardDecl, baseTry]
           pure (withPrefix scoped)
-      | otherwise -> finallyUnsupportedFallback span "contains control flow that cannot be lowered to RAII"
+      | otherwise -> finallyUnsupportedFallback spanInfo "contains control flow that cannot be lowered to RAII"
 
 prepareElseBlock :: [CppStmt] -> [CppStmt] -> [CppStmt] -> CppCodeGen ([CppStmt], [CppStmt], [CppStmt])
 prepareElseBlock elseBody tryBody finallyBody
@@ -1182,8 +1178,8 @@ prepareElseBlock elseBody tryBody finallyBody
       pure ([successDecl], tryBody', elseStmt : finallyBody)
 
 generateExceptHandler :: PythonScope -> Located PythonExcept -> CppCodeGen CppCatch
-generateExceptHandler scope (Located span except) = do
-  catchType <- resolveExceptType span (pyExceptType except)
+generateExceptHandler scope (Located spanInfo except) = do
+  catchType <- resolveExceptType spanInfo (pyExceptType except)
   (catchVar, restoreAction) <- case pyExceptName except of
     Just (Identifier name) -> do
       current <- gets cgsSymbolTable
@@ -1203,7 +1199,7 @@ generateExceptHandler scope (Located span except) = do
   pure $ CppCatch catchType catchVar bodyStmts
 
 resolveExceptType :: SourceSpan -> Maybe (Located PythonExpr) -> CppCodeGen CppType
-resolveExceptType span mTypeExpr = do
+resolveExceptType spanInfo mTypeExpr = do
   addInclude "<exception>"
   let defaultType = CppClassType "std::exception" []
   case mTypeExpr of
@@ -1218,7 +1214,7 @@ resolveExceptType span mTypeExpr = do
         Nothing -> do
           emitWarning $
             "Unsupported exception type in 'except' at "
-            <> formatSpan span <> "; defaulting to std::exception"
+            <> formatSpan spanInfo <> "; defaulting to std::exception"
           pure defaultType
 
 exceptionTypeName :: Located PythonExpr -> Maybe Text
@@ -1234,18 +1230,18 @@ exceptionTypeName (Located _ expr) =
 -- | Generate C++ from Python expressions
 -- | Generate C++ expression from Python argument
 generatePythonArgument :: Located PythonArgument -> CppCodeGen CppExpr
-generatePythonArgument (Located span arg) = case arg of
+generatePythonArgument (Located spanInfo arg) = case arg of
   ArgPositional expr -> generatePythonExpr expr
   ArgKeyword name expr -> do
     emitWarning $ "Keyword argument '" <> (\(Identifier n) -> n) name <> 
-      "' at " <> formatSpan span <> " is being treated as positional argument"
+      "' at " <> formatSpan spanInfo <> " is being treated as positional argument"
     generatePythonExpr expr
   ArgStarred expr -> do
-    emitWarning $ "*args unpacking at " <> formatSpan span <> 
+    emitWarning $ "*args unpacking at " <> formatSpan spanInfo <> 
       " is not fully supported, treating as single argument"
     generatePythonExpr expr
   ArgKwStarred expr -> do
-    emitWarning $ "**kwargs unpacking at " <> formatSpan span <> 
+    emitWarning $ "**kwargs unpacking at " <> formatSpan spanInfo <> 
       " is not fully supported, treating as single argument"
     generatePythonExpr expr
 
@@ -1265,16 +1261,18 @@ generateFStringExpr segments = do
     compileSegment (PythonFStringExpr expr) = do
       cppExpr <- generatePythonExpr expr
       addInclude "<string>"
-      pure $ toStringExpr cppExpr
+      exprType <- refinePythonExprType ("f-string expression at " <> formatSpan (locSpan expr)) expr CppAuto
+      pure $ toStringExpr exprType cppExpr
     
-    toStringExpr cppExpr = case cppExpr of
+    toStringExpr exprType cppExpr = case cppExpr of
       CppLiteral (CppStringLit _) -> cppExpr
-      CppVar _ -> cppExpr
-      _ -> CppCall (CppVar "std::to_string") [cppExpr]
+      _ -> case stripTypeQualifiers exprType of
+        CppString -> cppExpr
+        _ -> CppCall (CppVar "std::to_string") [cppExpr]
 
 
 generateJoinedStringExpr :: SourceSpan -> [Located PythonExpr] -> CppCodeGen CppExpr
-generateJoinedStringExpr span segments = do
+generateJoinedStringExpr spanInfo segments = do
   addInclude "<sstream>"
   addInclude "<string>"
   compiled <- mapM segmentToString segments
@@ -1284,7 +1282,7 @@ generateJoinedStringExpr span segments = do
       decl = CppDecl (CppVariable builderName builderType Nothing)
       streamStmt expr = CppExprStmt (CppBinary "<<" builderVar expr)
       body = decl : map streamStmt compiled ++ [CppReturn (Just (CppCall (CppMember builderVar "str") []))]
-  emitInfo $ "Joined string at " <> formatSpan span <> " lowered via std::ostringstream"
+  emitInfo $ "Joined string at " <> formatSpan spanInfo <> " lowered via std::ostringstream"
   pure $ CppCall (CppLambda [] body) []
   where
     segmentToString located =
@@ -1295,7 +1293,7 @@ generateJoinedStringExpr span segments = do
 
 
 generatePythonExpr :: Located PythonExpr -> CppCodeGen CppExpr
-generatePythonExpr (Located span expr) = case expr of
+generatePythonExpr (Located spanInfo expr) = case expr of
   PyLiteral lit -> case lit of
     PyFString segments -> generateFStringExpr segments
     _ -> return $ CppLiteral $ mapPythonLiteral lit
@@ -1382,7 +1380,7 @@ generatePythonExpr (Located span expr) = case expr of
           manyArgs -> do
             let chainedOutput =
                   foldl
-                    (\acc expr -> CppBinary "<<" (CppBinary "<<" acc expr) (CppLiteral (CppStringLit " ")))
+                    (\acc argExpr -> CppBinary "<<" (CppBinary "<<" acc argExpr) (CppLiteral (CppStringLit " ")))
                     (CppVar "std::cout")
                     (init manyArgs)
             return $ CppBinary "<<" (CppBinary "<<" chainedOutput (last manyArgs)) (CppVar "std::endl")
@@ -1406,12 +1404,12 @@ generatePythonExpr (Located span expr) = case expr of
         cppArgs <- mapM generatePythonArgument args
         return $ CppCall cppFunc cppArgs
   PyAsyncCall func args -> do
-    emitWarning $ "'async' call at " <> formatSpan span <> " is lowered to a synchronous call"
+    emitWarning $ "'async' call at " <> formatSpan spanInfo <> " is lowered to a synchronous call"
     cppFunc <- generatePythonExpr func
     cppArgs <- mapM generatePythonArgument args
     return $ CppCall cppFunc cppArgs
   PyList _ -> do
-    (_, vectorExpr) <- generatePythonListLiteral (Located span expr)
+    (_, vectorExpr) <- generatePythonListLiteral (Located spanInfo expr)
     return vectorExpr
   PyTuple exprs -> do
     generatePythonTupleLiteral exprs
@@ -1423,25 +1421,25 @@ generatePythonExpr (Located span expr) = case expr of
   PyLambda params body -> do
     generatePythonLambda params body
   PyListComp element comprehensions -> do
-    generatePythonListComprehension span element comprehensions
+    generatePythonListComprehension spanInfo element comprehensions
   PySetComp element comprehensions -> do
     emitWarning "PySetComp branch reached!"
-    generatePythonSetComprehension span element comprehensions
+    generatePythonSetComprehension spanInfo element comprehensions
   PyDictComp keyExpr valueExpr comprehensions -> do
-    generatePythonDictComprehension span keyExpr valueExpr comprehensions
+    generatePythonDictComprehension spanInfo keyExpr valueExpr comprehensions
   PyGenComp element comprehensions -> do
-    generatePythonGeneratorExpression span element comprehensions
+    generatePythonGeneratorExpression spanInfo element comprehensions
   PyNamedExpr target valueExpr ->
-    generateWalrusExpr span target valueExpr
+    generateWalrusExpr spanInfo target valueExpr
   PyJoinedStr segments ->
-    generateJoinedStringExpr span segments
+    generateJoinedStringExpr spanInfo segments
   PyFormatSpec inner ->
     renderExprAsString inner
   PyStarred inner -> do
-    emitWarning $ "Unpacking expression at " <> formatSpan span <> " is treated as a plain value"
+    emitWarning $ "Unpacking expression at " <> formatSpan spanInfo <> " is treated as a plain value"
     generatePythonExpr inner
   PyAwait awaitedExpr -> do
-    emitWarning $ "Python 'await' expression at " <> formatSpan span <> " is executed synchronously"
+    emitWarning $ "Python 'await' expression at " <> formatSpan spanInfo <> " is executed synchronously"
     generatePythonExpr awaitedExpr
   PyIfExp testExpr thenExpr elseExpr -> do
     -- Python ternary: `thenExpr if testExpr else elseExpr`
@@ -1496,7 +1494,7 @@ generatePythonExpr (Located span expr) = case expr of
                 actual -> renderCppType actual
               baseMessage = "Python membership operator '" <> operatorLabel
                             <> "' over " <> renderedType <> " requires runtime fallback"
-              message = baseMessage <> " at " <> formatSpan span
+              message = baseMessage <> " at " <> formatSpan spanInfo
           strict <- gets (cgcStrictMode . cgsConfig)
           action <- if strict
             then runtimeAbortStmt message
@@ -1550,15 +1548,15 @@ generatePythonExpr (Located span expr) = case expr of
               membership = CppBinary "!=" findCall (CppVar endVar)
           pure $ wrapLambda [haystackDecl, needleDecl, endDecl] (applyNegation membership)
 
-        bindConstRef name expr =
-          CppDecl (CppVariable name (CppConst (CppReference CppAuto)) (Just expr))
+        bindConstRef varName varExpr =
+          CppDecl (CppVariable varName (CppConst (CppReference CppAuto)) (Just varExpr))
 
         wrapLambda bindings resultExpr =
           CppCall (CppLambda [] (bindings ++ [CppReturn (Just resultExpr)])) []
 
-        applyNegation expr
-          | isNegated = CppUnary "!" expr
-          | otherwise = expr
+        applyNegation testExpr
+          | isNegated = CppUnary "!" testExpr
+          | otherwise = testExpr
 
         classifyMembershipTarget ty = case ty of
           CppString -> Just MembershipStringCategory
@@ -1583,20 +1581,20 @@ generatePythonExpr (Located span expr) = case expr of
     lowerStringMultiplication primary secondary = do
       firstAttempt <- attempt primary secondary
       case firstAttempt of
-        Just expr -> pure (Just expr)
+        Just expr' -> pure (Just expr')
         Nothing -> attempt secondary primary
       where
-        attempt (stringExpr, stringType, stringValue) (countExpr, countType, countValue)
-          | isStringOperand stringExpr stringType
-          , isIntegralOperand countExpr countType = do
+        attempt (strExpr, strType, strValue) (cntExpr, cntType, cntValue)
+          | isStringOperand strExpr strType
+          , isIntegralOperand cntExpr cntType = do
               ensureStringRepeatHelper
-              materialized <- materializeStringOperand stringExpr stringType stringValue
-              let countArg = CppCast CppLongLong countValue
+              materialized <- materializeStringOperand strExpr strType strValue
+              let countArg = CppCast CppLongLong cntValue
               pure $ Just (CppCall (CppVar stringRepeatHelperName) [materialized, countArg])
           | otherwise = pure Nothing
 
     materializeStringOperand :: Located PythonExpr -> CppType -> CppExpr -> CppCodeGen CppExpr
-    materializeStringOperand locatedExpr inferredType valueExpr =
+    materializeStringOperand _locatedExpr inferredType valueExpr =
       case stripTypeQualifiers inferredType of
         ty | isStdStringType ty -> pure valueExpr
         CppPointer inner
@@ -1765,7 +1763,7 @@ generatePythonTupleLiteral exprs = do
   addInclude "<tuple>"
   cppExprs <- mapM generatePythonExpr exprs
   types <- mapM (\e -> pure $ fromMaybe CppAuto (inferPythonExprCppTypeLocated e)) exprs
-  let tupleType = CppClassType "std::tuple" types
+  let _tupleType = CppClassType "std::tuple" types
   return $ CppCall (CppVar "std::make_tuple") cppExprs
 
 -- | Generate C++ code for Python set literals  
@@ -1808,21 +1806,21 @@ generatePythonLambda params bodyExpr = do
 
 -- | Generate C++ code for Python list comprehensions
 generatePythonListComprehension :: SourceSpan -> Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
-generatePythonListComprehension span element comps
+generatePythonListComprehension spanInfo element comps
   | null comps =
-      listComprehensionFallback span "requires at least one comprehension clause"
+      listComprehensionFallback spanInfo "requires at least one comprehension clause"
   | otherwise = do
       addInclude "<vector>"
-      elementType <- inferListElementType span element
+      elementType <- inferListElementType spanInfo element
       builderName <- generateTempVar
       elementExpr <- generatePythonExpr element
       let builderType = CppVector elementType
           builderVar = CppVar builderName
           pushStmt = CppExprStmt (CppCall (CppMember builderVar "push_back") [elementExpr])
-      bodyResult <- buildComprehensionStmts span comps [pushStmt]
+      bodyResult <- buildComprehensionStmts spanInfo comps [pushStmt]
       case bodyResult of
         Left reason ->
-          listComprehensionFallback span reason
+          listComprehensionFallback spanInfo reason
         Right stmtBody -> do
           let initExpr = CppBracedInit builderType []
               builderDecl = CppDecl (CppVariable builderName builderType (Just initExpr))
@@ -1830,28 +1828,28 @@ generatePythonListComprehension span element comps
           pure $ CppCall (CppLambda [] lambdaBody) []
 
 inferListElementType :: SourceSpan -> Located PythonExpr -> CppCodeGen CppType
-inferListElementType span element =
-  inferComprehensionElementType "list comprehension result" span element ensureStdAny
+inferListElementType spanInfo element =
+  inferComprehensionElementType "list comprehension result" spanInfo element ensureStdAny
 
 inferSetElementType :: SourceSpan -> Located PythonExpr -> CppCodeGen CppType
-inferSetElementType span element =
-  inferComprehensionElementType "set comprehension element" span element (pure CppLongLong)
+inferSetElementType spanInfo element =
+  inferComprehensionElementType "set comprehension element" spanInfo element (pure CppLongLong)
 
 inferDictKeyType :: SourceSpan -> Located PythonExpr -> CppCodeGen CppType
-inferDictKeyType span keyExpr =
-  inferComprehensionElementType "dict comprehension key" span keyExpr fallback
+inferDictKeyType spanInfo keyExpr =
+  inferComprehensionElementType "dict comprehension key" spanInfo keyExpr fallback
   where
     fallback = do
       addInclude "<string>"
       pure CppString
 
 inferDictValueType :: SourceSpan -> Located PythonExpr -> CppCodeGen CppType
-inferDictValueType span valueExpr =
-  inferComprehensionElementType "dict comprehension value" span valueExpr (pure CppLongLong)
+inferDictValueType spanInfo valueExpr =
+  inferComprehensionElementType "dict comprehension value" spanInfo valueExpr (pure CppLongLong)
 
 inferComprehensionElementType :: Text -> SourceSpan -> Located PythonExpr -> CppCodeGen CppType -> CppCodeGen CppType
-inferComprehensionElementType label span element fallbackAction = do
-  let context = label <> " at " <> formatSpan span
+inferComprehensionElementType label spanInfo element fallbackAction = do
+  let context = label <> " at " <> formatSpan spanInfo
       defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated element)
   refined <- refinePythonExprType context element defaultType
   let coreType = stripTypeQualifiers refined
@@ -1860,19 +1858,19 @@ inferComprehensionElementType label span element fallbackAction = do
     else pure coreType
 
 listComprehensionFallback :: SourceSpan -> Text -> CppCodeGen CppExpr
-listComprehensionFallback span reason = do
+listComprehensionFallback spanInfo reason = do
   addInclude "<vector>"
   let defaultExpr = CppBracedInit (CppVector CppAuto) []
-  comprehensionFallback span ("Python list comprehension " <> reason) (Just defaultExpr)
+  comprehensionFallback spanInfo ("Python list comprehension " <> reason) (Just defaultExpr)
 
 buildComprehensionStmts :: SourceSpan -> [PythonComprehension] -> [CppStmt] -> CppCodeGen (Either Text [CppStmt])
 buildComprehensionStmts _ [] terminalBody = pure (Right terminalBody)
-buildComprehensionStmts span (comp:rest) terminalBody
+buildComprehensionStmts spanInfo (comp:rest) terminalBody
   | pyCompAsync comp =
       let locText = formatSpan (locSpan (pyCompIter comp))
       in pure (Left ("contains 'async for' clause near " <> locText))
   | otherwise = do
-      innerResult <- buildComprehensionStmts span rest terminalBody
+      innerResult <- buildComprehensionStmts spanInfo rest terminalBody
       case innerResult of
         Left err -> pure (Left err)
         Right innerBody ->
@@ -1907,7 +1905,7 @@ describePattern pat = T.pack (show pat)
 
 
 generateWalrusExpr :: SourceSpan -> Located PythonPattern -> Located PythonExpr -> CppCodeGen CppExpr
-generateWalrusExpr span target valueExpr =
+generateWalrusExpr spanInfo target valueExpr =
   case locValue target of
     PatVar (Identifier name) -> lowerNamed name
     _ -> do
@@ -1915,7 +1913,7 @@ generateWalrusExpr span target valueExpr =
             "Assignment expression target '"
             <> describePattern (locValue target)
             <> "' at "
-            <> formatSpan span
+            <> formatSpan spanInfo
             <> " is not supported"
       reportNotImplemented message
       generatePythonExpr valueExpr
@@ -1923,7 +1921,7 @@ generateWalrusExpr span target valueExpr =
     lowerNamed name = do
       symtab <- gets cgsSymbolTable
       let defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated valueExpr)
-          context = "assignment expression to " <> name <> " at " <> formatSpan span
+          context = "assignment expression to " <> name <> " at " <> formatSpan spanInfo
       refinedType <- refinePythonExprType context valueExpr defaultType
       case HM.lookup name symtab of
         Nothing -> do
@@ -1931,7 +1929,7 @@ generateWalrusExpr span target valueExpr =
                 "Assignment expression introduces new name '"
                 <> name
                 <> "' at "
-                <> formatSpan span
+                <> formatSpan spanInfo
                 <> " which is not yet supported"
           reportNotImplemented message
           generatePythonExpr valueExpr
@@ -1945,8 +1943,8 @@ generateWalrusExpr span target valueExpr =
           pure $ CppCall (CppLambda [] [decl, assignStmt, returnStmt]) []
 
 comprehensionFallback :: SourceSpan -> Text -> Maybe CppExpr -> CppCodeGen CppExpr
-comprehensionFallback span baseMessage defaultExpr = do
-  let message = baseMessage <> " at " <> formatSpan span
+comprehensionFallback spanInfo baseMessage defaultExpr = do
+  let message = baseMessage <> " at " <> formatSpan spanInfo
   reportNotImplemented message
   strict <- gets (cgcStrictMode . cgsConfig)
   if strict
@@ -1957,21 +1955,21 @@ comprehensionFallback span baseMessage defaultExpr = do
 
 -- | Generate C++ code for Python set comprehensions
 generatePythonSetComprehension :: SourceSpan -> Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
-generatePythonSetComprehension span element comps
+generatePythonSetComprehension spanInfo element comps
   | null comps =
-      setComprehensionFallback span "requires at least one comprehension clause"
+      setComprehensionFallback spanInfo "requires at least one comprehension clause"
   | otherwise = do
       addInclude "<set>"
-      elementType <- inferSetElementType span element
+      elementType <- inferSetElementType spanInfo element
       builderName <- generateTempVar
       elementExpr <- generatePythonExpr element
       let builderType = CppClassType "std::set" [elementType]
           builderVar = CppVar builderName
           insertStmt = CppExprStmt (CppCall (CppMember builderVar "insert") [elementExpr])
-      bodyResult <- buildComprehensionStmts span comps [insertStmt]
+      bodyResult <- buildComprehensionStmts spanInfo comps [insertStmt]
       case bodyResult of
         Left reason ->
-          setComprehensionFallback span reason
+          setComprehensionFallback spanInfo reason
         Right stmtBody -> do
           let initExpr = CppBracedInit builderType []
               builderDecl = CppDecl (CppVariable builderName builderType (Just initExpr))
@@ -1979,16 +1977,16 @@ generatePythonSetComprehension span element comps
           pure $ CppCall (CppLambda [] lambdaBody) []
 
 setComprehensionFallback :: SourceSpan -> Text -> CppCodeGen CppExpr
-setComprehensionFallback span reason = do
+setComprehensionFallback spanInfo reason = do
   addInclude "<set>"
   let defaultExpr = CppBracedInit (CppClassType "std::set" [CppAuto]) []
-  comprehensionFallback span ("Python set comprehension " <> reason) (Just defaultExpr)
+  comprehensionFallback spanInfo ("Python set comprehension " <> reason) (Just defaultExpr)
 
 -- | Generate C++ code for Python dict comprehensions
 generatePythonDictComprehension :: SourceSpan -> Located PythonExpr -> Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
-generatePythonDictComprehension span keyExpr valueExpr comps
+generatePythonDictComprehension spanInfo keyExpr valueExpr comps
   | null comps =
-      dictComprehensionFallback span "requires at least one comprehension clause"
+      dictComprehensionFallback spanInfo "requires at least one comprehension clause"
   | otherwise = do
       addInclude "<map>"
       
@@ -2008,18 +2006,18 @@ generatePythonDictComprehension span keyExpr valueExpr comps
           Left _ -> pure ()
         ) comps
       
-      keyType <- inferDictKeyType span keyExpr
-      valueType <- inferDictValueType span valueExpr
+      keyType <- inferDictKeyType spanInfo keyExpr
+      valueType <- inferDictValueType spanInfo valueExpr
       builderName <- generateTempVar
       cppKey <- generatePythonExpr keyExpr
       cppValue <- generatePythonExpr valueExpr
       let builderType = CppClassType "std::map" [keyType, valueType]
           builderVar = CppVar builderName
           assignment = CppExprStmt (CppBinary "=" (CppIndex builderVar cppKey) cppValue)
-      bodyResult <- buildComprehensionStmts span comps [assignment]
+      bodyResult <- buildComprehensionStmts spanInfo comps [assignment]
       case bodyResult of
         Left reason ->
-          dictComprehensionFallback span reason
+          dictComprehensionFallback spanInfo reason
         Right stmtBody -> do
           let initExpr = CppBracedInit builderType []
               builderDecl = CppDecl (CppVariable builderName builderType (Just initExpr))
@@ -2027,19 +2025,19 @@ generatePythonDictComprehension span keyExpr valueExpr comps
           pure $ CppCall (CppLambda [] lambdaBody) []
 
 dictComprehensionFallback :: SourceSpan -> Text -> CppCodeGen CppExpr
-dictComprehensionFallback span reason = do
+dictComprehensionFallback spanInfo reason = do
   addInclude "<map>"
   let defaultExpr = CppBracedInit (CppClassType "std::map" [CppString, CppAuto]) []
-  comprehensionFallback span ("Python dict comprehension " <> reason) (Just defaultExpr)
+  comprehensionFallback spanInfo ("Python dict comprehension " <> reason) (Just defaultExpr)
 
 
 generatePythonGeneratorExpression :: SourceSpan -> Located PythonExpr -> [PythonComprehension] -> CppCodeGen CppExpr
-generatePythonGeneratorExpression span element comps = do
+generatePythonGeneratorExpression spanInfo element comps = do
   emitWarning $
     "Python generator expression at "
-    <> formatSpan span
+    <> formatSpan spanInfo
     <> " is eagerly materialized into std::vector"
-  generatePythonListComprehension span element comps
+  generatePythonListComprehension spanInfo element comps
 
 generateSliceAccess :: Located PythonExpr -> CppExpr -> Located PythonSlice -> CppCodeGen CppExpr
 generateSliceAccess targetExpr cppTarget locatedSlice =
@@ -2110,7 +2108,7 @@ inferPythonExprCppTypeLocated expr = do
     Nothing -> do
       -- If that fails, try to look up in the symbol table for variables
       case locValue expr of
-        PyVar (Identifier name) -> do
+        PyVar (Identifier _name) -> do
           -- Note: We can't access the symbol table here since this is a pure function
           -- This will be handled in refinePythonExprType instead
           Nothing
@@ -2215,19 +2213,19 @@ promoteToTrueDivOperand expr = case expr of
 
 -- | Format an argument for printing, converting Python bool values to "True"/"False"
 formatPrintArgument :: Located PythonArgument -> CppCodeGen CppExpr
-formatPrintArgument (Located span argument) =
+formatPrintArgument (Located spanInfo argument) =
   case argument of
     ArgPositional expr -> formatExpr expr
     ArgKeyword name expr -> do
       emitWarning $ "Keyword argument '" <> (\(Identifier n) -> n) name
-        <> "' at " <> formatSpan span <> " is being treated as positional argument"
+        <> "' at " <> formatSpan spanInfo <> " is being treated as positional argument"
       formatExpr expr
     ArgStarred expr -> do
-      emitWarning $ "*args unpacking at " <> formatSpan span
+      emitWarning $ "*args unpacking at " <> formatSpan spanInfo
         <> " is not fully supported, treating as single argument"
       generatePythonExpr expr
     ArgKwStarred expr -> do
-      emitWarning $ "**kwargs unpacking at " <> formatSpan span
+      emitWarning $ "**kwargs unpacking at " <> formatSpan spanInfo
         <> " is not fully supported, treating as single argument"
       generatePythonExpr expr
   where
@@ -2570,12 +2568,12 @@ adaptReturnStmts expectedReturnType = map adaptStmt
         CppIf cond (adaptReturnStmts expectedReturnType thenStmts) (adaptReturnStmts expectedReturnType elseStmts)
       CppWhile cond bodyStmts ->
         CppWhile cond (adaptReturnStmts expectedReturnType bodyStmts)
-      CppFor init cond step bodyStmts ->
-        CppFor init cond step (adaptReturnStmts expectedReturnType bodyStmts)
+      CppFor initStmt cond step bodyStmts ->
+        CppFor initStmt cond step (adaptReturnStmts expectedReturnType bodyStmts)
       CppForRange var iter bodyStmts ->
         CppForRange var iter (adaptReturnStmts expectedReturnType bodyStmts)
-      CppSwitch expr cases ->
-        CppSwitch expr (map adaptCase cases)
+      CppSwitch switchExpr cases ->
+        CppSwitch switchExpr (map adaptCase cases)
       CppTry tryStmts catches finallyStmts ->
         CppTry (adaptReturnStmts expectedReturnType tryStmts)
                (map adaptCatch catches)
@@ -2655,7 +2653,7 @@ generatePythonFunction funcDef = do
   addDeclaration $ CppFunction funcName returnType cppParams finalBodyStmts
 
 refineAnnotatedReturnType :: Text -> CppType -> [Located PythonStmt] -> CppCodeGen CppType
-refineAnnotatedReturnType funcName annotatedType body =
+refineAnnotatedReturnType _funcName annotatedType _body =
   pure annotatedType
 
 -- | Infer the appropriate C++ return type for a Python function when no annotation is provided
@@ -2769,21 +2767,21 @@ refinePythonExprType context locatedExpr defaultType = do
           -- Slice access returns container type
           emitInfo $ context <> ": slice access on " <> T.pack (show objType) <> ", returning container type"
           pure objType
-    PyListComp element comps -> do
+    PyListComp element _comps -> do
       -- Handle list comprehensions explicitly
       addInclude "<vector>"
       elementType <- inferListElementType (locSpan locatedExpr) element
       let listType = CppVector elementType
       emitInfo $ context <> ": list comprehension detected, using type " <> T.pack (show listType)
       pure listType
-    PySetComp element comps -> do
+    PySetComp element _comps -> do
       -- Handle set comprehensions explicitly  
       addInclude "<set>"
       elementType <- inferSetElementType (locSpan locatedExpr) element
       let setType = CppClassType "std::set" [elementType]
       emitInfo $ context <> ": set comprehension detected, using type " <> T.pack (show setType)
       pure setType
-    PyDictComp keyExpr valueExpr comps -> do
+    PyDictComp keyExpr valueExpr _comps -> do
       -- Handle dict comprehensions explicitly
       addInclude "<map>"
       keyType <- inferDictKeyType (locSpan locatedExpr) keyExpr
@@ -2857,25 +2855,25 @@ mapComparisonOp = \case
   OpIn -> error "mapComparisonOp: OpIn requires special handling"
   OpNotIn -> error "mapComparisonOp: OpNotIn requires special handling"
 
-generatePythonInteropBindings :: Text -> CppCodeGen ()
-generatePythonInteropBindings moduleName =
-  emitInfo $ "Python interop bindings for module: " <> moduleName
+_generatePythonInteropBindings :: Text -> CppCodeGen ()
+_generatePythonInteropBindings _moduleName =
+  emitInfo $ "Python interop bindings for module: " <> _moduleName
 
 mapPythonType :: Located PythonTypeExpr -> CppCodeGen CppType
-mapPythonType (Located span expr) =
+mapPythonType (Located spanInfo expr) =
   case expr of
-    TypeName qn -> mapTypeName span qn
+    TypeName qn -> mapTypeName spanInfo qn
     TypeVar name ->
-      fallbackToStdAny span expr ("type variable '" <> name <> "' is not supported in C++ generation")
-    TypeSubscript base args -> mapTypeSubscript span base args
-    TypeTuple elems -> mapTypeTuple span elems
-    TypeUnion members -> mapTypeUnion span members
-    TypeOptional inner -> mapTypeOptional span inner
-    TypeCallable args ret -> mapTypeCallable span args ret
-    TypeLiteral literalExpr -> mapTypeLiteral span literalExpr
+      fallbackToStdAny spanInfo expr ("type variable '" <> name <> "' is not supported in C++ generation")
+    TypeSubscript base args -> mapTypeSubscript spanInfo base args
+    TypeTuple elems -> mapTypeTuple spanInfo elems
+    TypeUnion members -> mapTypeUnion spanInfo members
+    TypeOptional inner -> mapTypeOptional spanInfo inner
+    TypeCallable args ret -> mapTypeCallable spanInfo args ret
+    TypeLiteral literalExpr -> mapTypeLiteral spanInfo literalExpr
 
 mapTypeName :: SourceSpan -> QualifiedName -> CppCodeGen CppType
-mapTypeName span qn = do
+mapTypeName _spanInfo qn = do
   let canonical = canonicalQualifiedName qn
       simple = T.toLower (identifierText (qnName qn))
   case () of
@@ -2902,7 +2900,7 @@ mapTypeName span qn = do
           pure (CppClassType (qualifiedNameToCpp qn) [])
 
 mapTypeSubscript :: SourceSpan -> Located PythonTypeExpr -> [Located PythonTypeExpr] -> CppCodeGen CppType
-mapTypeSubscript span base args =
+mapTypeSubscript spanInfo base args =
   case locValue base of
     TypeName qn ->
       let canonical = canonicalQualifiedName qn
@@ -2919,7 +2917,7 @@ mapTypeSubscript span base args =
           | simple == "final" || canonical `elem` finalNames -> mapFinal
           | otherwise -> mapGenericType qn
     _ ->
-      fallbackToStdAny span (TypeSubscript base args) "uses an unsupported base expression"
+      fallbackToStdAny spanInfo (TypeSubscript base args) "uses an unsupported base expression"
   where
     listNames = ["typing.list", "builtins.list", "typing.sequence", "typing.mutablesequence"]
     tupleNames = ["typing.tuple"]
@@ -2941,17 +2939,17 @@ mapTypeSubscript span base args =
         elemType <- ensureStdAny
         emitWarning $
           "Type constructor 'list' used without element type at "
-          <> formatSpan span <> "; assuming std::vector<std::any>"
+          <> formatSpan spanInfo <> "; assuming std::vector<std::any>"
         pure $ CppVector elemType
       _ -> do
         addInclude "<vector>"
         elemType <- ensureStdAny
         emitWarning $
           "Type constructor 'list' expects exactly one argument at "
-          <> formatSpan span <> "; using std::vector<std::any>"
+          <> formatSpan spanInfo <> "; using std::vector<std::any>"
         pure $ CppVector elemType
 
-    mapTupleFromArgs = mapTypeTuple span args
+    mapTupleFromArgs = mapTypeTuple spanInfo args
 
     mapSet = case args of
       [elemExpr] -> do
@@ -2963,14 +2961,14 @@ mapTypeSubscript span base args =
         elemType <- ensureStdAny
         emitWarning $
           "Type constructor 'set' used without element type at "
-          <> formatSpan span <> "; assuming std::unordered_set<std::any>"
+          <> formatSpan spanInfo <> "; assuming std::unordered_set<std::any>"
         pure $ CppClassType "std::unordered_set" [elemType]
       _ -> do
         addInclude "<unordered_set>"
         elemType <- ensureStdAny
         emitWarning $
           "Type constructor 'set' expects exactly one argument at "
-          <> formatSpan span <> "; using std::unordered_set<std::any>"
+          <> formatSpan spanInfo <> "; using std::unordered_set<std::any>"
         pure $ CppClassType "std::unordered_set" [elemType]
 
     mapDict = case args of
@@ -2985,37 +2983,37 @@ mapTypeSubscript span base args =
         valueType <- ensureStdAny
         emitWarning $
           "Type constructor 'dict' expects two arguments at "
-          <> formatSpan span <> "; using std::unordered_map<std::string, std::any>"
+          <> formatSpan spanInfo <> "; using std::unordered_map<std::string, std::any>"
         pure $ CppUnorderedMap CppString valueType
 
     mapOptionalFromArgs = case args of
-      [innerExpr] -> mapTypeOptional span innerExpr
-      _ -> fallbackToStdAny span (TypeSubscript base args) "expects exactly one type argument"
+      [innerExpr] -> mapTypeOptional spanInfo innerExpr
+      _ -> fallbackToStdAny spanInfo (TypeSubscript base args) "expects exactly one type argument"
 
-    mapUnionFromArgs = mapTypeUnion span args
+    mapUnionFromArgs = mapTypeUnion spanInfo args
 
     mapCallableFromArgs =
       case unsnoc args of
-        Just (paramArgs, retExpr) -> mapTypeCallable span paramArgs retExpr
-        Nothing -> fallbackToStdAny span (TypeSubscript base args) "expects argument list and return type"
+        Just (paramArgs, retExpr) -> mapTypeCallable spanInfo paramArgs retExpr
+        Nothing -> fallbackToStdAny spanInfo (TypeSubscript base args) "expects argument list and return type"
 
     unsnoc [] = Nothing
     unsnoc xs = Just (init xs, last xs)
 
     mapAnnotated = case args of
       (primary:_) -> mapPythonType primary
-      _ -> fallbackToStdAny span (TypeSubscript base args) "expects at least one underlying type"
+      _ -> fallbackToStdAny spanInfo (TypeSubscript base args) "expects at least one underlying type"
 
     mapFinal = case args of
       (primary:_) -> mapPythonType primary
-      _ -> fallbackToStdAny span (TypeSubscript base args) "expects a concrete type argument"
+      _ -> fallbackToStdAny spanInfo (TypeSubscript base args) "expects a concrete type argument"
 
     mapGenericType qn = do
       argTypes <- mapM mapPythonType args
       pure $ CppClassType (qualifiedNameToCpp qn) argTypes
 
 mapTypeTuple :: SourceSpan -> [Located PythonTypeExpr] -> CppCodeGen CppType
-mapTypeTuple span elems =
+mapTypeTuple _spanInfo elems =
   case elems of
     [elemExpr, ellipsisExpr] | isEllipsisTypeExpr (locValue ellipsisExpr) -> do
       elemType <- mapPythonType elemExpr
@@ -3027,7 +3025,7 @@ mapTypeTuple span elems =
       pure $ CppTuple tupleTypes
 
 mapTypeUnion :: SourceSpan -> [Located PythonTypeExpr] -> CppCodeGen CppType
-mapTypeUnion span members = do
+mapTypeUnion spanInfo members = do
   let (noneMembers, otherMembers) = partition (isNoneTypeExpr . locValue) members
   mapped <- mapM mapPythonType otherMembers
   let uniqueMapped = nub mapped
@@ -3044,14 +3042,14 @@ mapTypeUnion span members = do
       addInclude "<variant>"
       pure $ CppOptional (CppVariant more)
     (False, []) ->
-      fallbackToStdAny span (TypeUnion members) "did not provide any supported member types"
+      fallbackToStdAny spanInfo (TypeUnion members) "did not provide any supported member types"
     (False, [single]) -> pure single
     (False, more) -> do
       addInclude "<variant>"
       pure $ CppVariant more
 
 mapTypeOptional :: SourceSpan -> Located PythonTypeExpr -> CppCodeGen CppType
-mapTypeOptional span inner = do
+mapTypeOptional _spanInfo inner = do
   innerType <- mapPythonType inner
   addInclude "<optional>"
   pure $ CppOptional innerType
@@ -3073,43 +3071,43 @@ mapTypeCallable _ args ret = do
         _ -> (:[]) <$> mapPythonType argExpr
 
 mapTypeLiteral :: SourceSpan -> Located PythonExpr -> CppCodeGen CppType
-mapTypeLiteral span literalExpr =
+mapTypeLiteral spanInfo literalExpr =
   case inferPythonExprCppTypeLocated literalExpr of
     Just ty -> pure ty
-    Nothing -> fallbackToStdAny span (TypeLiteral literalExpr) "could not infer literal type"
+    Nothing -> fallbackToStdAny spanInfo (TypeLiteral literalExpr) "could not infer literal type"
 
 mapPythonParameter :: Located PythonParameter -> CppCodeGen CppParam
-mapPythonParameter (Located span param) =
+mapPythonParameter (Located spanInfo param) =
   case param of
     ParamNormal (Identifier name) mtype mdefault -> do
       baseType <- maybe (pure CppAuto) mapPythonType mtype
-      refinedType <- applyParameterAnnotations span name baseType
+      refinedType <- applyParameterAnnotations spanInfo name baseType
       cppDefault <- mapM generatePythonExpr mdefault
       pure $ CppParam name refinedType cppDefault
     ParamKwOnly (Identifier name) mtype mdefault -> do
       baseType <- maybe (pure CppAuto) mapPythonType mtype
-      refinedType <- applyParameterAnnotations span name baseType
+      refinedType <- applyParameterAnnotations spanInfo name baseType
       cppDefault <- mapM generatePythonExpr mdefault
       pure $ CppParam name refinedType cppDefault
     ParamVarArgs (Identifier name) mtype -> do
       elemType <- maybe ensureStdAny mapPythonType mtype
       addInclude "<vector>"
       let vectorType = CppVector elemType
-      refinedType <- applyParameterAnnotations span name vectorType
+      refinedType <- applyParameterAnnotations spanInfo name vectorType
       pure $ CppParam name refinedType Nothing
     ParamKwArgs (Identifier name) mtype -> do
       valueType <- maybe ensureStdAny mapPythonType mtype
       addInclude "<unordered_map>"
       addInclude "<string>"
       let mapType = CppUnorderedMap CppString valueType
-      refinedType <- applyParameterAnnotations span name mapType
+      refinedType <- applyParameterAnnotations spanInfo name mapType
       pure $ CppParam name refinedType Nothing
 
 applyParameterAnnotations :: SourceSpan -> Text -> CppType -> CppCodeGen CppType
-applyParameterAnnotations span name baseType
+applyParameterAnnotations spanInfo name baseType
   | T.null name = pure baseType
   | otherwise =
-      let locatedCommon = Located span (CEVar (Identifier name))
+      let locatedCommon = Located spanInfo (CEVar (Identifier name))
           exprKey = fingerprintCommonExpr locatedCommon
           context = "parameter " <> name
       in lookupAndApplyAnnotations context exprKey baseType
@@ -3172,54 +3170,54 @@ isEllipsisTypeExpr = \case
   _ -> False
 
 fallbackToStdAny :: SourceSpan -> PythonTypeExpr -> Text -> CppCodeGen CppType
-fallbackToStdAny span expr reason = do
+fallbackToStdAny spanInfo expr reason = do
   addInclude "<any>"
   emitWarning $
     "Python type annotation '" <> describeTypeExpr expr <> "' at "
-    <> formatSpan span <> " " <> reason <> "; falling back to std::any"
+    <> formatSpan spanInfo <> " " <> reason <> "; falling back to std::any"
   pure stdAnyType
 
-generatePythonAssignment :: Located PythonPattern -> CppExpr -> CppCodeGen ()
-generatePythonAssignment (Located _ pattern) cppExpr = case pattern of
+_generatePythonAssignment :: Located PythonPattern -> CppExpr -> CppCodeGen ()
+_generatePythonAssignment (Located _ pattern) cppExpr = case pattern of
   PatVar (Identifier name) -> do
     addDeclaration $ CppVariable name CppAuto (Just cppExpr)
   _ -> reportNotImplemented "TODO: Complex pattern assignment"
 
 generatePythonClassMember :: Text -> Located PythonStmt -> CppCodeGen (Maybe CppDecl)
-generatePythonClassMember className located@(Located span stmt) =
+generatePythonClassMember className _located@(Located spanInfo stmt) =
   case stmt of
     PyFuncDef funcDef
       | pyFuncIsAsync funcDef ->
-          Just <$> generateClassMethodFallback className funcDef span "async methods are not supported"
+          Just <$> generateClassMethodFallback className funcDef spanInfo "async methods are not supported"
       | not (null (pyFuncDecorators funcDef)) ->
-          Just <$> generateClassMethodFallback className funcDef span "decorated methods are not yet supported"
+          Just <$> generateClassMethodFallback className funcDef spanInfo "decorated methods are not yet supported"
       | otherwise ->
           Just <$> generateClassMethodDecl className funcDef
     PyAsyncFuncDef funcDef ->
-      Just <$> generateClassMethodFallback className funcDef span "async methods are not supported"
+      Just <$> generateClassMethodFallback className funcDef spanInfo "async methods are not supported"
     PyAssign targets expr ->
       case targets of
         [Located _ (PatVar (Identifier name))] ->
           Just <$> generateClassAttributeDecl className name expr
         _ ->
-          classMemberUnsupported className span "assignment target is not supported"
+          classMemberUnsupported className spanInfo "assignment target is not supported"
     PyAnnAssign target typeExpr mValue ->
       case locValue target of
         PatVar (Identifier name) ->
           Just <$> generateAnnotatedClassAttributeDecl className name typeExpr mValue
         _ ->
-          classMemberUnsupported className span "annotated assignment target is not supported"
+          classMemberUnsupported className spanInfo "annotated assignment target is not supported"
     PyExprStmt expr
       | isDocstringExpr expr -> pure Nothing
       | otherwise ->
-          classMemberUnsupported className span "expression statement is not supported at class scope"
+          classMemberUnsupported className spanInfo "expression statement is not supported at class scope"
     PyPass ->
       pure Nothing
     _ ->
-      classMemberUnsupported className span ("statement '" <> T.pack (show stmt) <> "' is not supported at class scope")
+      classMemberUnsupported className spanInfo ("statement '" <> T.pack (show stmt) <> "' is not supported at class scope")
 
 extractBaseClassName :: Located PythonExpr -> CppCodeGen (Maybe Text)
-extractBaseClassName (Located span expr) =
+extractBaseClassName (Located spanInfo expr) =
   case expr of
     PyVar (Identifier name) -> pure (Just name)
     PyConst qn -> pure (Just (qualifiedNameToCpp qn))
@@ -3231,7 +3229,7 @@ extractBaseClassName (Located span expr) =
     _ -> do
       emitWarning $
         "Unsupported class base expression '" <> T.pack (show expr) <> "' at "
-        <> formatSpan span <> "; skipping base"
+        <> formatSpan spanInfo <> "; skipping base"
       pure Nothing
 
 generateClassMethodDecl :: Text -> PythonFuncDef -> CppCodeGen CppDecl
@@ -3251,11 +3249,11 @@ generateClassMethodDecl className funcDef = do
       pure $ CppMethod methodName returnType cppParams sanitizedBody False
 
 generateClassMethodFallback :: Text -> PythonFuncDef -> SourceSpan -> Text -> CppCodeGen CppDecl
-generateClassMethodFallback className funcDef span reason = do
+generateClassMethodFallback className funcDef spanInfo reason = do
   let methodName = identifierText (pyFuncName funcDef)
       (paramsWithoutSelf, _) = dropSelfParameter (pyFuncParams funcDef)
       baseMessage = "Python class '" <> className <> "', method '" <> methodName <> "' " <> reason
-      fullMessage = baseMessage <> " at " <> formatSpan span <> " (runtime fallback)"
+      fullMessage = baseMessage <> " at " <> formatSpan spanInfo <> " (runtime fallback)"
   cppParams <- mapM mapPythonParameter paramsWithoutSelf
   emitWarning fullMessage
   abortStmt <- runtimeAbortStmt fullMessage
@@ -3282,11 +3280,11 @@ generateAnnotatedClassAttributeDecl _ name typeExpr mValue = do
   pure $ CppVariable name cppType cppValue
 
 classMemberUnsupported :: Text -> SourceSpan -> Text -> CppCodeGen (Maybe CppDecl)
-classMemberUnsupported className span reason = do
+classMemberUnsupported className spanInfo reason = do
   fallbackName <- generateTempVar
   let methodName = "__fluxus_class_fallback_" <> fallbackName
       baseMessage = "Python class '" <> className <> "': " <> reason
-      fullMessage = baseMessage <> " at " <> formatSpan span <> " (runtime fallback)"
+      fullMessage = baseMessage <> " at " <> formatSpan spanInfo <> " (runtime fallback)"
   emitWarning fullMessage
   abortStmt <- runtimeAbortStmt fullMessage
   let body = [CppComment baseMessage, abortStmt]

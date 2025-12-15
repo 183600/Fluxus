@@ -39,11 +39,9 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Yaml (decodeFileEither, prettyPrintParseException)
 import System.Environment (lookupEnv)
-import System.FilePath
 import System.Directory
 import Control.Monad (unless, when)
 import Data.Char (toLower)
-import Control.Monad.IO.Class
 import Data.Maybe (fromMaybe)
 import Data.List (isPrefixOf, nub)
 import GHC.Generics (Generic)

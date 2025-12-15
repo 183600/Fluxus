@@ -35,16 +35,14 @@ module Fluxus.Compiler.Driver
   , applyPlatformDefaults
   ) where
 
-import Data.List (intercalate, foldl', partition, isPrefixOf, dropWhileEnd)
+import Data.List (intercalate, partition, isPrefixOf, dropWhileEnd)
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Except
 import Control.Monad.IO.Class
 import Control.Monad (when, unless, forM_, foldM)
 import Control.Exception (IOException, try)
-import Data.Maybe (fromMaybe, maybeToList, catMaybes)
-import Data.Either (partitionEithers)
-import Data.Int (Int64)
+import Data.Maybe (fromMaybe, catMaybes)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
@@ -100,7 +98,6 @@ import Fluxus.Analysis.CommonExprLowering
   , LoweringIssue(..)
   , renderLoweringIssue
   , isUnsupportedIssue
-  , renderCommonExpr
   , renderLocatedCommonExpr
   , fingerprintCommonExpr
   )
@@ -121,8 +118,8 @@ import Fluxus.Parser.Python.Parser (runPythonParser)
 import Fluxus.Parser.Go.Lexer (runGoLexer)
 import Fluxus.Parser.Go.Parser (runGoParser, GoParseError(..))
 import Fluxus.CodeGen.CPP
-  ( CppUnit(..), CppDecl(..), CppStmt(..), CppExpr(..), CppType(..)
-  , CppLiteral(..), CppParam(..), CppCase(..), CppGenConfig(..)
+  ( CppUnit(..)
+  , CppGenConfig(..)
   , CppCodeGenResult(..), CppCodeGenFailure(..)
   , generateCppWithAnnotations
   )
@@ -802,9 +799,9 @@ typeInferenceStage ast = do
         addWarning $ TypeWarning ("Failed to infer types for " <> textShow failures <> " expressions") systemSpan
       return ast
   where
-    inferExpression env (okCount, errCount) locatedExpr =
+    inferExpression inferEnv (okCount, errCount) locatedExpr =
       let expr = locValue locatedExpr
-      in case runTypeInference env $ do
+      in case runTypeInference inferEnv $ do
         result <- inferType expr
         solveConstraints
         st <- get
