@@ -136,6 +136,7 @@ test-suite fluxus-test
     Test.Fluxus.Utils.GraphSpec
     Test.Fluxus.Compiler.ConfigSpec
     Test.Fluxus.Compiler.DriverSpec
+    Test.Fluxus.QuickCheckProperties
   build-depends:
     base,
     containers,

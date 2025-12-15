@@ -602,7 +602,7 @@ goRuntimeTests =
             , "fmt.Println(prefix + suffix)"
             ]
       , grtExpectedStdOut = "fluxus\n"
-      , grtPendingReason = Just "String concatenation between Go strings is not yet mapped to std::string operations"
+      , grtPendingReason = Nothing
       }
   , GoRuntimeTest
       { grtName = "compiles go subtraction chain"
@@ -681,7 +681,7 @@ goRuntimeTests =
             [ "fmt.Println(compute())"
             ]
       , grtExpectedStdOut = "6\n"
-      , grtPendingReason = Just "Go helper functions relying on loops are not yet emitted correctly by the C++ backend"
+      , grtPendingReason = Nothing
       }
   , GoRuntimeTest
       { grtName = "compiles go modulo operation"
@@ -750,7 +750,7 @@ goRuntimeTests =
             , "fmt.Println(count)"
             ]
       , grtExpectedStdOut = "4\n"
-      , grtPendingReason = Just "Go nested while-loop translation is not yet supported in the C++ backend"
+      , grtPendingReason = Nothing
       }
   , GoRuntimeTest
       { grtName = "compiles go iterative factorial function"
@@ -823,7 +823,7 @@ goRuntimeTests =
             [ "fmt.Println(repeat(\"ha\", 3))"
             ]
       , grtExpectedStdOut = "hahaha\n"
-      , grtPendingReason = Just "String accumulation in loops is not yet implemented with std::string in the C++ backend"
+      , grtPendingReason = Nothing
       }
   , GoRuntimeTest
       { grtName = "compiles go difference compute function"
@@ -840,7 +840,7 @@ goRuntimeTests =
             [ "fmt.Println(computeDifference())"
             ]
       , grtExpectedStdOut = "35\n"
-      , grtPendingReason = Just "Go for-loop state mutation translation is not yet implemented in the C++ backend"
+      , grtPendingReason = Nothing
       }
   , GoRuntimeTest
       { grtName = "compiles go arithmetic precedence"

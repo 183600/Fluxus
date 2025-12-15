@@ -19,7 +19,6 @@ import Fluxus.AST.Common
 import Control.Monad.State
 import Control.Monad.Reader
 import Data.Text (Text)
-import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Set (Set)

@@ -2242,7 +2242,7 @@ pythonRuntimeTests =
           , "    print(\"non-positive\")"
           ]
       , prtExpectedStdOut = "positive\n"
-      , prtPendingReason = Just "Identifiers that embed Python keywords (like is_positive) are not handled by the lexer"
+      , prtPendingReason = Nothing
       }
   , PythonRuntimeTest
       { prtName = "compiles countdown loop"
@@ -2258,14 +2258,14 @@ pythonRuntimeTests =
   , PythonRuntimeTest
       { prtName = "compiles list returning function"
       , prtSource =
-          [ "def pair_sum(a, b):"
+          [ "def pair_sum(a: int, b: int) -> int:"
           , "    values = [a, b, a + b]"
           , "    return values[2]"
           , ""
           , "print(pair_sum(3, 4))"
           ]
       , prtExpectedStdOut = "7\n"
-      , prtPendingReason = Just "List literal parsing is not yet implemented in the Python frontend"
+      , prtPendingReason = Nothing
       }
   , PythonRuntimeTest
       { prtName = "compiles string repetition helper"
@@ -2320,7 +2320,7 @@ pythonRuntimeTests =
           , "print(count)"
           ]
       , prtExpectedStdOut = "4\n"
-      , prtPendingReason = Just "Nested while loops are not yet supported in the Python frontend"
+      , prtPendingReason = Nothing
       }
   , PythonRuntimeTest
       { prtName = "compiles if elif chain"
@@ -2355,12 +2355,14 @@ pythonRuntimeTests =
           , "print(count)"
           ]
       , prtExpectedStdOut = "3\n"
-      , prtPendingReason = Just "List literal parsing is not yet implemented in the Python frontend"
+      , prtPendingReason = Nothing
       }
   , PythonRuntimeTest
       { prtName = "compiles min function loop"
       , prtSource =
-          [ "def find_min(values):"
+          [ "from typing import List"
+          , ""
+          , "def find_min(values: List[int]) -> int:"
           , "    smallest = values[0]"
           , "    for value in values:"
           , "        if value < smallest:"
@@ -2370,7 +2372,7 @@ pythonRuntimeTests =
           , "print(find_min([5, 3, 7, 2]))"
           ]
       , prtExpectedStdOut = "2\n"
-      , prtPendingReason = Just "List literal parsing is not yet implemented in the Python frontend"
+      , prtPendingReason = Nothing
       }
   , PythonRuntimeTest
       { prtName = "compiles even counter function"

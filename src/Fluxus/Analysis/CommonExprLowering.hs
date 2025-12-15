@@ -22,7 +22,6 @@ module Fluxus.Analysis.CommonExprLowering
 
 import Data.Either (partitionEithers)
 import Data.Int (Int64)
-import Data.List (foldl')
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (maybeToList, catMaybes)
 import Data.Text (Text)
@@ -167,9 +166,6 @@ collectPythonClass cls =
 collectGoExpressions :: GoPackage -> [Located GoExpr]
 collectGoExpressions goPkg =
   concatMap (concatMap collectGoDecl . goFileDecls) (goPackageFiles goPkg)
-
-collectGoFile :: GoFile -> [Located GoExpr]
-collectGoFile goFile = concatMap collectGoDecl (goFileDecls goFile)
 
 collectGoDecl :: Located GoDecl -> [Located GoExpr]
 collectGoDecl (Located _ decl) = case decl of

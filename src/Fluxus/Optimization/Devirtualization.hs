@@ -159,7 +159,7 @@ recordVirtualCall methodName callInfo = do
 
 -- | Optimize dispatch by resolving virtual calls where possible
 optimizeDispatch :: CommonExpr -> DevirtualizationM CommonExpr
-optimizeDispatch expr@(CECall func args) = do
+optimizeDispatch _expr@(CECall func args) = do
   case locatedValue func of
     CEAttribute obj methodName -> do
       -- Check if this virtual call can be resolved

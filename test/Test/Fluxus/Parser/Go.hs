@@ -1183,14 +1183,17 @@ advancedGoSyntaxSpec = describe "Go Parser - advanced Go syntax" $ do
           other -> expectationFailure $ "unexpected function literal return annotation: " <> show other
         bodyStmts <- extractBlockStatements func
         length bodyStmts `shouldBe` 1
-        case locatedValue (head bodyStmts) of
-          GoReturn [retExpr] ->
-            case locatedValue retExpr of
-              GoBinaryOp OpAdd left right -> do
-                locatedValue left `shouldBe` GoIdent (Identifier "x")
-                locatedValue right `shouldBe` GoLiteral (GoInt 1)
-              other -> expectationFailure $ "expected addition expression, got " <> show other
-          other -> expectationFailure $ "expected return statement, got " <> show other
+        case bodyStmts of
+          (firstStmt:_) ->
+            case locatedValue firstStmt of
+              GoReturn [retExpr] ->
+                case locatedValue retExpr of
+                  GoBinaryOp OpAdd left right -> do
+                    locatedValue left `shouldBe` GoIdent (Identifier "x")
+                    locatedValue right `shouldBe` GoLiteral (GoInt 1)
+                  other -> expectationFailure $ "expected addition expression, got " <> show other
+              other -> expectationFailure $ "expected return statement, got " <> show other
+          [] -> expectationFailure "bodyStmts list is empty"
       other -> expectationFailure $ "expected GoFuncLit, got " <> show other
   where
     pointerSource = T.unlines

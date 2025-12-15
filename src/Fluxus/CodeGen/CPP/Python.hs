@@ -182,17 +182,26 @@ generatePythonStmt scope (Located span stmt) =
       return cppNoop
     PyIf condition thenStmts elseStmts -> do
       cppCond <- generatePythonExpr condition
+      wasInControlFlow <- gets cgsInControlFlow
+      modify $ \s -> s { cgsInControlFlow = True }
       cppThen <- mapM (generatePythonStmt scope) thenStmts
       cppElse <- mapM (generatePythonStmt scope) elseStmts
+      modify $ \s -> s { cgsInControlFlow = wasInControlFlow }
       return $ CppIf cppCond cppThen cppElse
     PyWhile condition bodyStmts _ -> do
       cppCond <- generatePythonExpr condition
+      wasInControlFlow <- gets cgsInControlFlow
+      modify $ \s -> s { cgsInControlFlow = True }
       cppBody <- mapM (generatePythonStmt scope) bodyStmts
+      modify $ \s -> s { cgsInControlFlow = wasInControlFlow }
       return $ CppWhile cppCond cppBody
     PyFor (Located _ (PatVar (Identifier varName))) iterExpr bodyStmts _ -> do
       symtab <- gets cgsSymbolTable
       let varAlreadyDeclared = HM.member varName symtab
+      wasInControlFlow <- gets cgsInControlFlow
+      modify $ \s -> s { cgsInControlFlow = True }
       cppBody <- mapM (generatePythonStmt scope) bodyStmts
+      modify $ \s -> s { cgsInControlFlow = wasInControlFlow }
       case locatedValue iterExpr of
         PyCall (Located _ (PyVar (Identifier "range"))) rangeArgs -> do
           unless varAlreadyDeclared $
@@ -430,6 +439,19 @@ generatePythonStmt scope (Located span stmt) =
               updateSymbolTable
               return declarationStmt
 
+    isConstantExpr :: CppExpr -> Bool
+    isConstantExpr expr = case expr of
+      CppLiteral _ -> True
+      CppVar _ -> True
+      CppConditional _ e1 e2 -> isConstantExpr e1 && isConstantExpr e2
+      CppBinary _ e1 e2 -> isConstantExpr e1 && isConstantExpr e2
+      CppUnary _ e -> isConstantExpr e
+      CppCast _ e -> isConstantExpr e
+      CppCall _ args -> all isConstantExpr args
+      CppLambda _ _ -> True
+      CppBracedInit _ exprs -> all isConstantExpr exprs
+      _ -> False
+
     handleRegularAssignment :: PythonScope -> HashMap Text CppType -> Text -> Located PythonExpr -> CppCodeGen CppStmt
     handleRegularAssignment scope' symtab varName locatedExpr = do
       emitInfo $ "handleRegularAssignment for " <> varName <> " with expression type: " <> T.pack (show (locValue locatedExpr))
@@ -451,9 +473,16 @@ generatePythonStmt scope (Located span stmt) =
             else do
               updateSymbolTableWith refinedType
               recordHoistedGlobal varName
-              addDeclaration $ CppVariable varName refinedType (Just cppExpr)
-              emitInfo $ "Initialized module-level variable " <> varName
-              return cppNoop
+              inControlFlow <- gets cgsInControlFlow
+              if inControlFlow || not (isConstantExpr cppExpr)
+                then do
+                  addDeclaration $ CppVariable varName refinedType Nothing
+                  emitInfo $ "Declared module-level variable " <> varName <> " (in control flow or non-constant)"
+                  return assignmentStmt
+                else do
+                  addDeclaration $ CppVariable varName refinedType (Just cppExpr)
+                  emitInfo $ "Initialized module-level variable " <> varName
+                  return cppNoop
         ScopeFunction ->
           if HM.member varName symtab
             then do
@@ -776,7 +805,7 @@ generatePythonStmt scope (Located span stmt) =
           let prefixDecls =
                 if varAlreadyDeclared
                   then []
-                  else [CppDecl (CppVariable varName targetType (Just (CppBracedInit targetType [])))]
+                  else [CppDecl (CppVariable varName targetType Nothing)]
           loopVarName <- generateTempVar
           let assignmentStmt = CppExprStmt (CppBinary "=" (CppVar varName) (CppVar loopVarName))
               loopBody = assignmentStmt : cppBody
@@ -1224,18 +1253,24 @@ generatePythonArgument (Located span arg) = case arg of
 generateFStringExpr :: [PythonFStringSegment] -> CppCodeGen CppExpr
 generateFStringExpr segments = do
   compiled <- mapM compileSegment segments
-  ossName <- generateTempVar
-  addInclude "<sstream>"
-  let ossVar = CppVar ossName
-      ossType = CppClassType "std::ostringstream" []
-      ossDecl = CppDecl (CppVariable ossName ossType Nothing)
-      streamStmts = map (\expr -> CppExprStmt (CppBinary "<<" ossVar expr)) compiled
-      resultExpr = CppCall (CppMember ossVar "str") []
-      lambdaBody = ossDecl : streamStmts ++ [CppReturn (Just resultExpr)]
-  pure $ CppCall (CppLambda [] lambdaBody) []
+  case compiled of
+    [] -> pure $ CppLiteral (CppStringLit "")
+    [single] -> pure single
+    _ -> do
+      addInclude "<string>"
+      let buildExpr = foldl1 (\acc seg -> CppBinary "+" acc seg) compiled
+      pure buildExpr
   where
     compileSegment (PythonFStringLiteral text) = pure $ CppLiteral (CppStringLit text)
-    compileSegment (PythonFStringExpr expr) = generatePythonExpr expr
+    compileSegment (PythonFStringExpr expr) = do
+      cppExpr <- generatePythonExpr expr
+      addInclude "<string>"
+      pure $ toStringExpr cppExpr
+    
+    toStringExpr cppExpr = case cppExpr of
+      CppLiteral (CppStringLit _) -> cppExpr
+      CppVar _ -> cppExpr
+      _ -> CppCall (CppVar "std::to_string") [cppExpr]
 
 
 generateJoinedStringExpr :: SourceSpan -> [Located PythonExpr] -> CppCodeGen CppExpr
@@ -1319,7 +1354,7 @@ generatePythonExpr (Located span expr) = case expr of
         generateComparison op left right
       (ops', exprs') | length ops' + 1 == length exprs' -> do
         let lefts = init exprs'
-            rights = tail exprs'
+            rights = drop 1 exprs'
         comparisons <- sequence [generateComparison op left right | (op, left, right) <- zip3 ops' lefts rights]
         return $ foldl1 (\acc comp -> CppBinary "&&" acc comp) comparisons
       _ -> do
@@ -2104,6 +2139,16 @@ inferPythonExprCppType = \case
   PyJoinedStr _ -> Just CppString
   PyFormatSpec _ -> Just CppString
   PyGenComp _ _ -> Just (CppVector CppAuto)
+  PySubscript obj _ -> do
+    objType <- inferPythonExprCppTypeLocated obj
+    case objType of
+      CppVector elemType -> Just elemType
+      _ -> Nothing
+  PyList elems -> do
+    elemTypes <- mapM inferPythonExprCppTypeLocated elems
+    case elemTypes of
+      [] -> Nothing
+      (t:ts) -> foldM unifyElementType t ts
   _ -> Nothing
 
 inferPythonLiteralType :: PythonLiteral -> Maybe CppType
@@ -2512,6 +2557,66 @@ finallyGuardDecl =
               (CppLiteral (CppBoolLit False)))
         ] False
 
+-- | Adapt return statements to match the expected function return type
+-- by inserting std::any_cast conversions where necessary
+adaptReturnStmts :: CppType -> [CppStmt] -> [CppStmt]
+adaptReturnStmts expectedReturnType = map adaptStmt
+  where
+    adaptStmt :: CppStmt -> CppStmt
+    adaptStmt stmt = case stmt of
+      CppReturn (Just expr) ->
+        CppReturn (Just (adaptReturnExpr expr))
+      CppIf cond thenStmts elseStmts ->
+        CppIf cond (adaptReturnStmts expectedReturnType thenStmts) (adaptReturnStmts expectedReturnType elseStmts)
+      CppWhile cond bodyStmts ->
+        CppWhile cond (adaptReturnStmts expectedReturnType bodyStmts)
+      CppFor init cond step bodyStmts ->
+        CppFor init cond step (adaptReturnStmts expectedReturnType bodyStmts)
+      CppForRange var iter bodyStmts ->
+        CppForRange var iter (adaptReturnStmts expectedReturnType bodyStmts)
+      CppSwitch expr cases ->
+        CppSwitch expr (map adaptCase cases)
+      CppTry tryStmts catches finallyStmts ->
+        CppTry (adaptReturnStmts expectedReturnType tryStmts)
+               (map adaptCatch catches)
+               (adaptReturnStmts expectedReturnType finallyStmts)
+      CppStmtSeq stmts ->
+        CppStmtSeq (adaptReturnStmts expectedReturnType stmts)
+      CppBlock stmts ->
+        CppBlock (adaptReturnStmts expectedReturnType stmts)
+      _ -> stmt
+
+    adaptCase :: CppCase -> CppCase
+    adaptCase (CppCase label stmts) =
+      CppCase label (adaptReturnStmts expectedReturnType stmts)
+    adaptCase (CppDefault stmts) =
+      CppDefault (adaptReturnStmts expectedReturnType stmts)
+
+    adaptCatch :: CppCatch -> CppCatch
+    adaptCatch (CppCatch ty name stmts) =
+      CppCatch ty name (adaptReturnStmts expectedReturnType stmts)
+
+    adaptReturnExpr :: CppExpr -> CppExpr
+    adaptReturnExpr expr =
+      case (needsAnyCast expr, expectedReturnType) of
+        (True, _) | expectedReturnType /= stdAnyType ->
+          CppCall (CppVar ("std::any_cast<" <> renderCppType expectedReturnType <> ">")) [expr]
+        _ -> expr
+
+    needsAnyCast :: CppExpr -> Bool
+    needsAnyCast expr = case expr of
+      CppIndex _ _ -> True
+      CppCall _ _ -> False
+      CppVar _ -> False
+      CppLiteral _ -> False
+      CppBinary _ _ _ -> False
+      CppConditional _ _ _ -> False
+      CppUnary _ _ -> False
+      CppMember _ _ -> False
+      CppPointerMember _ _ -> False
+      CppCast _ _ -> False
+      _ -> False
+
 generatePythonFunction :: PythonFuncDef -> CppCodeGen ()
 generatePythonFunction funcDef = do
   let funcName = (\(Identifier n) -> n) (pyFuncName funcDef)
@@ -2519,7 +2624,12 @@ generatePythonFunction funcDef = do
   -- Map parameters
   cppParams <- mapM mapPythonParameter (pyFuncParams funcDef)
 
-  -- Determine return type
+  -- Generate function body and infer return type with populated symbol table
+  original <- gets cgsSymbolTable
+  registerParameters cppParams
+  bodyStmts <- mapM (generatePythonStmt ScopeFunction) (pyFuncBody funcDef)
+  
+  -- Determine return type after generating body (so symbol table is populated)
   returnType <- case pyFuncReturns funcDef of
     Just typeExpr ->
       if isNoneTypeExpr (locValue typeExpr)
@@ -2530,34 +2640,23 @@ generatePythonFunction funcDef = do
     Nothing
       | funcName == "main" -> return CppInt
       | otherwise -> inferFunctionReturnType funcName (pyFuncBody funcDef)
+  
+  -- Restore original symbol table
+  modify $ \s -> s { cgsSymbolTable = original }
 
-  -- Generate function body
-  bodyStmts <- withFunctionScope $ do
-    registerParameters cppParams
-    mapM (generatePythonStmt ScopeFunction) (pyFuncBody funcDef)
+  -- Adapt return statements to match the function return type
+  let adaptedBodyStmts = adaptReturnStmts returnType bodyStmts
 
   -- Add return statement for main function if needed
   let finalBodyStmts = if funcName == "main" && returnType == CppInt
-                      then bodyStmts ++ [CppReturn (Just (CppLiteral $ CppIntLit 0))]
-                      else bodyStmts
+                      then adaptedBodyStmts ++ [CppReturn (Just (CppLiteral $ CppIntLit 0))]
+                      else adaptedBodyStmts
 
   addDeclaration $ CppFunction funcName returnType cppParams finalBodyStmts
 
 refineAnnotatedReturnType :: Text -> CppType -> [Located PythonStmt] -> CppCodeGen CppType
-refineAnnotatedReturnType funcName annotatedType body
-  | annotatedType == CppVoid = pure CppVoid
-  | otherwise = do
-      let returnExprs = collectReturnExprs body
-      if null returnExprs
-        then pure annotatedType
-        else do
-          refinedTypes <-
-            mapM
-              (\expr -> refinePythonExprType ("annotated return from " <> funcName) expr annotatedType)
-              returnExprs
-          case nub refinedTypes of
-            [] -> pure annotatedType
-            (firstType:_) -> pure firstType
+refineAnnotatedReturnType funcName annotatedType body =
+  pure annotatedType
 
 -- | Infer the appropriate C++ return type for a Python function when no annotation is provided
 inferFunctionReturnType :: Text -> [Located PythonStmt] -> CppCodeGen CppType
@@ -2650,6 +2749,26 @@ refinePythonExprType context locatedExpr defaultType = do
           emitInfo $ context <> ": variable '" <> name <> "' not found in symbol table, using default type " <> T.pack (show defaultType)
           -- Continue with annotation lookup
           lookupAnnotationsIfNeeded
+    PySubscript obj sliceNode -> do
+      -- Handle subscript by looking up the base object type
+      objType <- refinePythonExprType (context <> " (subscript base)") obj CppAuto
+      case locValue sliceNode of
+        SliceIndex _ -> do
+          -- Index access returns element type
+          case objType of
+            CppVector elemType -> do
+              emitInfo $ context <> ": index access on vector, element type is " <> T.pack (show elemType)
+              pure elemType
+            CppString -> do
+              emitInfo $ context <> ": index access on string, element type is char"
+              pure CppChar
+            _ -> do
+              emitInfo $ context <> ": index access on non-vector type " <> T.pack (show objType) <> ", using default"
+              pure defaultType
+        _ -> do
+          -- Slice access returns container type
+          emitInfo $ context <> ": slice access on " <> T.pack (show objType) <> ", returning container type"
+          pure objType
     PyListComp element comps -> do
       -- Handle list comprehensions explicitly
       addInclude "<vector>"

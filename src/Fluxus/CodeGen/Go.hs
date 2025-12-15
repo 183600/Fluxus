@@ -23,7 +23,6 @@ import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.State.Strict (State, evalState, gets, modify)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
-import Data.List (foldl')
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -145,9 +144,9 @@ generateGoCode ast config =
 
 -- | Generate complete module
 generateModule :: GoGenEnv -> PythonModule -> (Text, Text)
-generateModule env pyModule =
-  let imports = generateImports env pyModule
-      bodyLines = runGoGen env (generateModuleBody pyModule)
+generateModule env pyMod =
+  let imports = generateImports env pyMod
+      bodyLines = runGoGen env (generateModuleBody pyMod)
       body = T.unlines bodyLines
   in (imports, body)
 
@@ -165,8 +164,8 @@ generateImports env _pyModule =
 
 -- | Generate module declarations sequentially
 generateModuleBody :: PythonModule -> GoGen [Text]
-generateModuleBody pyModule = do
-  stmtGroups <- mapM generateStatement (pyModuleBody pyModule)
+generateModuleBody pyMod = do
+  stmtGroups <- mapM generateStatement (pyModuleBody pyMod)
   pure (concat stmtGroups)
 
 data GeneratedParam = GeneratedParam

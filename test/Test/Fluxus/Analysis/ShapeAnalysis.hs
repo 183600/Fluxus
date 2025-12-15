@@ -228,7 +228,9 @@ spec = describe "Fluxus.Analysis.ShapeAnalysis" $ do
         Left err -> expectationFailure $ "analysis failed: " <> T.unpack err
         Right (mappings, _) -> do
           length mappings `shouldBe` 2
-          let (_, firstMapping) = head mappings
-              (_, secondMapping) = mappings !! 1
-          cmType firstMapping `shouldBe` "std::unordered_map"
-          cmType secondMapping `shouldBe` "std::array"
+          case mappings of
+            ((_, firstMapping) : _) -> do
+              let (_, secondMapping) = mappings !! 1
+              cmType firstMapping `shouldBe` "std::unordered_map"
+              cmType secondMapping `shouldBe` "std::array"
+            [] -> expectationFailure "mappings list is empty"

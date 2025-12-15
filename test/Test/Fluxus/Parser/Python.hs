@@ -232,9 +232,11 @@ lexerTokensSpec = describe "Python Lexer - tokens coverage" $ do
         case map locatedValue toks of
           [TokenString "hello", TokenFString segments] -> do
             length segments `shouldBe` 1
-            case head segments of
-              FStringLiteralSegment txt _ -> txt `shouldBe` "world"
-              _ -> expectationFailure "Expected literal segment"
+            case segments of
+              (firstSeg:_) -> case firstSeg of
+                FStringLiteralSegment txt _ -> txt `shouldBe` "world"
+                _ -> expectationFailure "Expected literal segment"
+              [] -> expectationFailure "segments list is empty"
           other -> expectationFailure $ "Unexpected tokens: " <> show other
         -- triple-quoted strings
         let input2 = "\"\"\"multi\nline\"\"\""
@@ -376,9 +378,11 @@ parserSpec = describe "Python Parser" $ do
           case locatedValue stmt of
             PyIf _ _ elifBranch -> do
               length elifBranch `shouldBe` 1
-              case locatedValue (head elifBranch) of
-                PyIf _ _ finalElse -> finalElse `shouldSatisfy` (not . null)
-                other -> expectationFailure $ "Expected nested if for elif branch, found " <> show other
+              case elifBranch of
+                (firstElif:_) -> case locatedValue firstElif of
+                  PyIf _ _ finalElse -> finalElse `shouldSatisfy` (not . null)
+                  other -> expectationFailure $ "Expected nested if for elif branch, found " <> show other
+                [] -> expectationFailure "elifBranch list is empty"
             other -> expectationFailure $ "Expected top-level if statement, found " <> show other
         _ -> expectationFailure "Expected single statement"
   
@@ -406,8 +410,9 @@ parserSpec = describe "Python Parser" $ do
             PyAssign _ value -> case locValue value of
               PyDict pairs -> do
                 length pairs `shouldBe` 2
-                let firstPair = head pairs
-                isLiteral (locValue (fst firstPair)) `shouldBe` True
+                case pairs of
+                  (firstPair:_) -> isLiteral (locValue (fst firstPair)) `shouldBe` True
+                  [] -> expectationFailure "pairs list is empty"
               other -> expectationFailure $ "Expected dict literal, found " <> show other
             other -> expectationFailure $ "Expected assignment, found " <> show other
           _ -> expectationFailure "Expected single assignment"
@@ -521,8 +526,11 @@ parserSpec = describe "Python Parser" $ do
                       TypeSubscript base elems -> do
                         expectSimpleTypeName base [] "tuple"
                         length elems `shouldBe` 2
-                        expectSimpleTypeName (head elems) [] "int"
-                        expectSimpleTypeName (elems !! 1) [] "str"
+                        case elems of
+                          (firstElem:_) -> do
+                            expectSimpleTypeName firstElem [] "int"
+                            expectSimpleTypeName (elems !! 1) [] "str"
+                          [] -> expectationFailure "elems list is empty"
                       other -> expectationFailure $ "Expected tuple return annotation, found " <> show other
                     Nothing -> expectationFailure "Expected return annotation"
                 other -> expectationFailure $ "Expected function definition, found " <> show other
@@ -553,8 +561,11 @@ parserSpec = describe "Python Parser" $ do
                 case locValue annType of
                   TypeUnion members -> do
                     length members `shouldBe` 2
-                    expectSimpleTypeName (head members) [] "int"
-                    expectSimpleTypeName (members !! 1) [] "None"
+                    case members of
+                      (firstMember:_) -> do
+                        expectSimpleTypeName firstMember [] "int"
+                        expectSimpleTypeName (members !! 1) [] "None"
+                      [] -> expectationFailure "members list is empty"
                   other -> expectationFailure $ "Expected TypeUnion, found " <> show other
               other -> expectationFailure $ "Expected annotated assignment, found " <> show other
             _ -> expectationFailure "Expected single annotated assignment"
@@ -573,8 +584,11 @@ parserSpec = describe "Python Parser" $ do
                       case locValue argsNode of
                         TypeTuple elems -> do
                           length elems `shouldBe` 2
-                          expectSimpleTypeName (head elems) [] "int"
-                          expectSimpleTypeName (elems !! 1) [] "str"
+                          case elems of
+                            (firstElem:secondElem:_) -> do
+                              expectSimpleTypeName firstElem [] "int"
+                              expectSimpleTypeName secondElem [] "str"
+                            _ -> expectationFailure "Expected at least 2 elements in tuple"
                         other -> expectationFailure $ "Expected tuple argument list, found " <> show other
                       expectSimpleTypeName retNode [] "bool"
                     other -> expectationFailure $ "Expected Callable annotation, found " <> show other
@@ -724,15 +738,18 @@ parserSpec = describe "Python Parser" $ do
             PyMatch subject cases -> do
               locValue subject `shouldBe` PyVar (Identifier "value")
               length cases `shouldBe` 2
-              let firstClause = locatedValue (head cases)
-                  secondClause = locatedValue (cases !! 1)
-              case locValue (pyCasePattern firstClause) of
-                PatLiteral (PyInt 0) -> pure ()
-                other -> expectationFailure $ "Expected literal pattern, found " <> show other
-              case locValue (pyCasePattern secondClause) of
-                PatVar (Identifier name) -> name `shouldBe` "other"
-                other -> expectationFailure $ "Expected capture pattern, found " <> show other
-              map (length . pyCaseBody . locatedValue) cases `shouldSatisfy` all (>= 1)
+              case cases of
+                (firstCase:secondCase:_) -> do
+                  let firstClause = locatedValue firstCase
+                      secondClause = locatedValue secondCase
+                  case locValue (pyCasePattern firstClause) of
+                    PatLiteral (PyInt 0) -> pure ()
+                    other -> expectationFailure $ "Expected literal pattern, found " <> show other
+                  case locValue (pyCasePattern secondClause) of
+                    PatVar (Identifier name) -> name `shouldBe` "other"
+                    other -> expectationFailure $ "Expected capture pattern, found " <> show other
+                  map (length . pyCaseBody . locatedValue) cases `shouldSatisfy` all (>= 1)
+                _ -> expectationFailure "Expected at least 2 cases"
             other -> expectationFailure $ "Expected match statement, found " <> show other
           _ -> expectationFailure "Expected single statement"
 
@@ -796,9 +813,11 @@ parserSpec = describe "Python Parser" $ do
                   locValue classExpr `shouldBe` PyVar (Identifier "Point")
                   map locValue posArgs `shouldBe` [PatVar (Identifier "x")]
                   length kwArgs `shouldBe` 1
-                  let (kwName, kwPattern) = head kwArgs
-                  kwName `shouldBe` Identifier "y"
-                  locValue kwPattern `shouldBe` PatVar (Identifier "y_val")
+                  case kwArgs of
+                    ((kwName, kwPattern):_) -> do
+                      kwName `shouldBe` Identifier "y"
+                      locValue kwPattern `shouldBe` PatVar (Identifier "y_val")
+                    _ -> expectationFailure "Expected at least 1 keyword argument"
                 other -> expectationFailure $ "Expected class pattern, found " <> show other
             other -> expectationFailure $ "Expected single case match, found " <> show other
           _ -> expectationFailure "Expected single match statement"

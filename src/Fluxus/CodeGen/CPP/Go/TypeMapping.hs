@@ -6,7 +6,6 @@ module Fluxus.CodeGen.CPP.Go.TypeMapping
   , collectCppTypeIncludes
   ) where
 
-import Data.List (foldl')
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Set as Set

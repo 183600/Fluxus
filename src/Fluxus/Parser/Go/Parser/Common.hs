@@ -103,8 +103,8 @@ instance TraversableStream GoTokenStream where
     let GoTokenStream input = pstateInput posState
         (pre, post) = splitAt offset input
         newPos = case (post, pre) of
-          (Located span _ : _, _) -> toSourcePosStart span
-          ([], Located span _ : _) -> toSourcePosEnd span
+          (Located srcSpan _ : _, _) -> toSourcePosStart srcSpan
+          ([], Located srcSpan _ : _) -> toSourcePosEnd srcSpan
           _ -> pstateSourcePos posState
         ctx = case post of
           (Located _ tok : _) -> Just (T.unpack (showGoToken tok))
@@ -149,17 +149,19 @@ zeroWidthSpan (SourceSpan file start _) = SourceSpan file start start
 spanFromTokens :: [Located a] -> SourceSpan
 spanFromTokens [] = defaultSpan "<unknown>"
 spanFromTokens tokens =
-  mergeSpans (locSpan (head tokens)) (locSpan (last tokens))
+  case (tokens, reverse tokens) of
+    (firstToken:_, lastToken:_) -> mergeSpans (locSpan firstToken) (locSpan lastToken)
+    _ -> defaultSpan "<unknown>"
 
 spanAtOffset :: Text -> [Located a] -> Int -> SourceSpan
 spanAtOffset fallback tokens offset =
   case drop offset tokens of
-    (Located span _ : _) -> span
+    (Located srcSpan _ : _) -> srcSpan
     [] ->
       case reverse tokens of
-        (Located span _ : _) ->
-          let endPos = spanEnd span
-          in SourceSpan (spanFilename span) endPos endPos
+        (Located srcSpan _ : _) ->
+          let endPos = spanEnd srcSpan
+          in SourceSpan (spanFilename srcSpan) endPos endPos
         [] -> defaultSpan fallback
 
 located :: GoParser m a -> GoParser m (Located a)
@@ -171,7 +173,7 @@ located parser = do
       (consumed, _) = splitAt consumedCount before
       spanLoc = case consumed of
         [] -> case before of
-          (Located span _ : _) -> zeroWidthSpan span
+          (Located srcSpan _ : _) -> zeroWidthSpan srcSpan
           [] -> defaultSpan "<unknown>"
         _  -> spanFromTokens consumed
   pure $ Located spanLoc result

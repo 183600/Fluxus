@@ -73,9 +73,9 @@ runCompilerMain config args = do
   result <- runCompiler config $ do
     setupCompilerEnvironment
     
-    if length inputFiles == 1
-      then compileFile (head inputFiles)
-      else compileProject inputFiles
+    case inputFiles of
+      [singleFile] -> compileFile singleFile
+      _ -> compileProject inputFiles
   
   case result of
     Left compilerError -> do

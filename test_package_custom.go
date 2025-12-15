@@ -1,4 +1,0 @@
-package mypackage
-
-func MyFunction() {
-}

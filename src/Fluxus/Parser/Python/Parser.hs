@@ -164,9 +164,11 @@ parseAssignment = do
 
     coalescePatterns :: [Located PythonPattern] -> Located PythonPattern
     coalescePatterns [single] = single
-    coalescePatterns pats =
-      let combinedSpan = mergeSpans (locSpan (head pats)) (locSpan (last pats))
+    coalescePatterns pats@(firstPat:_) =
+      let lastPat = Prelude.last pats
+          combinedSpan = mergeSpans (locSpan firstPat) (locSpan lastPat)
       in Located combinedSpan (PatTuple pats)
+    coalescePatterns [] = error "coalescePatterns: empty list"
 
     parseAssignmentChain :: [Located PythonPattern] -> PythonParser PythonStmt
     parseAssignmentChain acc = do
@@ -1151,10 +1153,11 @@ parseSliceComponents startExpr = do
   pure $ SliceSlice startExpr stopExpr stepExpr
 
 wrapExtSlice :: [Located PythonSlice] -> Located PythonSlice
-wrapExtSlice slices =
-  let spanStart = locSpan (head slices)
-      spanEnd = locSpan (last slices)
+wrapExtSlice slices@(firstSlice:_) =
+  let spanStart = locSpan firstSlice
+      spanEnd = locSpan (Prelude.last slices)
   in Located (mergeSpans spanStart spanEnd) (SliceExtSlice slices)
+wrapExtSlice [] = error "wrapExtSlice: empty list"
 
 parseAttributeTrailer :: PythonParser (Located PythonExpr -> Located PythonExpr)
 parseAttributeTrailer = do
@@ -1517,10 +1520,11 @@ parseTypeUnionExpr = do
     [] -> pure first
     _  -> pure $ wrapUnion (first : rest)
   where
-    wrapUnion types =
-      let startSpan = locSpan (head types)
-          endSpan = locSpan (last types)
+    wrapUnion types@(firstType:_) =
+      let startSpan = locSpan firstType
+          endSpan = locSpan (Prelude.last types)
       in Located (mergeSpans startSpan endSpan) (TypeUnion types)
+    wrapUnion [] = error "wrapUnion: empty list"
 
 parseTypePostfixExpr :: PythonParser (Located PythonTypeExpr)
 parseTypePostfixExpr = do

@@ -27,7 +27,6 @@ import Control.Monad (void)
 import Control.Monad.Logger (MonadLogger)
 import Data.Functor (($>))
 import Data.Maybe (fromMaybe)
-import Data.Text (Text)
 import qualified Data.Text as T
 import Text.Megaparsec (lookAhead)
 import qualified Text.Megaparsec as MP

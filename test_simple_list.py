@@ -1,2 +1,2 @@
-values = [1, 2, 3]
-print(values[0])
+values = [3, 4, 7]
+print(values[2])

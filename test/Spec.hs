@@ -21,6 +21,7 @@ import qualified Test.Fluxus.CodeGen.CPP as CodeGenTests
 import qualified Test.Fluxus.Utils.GraphSpec as GraphUtilsTests
 import qualified Test.Fluxus.Compiler.ConfigSpec as ConfigTests
 import qualified Test.Fluxus.Compiler.DriverSpec as DriverTests
+import qualified Test.Fluxus.QuickCheckProperties as QuickCheckTests
 
 import Fluxus.Utils.Debug (DebugLevel(..), setDebugLevel, getDebugLevel, debugLog, debugBreak)
 
@@ -55,6 +56,7 @@ fullSpec =
     GraphUtilsTests.spec
     ConfigTests.spec
     DriverTests.spec
+    QuickCheckTests.spec
 
 ensureProgressFormat :: [String] -> [String]
 ensureProgressFormat args
