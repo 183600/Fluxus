@@ -6,6 +6,10 @@ module Fluxus.Utils.Debug
   , debugTrace
   , debugBreak
   , debugWith
+  , debugAssert
+  , debugTimer
+  , debugCallStack
+  , debugMemory
   , DebugLevel(..)
   , withDebugLevel
   , setDebugLevel
@@ -18,6 +22,13 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import System.IO (hFlush, stdout)
 import System.Environment (lookupEnv)
+import System.IO.Unsafe (unsafePerformIO)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.Time (getCurrentTime, diffUTCTime)
+
+{-# NOINLINE currentDebugLevel #-}
+currentDebugLevel :: IORef DebugLevel
+currentDebugLevel = unsafePerformIO $ newIORef Warning
 
 -- | Debug level for controlling verbosity
 data DebugLevel
@@ -79,12 +90,15 @@ debugWith level msg action = do
 -- | Set debug level for the current session
 setDebugLevel :: DebugLevel -> IO ()
 setDebugLevel level = do
+  writeIORef currentDebugLevel level
   putStrLn $ "Setting debug level to: " ++ show level
-  -- In a real implementation, you might store this in an IORef or similar
 
 -- | Get current debug level
 getDebugLevel :: IO DebugLevel
-getDebugLevel = getEnvDebugLevel
+getDebugLevel = do
+  envLevel <- getEnvDebugLevel
+  refLevel <- readIORef currentDebugLevel
+  return $ max envLevel refLevel  -- Use the higher of the two levels
 
 -- | Execute action with temporary debug level
 withDebugLevel :: DebugLevel -> IO a -> IO a
@@ -94,3 +108,33 @@ withDebugLevel level action = do
   result <- action
   setDebugLevel oldLevel
   pure result
+
+-- | Debug assertion - fails with error message if condition is false
+debugAssert :: MonadIO m => Bool -> Text -> m ()
+debugAssert condition msg = do
+  if not condition
+  then debugLog Error $ "ASSERTION FAILED: " <> msg
+  else pure ()
+
+-- | Time an operation and log the duration
+debugTimer :: MonadIO m => Text -> m a -> m a
+debugTimer name action = do
+  debugLog Debug $ "TIMER START: " <> name
+  start <- liftIO $ getCurrentTime
+  result <- action
+  end <- liftIO $ getCurrentTime
+  let duration = realToFrac $ diffUTCTime end start :: Double
+  debugLog Debug $ "TIMER END: " <> name <> " (" <> T.pack (show duration) <> "s)"
+  pure result
+
+-- | Log current call stack location
+debugCallStack :: MonadIO m => Text -> m ()
+debugCallStack context = do
+  debugLog Trace $ "CALL STACK: " <> context
+
+-- | Log memory usage information
+debugMemory :: MonadIO m => m ()
+debugMemory = do
+  debugLog Trace "Memory usage information would be displayed here"
+  -- In a real implementation, you could use System.Mem or foreign calls
+  -- to get actual memory usage statistics

@@ -15,7 +15,7 @@ import Fluxus.AST.Python
 import Fluxus.AST.Common
 
 safeHead :: [a] -> a
-safeHead [] = error "safeHead: empty list (test invariant violated)"
+safeHead [] = Prelude.error "safeHead: empty list (test invariant violated)"
 safeHead (x:_) = x
 
 parseModuleFrom :: Text -> Either String PythonModule

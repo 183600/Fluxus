@@ -1,10 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Main where
+module Main (main) where
 
 import Criterion.Main
-import qualified Data.HashMap.Strict as HashMap
+import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
+
 
 import Fluxus.AST.Common
 import Fluxus.AST.Python
@@ -49,8 +50,8 @@ ownershipWorkload exprs =
 fallbackWorkload :: CommonExpr -> CommonExpr
 fallbackWorkload expr = fst (runSmartFallback (optimizeWithFallback expr))
 
-sampleTypeEnv :: HashMap.HashMap Identifier Type
-sampleTypeEnv = HashMap.fromList
+sampleTypeEnv :: Map.Map Identifier Type
+sampleTypeEnv = Map.fromList
   [ (Identifier "sum_three", TFunction [TInt 32, TInt 32, TInt 32] (TInt 32))
   , (Identifier "scale", TFunction [TFloat 64, TFloat 64] (TFloat 64))
   , (Identifier "flag", TBool)
@@ -99,10 +100,16 @@ sampleFallbackExpr =
 -------------------------------------------------------------------------------
 
 pythonCodegenWorkload :: PythonAST -> CppUnit
-pythonCodegenWorkload ast = generateCpp benchCppConfig (Left ast)
+pythonCodegenWorkload ast = 
+  case generateCpp benchCppConfig (Left ast) of
+    Right result -> cgrUnit result
+    Left _ -> error "Code generation failed"
 
 goCodegenWorkload :: GoAST -> CppUnit
-goCodegenWorkload ast = generateCpp benchCppConfig (Right ast)
+goCodegenWorkload ast = 
+  case generateCpp benchCppConfig (Right ast) of
+    Right result -> cgrUnit result
+    Left _ -> error "Code generation failed"
 
 benchCppConfig :: CppGenConfig
 benchCppConfig = CppGenConfig
@@ -171,13 +178,13 @@ goSampleAST = GoAST packageDef
       }
     helperDef = GoFunction
       { goFuncName = Just (Identifier "double")
-      , goFuncParams = [GoParam (Identifier "x") (Just (GoTypeName (Identifier "int"))) Nothing]
-      , goFuncResults = [GoParamAnonymous (GoTypeName (Identifier "int"))]
+      , goFuncParams = [GoField [Identifier "x"] (noLoc (GoBasicType (Identifier "int"))) Nothing]
+      , goFuncResults = [GoField [] (noLoc (GoBasicType (Identifier "int"))) Nothing]
       , goFuncBody = Just (noLoc (GoBlock
-          [ noLoc (GoReturn (Just (noLoc (GoBinaryOp "*"
+          [ noLoc (GoReturn [noLoc (GoBinaryOp OpMul
               (noLoc (GoIdent (Identifier "x")))
               (noLoc (GoLiteral (GoInt 2)))
-            ))))
+            )])
           ]))
       }
     mainDef = GoFunction
@@ -185,7 +192,7 @@ goSampleAST = GoAST packageDef
       , goFuncParams = []
       , goFuncResults = []
       , goFuncBody = Just (noLoc (GoBlock
-          [ noLoc (GoAssign False [noLoc (GoIdent (Identifier "value"))]
+          [ noLoc (GoAssign [noLoc (GoIdent (Identifier "value"))]
               [noLoc (GoCall (noLoc (GoIdent (Identifier "double")))
                 [noLoc (GoLiteral (GoInt 21))])])
           , noLoc (GoExprStmt (noLoc (GoCall (noLoc (GoSelector (noLoc (GoIdent (Identifier "fmt"))) (Identifier "Println")))

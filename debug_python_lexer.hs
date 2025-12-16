@@ -1,61 +1,62 @@
 #!/usr/bin/env runhaskell
 
--- | Debug program for the Python lexer in Fluxus
--- This program tests the lexer with various Python expressions
-
 {-# LANGUAGE OverloadedStrings #-}
 
+-- | Debug utility for Python lexer
 module Main (main) where
 
-import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Void (Void)
-import Fluxus.Parser.Python.Lexer (runPythonLexer, PythonToken)
+import qualified Data.Text.IO as TIO
+import System.Environment (getArgs)
+import Fluxus.Parser.Python.Lexer
+import Fluxus.Utils.Debug
 import Fluxus.AST.Common (Located(..))
-import Text.Megaparsec (ParseErrorBundle)
 
--- | Test the lexer with a given input
-testLexer :: Text -> Text -> IO ()
-testLexer testName input = do
-    putStrLn $ "=== Testing: " ++ T.unpack testName ++ " ==="
-    putStrLn $ "Input: " ++ T.unpack input
-    putStrLn "Tokens:"
-    
-    case runPythonLexer "test.py" input of
-        Left err -> do
-            putStrLn $ "ERROR: " ++ show (err :: ParseErrorBundle Text Void)
-        Right lexerTokens -> do
-            putStrLn $ "SUCCESS: Found " ++ show (length lexerTokens) ++ " tokens"
-            mapM_ printToken lexerTokens
-    putStrLn ""
-
--- | Print a token
-printToken :: Located PythonToken -> IO ()
-printToken locatedToken = putStrLn $ "  " ++ show locatedToken
-
--- | Test cases for Python expressions
 main :: IO ()
 main = do
-    putStrLn "Python Lexer Debug Test"
-    putStrLn "======================="
-    putStrLn ""
-    
-    -- Test case 1: Simple print with number
-    testLexer "print(42)" "print(42)"
-    
-    -- Test case 2: Simple print with string
-    testLexer "print(\"Hello\")" "print(\"Hello\")"
-    
-    -- Test case 3: Multiple statements
-    testLexer "Multiple statements" "print(42)\nprint(\"Hello\")"
-    
-    -- Test case 4: Function definition
-    testLexer "Function definition" "def foo():\n    return 42"
-    
-    -- Test case 5: Variable assignment
-    testLexer "Variable assignment" "x = 42"
-    
-    -- Test case 6: Expression with operator
-    testLexer "Expression with operator" "1 + 2 * 3"
-    
-    putStrLn "Test completed!"
+  args <- getArgs
+  case args of
+    [] -> do
+      putStrLn "Usage: debug_python_lexer <filename>"
+      putStrLn "  Debug Python lexer on the specified file"
+    [filename] -> do
+      content <- TIO.readFile filename
+      putStrLn $ "Debugging Python lexer for: " ++ filename
+      putStrLn $ "Content length: " ++ show (T.length content) ++ " characters"
+      putStrLn ""
+      
+      setDebugLevel Debug
+      debugLog Debug $ "Starting lexer debug for file: " <> T.pack filename
+      
+      case runPythonLexer (T.pack filename) content of
+        Left err -> do
+          putStrLn "Lexer error:"
+          print err
+        Right tokens -> do
+          putStrLn $ "Successfully lexed " ++ show (length tokens) ++ " tokens"
+          putStrLn ""
+          mapM_ printToken tokens
+          
+          debugLog Debug $ "Lexer debug completed for file: " <> T.pack filename
+    _ -> do
+      putStrLn "Usage: debug_python_lexer <filename>"
+      putStrLn "  Debug Python lexer on the specified file"
+
+printToken :: Located PythonToken -> IO ()
+printToken (Located tokenSpan token) = do
+  putStr $ "Token at " ++ show tokenSpan ++ ": "
+  case token of
+    TokenKeyword kw -> putStrLn $ "Keyword " ++ show kw
+    TokenIdent ident -> putStrLn $ "Identifier " ++ T.unpack ident
+    TokenString str -> putStrLn $ "String \"" ++ T.unpack str ++ "\""
+    TokenFString segments -> putStrLn $ "F-String with " ++ show (length segments) ++ " segments"
+    TokenNumber num isFloat -> putStrLn $ "Number " ++ T.unpack num ++ " (float=" ++ show isFloat ++ ")"
+    TokenBytes bytes -> putStrLn $ "Bytes b\"" ++ T.unpack bytes ++ "\""
+    TokenOperator op -> putStrLn $ "Operator " ++ show op
+    TokenDelimiter delim -> putStrLn $ "Delimiter " ++ show delim
+    TokenNewline -> putStrLn "Newline"
+    TokenIndent level -> putStrLn $ "Indent " ++ show level
+    TokenDedent level -> putStrLn $ "Dedent " ++ show level
+    TokenComment commentText -> putStrLn $ "Comment #" ++ T.unpack commentText
+    TokenEOF -> putStrLn "EOF"
+    TokenError err -> putStrLn $ "Error: " ++ T.unpack err

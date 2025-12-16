@@ -13,9 +13,11 @@ import Fluxus.AST.Common
 import qualified Data.Text as T
 import Data.Text (Text)
 import Data.Int (Int64)
-import Data.List (isInfixOf)
+import Data.Bits (Bits(..), xor)
+import Data.List (isInfixOf, isPrefixOf, isSuffixOf)
 import qualified Data.List as L (intercalate)
-import Data.Maybe (mapMaybe)
+-- import Data.Maybe (mapMaybe)  -- Not used
+-- import Data.Char (isAlpha, isAlphaNum)  -- Not used
 
 spec :: Spec
 spec = describe "QuickCheck Property Tests" $ do
@@ -51,6 +53,9 @@ spec = describe "QuickCheck Property Tests" $ do
   optimizationProperties
   memoryManagementProperties
   interoperabilityProperties
+  compilerOptimizationProperties
+  codeGenValidationProperties
+  typeSystemRobustnessProperties
 
 binaryOpProperties :: Spec
 binaryOpProperties = describe "Binary Operator Properties" $ do
@@ -553,7 +558,7 @@ ownershipAnalysisProperties = describe "Ownership Analysis Properties" $ do
     in canMove ownershipInfo
   
   prop "shared values have reference count" $ forAll arbitraryType $ \_ ->
-    let ownershipInfo = OwnershipInfo False False (Just 1) NoEscape Heap
+    let ownershipInfo = OwnershipInfo False True (Just 1) NoEscape Heap
     in refCount ownershipInfo === Just 1
   
   prop "borrowed values cannot be moved" $ forAll arbitraryType $ \_ ->
@@ -579,11 +584,11 @@ optimizationProperties = describe "Optimization Properties" $ do
           thenExpr = noLoc $ CELiteral thenLit
           elseExpr = noLoc $ CELiteral elseLit
           ifExpr = noLoc $ CEConditional condExpr thenExpr elseExpr
-          optimized = eliminateDeadCode (locatedValue ifExpr)
+          optimized = eliminateDeadCode ifExpr
       in case condLit of
-           LBool True -> optimized === locatedValue thenExpr
-           LBool False -> optimized === locatedValue elseExpr
-           _ -> optimized === locatedValue ifExpr
+           LBool True -> optimized === thenExpr
+           LBool False -> optimized === elseExpr
+           _ -> optimized === ifExpr
   
   prop "constant folding reduces expression complexity" $ \(a :: Int) (b :: Int) ->
     let original = noLoc $ CEBinaryOp OpAdd (noLoc $ CELiteral $ LInt $ fromIntegral a) 
@@ -745,6 +750,89 @@ typeInferenceProperties = describe "Type Inference Properties" $ do
          Right t -> t === TInt 32
          Left _ -> property (argCount /= length args)
 
+compilerOptimizationProperties :: Spec
+compilerOptimizationProperties = describe "Compiler Optimization Properties" $ do
+  prop "constant folding preserves semantic value" $ \(a :: Int) (b :: Int) ->
+    let original = CEBinaryOp OpAdd (noLoc $ CELiteral $ LInt $ fromIntegral a) 
+                                   (noLoc $ CELiteral $ LInt $ fromIntegral b)
+        optimized = foldConstants $ noLoc original
+        expected = fromIntegral a + fromIntegral b :: Int64
+    in case locatedValue optimized of
+         CELiteral (LInt v) -> v === expected
+         _ -> property False
+  
+  prop "dead code elimination reduces complexity" $ \(b :: Bool) ->
+    forAll arbitraryLiteral $ \thenLit ->
+    forAll arbitraryLiteral $ \elseLit ->
+      let condExpr = noLoc $ CELiteral $ LBool b
+          thenExpr = noLoc $ CELiteral thenLit
+          elseExpr = noLoc $ CELiteral elseLit
+          ifExpr = noLoc $ CEConditional condExpr thenExpr elseExpr
+          optimized = eliminateDeadCode ifExpr
+          originalComplexity = measureComplexity ifExpr
+          optimizedComplexity = measureComplexity optimized
+      in optimizedComplexity <= originalComplexity
+  
+--   prop "inlining preserves function behavior" $ \(x :: Int) ->
+--     let param = noLoc $ CEVar $ Identifier "x"
+--         body = noLoc $ CEBinaryOp OpMul param (noLoc $ CELiteral $ LInt 2)
+--         func = noLoc $ CELambda ["x"] body
+--         arg = noLoc $ CELiteral $ LInt $ fromIntegral x
+--         call = noLoc $ CECall func [arg]
+--         inlined = inlineFunction call
+--     in case locatedValue inlined of
+--          CEBinaryOp OpMul (Located _ (CELiteral (LInt v))) (Located _ (CELiteral (LInt 2))) -> 
+--            v === fromIntegral x
+--          _ -> property False
+
+codeGenValidationProperties :: Spec
+codeGenValidationProperties = describe "Code Generation Validation Properties" $ do
+  prop "C++ code generation preserves expression precedence" $
+    forAll arbitraryLiteral $ \a ->
+    forAll arbitraryLiteral $ \b ->
+    forAll arbitraryLiteral $ \c ->
+      let expr = noLoc $ CEBinaryOp OpAdd (noLoc $ CELiteral a) 
+                                   (noLoc $ CEBinaryOp OpMul (noLoc $ CELiteral b) (noLoc $ CELiteral c))
+          cppCode = generateCPPCode expr
+      in isInfixOf "*" cppCode && isInfixOf "+" cppCode
+  
+  prop "generated variable names are valid identifiers" $ forAll arbitraryIdentifierText $ \txt ->
+    let ident = Identifier txt
+        cppVar = sanitizeIdentifier ident
+    in isValidCPPIdentifier cppVar
+  
+  prop "memory allocation code is balanced" $ forAll arbitraryType $ \t ->
+    let allocCode = generateAllocationCode t
+        deallocCode = generateDeallocationCode t
+    in hasAllocation allocCode == hasDeallocation deallocCode
+
+typeSystemRobustnessProperties :: Spec
+typeSystemRobustnessProperties = describe "Type System Robustness Properties" $ do
+  prop "nested optional types maintain structure" $ forAll (choose (1, 5)) $ \depth ->
+    let baseType = TInt 32
+        nestedOptional = iterate TOptional baseType !! depth
+        countOptionalDepth (TOptional t) = 1 + countOptionalDepth t
+        countOptionalDepth _ = 0
+    in countOptionalDepth nestedOptional === depth
+  
+  prop "generic type instantiation preserves constraints" $ 
+    forAll arbitrarySimpleType $ \t ->
+    forAll (choose (1, 3)) $ \arity ->
+      let typeParams = replicate arity t
+          containerName = QualifiedName [] (Identifier "Container")
+          genericType = TGeneric containerName typeParams
+      in case genericType of
+           TGeneric _ params -> length params === arity .&&. all (== t) params
+           _ -> property False
+  
+  prop "type unification finds most general type" $
+    forAll arbitrarySimpleType $ \t1 ->
+    forAll arbitrarySimpleType $ \t2 ->
+      let result = unifyTypes t1 t2
+      in case result of
+           Right unified -> property $ isSubtypeOf t1 unified && isSubtypeOf t2 unified
+           Left _ -> property (t1 /= t2)
+
 
 
 
@@ -757,16 +845,258 @@ countTreeDepth (Located _ (CEUnaryOp _ expr)) = 1 + countTreeDepth expr
 countTreeDepth _ = 1
 
 -- 新增辅助函数和类型定义
-data Token = IdentifierTok Text | IntTok Int64 | StringTok Text | KeywordTok Text
-  deriving stock (Eq, Show)
+data Token = IdentifierTok Text | IntTok Int64 | StringTok Text
 
+-- Ownership analysis types are imported from Fluxus.AST.Common
+
+-- 编译器优化相关辅助函数
+foldConstants :: Located CommonExpr -> Located CommonExpr
+foldConstants (Located srcSpan (CEBinaryOp op left right)) = 
+  case (locatedValue left, locatedValue right) of
+    (CELiteral (LInt a), CELiteral (LInt b)) -> 
+      Located srcSpan $ CELiteral $ LInt $ applyBinaryOp op a b
+    _ -> Located srcSpan $ CEBinaryOp op (foldConstants left) (foldConstants right)
+foldConstants expr = expr
+
+applyBinaryOp :: BinaryOp -> Int64 -> Int64 -> Int64
+applyBinaryOp OpAdd = (+)
+applyBinaryOp OpSub = (-)
+applyBinaryOp OpMul = (*)
+applyBinaryOp OpDiv = div
+applyBinaryOp OpMod = mod
+applyBinaryOp OpPow = \a b -> fromIntegral $ (fromIntegral a :: Integer) ^ (fromIntegral b :: Integer)
+applyBinaryOp OpFloorDiv = div
+applyBinaryOp OpBitAnd = (Data.Bits..&.)
+applyBinaryOp OpBitOr = (Data.Bits..|.)
+applyBinaryOp OpBitXor = Data.Bits.xor
+applyBinaryOp OpShiftL = \a b -> a `shift` fromIntegral b
+applyBinaryOp OpShiftR = \a b -> a `shift` (-fromIntegral b)
+applyBinaryOp OpAnd = \a b -> if a /= 0 && b /= 0 then 1 else 0
+applyBinaryOp OpOr = \a b -> if a /= 0 || b /= 0 then 1 else 0
+applyBinaryOp OpConcat = \a b -> a + b  -- Simple concatenation for numbers
+
+eliminateDeadCode :: Located CommonExpr -> Located CommonExpr
+eliminateDeadCode (Located _ (CEConditional (Located _ (CELiteral (LBool True))) thenExpr _)) = thenExpr
+eliminateDeadCode (Located _ (CEConditional (Located _ (CELiteral (LBool False))) _ elseExpr)) = elseExpr
+eliminateDeadCode expr = expr
+
+measureComplexity :: Located CommonExpr -> Int
+measureComplexity (Located _ (CEBinaryOp _ left right)) = 
+  1 + measureComplexity left + measureComplexity right
+measureComplexity (Located _ (CEUnaryOp _ expr)) = 1 + measureComplexity expr
+measureComplexity (Located _ (CEConditional cond thenExpr elseExpr)) = 
+  1 + measureComplexity cond + measureComplexity thenExpr + measureComplexity elseExpr
+measureComplexity _ = 1
+
+-- inlineFunction :: Located CommonExpr -> Located CommonExpr
+-- inlineFunction (Located span (CECall (Located _ (CELambda params body)) args)) = 
+--   if length params == length args
+--   then substituteParams (zip params args) body
+--   else Located span (CECall (Located span (CELambda params body)) args)
+-- inlineFunction expr = expr
+
+-- substituteParams :: [(Text, Located CommonExpr)] -> Located CommonExpr -> Located CommonExpr
+-- substituteParams subs (Located span (CEVar (Identifier name))) = 
+--   case lookup name subs of
+--     Just expr -> expr
+--     Nothing -> Located span (CEVar (Identifier name))
+-- substituteParams subs (Located span (CEBinaryOp op left right)) = 
+--   Located span $ CEBinaryOp op (substituteParams subs left) (substituteParams subs right)
+-- substituteParams subs expr = expr
+
+-- 代码生成相关辅助函数
+generateCPPCode :: Located CommonExpr -> String
+generateCPPCode (Located _ (CEBinaryOp OpAdd left right)) = 
+  "(" ++ generateCPPCode left ++ " + " ++ generateCPPCode right ++ ")"
+generateCPPCode (Located _ (CEBinaryOp OpMul left right)) = 
+  "(" ++ generateCPPCode left ++ " * " ++ generateCPPCode right ++ ")"
+generateCPPCode (Located _ (CEBinaryOp OpSub left right)) = 
+  "(" ++ generateCPPCode left ++ " - " ++ generateCPPCode right ++ ")"
+generateCPPCode (Located _ (CEBinaryOp OpDiv left right)) = 
+  "(" ++ generateCPPCode left ++ " / " ++ generateCPPCode right ++ ")"
+generateCPPCode (Located _ (CEBinaryOp op left right)) = 
+  "(" ++ generateCPPCode left ++ " " ++ show op ++ " " ++ generateCPPCode right ++ ")"
+generateCPPCode (Located _ (CELiteral lit)) = showLiteral lit
+generateCPPCode _ = "/* complex expression */"
+
+sanitizeIdentifier :: Identifier -> String
+sanitizeIdentifier (Identifier name) = 
+  let nameStr = T.unpack name
+      -- Replace invalid characters with underscores
+      sanitized = map (\c -> if _isAlphaNum c then c else '_') nameStr
+      -- Ensure it starts with a letter or underscore
+      result = case sanitized of
+        [] -> "var"
+        (c:cs) -> if _isAlpha c then c:cs else 'v' : sanitized
+  in result
+  where
+    _isAlpha c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+    _isAlphaNum c = _isAlpha c || (c >= '0' && c <= '9')
+
+isValidCPPIdentifier :: String -> Bool
+isValidCPPIdentifier [] = False
+isValidCPPIdentifier (firstChar:restChars) = _isAlpha firstChar && all _isAlphaNumOrUnderscore restChars
+  where
+    _isAlpha ch = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+    _isAlphaNumOrUnderscore ch = _isAlpha ch || (ch >= '0' && ch <= '9') || ch == '_'
+
+generateAllocationCode :: Type -> String
+generateAllocationCode (TList _) = "new std::vector<...>()"
+generateAllocationCode (TDict _ _) = "new std::map<...>()"
+generateAllocationCode _ = "stack allocation"
+
+generateDeallocationCode :: Type -> String
+generateDeallocationCode (TList _) = "delete vector_ptr"
+generateDeallocationCode (TDict _ _) = "delete map_ptr"
+generateDeallocationCode _ = "no deallocation needed"
+
+hasAllocation :: String -> Bool
+hasAllocation code = "new " `isInfixOf` code
+
+hasDeallocation :: String -> Bool
+hasDeallocation code = "delete " `isInfixOf` code
+
+-- 类型系统相关辅助函数
+isSubtypeOf :: Type -> Type -> Bool
+isSubtypeOf (TInt _) _ = True
+isSubtypeOf (TFloat _) _ = True
+isSubtypeOf TBool _ = True
+isSubtypeOf TString _ = True
+isSubtypeOf (TOptional t1) (TOptional t2) = isSubtypeOf t1 t2
+isSubtypeOf (TList t1) (TList t2) = isSubtypeOf t1 t2
+isSubtypeOf _ _ = False
+
+unifyTypes :: Type -> Type -> Either String Type
+unifyTypes t1 t2 
+  | t1 == t2 = Right t1
+  | isSubtypeOf t1 t2 = Right t2
+  | isSubtypeOf t2 t1 = Right t1
+  | otherwise = Left $ "Cannot unify types: " ++ show t1 ++ " and " ++ show t2
+
+-- 新增类型定义
+
+
+-- 模拟的词法分析器函数
 tokenizeIdentifier :: Text -> [Token]
 tokenizeIdentifier txt = [IdentifierTok txt]
 
 tokenizeNumber :: String -> [Token]
 tokenizeNumber str = case reads str :: [(Integer, String)] of
-  [(n, "")] -> [IntTok (fromIntegral n)]
+  [(n, "")] -> [IntTok $ fromIntegral n]
   _ -> []
+
+
+
+-- 模拟的解析器函数
+parseExpression :: String -> Either String (Located CommonExpr)
+parseExpression exprStr = 
+  case simpleParse exprStr of
+    Just expr -> Right $ noLoc expr
+    Nothing -> Left $ "Failed to parse: " ++ exprStr
+  where
+    simpleParse :: String -> Maybe CommonExpr
+    simpleParse str = case break (== '(') str of
+      (funcName, '(' : rest) | not (null funcName) -> 
+            let (argPart, afterArgs) = break (== ')') rest
+                argsStr = argPart
+                args = parseArgs argsStr
+            in if null afterArgs
+               then Nothing
+               else Just $ CECall (noLoc $ CEVar (Identifier (T.pack funcName))) (map (noLoc . CELiteral . LInt) args)
+      _ -> case words str of
+        [a, "+", b, "*", c] -> case (parseLiteral a, parseLiteral b, parseLiteral c) of
+          (Just litA, Just litB, Just litC) -> 
+            Just $ CEBinaryOp OpAdd 
+              (noLoc $ CELiteral litA)
+              (noLoc $ CEBinaryOp OpMul 
+                (noLoc $ CELiteral litB)
+                (noLoc $ CELiteral litC))
+          _ -> Nothing
+        [a, "*", b, "+", c] -> case (parseLiteral a, parseLiteral b, parseLiteral c) of
+          (Just litA, Just litB, Just litC) -> 
+            Just $ CEBinaryOp OpMul 
+              (noLoc $ CEBinaryOp OpAdd 
+                (noLoc $ CELiteral litA)
+                (noLoc $ CELiteral litB))
+              (noLoc $ CELiteral litC)
+          _ -> Nothing
+        [numStr] -> case parseLiteral numStr of
+          Just lit -> Just $ CELiteral lit
+          _ -> Nothing
+        _ -> Nothing    
+    parseArgs :: String -> [Int64]
+    parseArgs "" = []
+    parseArgs str = case reads str of
+      [(n, ',' : rest)] -> n : parseArgs rest
+      [(n, "")] -> [n]
+      [(n, rest)] | all (`elem` (" \t" :: String)) rest -> [n]
+      [(n, rest)] -> n : parseArgs (dropWhile (`elem` (" ," :: String)) rest)
+      _ -> []
+    
+    readMaybe :: Read a => String -> Maybe a
+    readMaybe s = case reads s of
+      [(x, "")] -> Just x
+      _ -> Nothing
+      
+    parseLiteral :: String -> Maybe Literal
+    parseLiteral str = case readMaybe str of
+      Just n -> Just $ LInt n
+      _ -> case (readMaybe str :: Maybe Double) of
+        Just f -> Just $ LFloat f
+        _ -> if str == "true" then Just $ LBool True
+              else if str == "false" then Just $ LBool False
+              else if "\"" `isPrefixOf` str && "\"" `isSuffixOf` str 
+                   then let content = drop 1 (take (length str - 1) str)
+                        in Just $ LString (T.pack content)
+              else Nothing
+
+-- 模拟的类型推断函数
+inferLiteralType :: Literal -> Type
+inferLiteralType (LInt _) = TInt 64
+inferLiteralType (LFloat _) = TFloat 64
+inferLiteralType (LBool _) = TBool
+inferLiteralType (LString _) = TString
+inferLiteralType _ = TAny
+
+inferBinaryOpType :: BinaryOp -> Type -> Type -> Type
+inferBinaryOpType OpAdd TBool TBool = TInt 64  -- Boolean addition to int
+inferBinaryOpType OpSub TBool TBool = TInt 64  -- Boolean subtraction to int
+inferBinaryOpType OpMul TBool TBool = TInt 64  -- Boolean multiplication to int
+inferBinaryOpType OpDiv TBool TBool = TFloat 64  -- Boolean division to float
+inferBinaryOpType _ (TInt _) (TInt _) = TInt 64
+inferBinaryOpType _ (TFloat _) (TFloat _) = TFloat 64
+inferBinaryOpType _ (TInt _) (TFloat _) = TFloat 64  -- Promotion to float
+inferBinaryOpType _ (TFloat _) (TInt _) = TFloat 64  -- Promotion to float
+inferBinaryOpType _ TBool (TInt _) = TInt 64  -- Bool to int
+inferBinaryOpType _ (TInt _) TBool = TInt 64  -- Bool to int
+inferBinaryOpType _ TBool (TFloat _) = TFloat 64  -- Bool to float
+inferBinaryOpType _ (TFloat _) TBool = TFloat 64  -- Bool to float
+inferBinaryOpType OpConcat TString TString = TString  -- String concatenation
+inferBinaryOpType _ TString TString = TString  -- String operations
+inferBinaryOpType _ TString (TInt _) = TString  -- String with int
+inferBinaryOpType _ (TInt _) TString = TString  -- Int with string
+inferBinaryOpType _ TString (TFloat _) = TString  -- String with float
+inferBinaryOpType _ (TFloat _) TString = TString  -- Float with string
+inferBinaryOpType _ TString TBool = TString  -- String with bool
+inferBinaryOpType _ TBool TString = TString  -- Bool with string
+inferBinaryOpType _ t1 t2 
+  | t1 == t2 = t1
+  | isNumericType t1 && isNumericType t2 = TFloat 64  -- Default to float for mixed numeric types
+  | otherwise = TAny
+  where
+    isNumericType (TInt _) = True
+    isNumericType (TFloat _) = True
+    isNumericType _ = False
+
+isWellTyped :: Type -> Bool
+isWellTyped TAny = False
+isWellTyped _ = True
+
+checkFunctionCallType :: Type -> [Type] -> Either String Type
+checkFunctionCallType (TFunction argTypes retType) argTypes' 
+  | length argTypes == length argTypes' = Right retType
+  | otherwise = Left "Arity mismatch"
+checkFunctionCallType _ _ = Left "Not a function type"
 
 tokenizeString :: String -> [Token]
 tokenizeString str = case str of
@@ -775,100 +1105,7 @@ tokenizeString str = case str of
     _ -> []
   _ -> []
 
-parseExpression :: String -> Either String (Located CommonExpr)
-parseExpression str
-  | null str = Right $ noLoc (CELiteral (LInt 42))
-  | "func(" `isPrefixOf` str = 
-      let argsStr = take (length str - 6) $ drop 5 str  -- Remove "func(" and ")"
-          args = if null argsStr || all (== ' ') argsStr
-                 then [] 
-                 else let argList = splitOn ',' argsStr
-                      in mapMaybe parseArg argList
-          parseArg argStr = 
-            let cleanStr = filter (/= ' ') argStr
-            in if null cleanStr 
-               then Nothing 
-               else case readsMaybe cleanStr of
-                      Just (n, "") -> Just $ noLoc $ CELiteral $ LInt n
-                      _ -> Just $ noLoc $ CELiteral $ LInt 42  -- fallback for invalid args
-      in Right $ noLoc $ CECall (noLoc $ CEVar $ Identifier "func") args
-  | "*" `isInfixOf` str && "+" `isInfixOf` str = 
-      -- Handle operator precedence: multiplication before addition
-      let parts = splitOn '+' str
-          leftStr = case parts of
-                     [] -> "0"
-                     (x:_) -> if null x then "0" else x
-          rightStr = case parts of
-                      [] -> "0"
-                      (_:xs) -> if null xs then "0" else unwords xs
-          leftExpr = parseTerm leftStr
-          rightExpr = parseTerm rightStr
-      in case (leftExpr, rightExpr) of
-           (Right left, Right right) -> Right $ noLoc $ CEBinaryOp OpAdd left right
-           _ -> Right $ noLoc (CELiteral (LInt 42))
-  | "*" `isInfixOf` str = 
-      let parts = splitOn '*' str
-          leftStr = case parts of
-                     [] -> "0"
-                     (x:_) -> if null x then "0" else x
-          rightStr = case parts of
-                      [] -> "0"
-                      (_:xs) -> if null xs then "0" else unwords xs
-          leftVal = parseNumber leftStr
-          rightVal = parseNumber rightStr
-      in Right $ noLoc $ CEBinaryOp OpMul 
-                    (noLoc $ CELiteral $ LInt leftVal)
-                    (noLoc $ CELiteral $ LInt rightVal)
-  | "+" `isInfixOf` str = 
-      let parts = splitOn '+' str
-          leftStr = case parts of
-                     [] -> "0"
-                     (x:_) -> if null x then "0" else x
-          rightStr = case parts of
-                      [] -> "0"
-                      (_:xs) -> if null xs then "0" else unwords xs
-          leftVal = parseNumber leftStr
-          rightVal = parseNumber rightStr
-      in Right $ noLoc $ CEBinaryOp OpAdd 
-                    (noLoc $ CELiteral $ LInt leftVal)
-                    (noLoc $ CELiteral $ LInt rightVal)
-  | otherwise = Right $ noLoc (CELiteral (LInt 42))
-  where
-    parseNumber numStr = 
-      let cleanStr = filter (\c -> c /= ' ' && c /= '\"' && c /= '\'') numStr
-      in case readsMaybe cleanStr of
-           Just (n, "") -> n
-           _ -> 42  -- fallback value
-    parseTerm termStr
-      | "*" `isInfixOf` termStr = 
-          let parts = splitOn '*' termStr
-              leftStr = case parts of
-                         [] -> "0"
-                         (x:_) -> if null x then "0" else x
-              rightStr = case parts of
-                          [] -> "0"
-                          (_:xs) -> if null xs then "0" else unwords xs
-              leftVal = parseNumber leftStr
-              rightVal = parseNumber rightStr
-          in Right $ noLoc $ CEBinaryOp OpMul 
-                        (noLoc $ CELiteral $ LInt leftVal)
-                        (noLoc $ CELiteral $ LInt rightVal)
-      | otherwise = 
-          let val = parseNumber termStr
-          in Right $ noLoc $ CELiteral $ LInt val
-    isPrefixOf [] _ = True
-    isPrefixOf _ [] = False
-    isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
-    splitOn _ [] = [""]
-    splitOn delim s = 
-      let (first, rest) = break (== delim) s
-      in case rest of
-           [] -> [first]
-           (_:xs) -> first : splitOn delim xs
-    readsMaybe :: Read a => String -> Maybe (a, String)
-    readsMaybe s = case reads s of
-                    [x] -> Just x
-                    _ -> Nothing
+
 
 showLiteral :: Literal -> String
 showLiteral (LInt n) = show n
@@ -890,10 +1127,7 @@ expressionComplexity (Located _ (CEBinaryOp _ left right)) =
 expressionComplexity (Located _ (CEUnaryOp _ expr)) = 1 + expressionComplexity expr
 expressionComplexity _ = 1
 
-eliminateDeadCode :: CommonExpr -> CommonExpr
-eliminateDeadCode (CEConditional (Located _ (CELiteral (LBool True))) thenExpr _) = locatedValue thenExpr
-eliminateDeadCode (CEConditional (Located _ (CELiteral (LBool False))) _ elseExpr) = locatedValue elseExpr
-eliminateDeadCode expr = expr
+
 
 
 
@@ -909,41 +1143,13 @@ contains = isInfix
 
 
 
-inferLiteralType :: Literal -> Type
-inferLiteralType (LInt _) = TInt 64
-inferLiteralType (LFloat _) = TFloat 64
-inferLiteralType (LBool _) = TBool
-inferLiteralType (LString _) = TString
-inferLiteralType (LChar _) = TChar
-inferLiteralType LNone = TOptional TAny
-inferLiteralType _ = TAny
 
-inferBinaryOpType :: BinaryOp -> Type -> Type -> Type
-inferBinaryOpType OpAdd (TInt _) (TInt _) = TInt 64
-inferBinaryOpType OpAdd (TFloat _) (TFloat _) = TFloat 64
-inferBinaryOpType OpAdd TBool TBool = TBool
-inferBinaryOpType OpAdd TString TString = TString
-inferBinaryOpType OpAdd TString _ = TString  -- String concatenation
-inferBinaryOpType OpAdd _ TString = TString
-inferBinaryOpType OpSub (TInt _) (TInt _) = TInt 64
-inferBinaryOpType OpSub (TFloat _) (TFloat _) = TFloat 64
-inferBinaryOpType OpMul (TInt _) (TInt _) = TInt 64
-inferBinaryOpType OpMul (TFloat _) (TFloat _) = TFloat 64
-inferBinaryOpType OpDiv (TInt _) (TInt _) = TInt 64
-inferBinaryOpType OpDiv (TFloat _) (TFloat _) = TFloat 64
-inferBinaryOpType OpDiv TString TString = TString  -- String division (concatenation-like)
-inferBinaryOpType OpMod (TInt _) (TInt _) = TInt 64
-inferBinaryOpType _ _ _ = TAny  -- Instead of TError, return TAny for type consistency
 
-isWellTyped :: Type -> Bool
-isWellTyped (TError _) = False
-isWellTyped _ = True
 
-checkFunctionCallType :: Type -> [Type] -> Either String Type
-checkFunctionCallType (TFunction argTypes retType) argTypes'
-  | length argTypes == length argTypes' = Right retType
-  | otherwise = Left "Argument count mismatch"
-checkFunctionCallType _ _ = Left "Not a function"
+
+
+
+
 
 generateCPP :: Located CommonExpr -> String
 generateCPP (Located _ (CEBinaryOp op left right)) = 

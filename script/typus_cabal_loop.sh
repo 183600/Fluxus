@@ -81,7 +81,7 @@ while true; do
   echo "===================="
 
   # 运行测试：不写入日志文件，实时检测 warning，并按行刷新心跳
-  stdbuf -oL -eL cabal test --flags="-fast production" --test-show-details=direct 2>&1 | \
+  stdbuf -oL -eL bash -c 'export LC_ALL=C.utf8; export LANG=C.utf8; cabal test --flags="-fast production" --test-show-details=direct' 2>&1 | \
     awk -v hb="$HEARTBEAT_FILE" '
       BEGIN { found=0 }
       {
@@ -90,7 +90,8 @@ while true; do
         # 每行刷新一次心跳，避免 watchdog 误杀
         system("touch " hb)
         l=tolower($0)
-        if (l ~ /(warn(ing)?|警告)/) found=1
+        # 忽略所有locale相关的警告，只检测实际的编译警告
+        if (l ~ /(warn(ing)?|警告)/ && l !~ /setlocale.*LC_ALL.*cannot change locale/ && l !~ /locale.*cannot set/ && l !~ /LC_ALL.*zh_CN/) found=1
       }
       END {
         # 0=发现warning，1=未发现（用退出码传递给外层）

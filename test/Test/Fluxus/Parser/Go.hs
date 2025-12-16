@@ -16,7 +16,7 @@ import Fluxus.AST.Common
 
 -- Safe safeHead function for tests
 safeHead :: [a] -> a
-safeHead [] = error "safeHead: empty list (test invariant violated)"
+safeHead [] = Prelude.error "safeHead: empty list (test invariant violated)"
 safeHead (x:_) = x
 
 spec :: Spec
