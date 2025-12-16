@@ -11,8 +11,16 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.HashSet as HS
 
-import Fluxus.CodeGen.CPP.AST
-
+import Fluxus.CodeGen.CPP.AST 
+  ( CppDecl(..)
+  , CppExpr(..)
+  , CppStmt(..)
+  , CppType(..)
+  , CppParam(..)
+  , CppUnit(..)
+  , CppCase(..)
+  , CppCatch(..)
+  )
 -- | Sanitize all identifiers contained in a C++ unit, ensuring that user
 -- supplied names do not collide with reserved C++ keywords or implementation
 -- defined identifier spaces (double underscores, leading underscore + uppercase

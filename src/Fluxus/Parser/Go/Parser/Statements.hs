@@ -33,12 +33,12 @@ import Text.Megaparsec (lookAhead, anySingle)
 import qualified Text.Megaparsec as MP
 
 import Fluxus.AST.Common (Located(..), BinaryOp(..))
-import Fluxus.AST.Go
-  ( GoStmt(..)
+import Fluxus.AST.Go 
+  ( GoExpr(..)
+  , GoStmt(..)
   , GoRangeClause(..)
   , GoForClause(..)
   , GoCommClause(..)
-  , GoExpr(..)
   )
 import Fluxus.Parser.Go.Lexer
   ( GoDelimiter(..)

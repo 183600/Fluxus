@@ -15,10 +15,10 @@ module Fluxus.Internal.Monad
   ) where
 
 import Fluxus.Internal.Types
-import Control.Monad.Reader
-import Control.Monad.State
-import Control.Monad.Except
--- -- -- import Control.Monad.IO.Class  -- unused  -- unused  -- unused ()
+import Control.Monad.Reader (asks, runReaderT)
+import Control.Monad.State (gets, modify, runStateT)
+import Control.Monad.Except (runExcept, throwError)
+import Control.Monad.IO.Class (liftIO)
 
 runCompilerM :: CompilerEnv -> CompilerState -> CompilerM a -> Either CompilerError (a, CompilerState)
 runCompilerM env st m = runExcept $ runStateT (runReaderT m env) st

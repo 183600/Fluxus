@@ -20,8 +20,8 @@ module Fluxus.Analysis.EscapeAnalysis
   ) where
 
 import Fluxus.AST.Common
-import Control.Monad.State
-import Control.Monad.Reader
+import Control.Monad.State (State, gets, modify, runState)
+import Control.Monad.Reader (ReaderT, ask, local, runReaderT)
 import Control.Monad (void)
 import Data.Text (Text)
 import qualified Data.Text as T

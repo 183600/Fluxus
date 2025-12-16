@@ -26,8 +26,8 @@ module Fluxus.Runtime.Python
   , managedPythonCall
   ) where
 
-import Fluxus.AST.Common
-import Control.Concurrent.STM
+import Fluxus.AST.Common (Literal(..), Type(..))
+import Control.Concurrent.STM (TVar, atomically, readTVar, writeTVar, newTVarIO)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -130,7 +130,7 @@ py_Finalize = return ()
 
 -- | Initialize Python runtime with specified mode
 initPythonRuntime :: InteropMode -> IO (Either Text PythonRuntime)
-initPythonRuntime _mode = pure (Left runtimeUnavailable)
+initPythonRuntime = const (pure (Left runtimeUnavailable))
 
 -- | Shutdown Python runtime and cleanup resources
 shutdownPythonRuntime :: PythonRuntime -> IO ()
@@ -154,19 +154,19 @@ shutdownPythonRuntime runtime = do
 
 -- | Call a Python function with arguments
 callPythonFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-callPythonFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
+callPythonFunction _ _ _ = pure (Left runtimeUnavailable)
 
 -- | Call a Python method on an object
 callPythonMethod :: PythonRuntime -> PythonObject -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-callPythonMethod _runtime _obj _methodName _args = pure (Left runtimeUnavailable)
+callPythonMethod _ _ _ _ = pure (Left runtimeUnavailable)
 
 -- | Import a Python module
 importPythonModule :: PythonRuntime -> Text -> IO (Either Text (Ptr ()))
-importPythonModule _runtime _moduleName = pure (Left runtimeUnavailable)
+importPythonModule _ _ = pure (Left runtimeUnavailable)
 
 -- | Create a Python object from Fluxus values
 createPythonObject :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text PythonObject)
-createPythonObject _runtime _className _args = pure (Left runtimeUnavailable)
+createPythonObject _ _ _ = pure (Left runtimeUnavailable)
 
 -- | Convert Fluxus literals to Python runtime values
 convertToPython :: Literal -> RuntimeValue
@@ -192,7 +192,7 @@ convertFromPython _ = LNone  -- Fallback for complex types
 
 -- | Run arbitrary Python code
 runPythonCode :: PythonRuntime -> Text -> IO (Either Text RuntimeValue)
-runPythonCode _runtime _code = pure (Left runtimeUnavailable)
+runPythonCode _ _ = pure (Left runtimeUnavailable)
 
 -- | Create a runtime bridge for optimized interop
 createRuntimeBridge :: PythonRuntime -> [Text] -> IO RuntimeBridge
@@ -208,33 +208,33 @@ createRuntimeBridge runtime optimizations = do
 
 -- | Optimized function call for statically analyzed code
 optimizedCall :: RuntimeBridge -> Text -> [Type] -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-optimizedCall _bridge _funcName _argTypes _args = pure (Left runtimeUnavailable)
+optimizedCall _ _ _ _ = pure (Left runtimeUnavailable)
 
 -- | Batch call multiple Python functions
 batchCallPython :: PythonRuntime -> [(Text, [RuntimeValue])] -> IO [Either Text RuntimeValue]
-batchCallPython _runtime calls = pure (replicate (length calls) (Left runtimeUnavailable))
+batchCallPython _ calls = pure (replicate (length calls) (Left runtimeUnavailable))
 
 -- | Managed Python call with automatic resource cleanup
 managedPythonCall :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-managedPythonCall _runtime _funcName _args = pure (Left runtimeUnavailable)
+managedPythonCall _ _ _ = pure (Left runtimeUnavailable)
 
 -- Helper functions
 
 -- | Optimized function call for static interop
 _callOptimizedFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-_callOptimizedFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
+_callOptimizedFunction _ _ _ = pure (Left runtimeUnavailable)
 
 -- | Cached function call for optimized interop
 _callCachedFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-_callCachedFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
+_callCachedFunction _ _ _ = pure (Left runtimeUnavailable)
 
 -- | Generic function call for full interop
 _callGenericFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-_callGenericFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
+_callGenericFunction _ _ _ = pure (Left runtimeUnavailable)
 
 -- | Fallback function call that always uses Python
 _callFallbackFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either Text RuntimeValue)
-_callFallbackFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
+_callFallbackFunction _ _ _ = pure (Left runtimeUnavailable)
 
 -- | Create type mapping from Fluxus types to Python types
 createTypeMapping :: Map Type Text

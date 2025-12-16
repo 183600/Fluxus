@@ -47,19 +47,11 @@ import Text.Megaparsec
 import qualified Text.Megaparsec as MP
 import qualified Text.Megaparsec.Pos as MPP
 
-import Fluxus.AST.Common
-  ( Identifier(..)
-  , Located(..)
-  , SourcePos(..)
-  , SourceSpan(..)
-  , locSpan
-  , locValue
-  , noLoc
-  )
+import Fluxus.AST.Common (Identifier(..), Located(..), SourcePos(..), SourceSpan(..), locSpan, noLoc)
 import Fluxus.Parser.Go.Lexer
   ( GoDelimiter(..)
-  , GoKeyword(..)
-  , GoOperator(..)
+  , GoKeyword
+  , GoOperator
   , GoToken(..)
   )
 

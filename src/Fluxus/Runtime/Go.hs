@@ -21,7 +21,7 @@ module Fluxus.Runtime.Go
   , importGoPackage
   ) where
 
-import Fluxus.AST.Common
+import Fluxus.AST.Common (Literal(..))
 import Control.Concurrent.STM (TVar)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -106,23 +106,23 @@ runtimeUnavailable = "Go runtime interop is not implemented yet"
 
 -- | Initialize Go runtime
 initGoRuntime :: GoInteropMode -> IO (Either Text GoRuntime)
-initGoRuntime _mode = pure (Left runtimeUnavailable)
+initGoRuntime = const (pure (Left runtimeUnavailable))
 
 -- | Shutdown Go runtime
 shutdownGoRuntime :: GoRuntime -> IO ()
-shutdownGoRuntime _runtime = return ()
+shutdownGoRuntime _ = return ()
 
 -- | Call a Go function
 callGoFunction :: GoRuntime -> Text -> [GoValue] -> IO (Either Text GoValue)
-callGoFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
+callGoFunction _ _ _ = pure (Left runtimeUnavailable)
 
 -- | Call a Go method on an object
 callGoMethod :: GoRuntime -> GoObject -> Text -> [GoValue] -> IO (Either Text GoValue)
-callGoMethod _runtime _obj _methodName _args = pure (Left runtimeUnavailable)
+callGoMethod _ _ _ _ = pure (Left runtimeUnavailable)
 
 -- | Create a Go object
 createGoObject :: GoRuntime -> Text -> Text -> [GoValue] -> IO (Either Text GoObject)
-createGoObject _runtime _packageName _typeName _args = pure (Left runtimeUnavailable)
+createGoObject _ _ _ _ = pure (Left runtimeUnavailable)
 
 -- | Convert Fluxus literals to Go values
 convertToGo :: Literal -> GoValue
@@ -148,8 +148,8 @@ convertFromGo _ = LNone  -- Fallback for complex types
 
 -- | Run Go code
 runGoCode :: GoRuntime -> Text -> IO (Either Text GoValue)
-runGoCode _runtime _code = pure (Left runtimeUnavailable)
+runGoCode _ _ = pure (Left runtimeUnavailable)
 
 -- | Import a Go package
 importGoPackage :: GoRuntime -> Text -> IO (Either Text (Ptr ()))
-importGoPackage _runtime _packageName = pure (Left runtimeUnavailable)
+importGoPackage _ _ = pure (Left runtimeUnavailable)

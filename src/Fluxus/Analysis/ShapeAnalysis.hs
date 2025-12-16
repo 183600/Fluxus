@@ -25,9 +25,9 @@ module Fluxus.Analysis.ShapeAnalysis
   ) where
 
 import Fluxus.AST.Common
-import Control.Monad.State
-import Control.Monad.Reader
-import Control.Monad.Except
+import Control.Monad.State (StateT, gets, runStateT)
+import Control.Monad.Reader (ReaderT, ask, runReaderT)
+import Control.Monad.Except (Except, throwError, runExcept)
 import Control.Monad (void)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -38,7 +38,7 @@ import qualified Data.HashMap.Strict as HashMap
 import Data.Set (Set)
 import qualified Data.Set as Set
 import GHC.Generics (Generic)
-import Data.Hashable (Hashable(..))
+import Data.Hashable (Hashable, hashWithSalt)
 import Control.DeepSeq (NFData)
 import Data.List (sortOn)
 

@@ -25,6 +25,8 @@ common shared-properties
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates
                -Wincomplete-uni-patterns -Wmissing-export-lists
                -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+               -Wno-missing-import-lists -Wno-unused-imports
+               -fno-warn-unused-imports
 
 library
   import: shared-properties

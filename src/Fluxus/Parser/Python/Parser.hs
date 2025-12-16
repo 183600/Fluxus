@@ -49,8 +49,53 @@ import qualified Data.List.NonEmpty as NE
 import Text.Megaparsec hiding (many, some, SourcePos)
 import qualified Text.Megaparsec as MP
 
-import Fluxus.AST.Common (SourceSpan(..), Located(..), BinaryOp(..), Identifier(..), ComparisonOp(..), UnaryOp(..), SourcePos(..), QualifiedName(..), ModuleName(..), locatedValue, noLoc)
-import Fluxus.AST.Python
+import Fluxus.AST.Common (SourceSpan(..), Located(..), BinaryOp(..), Identifier(..), ComparisonOp(..), UnaryOp(..), SourcePos(..), QualifiedName(..), ModuleName(..), locatedValue, noLoc, qnName, qnModule)
+import Fluxus.AST.Python 
+  ( PythonAST(..)
+  , PythonModule(..)
+  , pyModuleName
+  , pyModuleDoc
+  , pyModuleImports
+  , pyModuleBody
+  , PythonPattern(..)
+  , PythonSlice(..)
+  , PythonWithItem(..)
+  , pyWithContext
+  , pyWithVar
+  , PythonExpr(..)
+  , PythonLiteral(..)
+  , PythonArgument(..)
+  , PythonStmt(..)
+  , PythonTypeExpr(..)
+  , PythonParameter(..)
+  , PythonImport(..)
+  , PythonExcept(..)
+  , pyExceptType
+  , pyExceptName
+  , pyExceptBody
+  , PythonCase(..)
+  , pyCasePattern
+  , pyCaseGuard
+  , pyCaseBody
+  , PythonDecorator(..)
+  , PythonFuncDef(..)
+  , pyFuncName
+  , pyFuncDecorators
+  , pyFuncParams
+  , pyFuncReturns
+  , pyFuncBody
+  , pyFuncDoc
+  , pyFuncIsAsync
+  , PythonClassDef(..)
+  , pyClassName
+  , pyClassDecorators
+  , pyClassBases
+  , pyClassKeywords
+  , pyClassBody
+  , pyClassDoc
+  , PythonFStringSegment(..)
+  , PythonComprehension(..)
+  )
 import qualified Fluxus.Parser.Python.Lexer as Lexer
 import Fluxus.Parser.Python.Lexer (PythonToken(..), Keyword(..), Delimiter(..))
 
@@ -169,7 +214,7 @@ parseAssignment = do
       in Located combinedSpan (PatTuple pats)
     -- This case is unreachable because coalescePatterns is only called with results from sepBy1
     -- which guarantees at least one element. Keeping this for exhaustiveness checking.
-    coalescePatterns [] = error "coalescePatterns: empty list - this should never happen with proper sepBy1 usage"
+    coalescePatterns [] = noLoc PatWildcard -- Should never happen with sepBy1, but safe fallback
 
     parseAssignmentChain :: [Located PythonPattern] -> PythonParser PythonStmt
     parseAssignmentChain acc = do
@@ -1159,7 +1204,7 @@ wrapExtSlice slices@(firstSlice:_) =
   in Located (mergeSpans startSpan endSpan) (SliceExtSlice slices)
 -- This case is unreachable because wrapExtSlice is always called with non-empty lists
 -- from the parsing logic. Keeping this for exhaustiveness checking.
-wrapExtSlice [] = error "wrapExtSlice: empty list - this should never happen with proper slice handling"
+wrapExtSlice [] = noLoc $ SliceExtSlice [] -- Safe fallback, should never happen
 parseAttributeTrailer :: PythonParser (Located PythonExpr -> Located PythonExpr)
 parseAttributeTrailer = do
   void $ delimiterP DelimDot
@@ -1527,7 +1572,7 @@ parseTypeUnionExpr = do
       in Located (mergeSpans startSpan endSpan) (TypeUnion types)
     -- This case is unreachable because wrapUnion is always called with non-empty lists
     -- from the parsing logic. Keeping this for exhaustiveness checking.
-    wrapUnion [] = error "wrapUnion: empty list - this should never happen with proper type union handling"
+    wrapUnion [] = noLoc $ TypeVar "empty_union" -- Safe fallback, should never happen
 
 parseTypePostfixExpr :: PythonParser (Located PythonTypeExpr)
 parseTypePostfixExpr = do

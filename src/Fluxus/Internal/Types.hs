@@ -12,10 +12,10 @@ module Fluxus.Internal.Types
   , TypeTable
   ) where
 
-import Fluxus.AST.Common
-import Control.Monad.Reader
-import Control.Monad.State
-import Control.Monad.Except
+import Fluxus.AST.Common (Identifier, Type, QualifiedName(..))
+import Control.Monad.Reader (ReaderT)
+import Control.Monad.State (StateT)
+import Control.Monad.Except (Except)
 import Data.Text (Text)
 import Data.HashMap.Strict (HashMap)
 import GHC.Generics (Generic)

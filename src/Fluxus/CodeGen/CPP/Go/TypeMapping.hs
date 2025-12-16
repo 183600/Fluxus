@@ -10,21 +10,19 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Set as Set
 
-import Fluxus.AST.Common
+import Fluxus.AST.Common 
   ( Identifier(..)
   , Located(..)
   , ModuleName(..)
   , QualifiedName(..)
   )
-import Fluxus.AST.Go
+import Fluxus.AST.Go 
   ( GoType(..)
   , GoField(..)
   , GoExpr(..)
   , GoLiteral(..)
   )
-import Fluxus.CodeGen.CPP.AST
-  ( CppType(..)
-  )
+import Fluxus.CodeGen.CPP.AST (CppType(..))
 
 -- | Map a parsed Go type to its C++ counterpart.
 mapGoTypeToCpp :: GoType -> CppType

@@ -57,12 +57,7 @@ import Text.Megaparsec.Error (errorOffset, errorBundlePretty)
 import Control.Monad.Logger (MonadLogger, LogLevel, LogSource, LogStr, Loc, runLoggingT, LoggingT, runNoLoggingT, NoLoggingT)
 
 import Fluxus.AST.Common (SourceSpan(..), Located(..))
-import Fluxus.AST.Go
-  ( GoAST(..)
-  , GoPackage(..)
-  , GoFile(..)
-  , GoDecl(..)
-  )
+import Fluxus.AST.Go (GoAST(..), GoPackage(..), GoFile(..), GoDecl(..))
 import Fluxus.Parser.Go.Lexer (GoKeyword(..), GoToken(..))
 import Fluxus.Parser.Go.Parser.Common
   ( GoParser

@@ -18,13 +18,8 @@ import Data.Maybe (fromMaybe, isJust)
 import qualified Text.Megaparsec as MP
 
 import Fluxus.AST.Common (Located(..), Identifier(..))
-import Fluxus.AST.Go
-  ( GoDecl(..)
-  , GoFunction(..)
-  , GoReceiver(..)
-  , GoImport(..)
-  , GoField(..)
-  )
+import Fluxus.AST.Go (GoDecl(..), GoField(..))
+import Fluxus.AST.Go (GoFunction(..), GoReceiver(..), GoImport(..))
 import Fluxus.Parser.Go.Lexer
   ( GoDelimiter(..)
   , GoKeyword(..)

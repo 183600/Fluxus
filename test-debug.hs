@@ -10,8 +10,8 @@ module Main (main) where
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
-import Fluxus.Parser.Python.Parser
-import Fluxus.Parser.Python.Lexer
+import Fluxus.Parser.Python.Parser (runPythonParser)
+import Fluxus.Parser.Python.Lexer (runPythonLexer)
 import Text.Megaparsec (ParseErrorBundle)
 
 -- | Test the parser with a given input

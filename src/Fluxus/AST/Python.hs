@@ -40,7 +40,7 @@ import Data.List.NonEmpty (NonEmpty)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 
-import Fluxus.AST.Common
+import Fluxus.AST.Common (BinaryOp, ComparisonOp, Identifier, Located, ModuleName, QualifiedName, UnaryOp)
 
 -- | Top-level Python AST
 data PythonAST = PythonAST

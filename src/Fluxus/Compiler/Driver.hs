@@ -36,9 +36,10 @@ module Fluxus.Compiler.Driver
   ) where
 
 import Data.List (partition, isPrefixOf, dropWhileEnd)
-import Control.Monad.Reader
-import Control.Monad.State
-import Control.Monad.Except
+import Control.Monad.Reader (ReaderT, ask, runReaderT)
+import Control.Monad.State (StateT, get, gets, modify, runStateT)
+import Control.Monad.Except (ExceptT, throwError, runExceptT)
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, unless, forM_, foldM)
 import Control.Exception (IOException, try)
 import Data.Maybe (fromMaybe, catMaybes)
@@ -57,9 +58,9 @@ import Data.Hashable (Hashable, hash)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 
-import Fluxus.AST.Common
-import Fluxus.AST.Python
-import Fluxus.AST.Go
+import Fluxus.AST.Common (Identifier(..), Type, SourceSpan(..), SourcePos(..), AnalysisAnnotations, ExprAnnotations(..), eaInferredType, eaOwnership, eaEscapeInfo, eaOptimizationNotes, OwnershipInfo(..), ownsMemory, canMove, refCount, escapes, memLocation, emptyAnnotations, insertAnnotations, unAnalysisAnnotations, locValue)
+import Fluxus.AST.Python (PythonAST(..))
+import Fluxus.AST.Go (GoAST(..))
 import Fluxus.Analysis.TypeInference
   ( TypeInferenceState(..)
   , InferenceResult(..)

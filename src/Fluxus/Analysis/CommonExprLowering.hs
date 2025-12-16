@@ -27,7 +27,7 @@ import Data.Maybe (maybeToList, catMaybes)
 import Data.Text (Text)
 import qualified Data.Text as T
 
-import Fluxus.AST.Common
+import Fluxus.AST.Common (CommonCompClause(..), CommonExpr(..), Identifier(..), Located(..), Literal(..), QualifiedName(..), SourcePos(..), SourceSpan(..), mergeSpans)
 import Fluxus.AST.Go
 import Fluxus.AST.Python
 

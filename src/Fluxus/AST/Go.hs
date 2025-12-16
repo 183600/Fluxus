@@ -39,7 +39,7 @@ import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 
-import Fluxus.AST.Common
+import Fluxus.AST.Common (BinaryOp, ComparisonOp, Identifier, Located, QualifiedName, UnaryOp)
 
 -- | Top-level Go AST
 data GoAST = GoAST

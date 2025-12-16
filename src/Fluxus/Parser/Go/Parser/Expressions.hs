@@ -31,21 +31,14 @@ import qualified Data.Text as T
 import Text.Megaparsec (lookAhead)
 import qualified Text.Megaparsec as MP
 
-import Fluxus.AST.Common
-  ( Identifier(..)
-  , Located(..)
-  , locatedValue
-  , BinaryOp(..)
-  , UnaryOp(..)
-  , ComparisonOp(..)
-  )
-import Fluxus.AST.Go
+import Fluxus.AST.Common (BinaryOp(..), ComparisonOp(..), Identifier(..), Located(..), UnaryOp(..), locatedValue)
+import Fluxus.AST.Go 
   ( GoExpr(..)
   , GoLiteral(..)
+  , GoType(..)
   , GoField(..)
   , GoMethod(..)
   , GoSliceExpr(..)
-  , GoType(..)
   , GoChannel(..)
   , GoFunction(..)
   )
@@ -505,3 +498,5 @@ parseParameterList = do
             typeExpr <- parseGoType
             pure [GoField [] typeExpr Nothing]
         ]
+
+

@@ -15,9 +15,17 @@ module Fluxus.Analysis.SmartFallback
   , optimizeWithFallback
   ) where
 
-import Fluxus.AST.Common
-import Control.Monad.State
-import Control.Monad.Reader
+import Fluxus.AST.Common 
+  ( Identifier(..)
+  , Located(..)
+  , CommonExpr(..)
+  , CommonCompClause(..)
+  , locatedValue
+  , noLoc
+  , locSpan
+  )
+import Control.Monad.State (State, gets, modify, runState)
+import Control.Monad.Reader (ReaderT, asks, runReaderT)
 import Data.Text (Text)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap

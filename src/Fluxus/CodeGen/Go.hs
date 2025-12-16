@@ -28,9 +28,41 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import GHC.Generics (Generic)
 
-import Fluxus.AST.Common hiding (TypeVar)
+import Fluxus.AST.Common 
+  ( Identifier(..)
+  , Located(..)
+  , Type(..)
+  , AnalysisAnnotations
+  , BinaryOp(..)
+  , UnaryOp(..)
+  , QualifiedName(..)
+  , ModuleName(..)
+  , emptyAnnotations
+  , locatedValue
+  , lookupAnnotations
+  , eaInferredType
+  , noLoc
+  )
 import qualified Fluxus.AST.Common as Common (TypeVar(..))
-import Fluxus.AST.Python
+import Fluxus.AST.Python 
+  ( PythonAST(..)
+  , PythonModule
+  , pyModuleBody
+  , PythonFuncDef
+  , pyFuncName
+  , pyFuncParams
+  , pyFuncReturns
+  , pyFuncBody
+  , PythonExpr(..)
+  , PythonLiteral(..)
+  , PythonArgument(..)
+  , PythonStmt(..)
+  , PythonTypeExpr(..)
+  , PythonParameter(..)
+  
+  , PythonPattern(..)
+  , PythonSlice(..)
+  )
 import Fluxus.Analysis.CommonExprLowering (pythonExprToLocatedCommon, fingerprintCommonExpr)
 
 -- | Go code generation configuration

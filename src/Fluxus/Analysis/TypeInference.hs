@@ -23,9 +23,24 @@ module Fluxus.Analysis.TypeInference
   , bindVarType
   ) where
 
-import Fluxus.AST.Common
-import Control.Monad.State
-import Control.Monad.Except
+import Fluxus.AST.Common 
+  ( Identifier(..)
+  , Located(..)
+  , Type(..)
+  , TypeVar(..)
+  , CommonExpr(..)
+  , CommonCompClause(..)
+  , Literal(..)
+  , BinaryOp(..)
+  , UnaryOp(..)
+  , ComparisonOp(..)
+  , locatedValue
+  , cccIter
+  , cccBindings
+  , cccFilters
+  )
+import Control.Monad.State (StateT, evalStateT, get, gets, modify, put)
+import Control.Monad.Except (Except, throwError, catchError, runExcept)
 import Control.Monad (foldM)
 import Data.Text (Text)
 import qualified Data.Text as T

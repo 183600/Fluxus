@@ -12,8 +12,8 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.List (isPrefixOf, isSuffixOf)
 
-import Fluxus.Compiler.Driver
-import Fluxus.Compiler.Config
+import Fluxus.Compiler.Driver (runCompiler, setupCompilerEnvironment, compileFile, compileProject, CompilerConfig(ccSourceLanguage, ccVerboseLevel), CompilerError(ParseError, TypeError, OptimizationError, CodeGenError, LinkError, FileSystemError, ConfigurationError, RuntimeError), CompilerWarning(TypeWarning, OptimizationWarning, DeprecationWarning, PerformanceWarning), CompilerState(csWarnings, csErrors, csProcessedFiles, csTotalFiles), validateConfig, SourceLanguage(Go))
+import Fluxus.Compiler.Config (loadConfig, printConfig, checkSystemRequirements, LoadConfigResult(LoadConfigSuccess, LoadConfigHelp, LoadConfigVersion))
 import Fluxus.AST.Common (SourceSpan(..), SourcePos(..))
 
 -- | Main entry point

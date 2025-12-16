@@ -13,10 +13,44 @@ import Data.Maybe (catMaybes, isNothing)
 import Data.Text (Text)
 import qualified Data.Text as T
 
-import Fluxus.AST.Go
-import Fluxus.AST.Common (BinaryOp(..), ComparisonOp(..), Identifier(..), Located(..), SourcePos(..), SourceSpan(..), UnaryOp(..))
+import Fluxus.AST.Go 
+  ( GoAST(..)
+  , GoDecl(..)
+  , GoExpr(..)
+  , GoLiteral(..)
+  , GoStmt(..)
+  , GoType(..)
+  , GoFile
+  , goFileName
+  , goFileDecls
+  , GoFunction
+  , goFuncName
+  , goFuncParams
+  , goFuncResults
+  , goFuncBody
+  , GoField
+  , goFieldType
+  , goFieldNames
+  , GoCommClause
+  , goCommStmt
+  , goCommBody
+  , goPackageName
+  , goPackageFiles
+  , goForInit
+  , goForCond
+  , goForPost
+  )
+import Fluxus.AST.Common 
+  ( BinaryOp(..)
+  , ComparisonOp(..)
+  , Identifier(..)
+  , Located(..)
+  , SourcePos(..)
+  , SourceSpan(..)
+  , UnaryOp(..)
+  )
 import Fluxus.Analysis.CommonExprLowering (goExprToLocatedCommon, fingerprintCommonExpr, renderLoweringIssue)
-import Fluxus.CodeGen.CPP.AST
+import Fluxus.CodeGen.CPP.AST 
   ( CppDecl(..)
   , CppExpr(..)
   , CppLiteral(..)
@@ -42,7 +76,7 @@ import Fluxus.CodeGen.CPP.Go.TypeMapping
   ( collectCppTypeIncludes
   , mapGoTypeToCpp
   )
-import Fluxus.CodeGen.CPP.Shared
+import Fluxus.CodeGen.CPP.Shared 
   ( lookupAndApplyAnnotations
   , spaceSeparate
   , streamChain

@@ -58,11 +58,8 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import GHC.Generics (Generic)
 
-import Fluxus.AST.Common
-  ( AnalysisAnnotations
-  , emptyAnnotations
-  )
-import Fluxus.CodeGen.CPP.AST
+import Fluxus.AST.Common (AnalysisAnnotations, emptyAnnotations)
+import Fluxus.CodeGen.CPP.AST 
   ( CppDecl(..)
   , CppExpr(..)
   , CppStmt(..)

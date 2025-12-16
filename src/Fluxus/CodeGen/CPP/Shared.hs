@@ -25,17 +25,17 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 
-import Fluxus.AST.Common
+import Fluxus.AST.Common 
   ( ExprAnnotations(..)
   , OwnershipInfo(..)
   , MemoryLocation(..)
   , Type(..)
   , lookupAnnotations
   )
-import Fluxus.CodeGen.CPP.AST
+import Fluxus.CodeGen.CPP.AST 
   ( CppExpr(..)
-  , CppLiteral(..)
   , CppType(..)
+  , CppLiteral(..)
   )
 import Fluxus.CodeGen.CPP.Go.TypeMapping (mapGoTypeToCpp)
 import Fluxus.CodeGen.CPP.Monad

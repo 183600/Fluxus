@@ -17,12 +17,100 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.List.NonEmpty as NE
 
-import Fluxus.AST.Common hiding (TypeVar)
-import Fluxus.AST.Python
+import Fluxus.AST.Common 
+  ( Identifier(..)
+  , Located(..)
+  , ModuleName(..)
+  , QualifiedName(..)
+  , SourceSpan
+  , BinaryOp(..)
+  , UnaryOp(..)
+  , ComparisonOp(..)
+  , locValue
+  , locatedValue
+  , CommonExpr(..)
+  )
+import Fluxus.AST.Python 
+  ( PythonAST(..)
+  , pyModuleName
+  , pyModuleBody
+  , PythonFuncDef
+  , pyFuncName
+  , pyFuncParams
+  , pyFuncReturns
+  , pyFuncBody
+  , pyFuncIsAsync
+  , pyFuncDecorators
+  , PythonClassDef
+  , pyClassName
+  , pyClassBases
+  , pyClassBody
+  , PythonCase
+  , pyCasePattern
+  , pyCaseGuard
+  , pyCaseBody
+  , PythonPattern(..)
+  , PythonExcept
+  , pyExceptType
+  , pyExceptName
+  , pyExceptBody
+  , PythonWithItem
+  , pyWithContext
+  , pyWithVar
+  , PythonComprehension
+  , pyCompAsync
+  , pyCompIter
+  , pyCompTarget
+  , pyCompFilters
+  , PythonSlice(..)
+  , PythonFStringSegment(..)
+  , PythonExpr(..)
+  , PythonLiteral(..)
+  , PythonArgument(..)
+  , PythonStmt(..)
+  , PythonTypeExpr(..)
+  , PythonParameter(..)
+  , PythonImport(..)
+  )
 import Fluxus.Analysis.CommonExprLowering (pythonExprToLocatedCommon, fingerprintCommonExpr, renderLoweringIssue, formatSpan)
-import Fluxus.CodeGen.CPP.AST
-import Fluxus.CodeGen.CPP.Monad
-import Fluxus.CodeGen.CPP.Shared
+import Fluxus.CodeGen.CPP.AST 
+  ( CppDecl(..)
+  , CppExpr(..)
+  , CppStmt(..)
+  , CppType(..)
+  , CppLiteral(..)
+  , CppParam(..)
+  , CppUnit(..)
+  , CppCase(..)
+  , CppCatch(..)
+  , renderCppType
+  )
+import Fluxus.CodeGen.CPP.Monad 
+  ( CppCodeGen
+  , CppGenConfig
+  , CppGenState(..)
+  , addInclude
+  , addDeclaration
+  , runtimeAbortStmt
+  , runtimeFallbackStmt
+  , runtimeAbortCall
+  , emitInfo
+  , emitWarning
+  , reportFatalNotImplemented
+  , reportNotImplemented
+  , reportFatalUnsupported
+  , reportUnsupported
+  , reportInternalError
+  , generateTempVar
+  , cppNoop
+  , recordHoistedGlobal
+  , ensureRuntimeExecuteHelper
+  , ensureRuntimeAbortHelper
+  , cgcEnableInterop
+  , cgcStrictMode
+  )
+
+import Fluxus.CodeGen.CPP.Shared (lookupAndApplyAnnotations)
 
 -- | Generate C++ from Python AST
 generateCppFromPython :: PythonAST -> CppCodeGen CppUnit
