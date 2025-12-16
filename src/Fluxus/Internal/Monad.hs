@@ -18,7 +18,7 @@ import Fluxus.Internal.Types
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Except
--- import Control.Monad.IO.Class  -- unused
+-- -- -- import Control.Monad.IO.Class  -- unused  -- unused  -- unused ()
 
 runCompilerM :: CompilerEnv -> CompilerState -> CompilerM a -> Either CompilerError (a, CompilerState)
 runCompilerM env st m = runExcept $ runStateT (runReaderT m env) st

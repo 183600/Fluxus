@@ -167,7 +167,9 @@ parseAssignment = do
       let lastPat = Prelude.last pats
           combinedSpan = mergeSpans (locSpan firstPat) (locSpan lastPat)
       in Located combinedSpan (PatTuple pats)
-    coalescePatterns [] = error "coalescePatterns: empty list"
+    -- This case is unreachable because coalescePatterns is only called with results from sepBy1
+    -- which guarantees at least one element. Keeping this for exhaustiveness checking.
+    coalescePatterns [] = error "coalescePatterns: empty list - this should never happen with proper sepBy1 usage"
 
     parseAssignmentChain :: [Located PythonPattern] -> PythonParser PythonStmt
     parseAssignmentChain acc = do
@@ -1152,11 +1154,12 @@ parseSliceComponents startExpr = do
 
 wrapExtSlice :: [Located PythonSlice] -> Located PythonSlice
 wrapExtSlice slices@(firstSlice:_) =
-  let startSpan = locSpan firstSlice
-      endSpan = locSpan (Prelude.last slices)
+    let startSpan = locSpan firstSlice
+        endSpan = locSpan (Prelude.last slices)
   in Located (mergeSpans startSpan endSpan) (SliceExtSlice slices)
-wrapExtSlice [] = error "wrapExtSlice: empty list"
-
+-- This case is unreachable because wrapExtSlice is always called with non-empty lists
+-- from the parsing logic. Keeping this for exhaustiveness checking.
+wrapExtSlice [] = error "wrapExtSlice: empty list - this should never happen with proper slice handling"
 parseAttributeTrailer :: PythonParser (Located PythonExpr -> Located PythonExpr)
 parseAttributeTrailer = do
   void $ delimiterP DelimDot
@@ -1522,7 +1525,9 @@ parseTypeUnionExpr = do
       let startSpan = locSpan firstType
           endSpan = locSpan (Prelude.last types)
       in Located (mergeSpans startSpan endSpan) (TypeUnion types)
-    wrapUnion [] = error "wrapUnion: empty list"
+    -- This case is unreachable because wrapUnion is always called with non-empty lists
+    -- from the parsing logic. Keeping this for exhaustiveness checking.
+    wrapUnion [] = error "wrapUnion: empty list - this should never happen with proper type union handling"
 
 parseTypePostfixExpr :: PythonParser (Located PythonTypeExpr)
 parseTypePostfixExpr = do

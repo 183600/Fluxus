@@ -31,12 +31,9 @@ import Data.Word (Word64)
 import Data.ByteString (ByteString)
 import Data.HashMap.Strict (HashMap)
 import Data.Vector (Vector)
--- import qualified Data.Vector as V  -- unusedector
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Foreign.Ptr (Ptr)
--- import Foreign.C.Types  -- unused
--- import Foreign.C.String  -- unused
 
 -- | Go runtime state
 data GoRuntime = GoRuntime

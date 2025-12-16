@@ -15,6 +15,7 @@ module Fluxus.AST.Common
   , Located(..)
   , noLoc
   , locatedValue
+  , mergeSpans
     -- * Identifiers and names
   , Identifier(..)
   , QualifiedName(..)
@@ -54,6 +55,8 @@ import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Control.Applicative ((<|>))
+import Control.Monad () -- For instances
+import Control.Applicative () -- For instances
 
 -- | Source position information (line, column)
 data SourcePos = SourcePos
@@ -78,6 +81,22 @@ data Located a = Located
     deriving anyclass (NFData)
 
 instance Hashable a => Hashable (Located a)
+
+-- | Merge two source spans into one that covers both
+mergeSpans :: SourceSpan -> SourceSpan -> SourceSpan
+mergeSpans (SourceSpan file start _) (SourceSpan _ _ end) = SourceSpan file start end
+
+instance Applicative Located where
+  pure = noLoc
+  (Located spanF f) <*> (Located spanX x) = Located (mergeSpans spanF spanX) (f x)
+
+instance Monad Located where
+  return = pure
+  (Located locSpan x) >>= g = case g x of
+    Located span' v -> Located (mergeSpans locSpan span') v
+
+instance MonadFail Located where
+  fail msg = noLoc (error msg)
 
 -- | Create a node without location information (for testing/internal use)
 noLoc :: a -> Located a

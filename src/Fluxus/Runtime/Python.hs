@@ -27,7 +27,6 @@ module Fluxus.Runtime.Python
   ) where
 
 import Fluxus.AST.Common
--- import Control.Monad.IO.Class  -- unused
 import Control.Concurrent.STM
 import Data.Text (Text)
 import qualified Data.Text as T

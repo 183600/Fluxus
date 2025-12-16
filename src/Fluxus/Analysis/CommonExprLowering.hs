@@ -251,7 +251,7 @@ pythonExprToCommon located = case locValue located of
       [] -> Left $ failureAt (locSpan located) "Empty boolean operation in common expression lowering"
       (firstOperand:restOperands) ->
         let combined = foldl'
-              (\acc next -> Located (mergeSpans (locSpan acc) (locSpan next)) (CEBinaryOp op acc next))
+              (\acc next -> Located (Fluxus.AST.Common.mergeSpans (locSpan acc) (locSpan next)) (CEBinaryOp op acc next))
               firstOperand
               restOperands
         in pure $ locValue combined

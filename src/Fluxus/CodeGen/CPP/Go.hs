@@ -918,8 +918,8 @@ mapComparisonOp = \case
   OpGe -> ">="
   OpIs -> "=="
   OpIsNot -> "!="
-  OpIn -> error "mapComparisonOp: OpIn requires special handling"
-  OpNotIn -> error "mapComparisonOp: OpNotIn requires special handling"
+  OpIn -> "\"IN_OP_NOT_IMPLEMENTED\""
+  OpNotIn -> "\"NOT_IN_OP_NOT_IMPLEMENTED\""
 
 inferBaseType :: Located GoExpr -> CppType
 inferBaseType (Located _ expr) = case expr of

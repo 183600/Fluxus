@@ -111,14 +111,14 @@ data GoParseError = GoParseError
 
 -- | Run the Go parser producing an AST.
 runGoParser :: Text -> [Located GoToken] -> Either GoParseError GoAST
-runGoParser filename tokens =
+runGoParser filename tokensList =
   runIdentity $
     runNoLoggingT parser
   where
     parser :: NoLoggingT Identity (Either GoParseError GoAST)
     parser =
-      fmap (first (bundleToGoParseError filename tokens)) $
-        runParserT parseGo (T.unpack filename) (GoTokenStream tokens)
+      fmap (first (bundleToGoParseError filename tokensList)) $
+        runParserT parseGo (T.unpack filename) (GoTokenStream tokensList)
 
 -- | Run the Go parser with a custom logging function.
 runGoParserWithLogger

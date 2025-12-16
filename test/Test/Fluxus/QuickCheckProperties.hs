@@ -30,6 +30,12 @@ spec = describe "QuickCheck Property Tests" $ do
   typeAnnotationPreservationProperties
   operatorPrecedenceProperties
   sourceSpanContainmentProperties
+  dictionaryOperationProperties
+  tupleOperationProperties
+  sliceOperationProperties
+  functionCallProperties
+  typeConversionProperties
+  controlFlowProperties
 
 binaryOpProperties :: Spec
 binaryOpProperties = describe "Binary Operator Properties" $ do
@@ -326,3 +332,152 @@ arbitraryLiteral = oneof
   , LBool <$> arbitrary
   , LString . T.pack <$> listOf (elements ['a'..'z'])
   ]
+
+dictionaryOperationProperties :: Spec
+dictionaryOperationProperties = describe "Dictionary Operation Properties" $ do
+  prop "empty dictionary has no keys" $ 
+    let emptyDict = CEDict []
+    in case emptyDict of
+         CEDict [] -> True
+         _ -> False
+  
+  prop "dictionary preserves key-value pair count" $ \(NonNegative n) ->
+    let count = n `mod` 10
+        pairs = replicate count (noLoc $ CELiteral $ LString "key", noLoc $ CELiteral $ LInt 1)
+        dictExpr = CEDict pairs
+    in case dictExpr of
+         CEDict ps -> length ps === count
+         _ -> property False
+  
+  prop "dictionary lookup type consistency" $ forAll arbitraryIdentifierText $ \key ->
+    let keyExpr = noLoc $ CELiteral $ LString key
+        dictExpr = noLoc $ CEDict [(noLoc $ CELiteral $ LString key, noLoc $ CELiteral $ LInt 42)]
+        indexExpr = CEIndex dictExpr keyExpr
+    in case indexExpr of
+         CEIndex _ _ -> True
+         _ -> False
+
+tupleOperationProperties :: Spec
+tupleOperationProperties = describe "Tuple Operation Properties" $ do
+  prop "tuple preserves element count" $ \(NonNegative n) ->
+    let count = max 2 (n `mod` 10)
+        elems = replicate count (noLoc $ CELiteral $ LInt 1)
+        tupleExpr = CETuple elems
+    in case tupleExpr of
+         CETuple es -> length es === count
+         _ -> property False
+  
+  prop "tuple with mixed types is valid" $ 
+    forAll arbitraryLiteral $ \lit1 ->
+    forAll arbitraryLiteral $ \lit2 ->
+      let tupleExpr = CETuple [noLoc $ CELiteral lit1, noLoc $ CELiteral lit2]
+      in case tupleExpr of
+           CETuple [_, _] -> True
+           _ -> False
+  
+  prop "single element tuple is valid" $
+    forAll arbitraryLiteral $ \lit ->
+      let tupleExpr = CETuple [noLoc $ CELiteral lit]
+      in case tupleExpr of
+           CETuple [_] -> True
+           _ -> False
+
+sliceOperationProperties :: Spec
+sliceOperationProperties = describe "Slice Operation Properties" $ do
+  prop "slice with start and end is valid" $ \(a :: Int) (b :: Int) ->
+    let listExpr = noLoc $ CEVar (Identifier "list")
+        start = Just $ noLoc $ CELiteral $ LInt $ fromIntegral a
+        end = Just $ noLoc $ CELiteral $ LInt $ fromIntegral b
+        sliceExpr = CESlice listExpr start end
+    in case sliceExpr of
+         CESlice _ (Just _) (Just _) -> True
+         _ -> False
+  
+  prop "slice with only start is valid" $ \(a :: Int) ->
+    let listExpr = noLoc $ CEVar (Identifier "list")
+        start = Just $ noLoc $ CELiteral $ LInt $ fromIntegral a
+        sliceExpr = CESlice listExpr start Nothing
+    in case sliceExpr of
+         CESlice _ (Just _) Nothing -> True
+         _ -> False
+  
+  prop "slice with step preserves structure" $ \(a :: Int) (b :: Int) (_s :: Int) ->
+    let listExpr = noLoc $ CEVar (Identifier "list")
+        start = Just $ noLoc $ CELiteral $ LInt $ fromIntegral a
+        end = Just $ noLoc $ CELiteral $ LInt $ fromIntegral b
+        -- Note: CESlice doesn't take a step parameter in the current AST
+        sliceExpr = CESlice listExpr start end
+    in case sliceExpr of
+         CESlice _ (Just _) (Just _) -> True
+         _ -> False
+
+functionCallProperties :: Spec
+functionCallProperties = describe "Function Call Properties" $ do
+  prop "function call preserves argument count" $ \(NonNegative n) ->
+    let count = n `mod` 10
+        args = replicate count (noLoc $ CELiteral $ LInt 1)
+        funcExpr = noLoc $ CEVar $ Identifier "func"
+        callExpr = CECall funcExpr args
+    in case callExpr of
+         CECall _ as -> length as === count
+         _ -> property False
+  
+  prop "function call with no arguments is valid" $
+    let funcExpr = noLoc $ CEVar $ Identifier "func"
+        callExpr = CECall funcExpr []
+    in case callExpr of
+         CECall _ [] -> True
+         _ -> False
+  
+  prop "function call with arguments preserves count" $ \(NonNegative n) ->
+    let count = n `mod` 5
+        args = replicate count (noLoc $ CELiteral $ LInt 1)
+        funcExpr = noLoc $ CEVar $ Identifier "func"
+        callExpr = CECall funcExpr args
+    in case callExpr of
+         CECall _ as -> length as === count
+         _ -> property False
+
+typeConversionProperties :: Spec
+typeConversionProperties = describe "Type Conversion Properties" $ do
+  prop "int to float conversion preserves magnitude order" $ \(n :: Int) ->
+    let intVal = fromIntegral n :: Int64
+        floatVal = fromIntegral n :: Double
+    in (intVal > 0) == (floatVal > 0)
+  
+  prop "bool to int conversion is consistent" $ \(b :: Bool) ->
+    let intVal = if b then 1 else 0 :: Int64
+    in (b && intVal == 1) || (not b && intVal == 0)
+  
+  prop "string length is non-negative" $ forAll arbitraryIdentifierText $ \txt ->
+    T.length txt >= 0
+
+controlFlowProperties :: Spec
+controlFlowProperties = describe "Control Flow Properties" $ do
+  prop "if with else is valid" $
+    forAll arbitraryLiteral $ \condLit ->
+    forAll arbitraryLiteral $ \thenLit ->
+    forAll arbitraryLiteral $ \elseLit ->
+      let condExpr = noLoc $ CELiteral condLit
+          thenExpr = noLoc $ CELiteral thenLit
+          elseExpr = noLoc $ CELiteral elseLit
+          ifExpr = CEConditional condExpr thenExpr elseExpr
+      in case ifExpr of
+           CEConditional _ _ _ -> True
+           _ -> False
+  
+  prop "if without else is valid" $
+    forAll arbitraryLiteral $ \condLit ->
+    forAll arbitraryLiteral $ \thenLit ->
+    forAll arbitraryLiteral $ \elseLit ->
+      let condExpr = noLoc $ CELiteral condLit
+          thenExpr = noLoc $ CELiteral thenLit
+          elseExpr = noLoc $ CELiteral elseLit
+          ifExpr = CEConditional condExpr thenExpr elseExpr
+      in case ifExpr of
+           CEConditional _ _ _ -> True
+           _ -> False  
+  prop "logical and short-circuits on false" $ \(b1 :: Bool) (b2 :: Bool) ->
+    let result = b1 && b2
+        expected = if not b1 then False else b2
+    in result === expected

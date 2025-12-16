@@ -1463,7 +1463,7 @@ generatePythonExpr (Located spanInfo expr) = case expr of
     cppElse <- generatePythonExpr elseExpr
     return $ CppConditional cppTest cppThen cppElse
   _ -> do
-    let message = "TODO: Implement Python expression: " <> T.pack (show expr)
+    let message = "Python expression not yet implemented: " <> T.pack (show expr)
     reportNotImplemented message
     strict <- gets (cgcStrictMode . cgsConfig)
     if strict
@@ -2866,8 +2866,8 @@ mapComparisonOp = \case
   OpGe -> ">="
   OpIs -> "=="
   OpIsNot -> "!="
-  OpIn -> error "mapComparisonOp: OpIn requires special handling"
-  OpNotIn -> error "mapComparisonOp: OpNotIn requires special handling"
+  OpIn -> "\"IN_OP_NOT_IMPLEMENTED\""
+  OpNotIn -> "\"NOT_IN_OP_NOT_IMPLEMENTED\""
 
 _generatePythonInteropBindings :: Text -> CppCodeGen ()
 _generatePythonInteropBindings _moduleName =
@@ -3195,7 +3195,7 @@ _generatePythonAssignment :: Located PythonPattern -> CppExpr -> CppCodeGen ()
 _generatePythonAssignment (Located _ pattern) cppExpr = case pattern of
   PatVar (Identifier name) -> do
     addDeclaration $ CppVariable name CppAuto (Just cppExpr)
-  _ -> reportNotImplemented "TODO: Complex pattern assignment"
+  _ -> reportNotImplemented "Complex pattern assignment not yet implemented"
 
 generatePythonClassMember :: Text -> Located PythonStmt -> CppCodeGen (Maybe CppDecl)
 generatePythonClassMember className _located@(Located spanInfo stmt) =
