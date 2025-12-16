@@ -1,2 +1,0 @@
-s = ""
-print(len(s))

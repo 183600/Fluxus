@@ -45,8 +45,8 @@ import Data.Maybe (fromMaybe, catMaybes)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
-import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as HM
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Aeson (ToJSON(..), (.=), object)
 import Data.Time
 import System.FilePath
@@ -248,9 +248,9 @@ data CompilerState = CompilerState
   , csCompilerFallback   :: !Bool
   , csProcessedFiles     :: !Int
   , csTotalFiles         :: !Int
-  , csSymbolTable        :: !(HashMap Text Type)
-  , csTypeEnvironment    :: !(HashMap Text Type)
-  , csOptimizationStats  :: !(HashMap Text Int)
+  , csSymbolTable        :: !(Map Text Type)
+  , csTypeEnvironment    :: !(Map Text Type)
+  , csOptimizationStats  :: !(Map Text Int)
   , csIntermediateFiles  :: ![FilePath]
   , csAnalysisAnnotations :: !AnalysisAnnotations
   } deriving stock (Eq, Show, Generic)
@@ -395,9 +395,9 @@ initialCompilerState startTime = CompilerState
   , csCompilerFallback = False
   , csProcessedFiles = 0
   , csTotalFiles = 0
-  , csSymbolTable = HM.empty
-  , csTypeEnvironment = HM.empty
-  , csOptimizationStats = HM.empty
+  , csSymbolTable = Map.empty
+  , csTypeEnvironment = Map.empty
+  , csOptimizationStats = Map.empty
   , csIntermediateFiles = []
   , csAnalysisAnnotations = emptyAnnotations
   }
@@ -607,7 +607,8 @@ resolveWorkPath config candidate =
 -- | Compute the intermediate file path for a given source using the work directory.
 makeIntermediatePath :: CompilerConfig -> FilePath -> String -> FilePath
 makeIntermediatePath config source newExt =
-  resolveWorkPath config (replaceExtension source newExt)
+  let sourcePath = if source == "-" then "stdin" else source
+  in resolveWorkPath config (replaceExtension sourcePath newExt)
 
 -- | Resolve a default-named artifact (like the executable) into the work directory.
 defaultOutputLocation :: CompilerConfig -> FilePath -> FilePath
@@ -680,7 +681,7 @@ compileFile inputFile = do
       setCurrentPhase "linking"
       finalOutput <- case ccOutputPath config of
         Nothing ->
-          let executableName = dropExtension (takeFileName inputFile)
+          let executableName = if inputFile == "-" then "stdin" else dropExtension (takeFileName inputFile)
               outputPath = defaultOutputLocation config executableName
           in linkObjects [objFile] outputPath
         Just outPath -> linkObjects [objFile] outPath
@@ -728,7 +729,12 @@ compileProject inputFiles = do
 parseStage :: FilePath -> CompilerM (Either PythonAST GoAST)
 parseStage inputFile = do
   config <- ask
-  contentResult <- liftIO $ (try (TIO.readFile inputFile) :: IO (Either IOException Text))
+  contentResult <- liftIO $ if inputFile == "-"
+    then do
+      stdinContent <- TIO.getContents
+      return $ Right stdinContent
+    else do
+      (try (TIO.readFile inputFile) :: IO (Either IOException Text))
   content <- case contentResult of
     Left ioErr ->
       throwError $ FileSystemError (textShow ioErr) inputFile
@@ -736,10 +742,12 @@ parseStage inputFile = do
       return fileContent
 
   -- Detect language from file extension, with config as fallback
-  let detectedLanguage = case takeExtension inputFile of
-        ".py"  -> Python
-        ".go"  -> Go
-        _      -> ccSourceLanguage config  -- fallback to config
+  let detectedLanguage = case inputFile of
+        "-"    -> ccSourceLanguage config  -- use config for stdin
+        _      -> case takeExtension inputFile of
+                   ".py"  -> Python
+                   ".go"  -> Go
+                   _      -> ccSourceLanguage config  -- fallback to config
   
   case detectedLanguage of
     Python -> do
@@ -788,7 +796,7 @@ typeInferenceStage ast = do
     then return ast
     else do
       envSnapshot <- gets csTypeEnvironment
-      let initialEnv = HM.fromList $ map (\(name, ty) -> (Identifier name, ty)) (HM.toList envSnapshot)
+      let initialEnv = Map.fromList $ map (\(name, ty) -> (Identifier name, ty)) (Map.toList envSnapshot)
       (successes, failures) <- foldM (inferExpression initialEnv) (0 :: Int, 0 :: Int) commonExprs
       let total = successes + failures
       logInfo $ "Type inference summary: " <> textShow successes <> "/" <> textShow total <> " expressions inferred"
@@ -814,7 +822,7 @@ typeInferenceStage ast = do
         Right inferredType -> do
           let exprKey = fingerprintCommonExpr locatedExpr
               exprLabel = renderLocatedCommonExpr locatedExpr
-          modify $ \s -> s { csTypeEnvironment = HM.insert exprKey inferredType (csTypeEnvironment s) }
+          modify $ \s -> s { csTypeEnvironment = Map.insert exprKey inferredType (csTypeEnvironment s) }
           let annotation = ExprAnnotations
                 { eaInferredType = Just inferredType
                 , eaOwnership = Nothing
@@ -944,7 +952,7 @@ optimizationStage ast = do
           modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprKey monoAnnotation (csAnalysisAnnotations s) }
           forM_ monoHints $ \msg ->
             addWarning $ OptimizationWarning ("Monomorphization note for " <> exprLabel <> ": " <> msg)
-        recordOptimizationStatN "optimization.specializations" (HM.size (msSpecializations monoState))
+        recordOptimizationStatN "optimization.specializations" (Map.size (msSpecializations monoState))
         let (devirtResult, devirtState) = runDevirtualization (devirtualize (mrExpression monoResult))
         recordOptimizationStat "optimization.devirtualization"
         when (not (null (drOptimizations devirtResult))) $ do
@@ -958,7 +966,7 @@ optimizationStage ast = do
           modify $ \s -> s { csAnalysisAnnotations = insertAnnotations exprKey devirtAnnotation (csAnalysisAnnotations s) }
           forM_ devirtHints $ \msg ->
             addWarning $ OptimizationWarning ("Devirtualization note for " <> exprLabel <> ": " <> msg)
-        let resolvedCount = HM.size (dsResolvedCalls devirtState)
+        let resolvedCount = Map.size (dsResolvedCalls devirtState)
         when (resolvedCount > 0) $
           recordOptimizationStatN "optimization.devirtualization.resolved" resolvedCount
         when (drExpression devirtResult /= expr) $
@@ -985,7 +993,7 @@ codeGenStage ast = do
   config <- ask
   annotations <- gets csAnalysisAnnotations
   
-  logInfo $ "Code generation with " <> textShow (HM.size (unAnalysisAnnotations annotations)) <> " analysis annotations"
+  logInfo $ "Code generation with " <> textShow (Map.size (unAnalysisAnnotations annotations)) <> " analysis annotations"
 
   let cppConfig = CppGenConfig
         { cgcOptimizationLevel = fromEnum $ ccOptimizationLevel config
@@ -1135,7 +1143,7 @@ recordOptimizationStat key = recordOptimizationStatN key 1
 recordOptimizationStatN :: Text -> Int -> CompilerM ()
 recordOptimizationStatN key delta =
   modify $ \s ->
-    let updatedStats = HM.insertWith (+) key delta (csOptimizationStats s)
+    let updatedStats = Map.insertWith (+) key delta (csOptimizationStats s)
     in s { csOptimizationStats = updatedStats }
 
 addWarning :: CompilerWarning -> CompilerM ()

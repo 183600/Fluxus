@@ -34,8 +34,8 @@ import qualified Data.Text.Encoding as T
 import Data.Int (Int64)
 import Data.Word (Word64)
 import Data.ByteString (ByteString)
-import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as HashMap
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Vector (Vector)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
@@ -46,8 +46,8 @@ import Control.Monad (when)
 data PythonRuntime = PythonRuntime
   { pyrInterpreter :: !(Ptr ())           -- PyInterpreterState pointer
   , pyrGlobalDict :: !(Ptr ())            -- Global dictionary
-  , pyrModuleCache :: !(TVar (HashMap Text (Ptr ())))  -- Cached modules
-  , pyrObjectCache :: !(TVar (HashMap Text PythonObject))  -- Cached objects
+  , pyrModuleCache :: !(TVar (Map Text (Ptr ())))  -- Cached modules
+  , pyrObjectCache :: !(TVar (Map Text PythonObject))  -- Cached objects
   , pyrInteropMode :: !InteropMode         -- How to handle interop
   , pyrErrorState :: !(TVar (Maybe Text)) -- Last error if any
   , pyrRefCount :: !(TVar Int)             -- Reference count for cleanup
@@ -73,7 +73,7 @@ data RuntimeValue
   | RVNone
   | RVList !(Vector RuntimeValue)
   | RVTuple !(Vector RuntimeValue)
-  | RVDict !(HashMap Text RuntimeValue)
+  | RVDict !(Map Text RuntimeValue)
   | RVSet !(Vector RuntimeValue)
   | RVObject !PythonObject
   | RVFunction !Text !(Vector RuntimeValue -> IO RuntimeValue)
@@ -101,8 +101,8 @@ data PythonObject = PythonObject
   { poPtr :: !(Ptr ())                    -- PyObject pointer
   , poType :: !Text                       -- Python type name
   , poRefCount :: !Int                    -- Reference count
-  , poAttributes :: !(HashMap Text RuntimeValue)  -- Cached attributes
-  , poMethods :: !(HashMap Text (Vector RuntimeValue -> IO RuntimeValue))  -- Cached methods
+  , poAttributes :: !(Map Text RuntimeValue)  -- Cached attributes
+  , poMethods :: !(Map Text (Vector RuntimeValue -> IO RuntimeValue))  -- Cached methods
   } deriving stock (Generic)
 
 instance Show PythonObject where
@@ -111,8 +111,8 @@ instance Show PythonObject where
 -- | Runtime bridge for optimized interop
 data RuntimeBridge = RuntimeBridge
   { rbPythonRuntime :: !PythonRuntime
-  , rbTypeMap :: !(HashMap Type Text)        -- Fluxus type to Python type mapping
-  , rbFunctionCache :: !(TVar (HashMap Text (Vector RuntimeValue -> IO RuntimeValue)))
+  , rbTypeMap :: !(Map Type Text)        -- Fluxus type to Python type mapping
+  , rbFunctionCache :: !(TVar (Map Text (Vector RuntimeValue -> IO RuntimeValue)))
   , rbOptimizations :: ![Text]               -- Enabled optimizations
   } deriving stock (Generic)
 
@@ -146,8 +146,8 @@ shutdownPythonRuntime runtime = do
   when (newRefCount <= 0) $ do
     -- Clear caches
     atomically $ do
-      writeTVar (pyrModuleCache runtime) HashMap.empty
-      writeTVar (pyrObjectCache runtime) HashMap.empty
+      writeTVar (pyrModuleCache runtime) Map.empty
+      writeTVar (pyrObjectCache runtime) Map.empty
     
     -- Finalize Python interpreter
     py_Finalize
@@ -197,7 +197,7 @@ runPythonCode _runtime _code = pure (Left runtimeUnavailable)
 -- | Create a runtime bridge for optimized interop
 createRuntimeBridge :: PythonRuntime -> [Text] -> IO RuntimeBridge
 createRuntimeBridge runtime optimizations = do
-  functionCache <- newTVarIO HashMap.empty
+  functionCache <- newTVarIO Map.empty
   let typeMap = createTypeMapping
   return RuntimeBridge
     { rbPythonRuntime = runtime
@@ -237,8 +237,8 @@ _callFallbackFunction :: PythonRuntime -> Text -> [RuntimeValue] -> IO (Either T
 _callFallbackFunction _runtime _funcName _args = pure (Left runtimeUnavailable)
 
 -- | Create type mapping from Fluxus types to Python types
-createTypeMapping :: HashMap Type Text
-createTypeMapping = HashMap.fromList
+createTypeMapping :: Map Type Text
+createTypeMapping = Map.fromList
   [ (TInt 32, "int")
   , (TInt 64, "int")
   , (TFloat 64, "float")

@@ -20,8 +20,8 @@ import Control.Monad.State
 import Control.Monad.Reader
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as HashMap
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import GHC.Generics (Generic)
@@ -39,10 +39,10 @@ data MonomorphizationContext = MonomorphizationContext
 
 -- | State for monomorphization
 data MonomorphizationState = MonomorphizationState
-  { msSpecializations :: !(HashMap QualifiedName (Set [Type]))  -- Function to type instantiations
-  , msGeneratedFunctions :: !(HashMap (QualifiedName, [Type]) QualifiedName)  -- Generated specialized functions
-  , msTypeInstantiations :: !(HashMap QualifiedName [Type])     -- Current type instantiations
-  , msCallGraph :: !(HashMap QualifiedName (Set QualifiedName)) -- Function call dependencies
+  { msSpecializations :: !(Map QualifiedName (Set [Type]))  -- Function to type instantiations
+  , msGeneratedFunctions :: !(Map (QualifiedName, [Type]) QualifiedName)  -- Generated specialized functions
+  , msTypeInstantiations :: !(Map QualifiedName [Type])     -- Current type instantiations
+  , msCallGraph :: !(Map QualifiedName (Set QualifiedName)) -- Function call dependencies
   , msSpecializationQueue :: ![(QualifiedName, [Type])]         -- Functions to specialize
   } deriving stock (Show, Generic)
     deriving anyclass (NFData)
@@ -50,7 +50,7 @@ data MonomorphizationState = MonomorphizationState
 -- | Result of monomorphization
 data MonomorphizationResult = MonomorphizationResult
   { mrExpression :: !CommonExpr
-  , mrSpecializations :: !(HashMap QualifiedName [CommonExpr])  -- Generated specialized functions
+  , mrSpecializations :: !(Map QualifiedName [CommonExpr])  -- Generated specialized functions
   , mrOptimizations :: ![Text]                                 -- Applied optimizations
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
@@ -66,10 +66,10 @@ initialContext = MonomorphizationContext
 -- | Initial state
 initialState :: MonomorphizationState
 initialState = MonomorphizationState
-  { msSpecializations = HashMap.empty
-  , msGeneratedFunctions = HashMap.empty
-  , msTypeInstantiations = HashMap.empty
-  , msCallGraph = HashMap.empty
+  { msSpecializations = Map.empty
+  , msGeneratedFunctions = Map.empty
+  , msTypeInstantiations = Map.empty
+  , msCallGraph = Map.empty
   , msSpecializationQueue = []
   }
 
@@ -137,16 +137,16 @@ collectTypeInstantiations _ = return ()
 recordTypeInstantiation :: QualifiedName -> [Type] -> MonomorphizationM ()
 recordTypeInstantiation funcName types = do
   modify $ \s -> s 
-    { msSpecializations = HashMap.insertWith Set.union funcName (Set.singleton types) (msSpecializations s)
+    { msSpecializations = Map.insertWith Set.union funcName (Set.singleton types) (msSpecializations s)
     , msSpecializationQueue = (funcName, types) : msSpecializationQueue s
     }
 
 -- | Generate all required specializations
-generateSpecializations :: MonomorphizationM (HashMap QualifiedName [CommonExpr])
+generateSpecializations :: MonomorphizationM (Map QualifiedName [CommonExpr])
 generateSpecializations = do
   queue <- gets msSpecializationQueue
   specializations <- mapM (uncurry generateSpecialization) queue
-  return $ HashMap.fromList specializations
+  return $ Map.fromList specializations
 
 -- | Generate a single specialization
 generateSpecialization :: QualifiedName -> [Type] -> MonomorphizationM (QualifiedName, [CommonExpr])
@@ -155,7 +155,7 @@ generateSpecialization funcName types = do
   let specializedName = createSpecializedName funcName types
   
   -- Record the mapping
-  modify $ \s -> s { msGeneratedFunctions = HashMap.insert (funcName, types) specializedName (msGeneratedFunctions s) }
+  modify $ \s -> s { msGeneratedFunctions = Map.insert (funcName, types) specializedName (msGeneratedFunctions s) }
   
   -- Generate specialized function body (placeholder)
   let specializedBody = [CELiteral (LString "specialized function")]
@@ -245,7 +245,7 @@ transformExpression expr = return expr  -- Literals and variables unchanged
 lookupSpecialization :: QualifiedName -> [Type] -> MonomorphizationM (Maybe QualifiedName)
 lookupSpecialization funcName types = do
   generated <- gets msGeneratedFunctions
-  return $ HashMap.lookup (funcName, types) generated
+  return $ Map.lookup (funcName, types) generated
 
 -- | Specialize a function for given types
 specializeFunction :: QualifiedName -> [Type] -> MonomorphizationM QualifiedName
@@ -255,7 +255,7 @@ specializeFunction funcName types = do
     Just name -> return name
     Nothing -> do
       let specializedName = createSpecializedName funcName types
-      modify $ \s -> s { msGeneratedFunctions = HashMap.insert (funcName, types) specializedName (msGeneratedFunctions s) }
+      modify $ \s -> s { msGeneratedFunctions = Map.insert (funcName, types) specializedName (msGeneratedFunctions s) }
       return specializedName
 
 -- | Infer type of expression (simplified)

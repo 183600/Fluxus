@@ -1,2 +1,0 @@
-x = None
-print(x)

@@ -201,9 +201,27 @@ def test_python_to_cpp(test_case, test_num):
         
         # 步骤2: 编译Python到C++
         print_info("步骤2: 编译Python到C++...")
-        ret, cpp_code, compile_err = run_command(
-            ['cabal', 'run', 'fluxus', '--', '--python', py_file]
+        ret, output_info, compile_err = run_command(
+            ['cabal', 'run', 'fluxus', '--', '--python', py_file, '--stop-at-codegen']
         )
+        
+        # 从输出中提取C++文件路径
+        cpp_file_name = None
+        if output_info and "Output artifact:" in output_info:
+            cpp_file_name = output_info.split("Output artifact:")[1].strip()
+        
+        if not cpp_file_name:
+            print_error("无法从编译器输出中获取C++文件路径")
+            print(f"编译器输出: {output_info}")
+            return False
+        
+        # 读取生成的C++文件
+        try:
+            with open(cpp_file_name, 'r') as f:
+                cpp_code = f.read()
+        except FileNotFoundError:
+            print_error(f"无法找到生成的C++文件: {cpp_file_name}")
+            return False
         
         if ret != 0:
             print_error(f"编译失败: {compile_err}")
@@ -213,7 +231,7 @@ def test_python_to_cpp(test_case, test_num):
             print_error("生成的C++代码为空或太短")
             return False
         
-        # 保存C++代码
+        # 复制C++代码到临时文件用于后续编译
         with open(cpp_file, 'w') as f:
             f.write(cpp_code)
         

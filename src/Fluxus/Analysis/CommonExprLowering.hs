@@ -444,8 +444,7 @@ goLiteralToLiteral sp = \case
   GoBool b -> Right $ LBool b
   GoNil -> Right LNone
 
-mergeSpans :: SourceSpan -> SourceSpan -> SourceSpan
-mergeSpans (SourceSpan file start _) (SourceSpan _ _ end) = SourceSpan file start end
+
 
 formatSpan :: SourceSpan -> Text
 formatSpan (SourceSpan file start _) =

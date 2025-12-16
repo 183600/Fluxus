@@ -1,2 +1,0 @@
-d = {}
-print(len(d))

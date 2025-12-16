@@ -49,14 +49,13 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Int (Int64)
 import Data.Word (Word64)
-import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as HM
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Control.Applicative ((<|>))
 import Control.Monad () -- For instances
-import Control.Applicative () -- For instances
 
 -- | Source position information (line, column)
 data SourcePos = SourcePos
@@ -92,8 +91,8 @@ instance Applicative Located where
 
 instance Monad Located where
   return = pure
-  (Located locSpan x) >>= g = case g x of
-    Located span' v -> Located (mergeSpans locSpan span') v
+  (Located locSpan1 x) >>= g = case g x of
+    Located span' v -> Located (mergeSpans locSpan1 span') v
 
 instance MonadFail Located where
   fail msg = noLoc (error msg)
@@ -316,22 +315,22 @@ data ExprAnnotations = ExprAnnotations
 
 -- | Global analysis annotations keyed by a stable expression fingerprint.
 newtype AnalysisAnnotations = AnalysisAnnotations
-  { unAnalysisAnnotations :: HashMap Text ExprAnnotations
+  { unAnalysisAnnotations :: Map Text ExprAnnotations
   } deriving stock (Eq, Show, Generic)
     deriving newtype (Hashable, NFData)
 
 -- | Empty annotations payload.
 emptyAnnotations :: AnalysisAnnotations
-emptyAnnotations = AnalysisAnnotations HM.empty
+emptyAnnotations = AnalysisAnnotations Map.empty
 
 -- | Lookup annotations by key.
 lookupAnnotations :: Text -> AnalysisAnnotations -> Maybe ExprAnnotations
-lookupAnnotations key (AnalysisAnnotations mapping) = HM.lookup key mapping
+lookupAnnotations key (AnalysisAnnotations mapping) = Map.lookup key mapping
 
 -- | Insert or merge annotations for a key.
 insertAnnotations :: Text -> ExprAnnotations -> AnalysisAnnotations -> AnalysisAnnotations
 insertAnnotations key anns (AnalysisAnnotations mapping) =
-  AnalysisAnnotations $ HM.insertWith merge key anns mapping
+  AnalysisAnnotations $ Map.insertWith merge key anns mapping
   where
     merge new old = ExprAnnotations
       { eaInferredType = eaInferredType new <|> eaInferredType old

@@ -21,8 +21,8 @@ import Control.Monad.State
 import Control.Monad.Reader
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as HashMap
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import GHC.Generics (Generic)
@@ -33,17 +33,17 @@ type DevirtualizationM = ReaderT DevirtualizationContext (State Devirtualization
 -- | Context for devirtualization
 data DevirtualizationContext = DevirtualizationContext
   { dcCurrentFunction :: !(Maybe QualifiedName)
-  , dcTypeEnvironment :: !(HashMap Identifier Type)    -- Known variable types
-  , dcClassHierarchy :: !(HashMap QualifiedName [QualifiedName])  -- Inheritance relationships
+  , dcTypeEnvironment :: !(Map Identifier Type)    -- Known variable types
+  , dcClassHierarchy :: !(Map QualifiedName [QualifiedName])  -- Inheritance relationships
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
 -- | State for devirtualization analysis
 data DevirtualizationState = DevirtualizationState
-  { dsVirtualCalls :: !(HashMap QualifiedName [VirtualCallInfo])  -- Virtual call sites
-  , dsResolvedCalls :: !(HashMap QualifiedName QualifiedName)     -- Resolved virtual calls
-  , dsCallFrequency :: !(HashMap QualifiedName Int)              -- Call frequency analysis
-  , dsTypeConstraints :: !(HashMap Identifier (Set Type))        -- Type constraints for variables
+  { dsVirtualCalls :: !(Map QualifiedName [VirtualCallInfo])  -- Virtual call sites
+  , dsResolvedCalls :: !(Map QualifiedName QualifiedName)     -- Resolved virtual calls
+  , dsCallFrequency :: !(Map QualifiedName Int)              -- Call frequency analysis
+  , dsTypeConstraints :: !(Map Identifier (Set Type))        -- Type constraints for variables
   , dsOptimizations :: ![Text]                                   -- Applied optimizations
   } deriving stock (Show, Generic)
     deriving anyclass (NFData)
@@ -70,17 +70,17 @@ data DevirtualizationResult = DevirtualizationResult
 initialContext :: DevirtualizationContext
 initialContext = DevirtualizationContext
   { dcCurrentFunction = Nothing
-  , dcTypeEnvironment = HashMap.empty
-  , dcClassHierarchy = HashMap.empty
+  , dcTypeEnvironment = Map.empty
+  , dcClassHierarchy = Map.empty
   }
 
 -- | Initial state
 initialState :: DevirtualizationState
 initialState = DevirtualizationState
-  { dsVirtualCalls = HashMap.empty
-  , dsResolvedCalls = HashMap.empty
-  , dsCallFrequency = HashMap.empty
-  , dsTypeConstraints = HashMap.empty
+  { dsVirtualCalls = Map.empty
+  , dsResolvedCalls = Map.empty
+  , dsCallFrequency = Map.empty
+  , dsTypeConstraints = Map.empty
   , dsOptimizations = []
   }
 
@@ -155,7 +155,7 @@ analyzeCallSites _ = return ()
 recordVirtualCall :: Identifier -> VirtualCallInfo -> DevirtualizationM ()
 recordVirtualCall methodName callInfo = do
   let qualifiedName = QualifiedName [] methodName  -- Convert to QualifiedName
-  modify $ \s -> s { dsVirtualCalls = HashMap.insertWith (++) qualifiedName [callInfo] (dsVirtualCalls s) }
+  modify $ \s -> s { dsVirtualCalls = Map.insertWith (++) qualifiedName [callInfo] (dsVirtualCalls s) }
 
 -- | Optimize dispatch by resolving virtual calls where possible
 optimizeDispatch :: CommonExpr -> DevirtualizationM CommonExpr
@@ -236,7 +236,7 @@ resolveVirtualCall :: Identifier -> Identifier -> DevirtualizationM (Maybe Quali
 resolveVirtualCall methodName receiverVar = do
   -- Look up the type of the receiver variable
   typeEnv <- asks dcTypeEnvironment
-  case HashMap.lookup receiverVar typeEnv of
+  case Map.lookup receiverVar typeEnv of
     Just receiverType -> do
       -- Check if we can resolve the method for this type
       resolvedMethod <- resolveMethodForType methodName receiverType
@@ -244,7 +244,7 @@ resolveVirtualCall methodName receiverVar = do
         Just method -> do
           -- Record the successful resolution
           let qualifiedName = QualifiedName [] methodName  -- Convert to QualifiedName
-          modify $ \s -> s { dsResolvedCalls = HashMap.insert qualifiedName method (dsResolvedCalls s) }
+          modify $ \s -> s { dsResolvedCalls = Map.insert qualifiedName method (dsResolvedCalls s) }
           return $ Just method
         Nothing -> return Nothing
     Nothing -> return Nothing

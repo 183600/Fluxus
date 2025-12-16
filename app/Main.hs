@@ -105,8 +105,7 @@ extractInputFiles :: [String] -> [FilePath]
 extractInputFiles = filter isInputFile
   where
     isInputFile arg = not ("--" `isPrefixOf` arg) && 
-                     not ("-" `isPrefixOf` arg) &&
-                     (hasSupportedExtension arg)
+                     (arg == "-" || (not ("-" `isPrefixOf` arg) && hasSupportedExtension arg))
     
     hasSupportedExtension file = 
       any (`isSuffixOf` file) [".py", ".go"]

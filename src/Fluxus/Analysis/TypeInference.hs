@@ -29,8 +29,8 @@ import Control.Monad.Except
 import Control.Monad (foldM)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as HashMap
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import GHC.Generics (Generic)
@@ -38,8 +38,8 @@ import Control.DeepSeq (NFData)
 
 type TypeInferenceM = StateT TypeInferenceState (Except Text)
 type TypeConstraints = [(Type, Type)]
-type TypeEnvironment = HashMap Identifier Type
-type Substitution = HashMap TypeVar Type
+type TypeEnvironment = Map Identifier Type
+type Substitution = Map TypeVar Type
 
 data TypeInferenceState = TypeInferenceState
   { nextTyVar :: !Int
@@ -63,7 +63,7 @@ runTypeInference env m = runExcept $ evalStateT m initialState
     initialState = TypeInferenceState
       { nextTyVar = 0
       , constraints = []
-      , substitutions = HashMap.empty
+      , substitutions = Map.empty
       , typeEnv = env
       , currentScope = []
       }
@@ -84,13 +84,13 @@ addConstraint t1 t2 = modify $ \s -> s { constraints = (t1, t2) : constraints s 
 lookupVarType :: Identifier -> TypeInferenceM Type
 lookupVarType var = do
   env <- gets typeEnv
-  case HashMap.lookup var env of
+  case Map.lookup var env of
     Just t -> return t
     Nothing -> throwError $ "Undefined variable: " <> T.pack (show var)
 
 -- | Bind variable to type in current environment
 bindVarType :: Identifier -> Type -> TypeInferenceM ()
-bindVarType var t = modify $ \s -> s { typeEnv = HashMap.insert var t (typeEnv s) }
+bindVarType var t = modify $ \s -> s { typeEnv = Map.insert var t (typeEnv s) }
 
 -- | Push new scope for nested contexts (functions, blocks, etc.)
 _pushScope :: TypeInferenceM ()
@@ -481,7 +481,7 @@ occurs var = go
 applySubstitution :: Substitution -> Type -> Type
 applySubstitution subst = go
   where
-    go t@(TVar v) = HashMap.lookupDefault t v subst
+    go t@(TVar v) = Map.findWithDefault t v subst
     go (TList t) = TList (go t)
     go (TTuple ts) = TTuple (map go ts)
     go (TDict k v) = TDict (go k) (go v)
@@ -527,7 +527,7 @@ solveConstraints = do
     assign var ty rest = do
       subst <- gets substitutions
       let ty' = applySubstitution subst ty
-          newSub = HashMap.singleton var ty'
+          newSub = Map.singleton var ty'
           composed = composeSubstitution newSub subst
           rest' = map (applyPair newSub) rest
       modify $ \s -> s { substitutions = composed }
@@ -536,15 +536,15 @@ solveConstraints = do
     applyPair sub (a, b) = (applySubstitution sub a, applySubstitution sub b)
 
     composeSubstitution new old =
-      HashMap.union new (HashMap.map (applySubstitution new) old)
+      Map.union new (Map.map (applySubstitution new) old)
 
 -- | Instantiate a polymorphic type with fresh type variables
 instantiate :: Type -> TypeInferenceM Type
 instantiate (TForall vars _ t) = do
   freshVars <- mapM (const freshTypeVar) vars
-  let varMap = HashMap.fromList (zip vars (map extractTypeVar freshVars))
-  let substitution = HashMap.mapKeys (\(TypeVar name) -> TypeVar name) 
-                   $ HashMap.map TVar varMap
+  let varMap = Map.fromList (zip vars (map extractTypeVar freshVars))
+  let substitution = Map.mapKeys (\(TypeVar name) -> TypeVar name)
+                        $ Map.map TVar varMap
   return $ applySubstitution substitution t
   where
     extractTypeVar (TVar v) = v
@@ -581,7 +581,7 @@ generalize env t =
     freeVarsInType _ = Set.empty
     
     freeVarsInEnv :: TypeEnvironment -> Set TypeVar
-    freeVarsInEnv = Set.unions . map freeVarsInType . HashMap.elems
+    freeVarsInEnv = Set.unions . map freeVarsInType . Map.elems
 
 -- Helper function for checking if Either is Left
 isLeft :: Either a b -> Bool

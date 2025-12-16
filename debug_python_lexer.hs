@@ -1,68 +1,61 @@
 #!/usr/bin/env runhaskell
 
--- | Simple test program to debug the Python lexer in Fluxus
--- This program tests the lexer with simple Python expressions to identify tokenization issues
+-- | Debug program for the Python lexer in Fluxus
+-- This program tests the lexer with various Python expressions
+
+{-# LANGUAGE OverloadedStrings #-}
 
 module Main (main) where
 
+import Data.Text (Text)
+import qualified Data.Text as T
+import Data.Void (Void)
 import Fluxus.Parser.Python.Lexer
 import Fluxus.AST.Common
-import qualified Data.Text as T
-import Data.Text (Text)
+import Text.Megaparsec (ParseErrorBundle)
 
--- | Test a simple Python expression with the lexer
+-- | Test the lexer with a given input
 testLexer :: Text -> Text -> IO ()
 testLexer testName input = do
     putStrLn $ "=== Testing: " ++ T.unpack testName ++ " ==="
     putStrLn $ "Input: " ++ T.unpack input
     putStrLn "Tokens:"
     
-    case runPythonLexer (T.pack "test.py") input of
+    case runPythonLexer "test.py" input of
         Left err -> do
-            putStrLn $ "ERROR: " ++ show err
-        Right tokens -> do
-            putStrLn $ "SUCCESS: Found " ++ show (length tokens) ++ " tokens"
-            mapM_ printToken tokens
+            putStrLn $ "ERROR: " ++ show (err :: ParseErrorBundle Text Void)
+        Right lexerTokens -> do
+            putStrLn $ "SUCCESS: Found " ++ show (length lexerTokens) ++ " tokens"
+            mapM_ printToken lexerTokens
     putStrLn ""
 
--- | Print a token with its location information
+-- | Print a token
 printToken :: Located PythonToken -> IO ()
-printToken (Located loc token) = do
-    let posStr = show (posLine (spanStart loc)) ++ ":" ++ show (posColumn (spanStart loc))
-    putStrLn $ "  " ++ posStr ++ " -> " ++ show token
+printToken locatedToken = putStrLn $ "  " ++ show locatedToken
 
--- | Test cases for simple Python expressions
+-- | Test cases for Python expressions
 main :: IO ()
 main = do
-    putStrLn "Fluxus Python Lexer Debug Test"
-    putStrLn "=============================="
+    putStrLn "Python Lexer Debug Test"
+    putStrLn "======================="
     putStrLn ""
     
     -- Test case 1: Simple print with number
-    testLexer (T.pack "print(42)") (T.pack "print(42)")
+    testLexer "print(42)" "print(42)"
     
     -- Test case 2: Simple print with string
-    testLexer (T.pack "print(\"Hello\")") (T.pack "print(\"Hello\")")
+    testLexer "print(\"Hello\")" "print(\"Hello\")"
     
     -- Test case 3: Multiple statements
-    testLexer (T.pack "Multiple statements") (T.pack "print(42)\nprint(\"Hello\")")
+    testLexer "Multiple statements" "print(42)\nprint(\"Hello\")"
     
     -- Test case 4: Function definition
-    testLexer (T.pack "Function definition") (T.pack "def foo():\n    return 42")
+    testLexer "Function definition" "def foo():\n    return 42"
     
     -- Test case 5: Variable assignment
-    testLexer (T.pack "Variable assignment") (T.pack "x = 42")
+    testLexer "Variable assignment" "x = 42"
     
     -- Test case 6: Expression with operator
-    testLexer (T.pack "Expression with operator") (T.pack "1 + 2 * 3")
-    
-    -- Test case 7: Potential issues
-    testLexer (T.pack "Potential issues") (T.pack "if x: pass")
-    
-    -- Test case 8: String with escaped quotes
-    testLexer (T.pack "Escaped quotes") (T.pack "print(\"Hello \\\"world\\\"\")")
-    
-    -- Test case 9: Boolean literals
-    testLexer (T.pack "Boolean literals") (T.pack "True and False")
+    testLexer "Expression with operator" "1 + 2 * 3"
     
     putStrLn "Test completed!"

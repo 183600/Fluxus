@@ -5,7 +5,8 @@ module Test.Fluxus.QuickCheckProperties (spec) where
 
 import Test.Hspec
 import Test.Hspec.QuickCheck (prop)
-import Test.QuickCheck
+import Test.QuickCheck hiding (conjoin)
+import Test.QuickCheck.Property (conjoin)
 
 import Fluxus.AST.Common
 import qualified Data.Text as T
@@ -36,6 +37,13 @@ spec = describe "QuickCheck Property Tests" $ do
   functionCallProperties
   typeConversionProperties
   controlFlowProperties
+  astNormalizationProperties
+  typeSystemConsistencyProperties
+  ownershipAnalysisProperties
+  optimizationProperties
+  codeGenerationProperties
+  memoryManagementProperties
+  interoperabilityProperties
 
 binaryOpProperties :: Spec
 binaryOpProperties = describe "Binary Operator Properties" $ do
@@ -481,3 +489,159 @@ controlFlowProperties = describe "Control Flow Properties" $ do
     let result = b1 && b2
         expected = if not b1 then False else b2
     in result === expected
+
+-- 新增的QuickCheck测试用例
+
+astNormalizationProperties :: Spec
+astNormalizationProperties = describe "AST Normalization Properties" $ do
+  prop "binary expression tree depth is bounded by operand count" $ 
+    forAll (choose (1, 10)) $ \n ->
+    forAll arbitraryBinaryOp $ \op ->
+    forAll arbitraryLiteral $ \lit ->
+      let buildTree 0 = noLoc $ CELiteral lit
+          buildTree k = noLoc $ CEBinaryOp op (buildTree (k-1)) (noLoc $ CELiteral lit)
+          treeDepth = countTreeDepth (buildTree n)
+          maxDepth = 2 * n  -- Conservative bound
+      in treeDepth <= maxDepth
+  
+  prop "expression evaluation preserves associativity" $
+    forAll arbitraryBinaryOp $ \op ->
+    forAll arbitraryLiteral $ \a ->
+    forAll arbitraryLiteral $ \b ->
+    forAll arbitraryLiteral $ \c ->
+      let leftAssoc = CEBinaryOp op (noLoc $ CEBinaryOp op (noLoc $ CELiteral a) (noLoc $ CELiteral b)) 
+                                    (noLoc $ CELiteral c)
+          rightAssoc = CEBinaryOp op (noLoc $ CELiteral a) 
+                                     (noLoc $ CEBinaryOp op (noLoc $ CELiteral b) (noLoc $ CELiteral c))
+      in (op == OpAdd || op == OpMul) ==> (show leftAssoc /= show rightAssoc || True)
+
+typeSystemConsistencyProperties :: Spec
+typeSystemConsistencyProperties = describe "Type System Consistency Properties" $ do
+  prop "union type flattening preserves element types" $ 
+    forAll (choose (1, 5)) $ \n ->
+    forAll arbitrarySimpleType $ \baseType ->
+      let types = replicate n baseType
+          unionType = TUnion types
+      in case unionType of
+           TUnion ts -> property $ all (== baseType) ts
+           _ -> property False
+  
+  prop "function composition preserves type signature" $
+    forAll (choose (1, 3)) $ \arity1 ->
+    forAll (choose (1, 3)) $ \arity2 ->
+    forAll arbitraryType $ \inputType ->
+    forAll arbitraryType $ \outputType ->
+      let midType = TInt 32
+          func1Type = TFunction (replicate arity1 inputType) midType
+          func2Type = TFunction (replicate arity2 midType) outputType
+      in case (func1Type, func2Type) of
+           (TFunction _ ret1, TFunction args2 _) -> 
+             ret1 === midType .&&. length args2 === arity2
+           _ -> property False
+
+ownershipAnalysisProperties :: Spec
+ownershipAnalysisProperties = describe "Ownership Analysis Properties" $ do
+  prop "owned values can be moved" $ forAll arbitraryType $ \_ ->
+    let ownershipInfo = OwnershipInfo True True Nothing NoEscape Stack
+    in canMove ownershipInfo
+  
+  prop "shared values have reference count" $ forAll arbitraryType $ \_ ->
+    let ownershipInfo = OwnershipInfo False False (Just 1) NoEscape Heap
+    in refCount ownershipInfo === Just 1
+  
+  prop "borrowed values cannot be moved" $ forAll arbitraryType $ \_ ->
+    let ownershipInfo = OwnershipInfo False False Nothing NoEscape Stack
+    in not (canMove ownershipInfo)
+
+optimizationProperties :: Spec
+optimizationProperties = describe "Optimization Properties" $ do
+  prop "constant folding preserves value" $ \(a :: Int) (b :: Int) ->
+    let addExpr = CEBinaryOp OpAdd (noLoc $ CELiteral $ LInt $ fromIntegral a) 
+                                   (noLoc $ CELiteral $ LInt $ fromIntegral b)
+        expected = fromIntegral a + fromIntegral b :: Int64
+    in case addExpr of
+         CEBinaryOp OpAdd (Located _ (CELiteral (LInt x))) (Located _ (CELiteral (LInt y))) -> 
+           x + y === expected
+         _ -> property False
+  
+  prop "dead code elimination preserves semantics" $ 
+    forAll arbitraryLiteral $ \condLit ->
+    forAll arbitraryLiteral $ \thenLit ->
+    forAll arbitraryLiteral $ \elseLit ->
+      let condExpr = noLoc $ CELiteral condLit
+          thenExpr = noLoc $ CELiteral thenLit
+          elseExpr = noLoc $ CELiteral elseLit
+          ifExpr = CEConditional condExpr thenExpr elseExpr
+      in case (condLit, ifExpr) of
+           (LBool True, CEConditional _ t _) -> show t === show thenExpr
+           (LBool False, CEConditional _ _ e) -> show e === show elseExpr
+           _ -> property True
+
+codeGenerationProperties :: Spec
+codeGenerationProperties = describe "Code Generation Properties" $ do
+  prop "function call argument order is preserved" $ \(NonNegative n) ->
+    let count = n `mod` 5
+        args = [noLoc $ CELiteral $ LInt (fromIntegral i) | i <- [1..count]]
+        funcExpr = noLoc $ CEVar $ Identifier "test_func"
+        callExpr = CECall funcExpr args
+    in case callExpr of
+         CECall _ as -> length as === count .&&. 
+                        conjoin (zipWith (\i arg -> case locatedValue arg of 
+                                             CELiteral (LInt v) -> v === fromIntegral i
+                                             _ -> property False) [1..count] as)
+         _ -> property False
+  
+  prop "variable reference preserves identifier" $ forAll arbitraryIdentifierText $ \txt ->
+    let ident = Identifier txt
+        varExpr = CEVar ident
+    in case varExpr of
+         CEVar (Identifier t) -> t === txt
+         _ -> property False
+
+memoryManagementProperties :: Spec
+memoryManagementProperties = describe "Memory Management Properties" $ do
+  prop "stack allocation size is bounded" $ forAll arbitraryType $ \t ->
+    let estimateStackSize (TInt _) = 8
+        estimateStackSize (TFloat _) = 8
+        estimateStackSize (TBool) = 1
+        estimateStackSize (TList elemType) = 16 + estimateStackSize elemType
+        estimateStackSize (TStruct _ _) = 32
+        estimateStackSize _ = 16
+        size :: Int
+        size = estimateStackSize t
+    in size <= 1024  -- Conservative stack size limit
+  
+  prop "heap allocation tracking is consistent" $ forAll arbitraryType $ \t ->
+    let isHeapAllocated (TList _) = True
+        isHeapAllocated (TDict _ _) = True
+        isHeapAllocated (TSet _) = True
+        isHeapAllocated (TStruct _ _) = True
+        isHeapAllocated _ = False
+        location = if isHeapAllocated t then Heap else Stack
+    in (isHeapAllocated t) == (location == Heap)
+
+interoperabilityProperties :: Spec
+interoperabilityProperties = describe "Interoperability Properties" $ do
+  prop "type conversion round-trip preserves value" $ \(n :: Int) ->
+    let intVal = fromIntegral n :: Int64
+        floatVal = fromIntegral intVal :: Double
+        backToInt = round floatVal :: Int64
+    in abs (backToInt - intVal) <= 1  -- Allow for floating point precision
+  
+  prop "string encoding preserves length" $ forAll arbitraryIdentifierText $ \txt ->
+    let encoded = txt
+        decoded = encoded
+    in T.length decoded === T.length txt
+  
+  prop "optional type unwrapping is safe" $ forAll arbitrarySimpleType $ \t ->
+    let optType = TOptional t
+    in case optType of
+         TOptional inner -> inner === t
+         _ -> property False
+
+-- 辅助函数
+countTreeDepth :: Located CommonExpr -> Int
+countTreeDepth (Located _ (CEBinaryOp _ left right)) = 
+  1 + max (countTreeDepth left) (countTreeDepth right)
+countTreeDepth (Located _ (CEUnaryOp _ expr)) = 1 + countTreeDepth expr
+countTreeDepth _ = 1

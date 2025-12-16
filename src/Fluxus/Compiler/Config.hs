@@ -40,6 +40,7 @@ import qualified Data.Text as T
 import Data.Yaml (decodeFileEither, prettyPrintParseException)
 import System.Environment (lookupEnv)
 import System.Directory
+import System.IO (hPutStrLn, stderr)
 import Control.Monad (unless, when)
 import Data.Char (toLower)
 import Data.Maybe (fromMaybe)
@@ -491,9 +492,9 @@ checkSystemRequirements config = do
       shouldCheckCompiler = not skipCompilerCheck && not stopAtCodegen
   
   when skipCompilerCheck $
-    putStrLn "Warning: Skipping C++ compiler requirement check (ccSkipCompilerCheck enabled)"
+    hPutStrLn stderr "Warning: Skipping C++ compiler requirement check (ccSkipCompilerCheck enabled)"
   when (stopAtCodegen && not skipCompilerCheck) $
-    putStrLn "Skipping C++ compiler requirement check because stop-at-codegen is enabled"
+    hPutStrLn stderr "Skipping C++ compiler requirement check because stop-at-codegen is enabled"
   
   compilerCheckResult <-
     if shouldCheckCompiler
@@ -503,7 +504,7 @@ checkSystemRequirements config = do
           Left errText -> pure $ Left (T.unpack errText)
           Right (resolved, fallbackUsed) -> do
             when fallbackUsed $
-              putStrLn $
+              hPutStrLn stderr $
                 "Warning: Requested C++ compiler '" ++ T.unpack (ccCppCompiler config) ++
                 "' was not found; using '" ++ T.unpack resolved ++ "' instead."
             pure (Right ())
@@ -518,10 +519,10 @@ checkSystemRequirements config = do
   where
     checkIncludePath path = do
       exists <- doesDirectoryExist path
-      unless exists $ putStrLn $ "Warning: Include path does not exist: " ++ path
+      unless exists $ hPutStrLn stderr $ "Warning: Include path does not exist: " ++ path
     checkLibraryPath path = do
       exists <- doesDirectoryExist path
-      unless exists $ putStrLn $ "Warning: Library path does not exist: " ++ path
+      unless exists $ hPutStrLn stderr $ "Warning: Library path does not exist: " ++ path
 
 -- | Predefined configurations
 developmentConfig :: CompilerConfig

@@ -29,7 +29,7 @@ import qualified Data.Text.Encoding as T
 import Data.Int (Int64)
 import Data.Word (Word64)
 import Data.ByteString (ByteString)
-import Data.HashMap.Strict (HashMap)
+import Data.Map.Strict (Map)
 import Data.Vector (Vector)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
@@ -39,8 +39,8 @@ import Foreign.Ptr (Ptr)
 data GoRuntime = GoRuntime
   { gorCompiler :: !Text                        -- Go compiler path
   , gorWorkDir :: !Text                         -- Working directory
-  , gorPackages :: !(TVar (HashMap Text (Ptr ())))
-  , gorObjects :: !(TVar (HashMap Text GoObject))
+  , gorPackages :: !(TVar (Map Text (Ptr ())))
+  , gorObjects :: !(TVar (Map Text GoObject))
   , gorInteropMode :: !GoInteropMode
   , gorErrorState :: !(TVar (Maybe Text))
   } deriving stock (Generic)
@@ -65,8 +65,8 @@ data GoValue
   | GVNil
   | GVSlice !(Vector GoValue)
   | GVArray !(Vector GoValue)
-  | GVMap !(HashMap Text GoValue)
-  | GVStruct !(HashMap Text GoValue)
+  | GVMap !(Map Text GoValue)
+  | GVStruct !(Map Text GoValue)
   | GVInterface !GoObject
   | GVPointer !(Ptr ())
   | GVChannel !Text
@@ -95,7 +95,7 @@ data GoObject = GoObject
   { goPtr :: !(Ptr ())                         -- Go object pointer
   , goType :: !Text                            -- Go type name
   , goPackage :: !Text                         -- Package name
-  , goMethods :: !(HashMap Text ([GoValue] -> IO GoValue))
+  , goMethods :: !(Map Text ([GoValue] -> IO GoValue))
   } deriving stock (Generic)
 
 instance Show GoObject where
