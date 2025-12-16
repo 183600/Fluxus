@@ -3,7 +3,6 @@
 module Main (main) where
 
 import Data.List (isPrefixOf)
-import Data.Text (Text)
 import qualified Data.Text as T
 import System.Environment (getArgs, withArgs)
 import Test.Hspec
@@ -23,7 +22,7 @@ import qualified Test.Fluxus.Compiler.ConfigSpec as ConfigTests
 import qualified Test.Fluxus.Compiler.DriverSpec as DriverTests
 import qualified Test.Fluxus.QuickCheckProperties as QuickCheckTests
 
-import Fluxus.Utils.Debug (DebugLevel(..), setDebugLevel, getDebugLevel, debugLog, debugBreak)
+import Fluxus.Utils.Debug (DebugLevel(..), getDebugLevel, debugLog, debugBreak)
 
 main :: IO ()
 main = do

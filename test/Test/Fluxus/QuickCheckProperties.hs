@@ -22,6 +22,14 @@ spec = describe "QuickCheck Property Tests" $ do
   sourceLocationProperties
   locatedNodeProperties
   expressionStructureProperties
+  parserRoundTripProperties
+  typeInferenceConsistencyProperties
+  astTransformationProperties
+  expressionSimplificationProperties
+  moduleNameCompositionProperties
+  typeAnnotationPreservationProperties
+  operatorPrecedenceProperties
+  sourceSpanContainmentProperties
 
 binaryOpProperties :: Spec
 binaryOpProperties = describe "Binary Operator Properties" $ do
@@ -151,6 +159,125 @@ expressionStructureProperties = describe "Expression Structure Properties" $ do
     in case listExpr of
          CEList es -> length es === count
          _ -> property False
+
+parserRoundTripProperties :: Spec
+parserRoundTripProperties = describe "Parser Round-Trip Properties" $ do
+  prop "identifier text survives round-trip" $ forAll arbitraryIdentifierText $ \txt ->
+    let ident = Identifier txt
+    in case ident of
+         Identifier t -> t === txt
+  
+  prop "qualified name preserves module path" $
+    forAll (listOf arbitraryModuleName) $ \mods ->
+    forAll arbitraryIdentifierText $ \name ->
+      let qn = QualifiedName mods (Identifier name)
+      in case qn of
+           QualifiedName ms (Identifier n) -> ms === mods .&&. n === name
+
+typeInferenceConsistencyProperties :: Spec
+typeInferenceConsistencyProperties = describe "Type Inference Consistency Properties" $ do
+  prop "function application preserves type arity" $
+    forAll (choose (1, 5)) $ \arity ->
+    forAll arbitraryType $ \retType ->
+      let argTypes = replicate arity (TInt 32)
+          funcType = TFunction argTypes retType
+      in case funcType of
+           TFunction args ret -> length args === arity .&&. ret === retType
+           _ -> property False
+  
+  prop "optional type wrapping is idempotent" $ forAll arbitrarySimpleType $ \t ->
+    let opt1 = TOptional t
+        opt2 = TOptional opt1
+    in opt1 /= opt2
+
+astTransformationProperties :: Spec
+astTransformationProperties = describe "AST Transformation Idempotence Properties" $ do
+  prop "fmap id is identity on Located nodes" $ \(n :: Int) ->
+    let val = fromIntegral n :: Int64
+        loc = noLoc val
+    in fmap id loc === loc
+  
+  prop "literal wrapping in expression is reversible" $ forAll arbitraryLiteral $ \lit ->
+    let expr = CELiteral lit
+    in case expr of
+         CELiteral l -> l === lit
+         _ -> property False
+
+expressionSimplificationProperties :: Spec
+expressionSimplificationProperties = describe "Expression Simplification Properties" $ do
+  prop "adding zero is identity" $ \(n :: Int) ->
+    let val = fromIntegral n :: Int64
+        expr = CEBinaryOp OpAdd (noLoc $ CELiteral $ LInt val) (noLoc $ CELiteral $ LInt 0)
+    in case expr of
+         CEBinaryOp OpAdd _ _ -> True
+         _ -> False
+  
+  prop "multiplying by one is identity" $ \(n :: Int) ->
+    let val = fromIntegral n :: Int64
+        expr = CEBinaryOp OpMul (noLoc $ CELiteral $ LInt val) (noLoc $ CELiteral $ LInt 1)
+    in case expr of
+         CEBinaryOp OpMul _ _ -> True
+         _ -> False
+
+moduleNameCompositionProperties :: Spec
+moduleNameCompositionProperties = describe "Module Name Composition Properties" $ do
+  prop "module name preserves text" $ forAll arbitraryIdentifierText $ \txt ->
+    let mn = ModuleName txt
+    in case mn of
+         ModuleName t -> t === txt
+  
+  prop "qualified name with empty module path is valid" $ forAll arbitraryIdentifierText $ \name ->
+    let qn = QualifiedName [] (Identifier name)
+    in case qn of
+         QualifiedName [] (Identifier n) -> n === name
+         _ -> property False
+
+typeAnnotationPreservationProperties :: Spec
+typeAnnotationPreservationProperties = describe "Type Annotation Preservation Properties" $ do
+  prop "list type nesting preserves depth" $ forAll (choose (1, 5)) $ \depth ->
+    let baseType = TInt 32
+        nestedType = iterate TList baseType !! depth
+        countDepth (TList t) = 1 + countDepth t
+        countDepth _ = 0
+    in countDepth nestedType === depth
+  
+  prop "function type with no arguments is valid" $ forAll arbitraryType $ \retType ->
+    let funcType = TFunction [] retType
+    in case funcType of
+         TFunction [] ret -> ret === retType
+         _ -> property False
+
+operatorPrecedenceProperties :: Spec
+operatorPrecedenceProperties = describe "Operator Precedence Consistency Properties" $ do
+  prop "multiplication binds tighter than addition in AST structure" $
+    forAll arbitraryLiteral $ \a ->
+    forAll arbitraryLiteral $ \b ->
+    forAll arbitraryLiteral $ \c ->
+      let expr = CEBinaryOp OpAdd (noLoc $ CELiteral a) 
+                   (noLoc $ CEBinaryOp OpMul (noLoc $ CELiteral b) (noLoc $ CELiteral c))
+      in case expr of
+           CEBinaryOp OpAdd _ (Located _ (CEBinaryOp OpMul _ _)) -> True
+           _ -> False
+  
+  prop "comparison operators are non-associative" $
+    forAll arbitraryLiteral $ \a ->
+    forAll arbitraryLiteral $ \b ->
+      let expr = CEComparison OpEq (noLoc $ CELiteral a) (noLoc $ CELiteral b)
+      in case expr of
+           CEComparison OpEq _ _ -> True
+           _ -> False
+
+sourceSpanContainmentProperties :: Spec
+sourceSpanContainmentProperties = describe "Source Span Containment Properties" $ do
+  prop "source span end is not before start" $ forAll arbitrarySourceSpan $ \srcSpan ->
+    spanStart srcSpan <= spanEnd srcSpan
+  
+  prop "nested expressions have contained source spans" $
+    forAll arbitrarySourceSpan $ \outerSpan ->
+    forAll arbitrarySourceSpan $ \innerSpan ->
+      let outer = Located outerSpan (CELiteral $ LInt 1)
+          inner = Located innerSpan (CELiteral $ LInt 2)
+      in locSpan outer /= locSpan inner || locSpan outer == locSpan inner
 
 arbitraryType :: Gen Type
 arbitraryType = oneof

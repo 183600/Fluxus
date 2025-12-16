@@ -2,7 +2,7 @@
 
 module Test.Fluxus.CodeGen.CPP.Python (spec) where
 
-import Data.Foldable (foldl', for_)
+import Data.Foldable (for_)
 import Data.List (find)
 import Data.Maybe (listToMaybe)
 import qualified Data.Text as T
@@ -11,7 +11,7 @@ import Fluxus.AST.Python
 import qualified Fluxus.AST.Python as Py
 import Fluxus.Analysis.CommonExprLowering (pythonExprToLocatedCommon, fingerprintCommonExpr)
 import Fluxus.CodeGen.CPP
-import Fluxus.CodeGen.CPP.AST (CppCatch(..), CppDecl(..), CppExpr(..), CppLiteral(..), CppStmt(..), CppType(..), renderCppExpr)
+import Fluxus.CodeGen.CPP.AST (CppCatch(..), renderCppExpr)
 import Fluxus.CodeGen.CPP.Diagnostics (CppDiagnostic(..), DiagnosticSeverity(..))
 import Fluxus.Compiler.Driver
   ( CompilerConfig(..)
@@ -2127,7 +2127,7 @@ pythonRuntimeTests =
           , "print(greet(\"Fluxus\"))"
           ]
       , prtExpectedStdOut = "Hello Fluxus\n"
-      , prtPendingReason = Just "Python f-string expression evaluation is not yet supported in the C++ backend"
+      , prtPendingReason = Nothing
       }
   , PythonRuntimeTest
       { prtName = "compiles local variable function"
@@ -2412,7 +2412,7 @@ pythonRuntimeTests =
           , "print(result)"
           ]
       , prtExpectedStdOut = "012\n"
-      , prtPendingReason = Just "Python f-string expression evaluation is not yet supported in the C++ backend"
+      , prtPendingReason = Nothing
       }
   , PythonRuntimeTest
       { prtName = "compiles with statement using scope guard"

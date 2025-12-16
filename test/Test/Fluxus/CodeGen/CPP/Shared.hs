@@ -21,7 +21,6 @@ module Test.Fluxus.CodeGen.CPP.Shared
 
 import Data.Char (isAlphaNum)
 import Data.Text (Text)
-import qualified Data.Text as T
 import Fluxus.AST.Common
 import Fluxus.AST.Go
 import Fluxus.CodeGen.CPP

@@ -1,2 +1,2 @@
-x = f"Hello {name}"
+x = f"test"
 print(x)

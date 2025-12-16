@@ -38,7 +38,6 @@ import Data.ByteString (ByteString)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Vector (Vector)
-import qualified Data.Vector as Vector
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Foreign.Ptr (Ptr)

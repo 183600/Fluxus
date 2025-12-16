@@ -202,7 +202,7 @@ generatePythonStmt scope (Located spanInfo stmt) =
         PyCall (Located _ (PyVar (Identifier "range"))) rangeArgs -> do
           unless varAlreadyDeclared $
             modify $ \r ->
-              r { cgsSymbolTable = HM.insert varName CppAuto (cgsSymbolTable r) }
+              r { cgsSymbolTable = HM.insert varName CppInt (cgsSymbolTable r) }
           mSpec <- parseRangeArgs rangeArgs
           case mSpec of
             Nothing -> do
@@ -1251,10 +1251,13 @@ generateFStringExpr segments = do
   compiled <- mapM compileSegment segments
   case compiled of
     [] -> pure $ CppLiteral (CppStringLit "")
-    [single] -> pure single
-    _ -> do
+    [single] -> do
       addInclude "<string>"
-      let buildExpr = foldl1 (\acc seg -> CppBinary "+" acc seg) compiled
+      pure $ ensureStringExpr single
+    (first:rest) -> do
+      addInclude "<string>"
+      let firstSegment = ensureStdString first
+          buildExpr = foldl (\acc seg -> CppBinary "+" acc seg) firstSegment rest
       pure buildExpr
   where
     compileSegment (PythonFStringLiteral text) = pure $ CppLiteral (CppStringLit text)
@@ -1264,10 +1267,21 @@ generateFStringExpr segments = do
       exprType <- refinePythonExprType ("f-string expression at " <> formatSpan (locSpan expr)) expr CppAuto
       pure $ toStringExpr exprType cppExpr
     
+    ensureStdString cppExpr = case cppExpr of
+      CppLiteral (CppStringLit text) -> CppCall (CppVar "std::string") [CppLiteral (CppStringLit text)]
+      _ -> cppExpr
+    
+    ensureStringExpr cppExpr = case cppExpr of
+      CppLiteral (CppStringLit text) -> CppCall (CppVar "std::string") [CppLiteral (CppStringLit text)]
+      CppCall (CppVar "std::to_string") _ -> cppExpr
+      CppCall (CppVar "std::string") _ -> cppExpr
+      _ -> CppCall (CppVar "std::to_string") [cppExpr]
+    
     toStringExpr exprType cppExpr = case cppExpr of
       CppLiteral (CppStringLit _) -> cppExpr
       _ -> case stripTypeQualifiers exprType of
         CppString -> cppExpr
+        CppAuto -> cppExpr
         _ -> CppCall (CppVar "std::to_string") [cppExpr]
 
 

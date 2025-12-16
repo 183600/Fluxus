@@ -173,6 +173,7 @@ data Delimiter
 data LexerState = LexerState
   { indentStack :: [Int]  -- Stack of current indentation levels
   , atLineStart :: Bool   -- Whether we're at the start of a line
+  , currentFilename :: Text  -- Current filename being lexed
   } deriving (Show, Eq)
 
 -- | Initial lexer state
@@ -180,6 +181,7 @@ initialLexerState :: LexerState
 initialLexerState = LexerState
   { indentStack = [0]  -- Start with base indentation level 0
   , atLineStart = True
+  , currentFilename = ""
   }
 
 -- | Lexer type alias with state
@@ -187,7 +189,7 @@ type PythonLexer = StateT LexerState (MP.Parsec Void Text)
 
 -- | Run the Python lexer
 runPythonLexer :: Text -> Text -> Either (MP.ParseErrorBundle Text Void) [Located PythonToken]
-runPythonLexer filename input = MP.parse (evalStateT lexPython initialLexerState) (T.unpack filename) input
+runPythonLexer filename input = MP.parse (evalStateT lexPython (initialLexerState { currentFilename = filename })) (T.unpack filename) input
 
 -- | Main lexer entry point
 lexPython :: PythonLexer [Located PythonToken]
@@ -200,8 +202,9 @@ lexPython = do
   
   -- Generate final dedent tokens
   finalState <- get
-  let finalDedents = case indentStack finalState of
-                      (_:rest) -> map (Located (SourceSpan "<input>" (SourcePos 0 0) (SourcePos 0 0)) . TokenDedent) 
+  let fname = currentFilename finalState
+      finalDedents = case indentStack finalState of
+                      (_:rest) -> map (Located (SourceSpan fname (SourcePos 0 0) (SourcePos 0 0)) . TokenDedent) 
                                       (reverse rest)
                       [] -> []
   
@@ -230,7 +233,8 @@ processLine = do
   newlineTokens <- many (Fluxus.Parser.Python.Lexer.newline)
   
   end <- lift getSourcePos
-  let sourceSpan = SourceSpan "<input>" (convertPos start) (convertPos end)
+  fname <- gets currentFilename
+  let sourceSpan = SourceSpan fname (convertPos start) (convertPos end)
       locatedIndentTokens = indentTokens
       locatedNewlineTokens = map (Located sourceSpan) (map (\_ -> TokenNewline) newlineTokens)
   
@@ -257,7 +261,8 @@ handleIndentation = do
   modify $ \s -> s { atLineStart = False }
   
   end <- lift getSourcePos
-  let sourceSpan = SourceSpan "<input>" (convertPos start) (convertPos end)
+  fname <- gets currentFilename
+  let sourceSpan = SourceSpan fname (convertPos start) (convertPos end)
   
   if level > currentLevel
     then do
@@ -310,7 +315,8 @@ locatedPythonToken = do
   start <- lift getSourcePos
   token <- pythonToken
   end <- lift getSourcePos
-  let sourceSpan = SourceSpan "<input>" (convertPos start) (convertPos end)
+  fname <- gets currentFilename
+  let sourceSpan = SourceSpan fname (convertPos start) (convertPos end)
   return $ Located sourceSpan token
 
 -- | Parse keywords

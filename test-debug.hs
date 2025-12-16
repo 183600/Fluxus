@@ -12,7 +12,6 @@ import Text.Megaparsec hiding (many, some, eof, token, errorOffset)
 import qualified Text.Megaparsec as MP
 
 import Fluxus.AST.Common as Common
-import Fluxus.AST.Python
 import Fluxus.Parser.Python.Lexer (runPythonLexer, PythonToken(..))
 import Fluxus.Parser.Python.Parser
 import qualified Fluxus.Parser.Python.Lexer as Lexer
@@ -56,12 +55,12 @@ testCases =
 
 -- | Helper to print token list nicely
 printTokens :: [Located PythonToken] -> IO ()
-printTokens tokens = do
+printTokens toks = do
   putStrLn "Tokens:"
-  mapM_ printSingleToken tokens
+  mapM_ printSingleToken toks
   where
-    printSingleToken (Located span_ tok) = do
-      putStrLn $ "  " ++ show tok ++ " at " ++ show span_
+    printSingleToken (Located tokenSpan tok) = do
+      putStrLn $ "  " ++ show tok ++ " at " ++ show tokenSpan
 
 -- | Test lexer functionality
 testLexer :: TestCase -> IO ()

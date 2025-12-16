@@ -35,11 +35,10 @@ module Fluxus.Compiler.Driver
   , applyPlatformDefaults
   ) where
 
-import Data.List (intercalate, partition, isPrefixOf, dropWhileEnd)
+import Data.List (partition, isPrefixOf, dropWhileEnd)
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Except
-import Control.Monad.IO.Class
 import Control.Monad (when, unless, forM_, foldM)
 import Control.Exception (IOException, try)
 import Data.Maybe (fromMaybe, catMaybes)
@@ -95,7 +94,6 @@ import Fluxus.Analysis.SmartFallback
   )
 import Fluxus.Analysis.CommonExprLowering
   ( collectCommonExpressions
-  , LoweringIssue(..)
   , renderLoweringIssue
   , isUnsupportedIssue
   , renderLocatedCommonExpr
@@ -129,7 +127,6 @@ import Fluxus.CodeGen.CPP.Diagnostics
   , CppDiagnostic(..)
   , renderCppCodeGenError
   )
-import Fluxus.Utils.Pretty hiding ((</>))
 
 -- | Source language selection
 data SourceLanguage = Python | Go

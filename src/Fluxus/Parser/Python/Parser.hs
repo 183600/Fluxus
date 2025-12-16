@@ -912,9 +912,8 @@ parseFStringExpression exprText spanInfo = do
   lexedTokens <- first (T.pack . MP.errorBundlePretty) $
     Lexer.runPythonLexer (spanFilename spanInfo) exprText
   let shifted = map (shiftFStringToken spanInfo) lexedTokens
-      eofToken = Located spanInfo TokenEOF
       srcName = T.unpack (spanFilename spanInfo)
-  case MP.parse (parseExpression <* MP.eof) srcName (shifted ++ [eofToken]) of
+  case MP.parse (parseExpression <* eof) srcName shifted of
     Left err -> Left (T.pack (show err))
     Right parsed -> Right parsed
 
