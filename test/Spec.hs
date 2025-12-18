@@ -1,12 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main (main) where
 
 import Data.List (isPrefixOf)
 import qualified Data.Text as T
 import System.Environment (getArgs, withArgs)
+import System.Directory (createDirectoryIfMissing, doesDirectoryExist, listDirectory)
+import System.FilePath ((</>))
 import Test.Hspec
-import Control.Monad (when)
+import Control.Monad (when, filterM)
+import Control.Exception (catch, SomeException)
 
 import qualified Test.Fluxus.Parser.Python as PythonTests
 import qualified Test.Fluxus.Parser.Go as GoTests
@@ -26,19 +30,46 @@ import Fluxus.Utils.Debug (DebugLevel(..), getDebugLevel, debugLog, debugBreak)
 
 main :: IO ()
 main = do
-  -- Check for debug environment variable
+  ensureTestLogDirectory
+  
   debugLevel <- getDebugLevel
   when (debugLevel >= Info) $ do
     debugLog Info "Starting Fluxus test suite"
     debugLog Info $ "Debug level set to: " <> T.pack (show debugLevel)
   
-  -- Check for breakpoint request
   args <- getArgs
   when ("--break" `elem` args) $ do
     debugBreak "Test suite breakpoint - press Enter to continue"
   
   let args' = ensureProgressFormat args
   withArgs args' $ hspec fullSpec
+
+ensureTestLogDirectory :: IO ()
+ensureTestLogDirectory = catch findAndCreateLogDir $ \(_ :: SomeException) -> return ()
+  where
+    findAndCreateLogDir = do
+      let buildDir = "." </> "dist-newstyle" </> "build"
+      exists <- doesDirectoryExist buildDir
+      when exists $ do
+        platforms <- listDirectory buildDir
+        platformDirs <- filterM (\p -> doesDirectoryExist (buildDir </> p)) platforms
+        mapM_ createLogDirForPlatform platformDirs
+    
+    createLogDirForPlatform platform = do
+      let platformDir = "." </> "dist-newstyle" </> "build" </> platform
+      ghcVersions <- listDirectory platformDir
+      ghcDirs <- filterM (\g -> doesDirectoryExist (platformDir </> g)) ghcVersions
+      mapM_ (createLogDirForGhc platform) ghcDirs
+    
+    createLogDirForGhc platform ghcVer = do
+      let ghcDir = "." </> "dist-newstyle" </> "build" </> platform </> ghcVer
+      packages <- listDirectory ghcDir
+      packageDirs <- filterM (\p -> doesDirectoryExist (ghcDir </> p)) packages
+      mapM_ (createLogDirForPackage platform ghcVer) packageDirs
+    
+    createLogDirForPackage platform ghcVer pkg = do
+      let testDir = "." </> "dist-newstyle" </> "build" </> platform </> ghcVer </> pkg </> "t" </> "fluxus-test" </> "test"
+      createDirectoryIfMissing True testDir
 
 fullSpec :: Spec
 fullSpec =

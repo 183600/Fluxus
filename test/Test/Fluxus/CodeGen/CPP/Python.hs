@@ -22,10 +22,11 @@ import Fluxus.Compiler.Driver
   , setupCompilerEnvironment
   )
 import System.Directory (doesFileExist)
+import System.Environment (getEnvironment)
 import System.Exit (ExitCode(..))
 import System.FilePath ((</>), replaceExtension)
 import System.IO.Temp (withSystemTempDirectory)
-import System.Process (readProcessWithExitCode)
+import System.Process (readCreateProcessWithExitCode, proc, CreateProcess(..))
 import Test.Hspec
 
 import qualified Test.Fluxus.CodeGen.CPP.Shared as Shared
@@ -1984,7 +1985,11 @@ runPythonRuntimeTest compiler PythonRuntimeTest { prtName = name, prtSource = so
         cppExists `shouldBe` True
         binaryExists <- doesFileExist finalBinary
         binaryExists `shouldBe` True
-        (exitCode, stdOut, _) <- readProcessWithExitCode finalBinary [] ""
+        currentEnv <- getEnvironment
+        let cleanEnv = filter (\(k, _) -> k /= "LC_ALL" && k /= "LANG") currentEnv
+            newEnv = ("LC_ALL", "C.UTF-8") : ("LANG", "C.UTF-8") : cleanEnv
+            procSpec = (proc finalBinary []) { env = Just newEnv }
+        (exitCode, stdOut, _) <- readCreateProcessWithExitCode procSpec ""
         exitCode `shouldBe` ExitSuccess
         stdOut `shouldBe` expectedStdOut
 

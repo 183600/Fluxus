@@ -52,7 +52,8 @@ import Data.Aeson (ToJSON(..), (.=), object)
 import Data.Time
 import System.FilePath
 import System.Directory
-import System.Process
+import System.Process (readCreateProcessWithExitCode, proc, CreateProcess(..))
+import System.Environment (getEnvironment)
 import System.Exit
 import Data.Hashable (Hashable, hash)
 import GHC.Generics (Generic)
@@ -1041,10 +1042,13 @@ compileCpp cppFile = do
   
   logVerbose $ "Compiling C++: " <> T.pack (unwords $ map T.unpack args)
   
-  (exitCode, stdout, stderr) <- liftIO $ readProcessWithExitCode 
-    (T.unpack compilerBinary) 
-    (map T.unpack args) 
-    ""
+  currentEnv <- liftIO getEnvironment
+  let cleanEnv = filter (\(k, _) -> k /= "LC_ALL" && k /= "LANG") currentEnv
+      newEnv = ("LC_ALL", "C") : ("LANG", "C") : cleanEnv
+      procSpec = (proc (T.unpack compilerBinary) (map T.unpack args))
+        { env = Just newEnv }
+  
+  (exitCode, stdout, stderr) <- liftIO $ readCreateProcessWithExitCode procSpec ""
   
   case exitCode of
     ExitSuccess -> do
@@ -1066,10 +1070,13 @@ linkObjects objFiles outputPath = do
   liftIO $ createDirectoryIfMissing True (takeDirectory outputPath)
   logVerbose $ "Linking: " <> T.pack (unwords $ map T.unpack args)
   
-  (exitCode, stdout, stderr) <- liftIO $ readProcessWithExitCode 
-    (T.unpack compilerBinary) 
-    (map T.unpack args) 
-    ""
+  currentEnv <- liftIO getEnvironment
+  let cleanEnv = filter (\(k, _) -> k /= "LC_ALL" && k /= "LANG") currentEnv
+      newEnv = ("LC_ALL", "C") : ("LANG", "C") : cleanEnv
+      procSpec = (proc (T.unpack compilerBinary) (map T.unpack args))
+        { env = Just newEnv }
+  
+  (exitCode, stdout, stderr) <- liftIO $ readCreateProcessWithExitCode procSpec ""
   
   case exitCode of
     ExitSuccess -> do

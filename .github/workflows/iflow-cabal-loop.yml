@@ -21,6 +21,8 @@ jobs:
     env:
       RUN_HOURS: 5
       WORK_BRANCH: master
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
       # iFlow CLI 的无交互认证
       IFLOW_API_KEY: ${{ secrets.IFLOW_API_KEY }}
       IFLOW_BASE_URL: https://apis.iflow.cn/v1

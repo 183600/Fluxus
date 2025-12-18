@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -u
 
+export LC_ALL=C.utf8
+export LANG=C.utf8
+
 # ==================== 配置参数 ====================
 WATCHDOG_TIMEOUT=900  # 15分钟（秒）
 CHECK_INTERVAL=30     # 检查间隔（秒）
