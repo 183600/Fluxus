@@ -48,6 +48,7 @@ mapGoTypeToCpp = \case
 collectCppTypeIncludes :: CppType -> [Text]
 collectCppTypeIncludes = go
   where
+    go :: CppType -> [Text]
     go ty = case ty of
       CppString -> ["<string>"]
       CppVector inner -> "<vector>" : go inner
@@ -73,6 +74,7 @@ collectCppTypeIncludes = go
       CppStructLiteral fields -> concatMap (go . snd) fields
       _ -> []
 
+    templateIncludes :: Text -> [Text]
     templateIncludes name
       | name == "std::function" = ["<functional>"]
       | name == "std::any" = ["<any>"]
@@ -81,6 +83,7 @@ collectCppTypeIncludes = go
       | name == "std::array" = ["<array>"]
       | otherwise = []
 
+    classTypeIncludes :: Text -> [Text]
     classTypeIncludes name
       | name `Set.member` numericAliasNames = ["<cstdint>"]
       | name == "std::byte" = ["<cstddef>"]
@@ -149,6 +152,7 @@ mapGoStructType fields = CppStructLiteral (snd (foldl' accumulate (Set.empty, []
           newEntries = [(name, fieldType) | name <- names]
       in (used', acc ++ newEntries)
 
+    allocateNames :: Set.Set Text -> [Identifier] -> ([Text], Set.Set Text)
     allocateNames used fieldNames
       | null fieldNames =
           let (generated, used') = ensureFresh used "field"

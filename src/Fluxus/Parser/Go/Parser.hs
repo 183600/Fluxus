@@ -148,9 +148,10 @@ parseFile = do
   packageName <- parseGoIdentifier
   skipCommentsAndNewlines
 
-  let lookAheadImport = MP.lookAhead $ do
-        skipCommentsAndNewlines
-        goKeywordP GoKwImport
+  let lookAheadImport :: GoParser m ()
+      lookAheadImport = MP.lookAhead $ do
+          skipCommentsAndNewlines
+          goKeywordP GoKwImport
 
   importGroups <- MP.many $ do
     lookAheadImport

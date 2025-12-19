@@ -428,7 +428,8 @@ generateCppType expr _ownership strategy = do
 -- | Generate optimization hints based on ownership analysis
 generateOptimizationHints :: CommonExpr -> OwnershipInfo -> OwnershipStrategy -> OwnershipInferenceM [Text]
 generateOptimizationHints _expr ownership strategy = do
-  let hints = []
+  let hints :: [Text]
+      hints = []
   
   -- Suggest RAII when appropriate
   hints1 <- if ownsMemory ownership && memLocation ownership == Stack

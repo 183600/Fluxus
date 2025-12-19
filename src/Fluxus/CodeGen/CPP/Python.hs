@@ -545,7 +545,8 @@ generatePythonStmt scope (Located spanInfo stmt) =
         t <- refinePythonExprType ("assignment to " <> varName) locatedExpr defaultType
         emitInfo $ "refinedType for " <> varName <> " is " <> T.pack (show t)
         pure t
-      let updateSymbolTableWith t = modify $ \s -> s { cgsSymbolTable = HM.insert varName t (cgsSymbolTable s) }
+      let updateSymbolTableWith :: CppType -> CppCodeGen ()
+          updateSymbolTableWith t = modify $ \s -> s { cgsSymbolTable = HM.insert varName t (cgsSymbolTable s) }
           assignmentStmt = CppExprStmt (CppBinary "=" (CppVar varName) cppExpr)
           declarationStmt t = CppDecl (CppVariable varName t (Just cppExpr))
       case scope' of
@@ -661,6 +662,7 @@ generatePythonStmt scope (Located spanInfo stmt) =
     generateFunctionChainAssignments names refinedType initialExpr =
       go initialExpr (reverse names) []
       where
+        go :: CppExpr -> [Text] -> [CppStmt] -> CppCodeGen [CppStmt]
         go _ [] acc = pure (reverse acc)
         go current (varName:rest) acc = do
           symtab <- gets cgsSymbolTable
@@ -1810,6 +1812,7 @@ generatePythonListLiteral locatedList@(Located listSpan expr) =
       let vectorType = CppVector CppAuto
       pure (vectorType, CppBracedInit vectorType [])
   where
+    annotateElement :: (Int, Located PythonExpr) -> CppCodeGen (CppExpr, CppType, Int)
     annotateElement (idx, element) = do
       cppExpr <- generatePythonExpr element
       let defaultType = fromMaybe CppAuto (inferPythonExprCppTypeLocated element)
@@ -3099,6 +3102,7 @@ mapTypeSubscript spanInfo base args =
         Just (paramArgs, retExpr) -> mapTypeCallable spanInfo paramArgs retExpr
         Nothing -> fallbackToStdAny spanInfo (TypeSubscript base args) "expects argument list and return type"
 
+    unsnoc :: [a] -> Maybe ([a], a)
     unsnoc [] = Nothing
     unsnoc xs = Just (init xs, last xs)
 

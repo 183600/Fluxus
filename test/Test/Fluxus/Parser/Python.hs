@@ -13,9 +13,9 @@ import Fluxus.Parser.Python.Parser
 import Fluxus.AST.Python
 import Fluxus.AST.Common
 
-safeHead :: [a] -> a
-safeHead [] = error "safeHead: empty list (test invariant violated)"
-safeHead (x:_) = x
+safeHead :: [a] -> Maybe a
+safeHead [] = Nothing
+safeHead (x:_) = Just x
 
 parseModuleFrom :: Text -> Either String PythonModule
 parseModuleFrom source =
@@ -65,9 +65,11 @@ lexerSpec = describe "Python Lexer" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right tokens -> do
         length tokens `shouldBe` 1
-        case locatedValue (safeHead tokens) of
-          TokenString content -> content `shouldBe` "hello world"
-          _ -> expectationFailure "Expected string token"
+        case safeHead tokens of
+          Nothing -> expectationFailure "Expected at least one token"
+          Just token -> case locatedValue token of
+            TokenString content -> content `shouldBe` "hello world"
+            _ -> expectationFailure "Expected string token"
   
   it "tokenizes number literals" $ do
     let input = "42 3.14 1e10"
@@ -319,9 +321,11 @@ parserSpec = describe "Python Parser" $ do
       Right ast -> do
         let PythonAST module_ = ast
         length (pyModuleBody module_) `shouldBe` 1
-        case locatedValue (safeHead (pyModuleBody module_)) of
-          PyFuncDef funcDef -> pyFuncName funcDef `shouldBe` Identifier "test_func"
-          _ -> expectationFailure "Expected function definition"
+        case safeHead (pyModuleBody module_) of
+          Nothing -> expectationFailure "Expected at least one statement"
+          Just stmt -> case locatedValue stmt of
+            PyFuncDef funcDef -> pyFuncName funcDef `shouldBe` Identifier "test_func"
+            _ -> expectationFailure "Expected function definition"
   
   it "parses class definitions" $ do
     let tokens = mockTokens 
@@ -339,9 +343,11 @@ parserSpec = describe "Python Parser" $ do
       Right ast -> do
         let PythonAST module_ = ast
         length (pyModuleBody module_) `shouldBe` 1
-        case locatedValue (safeHead (pyModuleBody module_)) of
-          PyClassDef classDef -> pyClassName classDef `shouldBe` Identifier "TestClass"
-          _ -> expectationFailure "Expected class definition"
+        case safeHead (pyModuleBody module_) of
+          Nothing -> expectationFailure "Expected at least one statement"
+          Just stmt -> case locatedValue stmt of
+            PyClassDef classDef -> pyClassName classDef `shouldBe` Identifier "TestClass"
+            _ -> expectationFailure "Expected class definition"
   
   it "parses if statements" $ do
     let tokens = mockTokens 
@@ -359,9 +365,11 @@ parserSpec = describe "Python Parser" $ do
       Right ast -> do
         let PythonAST module_ = ast
         length (pyModuleBody module_) `shouldBe` 1
-        case locatedValue (safeHead (pyModuleBody module_)) of
-          PyIf _ _ _ -> return ()
-          _ -> expectationFailure "Expected if statement"
+        case safeHead (pyModuleBody module_) of
+          Nothing -> expectationFailure "Expected at least one statement"
+          Just stmt -> case locatedValue stmt of
+            PyIf _ _ _ -> return ()
+            _ -> expectationFailure "Expected if statement"
 
   it "parses if/elif/else chains" $
     withParsedModule (T.unlines

@@ -48,8 +48,10 @@ import Data.Void (Void)
 import qualified Data.List.NonEmpty as NE
 import Text.Megaparsec hiding (many, some, SourcePos)
 import qualified Text.Megaparsec as MP
+import Text.Read (readMaybe)
 
 import Fluxus.AST.Common (SourceSpan(..), Located(..), BinaryOp(..), Identifier(..), ComparisonOp(..), UnaryOp(..), SourcePos(..), QualifiedName(..), ModuleName(..), locatedValue, noLoc, qnName, qnModule)
+import Fluxus.Utils.Common (mergeSpans, defaultSpan, zeroWidthSpan)
 import Fluxus.AST.Python 
   ( PythonAST(..)
   , PythonModule(..)
@@ -913,6 +915,7 @@ parseAtomExpr = do
   trailers <- many parseTrailer
   return $ foldl applyTrailer atom trailers
   where
+    applyTrailer :: a -> (a -> b) -> b
     applyTrailer expr trailer = trailer expr
 
 parseAtom :: PythonParser (Located PythonExpr)
@@ -935,8 +938,12 @@ parseLiteralValue = do
       return $ PyFString pySegments
     TokenNumber text isFloat ->
       if isFloat
-        then return $ PyFloat (read $ T.unpack text)
-        else return $ PyInt (read $ T.unpack text)
+        then case readMaybe (T.unpack text) of
+               Just value -> return $ PyFloat value
+               Nothing -> fail $ "Invalid float literal: " ++ T.unpack text
+        else case readMaybe (T.unpack text) of
+               Just value -> return $ PyInt value
+               Nothing -> fail $ "Invalid integer literal: " ++ T.unpack text
     TokenKeyword KwTrue -> return $ PyBool True
     TokenKeyword KwFalse -> return $ PyBool False
     TokenKeyword KwNone -> return PyNone
@@ -1387,7 +1394,9 @@ parseClassPatternArgs = do
       void $ delimiterP DelimRightParen
       collectArgs (firstItem : rest)
   where
+    collectArgs :: [Either (Located PythonPattern) (Identifier, Located PythonPattern)] -> PythonParser ([Located PythonPattern], [(Identifier, Located PythonPattern)])
     collectArgs args = go [] [] False args
+    go :: [Located PythonPattern] -> [(Identifier, Located PythonPattern)] -> Bool -> [Either (Located PythonPattern) (Identifier, Located PythonPattern)] -> PythonParser ([Located PythonPattern], [(Identifier, Located PythonPattern)])
     go pos kw _ [] = pure (reverse pos, reverse kw)
     go pos kw seenKw (arg:rest) = case arg of
       Left pat -> do
@@ -1947,14 +1956,7 @@ located parser = do
           [] -> defaultSpan "<input>"
   return $ Located spanLoc value
 
-mergeSpans :: SourceSpan -> SourceSpan -> SourceSpan
-mergeSpans (SourceSpan file start _) (SourceSpan _ _ end) = SourceSpan file start end
 
-zeroWidthSpan :: SourceSpan -> SourceSpan
-zeroWidthSpan (SourceSpan file start _) = SourceSpan file start start
-
-defaultSpan :: Text -> SourceSpan
-defaultSpan file = SourceSpan file (SourcePos 0 0) (SourcePos 0 0)
 
 located' :: a -> Located a
 located' = noLoc

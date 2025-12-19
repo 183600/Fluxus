@@ -358,6 +358,7 @@ parseCommandLineArgs args = go id [] args
       _ -> go modifier configs rest  -- Assume it's an input file
       where
         set modifyFn currentConfigs remaining = go (modifyFn . modifier) currentConfigs remaining
+        prependUnique :: Eq a => a -> [a] -> [a]
         prependUnique value existing = value : filter (/= value) existing
 
 -- | Parse target platform from string
@@ -458,6 +459,7 @@ applyEnvironmentOverrides config = do
     , ccSkipCompilerCheck = parseBoolOverride (ccSkipCompilerCheck config) sanitizedSkip
     }
   where
+    readMaybe :: Read a => String -> Maybe a
     readMaybe s = case reads s of
       [(x, "")] -> Just x
       _ -> Nothing

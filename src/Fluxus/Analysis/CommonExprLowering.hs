@@ -25,7 +25,7 @@ import Data.Int (Int64)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (maybeToList, catMaybes)
 import Data.Text (Text)
-import qualified Data.Text as T
+import Fluxus.Utils.Common (textShow)
 
 import Fluxus.AST.Common (CommonCompClause(..), CommonExpr(..), Identifier(..), Located(..), Literal(..), QualifiedName(..), SourcePos(..), SourceSpan(..), mergeSpans)
 import Fluxus.AST.Go (GoAST(..), GoCommClause(..), GoDecl(..), GoExpr(..), GoFile(..), GoForClause(..), GoFunction(..), GoLiteral(..), GoPackage(..), GoRangeClause(..), GoStmt(..), GoTypeSwitchClause(..), goSliceHigh, goSliceLow, goSliceMax)
@@ -450,8 +450,7 @@ formatSpan :: SourceSpan -> Text
 formatSpan (SourceSpan file start _) =
   file <> ":" <> textShow (posLine start) <> ":" <> textShow (posColumn start)
 
-textShow :: Show a => a -> Text
-textShow = T.pack . show
+
 
 renderCommonExpr :: CommonExpr -> Text
 renderCommonExpr = textShow

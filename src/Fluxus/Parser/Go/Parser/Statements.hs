@@ -124,6 +124,7 @@ parseAssignment = do
       , GoOpLeftShiftAssign
       , GoOpRightShiftAssign
       ]
+    buildAssignment :: GoOperator -> [Located GoExpr] -> [Located GoExpr] -> GoParser m GoStmt
     buildAssignment GoOpAssign lhs' rhs' = pure $ GoAssign lhs' rhs'
     buildAssignment opToken [lhsExpr] [rhsExpr] =
       case compoundBinary opToken of

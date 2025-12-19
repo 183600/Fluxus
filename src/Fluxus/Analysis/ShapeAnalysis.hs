@@ -410,8 +410,10 @@ inferShape _ = unknownShape
 -- | Analyze structure for optimization opportunities
 analyzeStructure :: Type -> ShapeAnalysisM StructShape
 analyzeStructure (TStruct _name _fieldTypes) = do
-  let fields = HashMap.empty  -- Would extract from TStruct definition
-  let fieldOrder = []         -- Would analyze access patterns
+  let fields :: HashMap Text Type
+      fields = HashMap.empty  -- Would extract from TStruct definition
+  let fieldOrder :: [Text]
+      fieldOrder = []         -- Would analyze access patterns
   let totalSize = 0          -- Would calculate based on field types
   return StructShape
     { ssFields = fields
@@ -491,9 +493,11 @@ generateCppStructure shape
   | Vector.length (siDimensions shape) == 1 && siIsHomogeneous shape = do
     -- Array/vector type
     context <- ask
-    let useArray = case Vector.head (siDimensions shape) of
-          size | size > 0 && size <= scMaxInlineSize context -> True
-          _ -> False
+    let useArray = if Vector.null (siDimensions shape)
+          then False  -- Empty dimensions, can't use array
+          else case Vector.head (siDimensions shape) of
+                 size | size > 0 && size <= scMaxInlineSize context -> True
+                 _ -> False
     
     if useArray
       then return CppMapping

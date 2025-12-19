@@ -8,7 +8,6 @@ import qualified Data.Text as T
 import Fluxus.AST.Common
 import Fluxus.AST.Python
 import Fluxus.CodeGen.CPP
-import Fluxus.CodeGen.CPP.AST
 import Fluxus.CodeGen.CPP.Diagnostics (diagMessage)
 import Test.Hspec
 

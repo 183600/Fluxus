@@ -180,6 +180,7 @@ goKeyword = do
   return $ GoTokenKeyword kw
   where
     allKeywords = [minBound .. maxBound]
+    tryKeyword :: GoKeyword -> GoLexer GoKeyword
     tryKeyword kw = string (goKeywordToText kw) $> kw
 
 -- | Parse Go identifiers

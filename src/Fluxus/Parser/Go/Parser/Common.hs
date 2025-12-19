@@ -11,10 +11,8 @@ module Fluxus.Parser.Go.Parser.Common
   , chainl1
   , located
   , located'
-  , mergeSpans
   , spanFromTokens
   , spanAtOffset
-  , defaultSpan
   , goKeywordP
   , goOperatorP
   , goDelimiterP
@@ -34,6 +32,7 @@ import Data.Proxy (Proxy(..))
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
+import Fluxus.Utils.Common (mergeSpans, defaultSpan, zeroWidthSpan, textShow)
 import qualified Data.List.NonEmpty as NE
 import Text.Megaparsec
   ( ParsecT
@@ -129,14 +128,7 @@ chainl1 p op = do
         Nothing -> pure x
         Just (f, y) -> rest (f x y)
 
-mergeSpans :: SourceSpan -> SourceSpan -> SourceSpan
-mergeSpans (SourceSpan file start _) (SourceSpan _ _ end) = SourceSpan file start end
 
-defaultSpan :: Text -> SourceSpan
-defaultSpan file = SourceSpan file (SourcePos 0 0) (SourcePos 0 0)
-
-zeroWidthSpan :: SourceSpan -> SourceSpan
-zeroWidthSpan (SourceSpan file start _) = SourceSpan file start start
 
 spanFromTokens :: [Located a] -> SourceSpan
 spanFromTokens [] = defaultSpan "<unknown>"
@@ -227,8 +219,7 @@ parseGoString = do
 parseIdentifierList :: GoParser m [Identifier]
 parseIdentifierList = parseGoIdentifier `MP.sepBy1` goDelimiterP GoDelimComma
 
-textShow :: Show a => a -> Text
-textShow = T.pack . show
+
 
 toSourcePosStart :: SourceSpan -> MPP.SourcePos
 toSourcePosStart (SourceSpan fn (SourcePos line col) _) =

@@ -325,6 +325,7 @@ keyword = choice (map tryKeyword allKeywords)
   where
     allKeywords = [minBound .. maxBound]
     identChar = alphaNumChar <|> char '_'
+    tryKeyword :: Keyword -> PythonLexer PythonToken
     tryKeyword kw = do
       _ <- lift $ MP.try (string (keywordToText kw) <* notFollowedBy identChar)
       pure $ TokenKeyword kw
@@ -531,17 +532,18 @@ splitProcessedSegments input = fmap reverse (go input 0 Nothing mempty [])
               accWithExpr = SegmentExpressionRecord exprStartIdx exprEndIdx : accWithDebug
               offsetAfterExpr = offsetAfterBrace + consumedTotal
           go remainder offsetAfterExpr Nothing mempty accWithExpr
-        Just ('}', _) -> Left "Single '}' in f-string literal"
+        Just ('}', _) -> Left (T.pack "Single '}' in f-string literal")
         _ ->
           let (chunk, remainder) = T.break (`elem` ("{}" :: String)) txt
           in if T.null chunk
-               then Left "Unexpected state while parsing f-string literal"
+               then Left (T.pack "Unexpected state while parsing f-string literal")
                else
                  let builder' = builder <> TB.fromText chunk
                      mStart' = Just (fromMaybe offset mStart)
                      offset' = offset + T.length chunk
                  in go remainder offset' mStart' builder' acc
 
+    flushLiteral :: Int -> Maybe Int -> TB.Builder -> [SegmentRecord] -> Either Text [SegmentRecord]
     flushLiteral currentOffset mStart builder acc =
       case mStart of
         Nothing -> Right acc

@@ -292,7 +292,8 @@ isStackAllocatable expr = do
 -- | Suggest memory allocation optimizations
 suggestOptimizations :: CommonExpr -> EscapeInfo -> MemoryLocation -> EscapeAnalysisM [Text]
 suggestOptimizations _expr escapeInfo memLoc = do
-  let opts = []
+  let opts :: [Text]
+      opts = []
   
   -- Suggest stack allocation when possible
   opts1 <- if memLoc == Stack

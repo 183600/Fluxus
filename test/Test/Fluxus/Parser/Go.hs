@@ -14,9 +14,9 @@ import Fluxus.AST.Go
 import Fluxus.AST.Common
 
 -- Safe safeHead function for tests
-safeHead :: [a] -> a
-safeHead [] = error "safeHead: empty list (test invariant violated)"
-safeHead (x:_) = x
+safeHead :: [a] -> Maybe a
+safeHead [] = Nothing
+safeHead (x:_) = Just x
 
 spec :: Spec
 spec = describe "Go Parser" $ do
@@ -54,9 +54,11 @@ lexerSpec = describe "Go Lexer" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right tokens -> do
         length tokens `shouldBe` 1
-        case locatedValue (safeHead tokens) of
-          GoTokenString content -> content `shouldBe` "hello world"
-          _ -> expectationFailure "Expected string token"
+        case safeHead tokens of
+          Nothing -> expectationFailure "Expected at least one token"
+          Just token -> case locatedValue token of
+            GoTokenString content -> content `shouldBe` "hello world"
+            _ -> expectationFailure "Expected string token"
   
   it "tokenizes raw string literals" $ do
     let input = "`hello\nworld`"
@@ -64,9 +66,11 @@ lexerSpec = describe "Go Lexer" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right tokens -> do
         length tokens `shouldBe` 1
-        case locatedValue (safeHead tokens) of
-          GoTokenRawString content -> content `shouldBe` "hello\nworld"
-          _ -> expectationFailure "Expected raw string token"
+        case safeHead tokens of
+          Nothing -> expectationFailure "Expected at least one token"
+          Just token -> case locatedValue token of
+            GoTokenRawString content -> content `shouldBe` "hello\nworld"
+            _ -> expectationFailure "Expected raw string token"
   
   it "tokenizes number literals" $ do
     let input = "42 3.14 1e10"
@@ -272,9 +276,11 @@ lexerTokensSpec = describe "Go Lexer - tokens coverage" $ do
       Left _ -> expectationFailure "Lexer failed"
       Right toks -> do
         length toks `shouldBe` 1
-        case locatedValue (safeHead toks) of
-          GoTokenString content -> content `shouldBe` "a\n\t\r\"'\\"
-          _ -> expectationFailure "Expected string token"
+        case safeHead toks of
+          Nothing -> expectationFailure "Expected at least one token"
+          Just token -> case locatedValue token of
+            GoTokenString content -> content `shouldBe` "a\n\t\r\"'\\"
+            _ -> expectationFailure "Expected string token"
 
   it "produces newline tokens" $ do
     let input = "x\ny"
@@ -364,11 +370,16 @@ importDeclSpec = describe "Go Parser - Import Declaration" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let imports = goFileImports (safeHead files)
-        length imports `shouldBe` 1
-        case locatedValue (safeHead imports) of
-          GoImportNormal Nothing path -> path `shouldBe` "fmt"
-          _ -> expectationFailure "Expected simple import"
+        case safeHead files of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just file -> do
+            let imports = goFileImports file
+            length imports `shouldBe` 1
+            case safeHead imports of
+              Nothing -> expectationFailure "Expected at least one import"
+              Just imp -> case locatedValue imp of
+                GoImportNormal Nothing path -> path `shouldBe` "fmt"
+                _ -> expectationFailure "Expected simple import"
   
   it "parses grouped import statements" $ do
     let tokens = mockGoTokens 
@@ -389,8 +400,20 @@ importDeclSpec = describe "Go Parser - Import Declaration" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let imports = goFileImports (safeHead files)
-        length imports `shouldBe` 2
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let imports = goFileImports f
+            length imports `shouldBe` 2
+            case safeHead imports of
+              Nothing -> expectationFailure "Expected at least one import"
+              Just (Located _ (GoImportNormal Nothing path)) -> path `shouldBe` "fmt"
+              _ -> expectationFailure "Expected first import to be fmt"
+            case safeHead (drop 1 imports) of
+              Nothing -> expectationFailure "Expected at least one import"
+              Just (Located _ (GoImportNormal Nothing path)) -> path `shouldBe` "math/rand"
+              _ -> expectationFailure "Expected second import to be math/rand"
   
   it "parses import with alias" $ do
     let tokens = mockGoTokens 
@@ -407,13 +430,18 @@ importDeclSpec = describe "Go Parser - Import Declaration" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let imports = goFileImports (safeHead files)
-        length imports `shouldBe` 1
-        case locatedValue (safeHead imports) of
-          GoImportNormal (Just (Identifier alias)) path -> do
-            alias `shouldBe` "f"
-            path `shouldBe` "fmt"
-          _ -> expectationFailure "Expected aliased import"
+        let file = safeHead files
+        case file of
+          Just f -> do
+            let imports = goFileImports f
+            length imports `shouldBe` 1
+            case safeHead imports of
+              Nothing -> expectationFailure "Expected at least one import"
+              Just (Located _ (GoImportNormal (Just (Identifier alias)) path)) -> do
+                alias `shouldBe` "f"
+                path `shouldBe` "fmt"
+              _ -> expectationFailure "Expected aliased import"
+          Nothing -> expectationFailure "Expected at least one file"
   
   it "parses import with dot notation" $ do
     let tokens = mockGoTokens 
@@ -430,11 +458,16 @@ importDeclSpec = describe "Go Parser - Import Declaration" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let imports = goFileImports (safeHead files)
-        length imports `shouldBe` 1
-        case locatedValue (safeHead imports) of
-          GoImportDot path -> path `shouldBe` "fmt"
-          _ -> expectationFailure "Expected dot import"
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let imports = goFileImports f
+            length imports `shouldBe` 1
+            case safeHead imports of
+              Nothing -> expectationFailure "Expected at least one import"
+              Just (Located _ (GoImportDot path)) -> path `shouldBe` "fmt"
+              _ -> expectationFailure "Expected dot import"
   
   it "parses import with blank identifier" $ do
     let tokens = mockGoTokens 
@@ -451,11 +484,16 @@ importDeclSpec = describe "Go Parser - Import Declaration" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let imports = goFileImports (safeHead files)
-        length imports `shouldBe` 1
-        case locatedValue (safeHead imports) of
-          GoImportBlank path -> path `shouldBe` "database/sql/driver"
-          _ -> expectationFailure "Expected blank import"
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let imports = goFileImports f
+            length imports `shouldBe` 1
+            case safeHead imports of
+              Nothing -> expectationFailure "Expected at least one import"
+              Just (Located _ (GoImportBlank path)) -> path `shouldBe` "database/sql/driver"
+              _ -> expectationFailure "Expected blank import"
   
   it "parses multiple imports with different styles" $ do
     let tokens = mockGoTokens 
@@ -483,8 +521,30 @@ importDeclSpec = describe "Go Parser - Import Declaration" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let imports = goFileImports (safeHead files)
-        length imports `shouldBe` 4
+        let file = safeHead files
+        case file of
+          Just f -> do
+            let imports = goFileImports f
+            length imports `shouldBe` 4
+            case safeHead imports of
+              Nothing -> expectationFailure "Expected at least one import"
+              Just (Located _ (GoImportNormal Nothing path)) -> path `shouldBe` "fmt"
+              _ -> expectationFailure "Expected first import to be fmt"
+            case safeHead (drop 1 imports) of
+              Nothing -> expectationFailure "Expected at least one import"
+              Just (Located _ (GoImportNormal (Just (Identifier alias)) path)) -> do
+                alias `shouldBe` "m"
+                path `shouldBe` "math"
+              _ -> expectationFailure "Expected second import to be aliased math"
+            case safeHead (drop 1 (drop 1 imports)) of
+              Nothing -> expectationFailure "Expected at least one import"
+              Just (Located _ (GoImportDot path)) -> path `shouldBe` "strings"
+              _ -> expectationFailure "Expected third import to be dot strings"
+            case safeHead (drop 1 (drop 1 (drop 1 imports))) of
+              Nothing -> expectationFailure "Expected at least one import"
+              Just (Located _ (GoImportBlank path)) -> path `shouldBe` "net/http/pprof"
+              _ -> expectationFailure "Expected fourth import to be blank net/http/pprof"
+          Nothing -> expectationFailure "Expected at least one file"
   
   it "parses import with nested package path" $ do
     let tokens = mockGoTokens 
@@ -500,11 +560,16 @@ importDeclSpec = describe "Go Parser - Import Declaration" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let imports = goFileImports (safeHead files)
-        length imports `shouldBe` 1
-        case locatedValue (safeHead imports) of
-          GoImportNormal Nothing path -> path `shouldBe` "encoding/json"
-          _ -> expectationFailure "Expected nested path import"
+        let file = safeHead files
+        case file of
+          Just f -> do
+            let imports = goFileImports f
+            length imports `shouldBe` 1
+            case safeHead imports of
+              Nothing -> expectationFailure "Expected at least one import"
+              Just (Located _ (GoImportNormal Nothing path)) -> path `shouldBe` "encoding/json"
+              _ -> expectationFailure "Expected nested path import"
+          Nothing -> expectationFailure "Expected at least one file"
   
   it "parses import with deeply nested package path" $ do
     let tokens = mockGoTokens 
@@ -520,11 +585,16 @@ importDeclSpec = describe "Go Parser - Import Declaration" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let imports = goFileImports (safeHead files)
-        length imports `shouldBe` 1
-        case locatedValue (safeHead imports) of
-          GoImportNormal Nothing path -> path `shouldBe` "github.com/user/project/pkg/module"
-          _ -> expectationFailure "Expected deeply nested path import"
+        let file = safeHead files
+        case file of
+          Just f -> do
+            let imports = goFileImports f
+            length imports `shouldBe` 1
+            case safeHead imports of
+              Nothing -> expectationFailure "Expected at least one import"
+              Just (Located _ (GoImportNormal Nothing path)) -> path `shouldBe` "github.com/user/project/pkg/module"
+              _ -> expectationFailure "Expected deeply nested path import"
+          Nothing -> expectationFailure "Expected at least one file"
   
   it "parses standard library imports" $ do
     let stdLibs = ["fmt", "os", "io", "net/http", "database/sql", "encoding/json", "time", "sync"]
@@ -541,8 +611,12 @@ importDeclSpec = describe "Go Parser - Import Declaration" $ do
         Right ast -> do
           let GoAST package_ = ast
           let files = goPackageFiles package_
-          let imports = goFileImports (safeHead files)
-          length imports `shouldBe` 1
+          let file = safeHead files
+          case file of
+            Nothing -> expectationFailure "Expected at least one file"
+            Just f -> do
+              let imports = goFileImports f
+              length imports `shouldBe` 1
       ) stdLibs
   
   it "parses package with both imports and declarations" $ do
@@ -571,10 +645,14 @@ importDeclSpec = describe "Go Parser - Import Declaration" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let imports = goFileImports (safeHead files)
-        length imports `shouldBe` 2
-        let decls = goFileDecls (safeHead files)
-        length decls `shouldBe` 1
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let imports = goFileImports f
+            length imports `shouldBe` 2
+            let decls = goFileDecls f
+            length decls `shouldBe` 1
 
 -- Package declaration tests
 packageDeclSpec :: Spec
@@ -638,8 +716,12 @@ packageDeclSpec = describe "Go Parser - Package Declaration" $ do
         goPackageName package_ `shouldBe` Identifier "main"
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let imports = goFileImports (safeHead files)
-        length imports `shouldBe` 1
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let imports = goFileImports f
+            length imports `shouldBe` 1
   
   it "parses package declaration followed by function" $ do
     let tokens = mockGoTokens 
@@ -660,8 +742,12 @@ packageDeclSpec = describe "Go Parser - Package Declaration" $ do
         goPackageName package_ `shouldBe` Identifier "main"
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (safeHead files)
-        length decls `shouldBe` 1
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let decls = goFileDecls f
+            length decls `shouldBe` 1
   
   it "parses package declaration with common library names" $ do
     let packageNames = ["fmt", "os", "io", "net", "http", "strings", "bytes", "time"]
@@ -738,13 +824,18 @@ parserSpec = describe "Go Parser" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (safeHead files)
-        length decls `shouldBe` 1
-        case locatedValue (safeHead decls) of
-          GoFuncDecl func -> case goFuncName func of
-            Just (Identifier name) -> name `shouldBe` "test_func"
-            Nothing -> expectationFailure "Function should have a name"
-          _ -> expectationFailure "Expected function declaration"
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let decls = goFileDecls f
+            length decls `shouldBe` 1
+            case safeHead decls of
+              Nothing -> expectationFailure "Expected at least one declaration"
+              Just (Located _ (GoFuncDecl func)) -> case goFuncName func of
+                Just (Identifier name) -> name `shouldBe` "test_func"
+                Nothing -> expectationFailure "Function should have a name"
+              _ -> expectationFailure "Expected function declaration"
   
   it "parses variable declarations" $ do
     let tokens = mockGoTokens 
@@ -760,11 +851,16 @@ parserSpec = describe "Go Parser" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (safeHead files)
-        length decls `shouldBe` 1
-        case locatedValue (safeHead decls) of
-          GoVarDecl vars -> length vars `shouldBe` 1
-          _ -> expectationFailure "Expected variable declaration"
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let decls = goFileDecls f
+            length decls `shouldBe` 1
+            case safeHead decls of
+              Nothing -> expectationFailure "Expected at least one declaration"
+              Just (Located _ (GoVarDecl vars)) -> length vars `shouldBe` 1
+              _ -> expectationFailure "Expected variable declaration"
   
   it "parses type declarations" $ do
     let tokens = mockGoTokens 
@@ -780,11 +876,16 @@ parserSpec = describe "Go Parser" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (safeHead files)
-        length decls `shouldBe` 1
-        case locatedValue (safeHead decls) of
-          GoTypeDecl (Identifier name) _ -> name `shouldBe` "MyInt"
-          _ -> expectationFailure "Expected type declaration"
+        let file = safeHead files
+        case file of
+          Just f -> do
+            let decls = goFileDecls f
+            length decls `shouldBe` 1
+            case safeHead decls of
+              Nothing -> expectationFailure "Expected at least one declaration"
+              Just (Located _ (GoTypeDecl (Identifier name) _)) -> name `shouldBe` "MyInt"
+              _ -> expectationFailure "Expected type declaration"
+          Nothing -> expectationFailure "Expected at least one file"
   
   -- 新增函数测试用例
   it "parses function with parameters and return type" $ do
@@ -815,13 +916,18 @@ parserSpec = describe "Go Parser" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (safeHead files)
-        length decls `shouldBe` 1
-        case locatedValue (safeHead decls) of
-          GoFuncDecl func -> case goFuncName func of
-            Just (Identifier name) -> name `shouldBe` "add"
-            Nothing -> expectationFailure "Function should have a name"
-          _ -> expectationFailure "Expected function declaration"
+        let file = safeHead files
+        case file of
+          Just f -> do
+            let decls = goFileDecls f
+            length decls `shouldBe` 1
+            case safeHead decls of
+              Nothing -> expectationFailure "Expected at least one declaration"
+              Just (Located _ (GoFuncDecl func)) -> case goFuncName func of
+                Just (Identifier name) -> name `shouldBe` "add"
+                Nothing -> expectationFailure "Function should have a name"
+              _ -> expectationFailure "Expected function declaration"
+          Nothing -> expectationFailure "Expected at least one file"
   
   it "parses function with multiple return values" $ do
     let tokens = mockGoTokens 
@@ -855,13 +961,18 @@ parserSpec = describe "Go Parser" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (safeHead files)
-        length decls `shouldBe` 1
-        case locatedValue (safeHead decls) of
-          GoFuncDecl func -> case goFuncName func of
-            Just (Identifier name) -> name `shouldBe` "swap"
-            Nothing -> expectationFailure "Function should have a name"
-          _ -> expectationFailure "Expected function declaration"
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let decls = goFileDecls f
+            length decls `shouldBe` 1
+            case safeHead decls of
+              Nothing -> expectationFailure "Expected at least one declaration"
+              Just (Located _ (GoFuncDecl func)) -> case goFuncName func of
+                Just (Identifier name) -> name `shouldBe` "swap"
+                Nothing -> expectationFailure "Function should have a name"
+              _ -> expectationFailure "Expected function declaration"
   
   it "parses function with no parameters and no return value" $ do
     let tokens = mockGoTokens 
@@ -887,13 +998,18 @@ parserSpec = describe "Go Parser" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (safeHead files)
-        length decls `shouldBe` 1
-        case locatedValue (safeHead decls) of
-          GoFuncDecl func -> case goFuncName func of
-            Just (Identifier name) -> name `shouldBe` "hello"
-            Nothing -> expectationFailure "Function should have a name"
-          _ -> expectationFailure "Expected function declaration"
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let decls = goFileDecls f
+            length decls `shouldBe` 1
+            case safeHead decls of
+              Nothing -> expectationFailure "Expected at least one declaration"
+              Just (Located _ (GoFuncDecl func)) -> case goFuncName func of
+                Just (Identifier name) -> name `shouldBe` "hello"
+                Nothing -> expectationFailure "Function should have a name"
+              _ -> expectationFailure "Expected function declaration"
   
   it "parses main function as program entry point" $ do
     let tokens = mockGoTokens 
@@ -919,13 +1035,18 @@ parserSpec = describe "Go Parser" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (safeHead files)
-        length decls `shouldBe` 1
-        case locatedValue (safeHead decls) of
-          GoFuncDecl func -> case goFuncName func of
-            Just (Identifier name) -> name `shouldBe` "main"
-            Nothing -> expectationFailure "Function should have a name"
-          _ -> expectationFailure "Expected function declaration"
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let decls = goFileDecls f
+            length decls `shouldBe` 1
+            case safeHead decls of
+              Nothing -> expectationFailure "Expected at least one declaration"
+              Just (Located _ (GoFuncDecl func)) -> case goFuncName func of
+                Just (Identifier name) -> name `shouldBe` "main"
+                Nothing -> expectationFailure "Function should have a name"
+              _ -> expectationFailure "Expected function declaration"
   
   it "parses function with variadic parameters" $ do
     let tokens = mockGoTokens 
@@ -968,13 +1089,18 @@ parserSpec = describe "Go Parser" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (safeHead files)
-        length decls `shouldBe` 1
-        case locatedValue (safeHead decls) of
-          GoFuncDecl func -> case goFuncName func of
-            Just (Identifier name) -> name `shouldBe` "sum"
-            Nothing -> expectationFailure "Function should have a name"
-          _ -> expectationFailure "Expected function declaration"
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let decls = goFileDecls f
+            length decls `shouldBe` 1
+            case safeHead decls of
+              Nothing -> expectationFailure "Expected at least one declaration"
+              Just (Located _ (GoFuncDecl func)) -> case goFuncName func of
+                Just (Identifier name) -> name `shouldBe` "sum"
+                Nothing -> expectationFailure "Function should have a name"
+              _ -> expectationFailure "Expected function declaration"
   
   it "parses function with named return values" $ do
     let tokens = mockGoTokens 
@@ -1019,13 +1145,18 @@ parserSpec = describe "Go Parser" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (safeHead files)
-        length decls `shouldBe` 1
-        case locatedValue (safeHead decls) of
-          GoFuncDecl func -> case goFuncName func of
-            Just (Identifier name) -> name `shouldBe` "divide"
-            Nothing -> expectationFailure "Function should have a name"
-          _ -> expectationFailure "Expected function declaration"
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let decls = goFileDecls f
+            length decls `shouldBe` 1
+            case safeHead decls of
+              Nothing -> expectationFailure "Expected at least one declaration"
+              Just (Located _ (GoFuncDecl func)) -> case goFuncName func of
+                Just (Identifier name) -> name `shouldBe` "divide"
+                Nothing -> expectationFailure "Function should have a name"
+              _ -> expectationFailure "Expected function declaration"
   
   it "parses recursive function" $ do
     let tokens = mockGoTokens 
@@ -1066,13 +1197,18 @@ parserSpec = describe "Go Parser" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (safeHead files)
-        length decls `shouldBe` 1
-        case locatedValue (safeHead decls) of
-          GoFuncDecl func -> case goFuncName func of
-            Just (Identifier name) -> name `shouldBe` "factorial"
-            Nothing -> expectationFailure "Function should have a name"
-          _ -> expectationFailure "Expected function declaration"
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let decls = goFileDecls f
+            length decls `shouldBe` 1
+            case safeHead decls of
+              Nothing -> expectationFailure "Expected at least one declaration"
+              Just (Located _ (GoFuncDecl func)) -> case goFuncName func of
+                Just (Identifier name) -> name `shouldBe` "factorial"
+                Nothing -> expectationFailure "Function should have a name"
+              _ -> expectationFailure "Expected function declaration"
   
   it "parses function with pointer parameters and return type" $ do
     let tokens = mockGoTokens 
@@ -1098,13 +1234,18 @@ parserSpec = describe "Go Parser" $ do
         let GoAST package_ = ast
         let files = goPackageFiles package_
         length files `shouldBe` 1
-        let decls = goFileDecls (safeHead files)
-        length decls `shouldBe` 1
-        case locatedValue (safeHead decls) of
-          GoFuncDecl func -> case goFuncName func of
-            Just (Identifier name) -> name `shouldBe` "increment"
-            Nothing -> expectationFailure "Function should have a name"
-          _ -> expectationFailure "Expected function declaration"
+        let file = safeHead files
+        case file of
+          Nothing -> expectationFailure "Expected at least one file"
+          Just f -> do
+            let decls = goFileDecls f
+            length decls `shouldBe` 1
+            case safeHead decls of
+              Nothing -> expectationFailure "Expected at least one declaration"
+              Just (Located _ (GoFuncDecl func)) -> case goFuncName func of
+                Just (Identifier name) -> name `shouldBe` "increment"
+                Nothing -> expectationFailure "Function should have a name"
+              _ -> expectationFailure "Expected function declaration"
 
 advancedGoSyntaxSpec :: Spec
 advancedGoSyntaxSpec = describe "Go Parser - advanced Go syntax" $ do

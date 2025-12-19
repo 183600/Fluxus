@@ -5,6 +5,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Graph utilities for control flow and data flow analysis
 module Fluxus.Utils.Graph
@@ -188,6 +189,7 @@ topologicalSort graph = go fullInDegrees initialQueue [] (0 :: Int)
             else Nothing
         current Seq.:< rest ->
           let (inDeg', rest') = foldl' update (inDeg, rest) (successors current graph)
+              update :: (Map Int Int, Seq Int) -> Int -> (Map Int Int, Seq Int)
               update (degMap, q) succNode =
                 case Map.lookup succNode degMap of
                   Nothing -> (degMap, q)
@@ -225,6 +227,7 @@ stronglyConnectedComponents graph =
                 strongConnect v indices lowlinks stack index result
           in tarjan vs newIndices newLowlinks newStack newIndex newResult
 
+    strongConnect :: Int -> Map Int Int -> Map Int Int -> [Int] -> Int -> [[Int]] -> (Map Int Int, Map Int Int, [Int], Int, [[Int]])
     strongConnect v indices lowlinks stack index result =
       let indices' = Map.insert v index indices
           lowlinks' = Map.insert v index lowlinks
@@ -232,6 +235,7 @@ stronglyConnectedComponents graph =
           index' = index + 1
       in foldl' (processSuccessor v) (indices', lowlinks', stack', index', result) (successors v graph)
 
+    processSuccessor :: Int -> (Map Int Int, Map Int Int, [Int], Int, [[Int]]) -> Int -> (Map Int Int, Map Int Int, [Int], Int, [[Int]])
     processSuccessor v (indices, lowlinks, stack, index, result) w
       | not (Map.member w indices) =
           let (indices', lowlinks', stack', index', result') = strongConnect w indices lowlinks stack index result
@@ -271,6 +275,7 @@ postDominators exit graph =
   let reversedGraph = reverseGraph graph
   in dominators exit reversedGraph
   where
+    reverseGraph :: Graph a -> Graph a
     reverseGraph g = g { graphEdges = Set.map reverseEdge (graphEdges g) }
     reverseEdge (Edge from to label) = Edge to from label
 
@@ -399,6 +404,7 @@ backwardDataFlow problem graph =
       reversedGraph = reverseGraph graph
   in forwardDataFlow reversedProblem reversedGraph
   where
+    reverseGraph :: Graph a -> Graph a
     reverseGraph g = g { graphEdges = Set.map reverseEdge (graphEdges g) }
     reverseEdge (Edge from to label) = Edge to from label
 
@@ -434,6 +440,7 @@ buildDominatorTree entry graph =
                [] -> Nothing
                _ -> find isImmediate candidates
 
+    addDomEdge :: Graph a -> (NodeId, Maybe NodeId) -> Graph a
     addDomEdge tree (nid, mImmDom) =
       case mImmDom of
         Nothing -> tree

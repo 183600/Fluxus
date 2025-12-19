@@ -179,6 +179,7 @@ parseImportDecl = do
         pure [located' imp]
     ]
   where
+    parseImportSpec :: GoParser m GoImport
     parseImportSpec = MP.choice
       [ MP.try $ do
           void $ goDelimiterP GoDelimDot

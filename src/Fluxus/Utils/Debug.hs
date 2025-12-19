@@ -14,6 +14,7 @@ module Fluxus.Utils.Debug
   , withDebugLevel
   , setDebugLevel
   , getDebugLevel
+  , initDebugSystem
   ) where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -24,12 +25,24 @@ import System.IO (hFlush, stdout)
 import System.Environment (lookupEnv)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Time (getCurrentTime, diffUTCTime)
-import System.IO.Unsafe (unsafePerformIO)
+import Control.Concurrent.MVar (MVar, newMVar, takeMVar, putMVar)
+import Control.Exception (evaluate)
 
--- Global debug level reference
-{-# NOINLINE debugLevelRef #-}
-debugLevelRef :: IORef (Maybe DebugLevel)
-debugLevelRef = unsafePerformIO $ newIORef Nothing
+-- Safe global state using MVar for thread safety
+type DebugState = (IORef (Maybe DebugLevel), MVar ())
+
+-- Initialize the debug system - should be called once at program start
+initDebugSystem :: IO DebugState
+initDebugSystem = do
+  debugRef <- newIORef Nothing
+  lock <- newMVar ()
+  _ <- evaluate (debugRef, lock)  -- Force evaluation
+  return (debugRef, lock)
+
+-- Global state - initialized lazily but safely
+{-# NOINLINE globalDebugState #-}
+globalDebugState :: IO DebugState
+globalDebugState = initDebugSystem
 
 -- | Debug level for controlling verbosity
 data DebugLevel
@@ -54,10 +67,20 @@ getEnvDebugLevel = do
     Just "trace" -> pure Trace
     _ -> pure Warning  -- Default level
 
+-- | Get current debug level safely
+getCurrentDebugLevel :: IO DebugLevel
+getCurrentDebugLevel = do
+  (debugRef, _) <- globalDebugState
+  envLevel <- getEnvDebugLevel
+  refLevel <- readIORef debugRef
+  case refLevel of
+    Just level -> return $ max envLevel level  -- Use the higher of the two levels
+    Nothing -> return envLevel  -- Only use environment level if not set
+
 -- | Log a debug message if the current level allows it
 debugLog :: MonadIO m => DebugLevel -> Text -> m ()
 debugLog level msg = do
-  currentLevel <- liftIO getEnvDebugLevel
+  currentLevel <- liftIO getCurrentDebugLevel
   if level <= currentLevel
   then liftIO $ do
     TIO.putStr $ "[" <> T.pack (show level) <> "] " <> msg <> "\n"
@@ -91,25 +114,34 @@ debugWith level msg action = do
 -- | Set debug level for the current session
 setDebugLevel :: DebugLevel -> IO ()
 setDebugLevel level = do
-  writeIORef debugLevelRef (Just level)
+  (debugRef, lock) <- globalDebugState
+  -- Use MVar to ensure thread safety
+  takeMVar lock
+  writeIORef debugRef (Just level)
+  putMVar lock ()
   putStrLn $ "Setting debug level to: " ++ show level
 
 -- | Get current debug level
 getDebugLevel :: IO DebugLevel
-getDebugLevel = do
-  envLevel <- getEnvDebugLevel
-  refLevel <- readIORef debugLevelRef
-  case refLevel of
-    Just level -> return $ max envLevel level  -- Use the higher of the two levels
-    Nothing -> return envLevel  -- Only use environment level if not set
+getDebugLevel = getCurrentDebugLevel
 
 -- | Execute action with temporary debug level
 withDebugLevel :: DebugLevel -> IO a -> IO a
 withDebugLevel level action = do
-  oldLevel <- readIORef debugLevelRef
-  writeIORef debugLevelRef (Just level)
+  (debugRef, lock) <- globalDebugState
+  -- Use MVar to ensure thread safety
+  takeMVar lock
+  oldLevel <- readIORef debugRef
+  writeIORef debugRef (Just level)
+  putMVar lock ()
+  
   result <- action
-  writeIORef debugLevelRef oldLevel
+  
+  -- Restore old level
+  takeMVar lock
+  writeIORef debugRef oldLevel
+  putMVar lock ()
+  
   pure result
 
 -- | Debug assertion - fails with error message if condition is false

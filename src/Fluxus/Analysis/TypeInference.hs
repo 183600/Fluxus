@@ -393,11 +393,65 @@ inferBitwiseOp leftType rightType = do
   case leftType of
     TInt _ -> return ()
     TUInt _ -> return ()
-    _ -> throwError "Bitwise operations require integer types"
+    TBool -> return ()  -- Allow boolean for bitwise ops
+    TChar -> return ()  -- Allow char for bitwise ops
+    TFloat _ -> throwError "Bitwise operations cannot be performed on float types"
+    TString -> throwError "Bitwise operations cannot be performed on string types"
+    TList _ -> throwError "Bitwise operations cannot be performed on array types"
+    TStruct _ _ -> throwError "Bitwise operations cannot be performed on struct types"
+    TFunction _ _ -> throwError "Bitwise operations cannot be performed on function types"
+    TVoid -> throwError "Bitwise operations cannot be performed on void type"
+    TBytes -> throwError "Bitwise operations cannot be performed on bytes type"
+    TAny -> throwError "Bitwise operations cannot be performed on dynamic type"
+    TTuple _ -> throwError "Bitwise operations cannot be performed on tuple types"
+    TDict _ _ -> throwError "Bitwise operations cannot be performed on dictionary types"
+    TSet _ -> throwError "Bitwise operations cannot be performed on set types"
+    TOptional _ -> throwError "Bitwise operations cannot be performed on optional types"
+    TMethod _ _ _ -> throwError "Bitwise operations cannot be performed on method types"
+    TVar _ -> return ()  -- Type variables will be resolved during unification
+    TEnum _ _ -> throwError "Bitwise operations cannot be performed on enum types"
+    TInterface _ _ -> throwError "Bitwise operations cannot be performed on interface types"
+    TUnion _ -> throwError "Bitwise operations cannot be performed on union types"
+    TGeneric _ _ -> throwError "Bitwise operations cannot be performed on generic types"
+    TForall _ _ _ -> throwError "Bitwise operations cannot be performed on polymorphic types"
+    TOwned _ -> return ()  -- Unwrap ownership types
+    TShared _ -> return ()  -- Unwrap shared types
+    TBorrowed _ -> return ()  -- Unwrap borrowed types
+    TMutable _ -> return ()  -- Unwrap mutable types
+    TError _ -> throwError "Bitwise operations cannot be performed on error types"
+    TInfer _ -> return ()  -- Type inference variables will be resolved
+    
   case rightType of
     TInt _ -> return ()
     TUInt _ -> return ()
-    _ -> throwError "Bitwise operations require integer types"
+    TBool -> return ()  -- Allow boolean for bitwise ops
+    TChar -> return ()  -- Allow char for bitwise ops
+    TFloat _ -> throwError "Bitwise operations cannot be performed on float types"
+    TString -> throwError "Bitwise operations cannot be performed on string types"
+    TList _ -> throwError "Bitwise operations cannot be performed on array types"
+    TStruct _ _ -> throwError "Bitwise operations cannot be performed on struct types"
+    TFunction _ _ -> throwError "Bitwise operations cannot be performed on function types"
+    TVoid -> throwError "Bitwise operations cannot be performed on void type"
+    TBytes -> throwError "Bitwise operations cannot be performed on bytes type"
+    TAny -> throwError "Bitwise operations cannot be performed on dynamic type"
+    TTuple _ -> throwError "Bitwise operations cannot be performed on tuple types"
+    TDict _ _ -> throwError "Bitwise operations cannot be performed on dictionary types"
+    TSet _ -> throwError "Bitwise operations cannot be performed on set types"
+    TOptional _ -> throwError "Bitwise operations cannot be performed on optional types"
+    TMethod _ _ _ -> throwError "Bitwise operations cannot be performed on method types"
+    TVar _ -> return ()  -- Type variables will be resolved during unification
+    TEnum _ _ -> throwError "Bitwise operations cannot be performed on enum types"
+    TInterface _ _ -> throwError "Bitwise operations cannot be performed on interface types"
+    TUnion _ -> throwError "Bitwise operations cannot be performed on union types"
+    TGeneric _ _ -> throwError "Bitwise operations cannot be performed on generic types"
+    TForall _ _ _ -> throwError "Bitwise operations cannot be performed on polymorphic types"
+    TOwned _ -> return ()  -- Unwrap ownership types
+    TShared _ -> return ()  -- Unwrap shared types
+    TBorrowed _ -> return ()  -- Unwrap borrowed types
+    TMutable _ -> return ()  -- Unwrap mutable types
+    TError _ -> throwError "Bitwise operations cannot be performed on error types"
+    TInfer _ -> return ()  -- Type inference variables will be resolved
+    
   addConstraint leftType rightType
   return leftType
 
@@ -410,20 +464,98 @@ inferUnaryOp OpNegate operandType = do
   -- Negate requires numeric type
   case operandType of
     TInt _ -> return operandType
+    TUInt _ -> return operandType
     TFloat _ -> return operandType
-    _ -> throwError "Negate operation requires numeric type"
+    TBool -> return operandType  -- Allow boolean negation
+    TChar -> return operandType  -- Allow char negation
+    TString -> throwError "Negate operation cannot be performed on string type"
+    TList _ -> throwError "Negate operation cannot be performed on array type"
+    TStruct _ _ -> throwError "Negate operation cannot be performed on struct type"
+    TFunction _ _ -> throwError "Negate operation cannot be performed on function type"
+    TVoid -> throwError "Negate operation cannot be performed on void type"
+    TBytes -> throwError "Negate operation cannot be performed on bytes type"
+    TAny -> throwError "Negate operation cannot be performed on dynamic type"
+    TTuple _ -> throwError "Negate operation cannot be performed on tuple types"
+    TDict _ _ -> throwError "Negate operation cannot be performed on dictionary types"
+    TSet _ -> throwError "Negate operation cannot be performed on set types"
+    TOptional _ -> throwError "Negate operation cannot be performed on optional types"
+    TMethod _ _ _ -> throwError "Negate operation cannot be performed on method types"
+    TVar _ -> return operandType  -- Type variables will be resolved during unification
+    TEnum _ _ -> throwError "Negate operation cannot be performed on enum types"
+    TInterface _ _ -> throwError "Negate operation cannot be performed on interface types"
+    TUnion _ -> throwError "Negate operation cannot be performed on union types"
+    TGeneric _ _ -> throwError "Negate operation cannot be performed on generic types"
+    TForall _ _ _ -> throwError "Negate operation cannot be performed on polymorphic types"
+    TOwned t -> return t  -- Unwrap ownership types
+    TShared t -> return t  -- Unwrap shared types
+    TBorrowed t -> return t  -- Unwrap borrowed types
+    TMutable t -> return t  -- Unwrap mutable types
+    TError _ -> throwError "Negate operation cannot be performed on error types"
+    TInfer _ -> return operandType  -- Type inference variables will be resolved
 inferUnaryOp OpBitNot operandType = do
   -- Bitwise not requires integer type
   case operandType of
     TInt _ -> return operandType
     TUInt _ -> return operandType
-    _ -> throwError "Bitwise not operation requires integer type"
+    TBool -> return operandType  -- Allow boolean bitwise not
+    TChar -> return operandType  -- Allow char bitwise not
+    TFloat _ -> throwError "Bitwise not operation cannot be performed on float type"
+    TString -> throwError "Bitwise not operation cannot be performed on string type"
+    TList _ -> throwError "Bitwise not operation cannot be performed on array type"
+    TStruct _ _ -> throwError "Bitwise not operation cannot be performed on struct type"
+    TFunction _ _ -> throwError "Bitwise not operation cannot be performed on function type"
+    TVoid -> throwError "Bitwise not operation cannot be performed on void type"
+    TBytes -> throwError "Bitwise not operation cannot be performed on bytes type"
+    TAny -> throwError "Bitwise not operation cannot be performed on dynamic type"
+    TTuple _ -> throwError "Bitwise not operation cannot be performed on tuple types"
+    TDict _ _ -> throwError "Bitwise not operation cannot be performed on dictionary types"
+    TSet _ -> throwError "Bitwise not operation cannot be performed on set types"
+    TOptional _ -> throwError "Bitwise not operation cannot be performed on optional types"
+    TMethod _ _ _ -> throwError "Bitwise not operation cannot be performed on method types"
+    TVar _ -> return operandType  -- Type variables will be resolved during unification
+    TEnum _ _ -> throwError "Bitwise not operation cannot be performed on enum types"
+    TInterface _ _ -> throwError "Bitwise not operation cannot be performed on interface types"
+    TUnion _ -> throwError "Bitwise not operation cannot be performed on union types"
+    TGeneric _ _ -> throwError "Bitwise not operation cannot be performed on generic types"
+    TForall _ _ _ -> throwError "Bitwise not operation cannot be performed on polymorphic types"
+    TOwned t -> return t  -- Unwrap ownership types
+    TShared t -> return t  -- Unwrap shared types
+    TBorrowed t -> return t  -- Unwrap borrowed types
+    TMutable t -> return t  -- Unwrap mutable types
+    TError _ -> throwError "Bitwise not operation cannot be performed on error types"
+    TInfer _ -> return operandType  -- Type inference variables will be resolved
 inferUnaryOp OpPositive operandType = do
   -- Unary plus requires numeric type
   case operandType of
     TInt _ -> return operandType
+    TUInt _ -> return operandType
     TFloat _ -> return operandType
-    _ -> throwError "Unary plus operation requires numeric type"
+    TBool -> return operandType  -- Allow boolean unary plus
+    TChar -> return operandType  -- Allow char unary plus
+    TString -> throwError "Unary plus operation cannot be performed on string type"
+    TList _ -> throwError "Unary plus operation cannot be performed on array type"
+    TStruct _ _ -> throwError "Unary plus operation cannot be performed on struct type"
+    TFunction _ _ -> throwError "Unary plus operation cannot be performed on function type"
+    TVoid -> throwError "Unary plus operation cannot be performed on void type"
+    TBytes -> throwError "Unary plus operation cannot be performed on bytes type"
+    TAny -> throwError "Unary plus operation cannot be performed on dynamic type"
+    TTuple _ -> throwError "Unary plus operation cannot be performed on tuple types"
+    TDict _ _ -> throwError "Unary plus operation cannot be performed on dictionary types"
+    TSet _ -> throwError "Unary plus operation cannot be performed on set types"
+    TOptional _ -> throwError "Unary plus operation cannot be performed on optional types"
+    TMethod _ _ _ -> throwError "Unary plus operation cannot be performed on method types"
+    TVar _ -> return operandType  -- Type variables will be resolved during unification
+    TEnum _ _ -> throwError "Unary plus operation cannot be performed on enum types"
+    TInterface _ _ -> throwError "Unary plus operation cannot be performed on interface types"
+    TUnion _ -> throwError "Unary plus operation cannot be performed on union types"
+    TGeneric _ _ -> throwError "Unary plus operation cannot be performed on generic types"
+    TForall _ _ _ -> throwError "Unary plus operation cannot be performed on polymorphic types"
+    TOwned t -> return t  -- Unwrap ownership types
+    TShared t -> return t  -- Unwrap shared types
+    TBorrowed t -> return t  -- Unwrap borrowed types
+    TMutable t -> return t  -- Unwrap mutable types
+    TError _ -> throwError "Unary plus operation cannot be performed on error types"
+    TInfer _ -> return operandType  -- Type inference variables will be resolved
 
 -- | Unify two types and generate constraints
 unifyTypes :: Type -> Type -> TypeInferenceM (Maybe TypeConstraints)

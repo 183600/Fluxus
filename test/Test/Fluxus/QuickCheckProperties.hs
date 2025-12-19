@@ -118,6 +118,9 @@ spec = describe "QuickCheck Property Tests" $ do
   optimizationInvariantProperties
   typeErasureProperties
   securityInvariantProperties
+  -- Additional compiler test properties
+  compilerCorrectnessProperties
+  codeGenerationProperties
 
 binaryOpProperties :: Spec
 binaryOpProperties = describe "Binary Operator Properties" $ do
@@ -2208,11 +2211,7 @@ checkBufferAccess :: Int -> Int -> Bool
 checkBufferAccess bufferSize index = index < bufferSize
 
 -- OwnershipInfo helper functions
-memLocation :: OwnershipInfo -> MemoryLocation
-memLocation ownershipInfo = memLocation ownershipInfo
 
-escapes :: OwnershipInfo -> EscapeInfo  
-escapes ownershipInfo = escapes ownershipInfo
 
 -- Type helpers
 
@@ -2299,7 +2298,3 @@ securityInvariantProperties = describe "Security Invariant Properties" $ do
         access = checkBufferAccess bufferSize index
         isSafe = index < bufferSize
     in access === isSafe
-
-
-
-

@@ -43,10 +43,12 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, unless, forM_, foldM)
 import Control.Exception (IOException, try)
 import Data.Maybe (fromMaybe, catMaybes)
+import Data.String (IsString)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.Map.Strict (Map)
+import Fluxus.Utils.Common (textShow)
 import qualified Data.Map.Strict as Map
 import Data.Aeson (ToJSON(..), (.=), object)
 import Data.Time
@@ -59,12 +61,13 @@ import Data.Hashable (Hashable, hash)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 
-import Fluxus.AST.Common (Identifier(..), Type, SourceSpan(..), SourcePos(..), AnalysisAnnotations, ExprAnnotations(..), eaInferredType, eaOwnership, eaEscapeInfo, eaOptimizationNotes, OwnershipInfo(..), ownsMemory, canMove, refCount, escapes, memLocation, emptyAnnotations, insertAnnotations, unAnalysisAnnotations, locValue)
+import Fluxus.AST.Common (Identifier(..), Type, SourceSpan(..), SourcePos(..), AnalysisAnnotations, ExprAnnotations(..), eaInferredType, eaOwnership, eaEscapeInfo, eaOptimizationNotes, OwnershipInfo(..), ownsMemory, canMove, refCount, escapes, memLocation, emptyAnnotations, insertAnnotations, unAnalysisAnnotations, locValue, Located(..), CommonExpr(..))
 import Fluxus.AST.Python (PythonAST(..))
 import Fluxus.AST.Go (GoAST(..))
 import Fluxus.Analysis.TypeInference
   ( TypeInferenceState(..)
   , InferenceResult(..)
+  , TypeEnvironment
   , runTypeInference
   , inferType
   , solveConstraints
@@ -355,6 +358,7 @@ applyPlatformDefaults config =
     baseLibraryDefaults = ccLibraryPaths defaultConfig
     baseLinkedDefaults = ccLinkedLibraries defaultConfig
 
+    resolveList :: Eq p => p -> p -> p -> p
     resolveList base defaults current
       | current == base = defaults
       | otherwise = current
@@ -806,6 +810,7 @@ typeInferenceStage ast = do
         addWarning $ TypeWarning ("Failed to infer types for " <> textShow failures <> " expressions") systemSpan
       return ast
   where
+    inferExpression :: TypeEnvironment -> (Int, Int) -> Located CommonExpr -> CompilerM (Int, Int)
     inferExpression inferEnv (okCount, errCount) locatedExpr =
       let expr = locValue locatedExpr
       in case runTypeInference inferEnv $ do
@@ -983,8 +988,7 @@ optimizationStage ast = do
 systemSpan :: SourceSpan
 systemSpan = SourceSpan (T.pack "<system>") (SourcePos 0 0) (SourcePos 0 0)
 
-textShow :: Show a => a -> Text
-textShow = T.pack . show
+
 
 renderType :: Type -> Text
 renderType = textShow
@@ -1023,6 +1027,7 @@ codeGenStage ast = do
     logDiagnostic :: CppDiagnostic -> CompilerM ()
     logDiagnostic diag =
       let baseMsg = diagMessage diag <> maybe "" (\ctx -> " (" <> ctx <> ")") (diagContext diag)
+          prefixedInfo :: (IsString a, Semigroup a) => a -> a -> a
           prefixedInfo tag msg = tag <> " " <> msg
       in case diagSeverity diag of
         SeverityInfo -> logInfo $ prefixedInfo "[codegen]" baseMsg

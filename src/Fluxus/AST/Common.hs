@@ -45,6 +45,8 @@ module Fluxus.AST.Common
   , insertAnnotations
   ) where
 
+import Fluxus.Utils.Common (mergeSpans, SourceSpan(..), SourcePos(..))
+
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Int (Int64)
@@ -57,20 +59,7 @@ import Control.DeepSeq (NFData)
 import Control.Applicative ((<|>))
 import Control.Monad () -- For instances
 
--- | Source position information (line, column)
-data SourcePos = SourcePos
-  { posLine   :: !Int
-  , posColumn :: !Int
-  } deriving stock (Eq, Ord, Show, Generic)
-    deriving anyclass (Hashable, NFData)
 
--- | Source span from start to end position
-data SourceSpan = SourceSpan
-  { spanFilename :: !Text
-  , spanStart    :: !SourcePos
-  , spanEnd      :: !SourcePos
-  } deriving stock (Eq, Ord, Show, Generic)
-    deriving anyclass (Hashable, NFData)
 
 -- | Add source location information to any AST node
 data Located a = Located
@@ -80,10 +69,6 @@ data Located a = Located
     deriving anyclass (NFData)
 
 instance Hashable a => Hashable (Located a)
-
--- | Merge two source spans into one that covers both
-mergeSpans :: SourceSpan -> SourceSpan -> SourceSpan
-mergeSpans (SourceSpan file start _) (SourceSpan _ _ end) = SourceSpan file start end
 
 instance Applicative Located where
   pure = noLoc

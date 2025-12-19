@@ -62,6 +62,7 @@ library
     Fluxus.Utils.Pretty
     Fluxus.Utils.Graph
     Fluxus.Utils.Debug
+    Fluxus.Utils.Common
   other-modules:
     Fluxus.Internal.Types
     Fluxus.Internal.Monad
@@ -72,12 +73,12 @@ library
     Fluxus.Parser.Go.Parser.Statements
   build-depends:
     base >= 4.17 && < 5,
-    containers >= 0.6.7 && < 0.8,
+    containers >= 0.6.7 && < 0.9,
     text >= 2.0 && < 2.2,
     bytestring >= 0.11 && < 0.13,
     mtl >= 2.3 && < 2.4,
     transformers >= 0.6 && < 0.7,
-    megaparsec >= 9.5 && < 9.7,
+    megaparsec >= 9.5 && < 9.8,
     prettyprinter >= 1.7 && < 1.8,
     prettyprinter-ansi-terminal >= 1.1 && < 1.2,
     hashable >= 1.4 && < 1.6,
@@ -90,7 +91,7 @@ library
     aeson >= 2.1 && < 2.3,
     yaml >= 0.11 && < 0.12,
     monad-logger >= 0.3.40 && < 0.4,
-    time >= 1.12 && < 1.14,
+    time >= 1.12 && < 1.16,
     stm >= 2.5 && < 2.6,
 
 executable fluxus

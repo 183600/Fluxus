@@ -12,6 +12,7 @@ import qualified Data.HashMap.Strict as HM
 import Data.Maybe (catMaybes, isNothing)
 import Data.Text (Text)
 import qualified Data.Text as T
+import Fluxus.Utils.Common (textShow)
 
 import Fluxus.AST.Go 
   ( GoAST(..)
@@ -112,8 +113,7 @@ formatSourceSpanShort :: SourceSpan -> Text
 formatSourceSpanShort SourceSpan { spanFilename = filename, spanStart = SourcePos line col } =
   filename <> ":" <> textShow line <> ":" <> textShow col
 
-textShow :: Show a => a -> Text
-textShow = T.pack . show
+
 
 wrapStatements :: [CppStmt] -> CppStmt
 wrapStatements [] = CppStmtSeq []
@@ -502,7 +502,8 @@ generateSwitchClauseBody = go
 
 generateGoSelect :: SourceSpan -> [Located GoCommClause] -> CppCodeGen CppStmt
 generateGoSelect srcSpan clauses = do
-  let unwrap (Located _ clause) = clause
+  let unwrap :: Located GoCommClause -> GoCommClause
+      unwrap (Located _ clause) = clause
       (defaultClauses, commClauses) = partition (isNothing . goCommStmt . unwrap) clauses
   case (commClauses, defaultClauses) of
     ([], []) -> do
@@ -675,6 +676,7 @@ generateGoMapLiteral srcSpan typeExpr entries = do
       emitWarning $ "map literal at " <> formatSourceSpanShort srcSpan <> " targets unsupported type " <> T.pack (show other)
       pure (CppBracedInit cppType [])
   where
+    buildInitializer :: CppType -> CppType -> CppType -> CppCodeGen CppExpr
     buildInitializer targetType _keyTy _valueTy = do
       addInclude "<utility>"
       pairExprs <- mapM (uncurry buildPair) entries

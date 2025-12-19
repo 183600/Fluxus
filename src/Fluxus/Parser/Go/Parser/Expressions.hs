@@ -30,6 +30,7 @@ import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import Text.Megaparsec (lookAhead)
 import qualified Text.Megaparsec as MP
+import Text.Read (readMaybe)
 
 import Fluxus.AST.Common (BinaryOp(..), ComparisonOp(..), Identifier(..), Located(..), UnaryOp(..), locatedValue)
 import Fluxus.AST.Go 
@@ -70,6 +71,7 @@ parseExpression = parseOrExpr
 parseOrExpr :: MonadLogger m => GoParser m (Located GoExpr)
 parseOrExpr = chainl1 parseAndExpr parseOrOp
   where
+    parseOrOp :: GoParser m (Located GoExpr -> Located GoExpr -> Located GoExpr)
     parseOrOp = do
       void $ goOperatorP GoOpOr
       pure $ \l r -> located' $ GoBinaryOp OpOr l r
@@ -77,6 +79,7 @@ parseOrExpr = chainl1 parseAndExpr parseOrOp
 parseAndExpr :: MonadLogger m => GoParser m (Located GoExpr)
 parseAndExpr = chainl1 parseEqualityExpr parseAndOp
   where
+    parseAndOp :: GoParser m (Located GoExpr -> Located GoExpr -> Located GoExpr)
     parseAndOp = do
       void $ goOperatorP GoOpAnd
       pure $ \l r -> located' $ GoBinaryOp OpAnd l r
@@ -84,6 +87,7 @@ parseAndExpr = chainl1 parseEqualityExpr parseAndOp
 parseEqualityExpr :: MonadLogger m => GoParser m (Located GoExpr)
 parseEqualityExpr = chainl1 parseRelationalExpr parseEqOp
   where
+    parseEqOp :: GoParser m (Located GoExpr -> Located GoExpr -> Located GoExpr)
     parseEqOp = MP.choice
       [ goOperatorP GoOpEq $> (\l r -> located' $ GoComparison OpEq l r)
       , goOperatorP GoOpNe $> (\l r -> located' $ GoComparison OpNe l r)
@@ -92,6 +96,7 @@ parseEqualityExpr = chainl1 parseRelationalExpr parseEqOp
 parseRelationalExpr :: MonadLogger m => GoParser m (Located GoExpr)
 parseRelationalExpr = chainl1 parseAdditiveExpr parseRelOp
   where
+    parseRelOp :: GoParser m (Located GoExpr -> Located GoExpr -> Located GoExpr)
     parseRelOp = MP.choice
       [ goOperatorP GoOpLt $> (\l r -> located' $ GoComparison OpLt l r)
       , goOperatorP GoOpLe $> (\l r -> located' $ GoComparison OpLe l r)
@@ -102,6 +107,7 @@ parseRelationalExpr = chainl1 parseAdditiveExpr parseRelOp
 parseAdditiveExpr :: MonadLogger m => GoParser m (Located GoExpr)
 parseAdditiveExpr = chainl1 parseMultiplicativeExpr parseAddOp
   where
+    parseAddOp :: GoParser m (Located GoExpr -> Located GoExpr -> Located GoExpr)
     parseAddOp = MP.choice
       [ goOperatorP GoOpPlus $> (\l r -> located' $ GoBinaryOp OpAdd l r)
       , goOperatorP GoOpMinus $> (\l r -> located' $ GoBinaryOp OpSub l r)
@@ -112,6 +118,7 @@ parseAdditiveExpr = chainl1 parseMultiplicativeExpr parseAddOp
 parseMultiplicativeExpr :: MonadLogger m => GoParser m (Located GoExpr)
 parseMultiplicativeExpr = chainl1 parseUnaryExpr parseMulOp
   where
+    parseMulOp :: GoParser m (Located GoExpr -> Located GoExpr -> Located GoExpr)
     parseMulOp = MP.choice
       [ goOperatorP GoOpMult $> (\l r -> located' $ GoBinaryOp OpMul l r)
       , goOperatorP GoOpDiv $> (\l r -> located' $ GoBinaryOp OpDiv l r)
@@ -160,9 +167,18 @@ parseGoLiteral :: GoParser m GoExpr
 parseGoLiteral = do
   Located _ token <- MP.satisfy isLiteralToken
   case token of
-    GoTokenInt text -> pure $ GoLiteral $ GoInt (read $ T.unpack text)
-    GoTokenFloat text -> pure $ GoLiteral $ GoFloat (read $ T.unpack text)
-    GoTokenImag text -> pure $ GoLiteral $ GoImag (read $ T.unpack $ T.init text)
+    GoTokenInt text -> 
+      case readMaybe (T.unpack text) of
+        Just value -> pure $ GoLiteral $ GoInt value
+        Nothing -> fail $ "Invalid integer literal: " ++ T.unpack text
+    GoTokenFloat text -> 
+      case readMaybe (T.unpack text) of
+        Just value -> pure $ GoLiteral $ GoFloat value
+        Nothing -> fail $ "Invalid float literal: " ++ T.unpack text
+    GoTokenImag text -> 
+      case readMaybe (T.unpack $ T.init text) of
+        Just value -> pure $ GoLiteral $ GoImag value
+        Nothing -> fail $ "Invalid imaginary literal: " ++ T.unpack text
     GoTokenString text -> pure $ GoLiteral $ GoString text
     GoTokenRawString text -> pure $ GoLiteral $ GoRawString text
     GoTokenRune char -> pure $ GoLiteral $ GoRune char
