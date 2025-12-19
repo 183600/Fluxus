@@ -57,6 +57,11 @@ jobs:
         run: |
           test -n "$IFLOW_API_KEY" || { echo "Missing IFLOW_API_KEY secret"; exit 1; }
 
+      - name: Setup locale to prevent warnings
+        run: |
+          sudo locale-gen zh_CN.UTF-8
+          sudo update-locale
+
       - name: Setup Haskell (GHC + Cabal)
         uses: haskell-actions/setup@v2
         with:

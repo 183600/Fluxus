@@ -15,6 +15,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup locale to prevent warnings
+        run: |
+          sudo locale-gen zh_CN.UTF-8
+          sudo update-locale
+
       - name: Set up Haskell
         uses: haskell/actions/setup@v2
         with:
