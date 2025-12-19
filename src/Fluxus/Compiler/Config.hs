@@ -447,7 +447,8 @@ applyEnvironmentOverrides config = do
     Just raw -> case readMaybe raw of
       Just level -> pure level
       Nothing -> do
-        putStrLn $ "Warning: Ignoring invalid FLUXUS_VERBOSE value '" ++ raw ++ "' (keeping existing verbosity)."
+        -- Use hPutStrLn stderr instead of putStrLn for warnings
+        hPutStrLn stderr $ "Warning: Ignoring invalid FLUXUS_VERBOSE value '" ++ raw ++ "' (keeping existing verbosity)."
         pure (ccVerboseLevel config)
 
   return config

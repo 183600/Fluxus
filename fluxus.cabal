@@ -20,12 +20,22 @@ source-repository head
   type: git
   location: https://github.com/183600/Fluxus
 
+flag fast
+  description: Enable fast compilation mode (less optimization)
+  default: False
+  manual: True
+
+flag production
+  description: Enable production build mode (more optimization)
+  default: False
+  manual: True
+
 common shared-properties
   default-language: Haskell2010
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates
                -Wincomplete-uni-patterns -Wmissing-export-lists
                -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
-               -Wno-missing-import-lists -Wno-unused-imports
+               -Wno-missing-import-lists -Wno-unused-imports -Wno-unused-binds
 
 library
   import: shared-properties
@@ -71,6 +81,8 @@ library
     Fluxus.Parser.Go.Parser.Declarations
     Fluxus.Parser.Go.Parser.Expressions
     Fluxus.Parser.Go.Parser.Statements
+  
+  
   build-depends:
     base >= 4.17 && < 5,
     containers >= 0.6.7 && < 0.9,
