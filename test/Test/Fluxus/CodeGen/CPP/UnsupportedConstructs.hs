@@ -9,7 +9,7 @@ import Fluxus.AST.Common
 import Fluxus.AST.Python
 import Fluxus.AST.Go
 import Fluxus.CodeGen.CPP
-import Fluxus.CodeGen.CPP.Diagnostics()
+import Fluxus.CodeGen.CPP.Diagnostics
 import Test.Hspec
 
 import qualified Test.Fluxus.CodeGen.CPP.Shared as Shared

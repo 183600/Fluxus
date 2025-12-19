@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
 
 module Test.Fluxus.Parser.Python (spec) where
 
@@ -15,7 +14,7 @@ import Fluxus.AST.Python
 import Fluxus.AST.Common
 
 safeHead :: [a] -> a
-safeHead [] = Prelude.error "safeHead: empty list (test invariant violated)"
+safeHead [] = error "safeHead: empty list (test invariant violated)"
 safeHead (x:_) = x
 
 parseModuleFrom :: Text -> Either String PythonModule

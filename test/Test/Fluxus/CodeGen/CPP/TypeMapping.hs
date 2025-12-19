@@ -1,7 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-{-# LANGUAGE OverloadedStrings #-}
-
 module Test.Fluxus.CodeGen.CPP.TypeMapping (spec) where
 
 import Test.Hspec

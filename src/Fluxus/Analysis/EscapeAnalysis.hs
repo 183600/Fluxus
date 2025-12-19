@@ -19,7 +19,7 @@ module Fluxus.Analysis.EscapeAnalysis
   , optimizeMemoryAllocation
   ) where
 
-import Fluxus.AST.Common
+import Fluxus.AST.Common (CommonCompClause(..), CommonExpr(..), EscapeInfo(..), Identifier(..), Located(..), MemoryLocation(..), cccFilters, cccIter, locatedValue)
 import Control.Monad.State (State, gets, modify, runState)
 import Control.Monad.Reader (ReaderT, ask, local, runReaderT)
 import Control.Monad (void)

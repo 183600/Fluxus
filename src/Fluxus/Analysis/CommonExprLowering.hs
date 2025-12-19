@@ -28,8 +28,8 @@ import Data.Text (Text)
 import qualified Data.Text as T
 
 import Fluxus.AST.Common (CommonCompClause(..), CommonExpr(..), Identifier(..), Located(..), Literal(..), QualifiedName(..), SourcePos(..), SourceSpan(..), mergeSpans)
-import Fluxus.AST.Go
-import Fluxus.AST.Python
+import Fluxus.AST.Go (GoAST(..), GoCommClause(..), GoDecl(..), GoExpr(..), GoFile(..), GoForClause(..), GoFunction(..), GoLiteral(..), GoPackage(..), GoRangeClause(..), GoStmt(..), GoTypeSwitchClause(..), goSliceHigh, goSliceLow, goSliceMax)
+import Fluxus.AST.Python (PythonAST(..), PythonArgument(..), PythonCase(..), PythonClassDef(..), PythonComprehension(..), PythonDecorator(..), PythonExcept(..), PythonExpr(..), PythonFuncDef(..), PythonLiteral(..), PythonModule(..), PythonParameter(..), PythonPattern(..), PythonSlice(..), PythonStmt(..), PythonWithItem(..))
 
 -- | Structured issue information produced during lowering.
 data LoweringIssue

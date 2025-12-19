@@ -47,7 +47,7 @@ import Text.Megaparsec
 import qualified Text.Megaparsec as MP
 import qualified Text.Megaparsec.Pos as MPP
 
-import Fluxus.AST.Common (Identifier(..), Located(..), SourcePos(..), SourceSpan(..), locSpan, noLoc)
+import Fluxus.AST.Common (Identifier(..), Located(..), SourcePos(..), SourceSpan(..), locSpan, noLoc, spanFilename, spanEnd)
 import Fluxus.Parser.Go.Lexer
   ( GoDelimiter(..)
   , GoKeyword

@@ -24,7 +24,7 @@ module Fluxus.Analysis.ShapeAnalysis
   , analyzeObjectShape
   ) where
 
-import Fluxus.AST.Common
+import Fluxus.AST.Common (BinaryOp(..), CommonCompClause(..), CommonExpr(..), Identifier(..), Located(..), Literal(..), Type(..), UnaryOp(..), cccFilters, cccIter, locatedValue)
 import Control.Monad.State (StateT, gets, runStateT)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.Except (Except, throwError, runExcept)
@@ -41,6 +41,7 @@ import GHC.Generics (Generic)
 import Data.Hashable (Hashable, hashWithSalt)
 import Control.DeepSeq (NFData)
 import Data.List (sortOn)
+import Data.Maybe (catMaybes, listToMaybe, isJust)
 
 type ShapeAnalysisM = ReaderT ShapeContext (StateT ShapeAnalysisState (Except Text))
 
@@ -629,14 +630,3 @@ extractFieldShape shape (Identifier fieldName) =
 allSame :: Eq a => [a] -> Bool
 allSame [] = True
 allSame (x:xs) = all (== x) xs
-
-catMaybes :: [Maybe a] -> [a]
-catMaybes = foldr (\x acc -> case x of Just y -> y:acc; Nothing -> acc) []
-
-listToMaybe :: [a] -> Maybe a
-listToMaybe [] = Nothing
-listToMaybe (x:_) = Just x
-
-isJust :: Maybe a -> Bool
-isJust (Just _) = True
-isJust Nothing = False

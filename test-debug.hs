@@ -5,12 +5,14 @@
 -- | General test debug utility
 module Main (main) where
 
+import Prelude
+
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import System.Environment (getArgs)
-import Fluxus.Parser.Python.Lexer
+import Fluxus.Parser.Python.Lexer (runPythonLexer, PythonToken(..))
 import Fluxus.Parser.Python.Parser ()
-import Fluxus.Utils.Debug
+import Fluxus.Utils.Debug (debugLog, setDebugLevel, DebugLevel(Debug))
 import Fluxus.AST.Common (Located(..))
 
 main :: IO ()

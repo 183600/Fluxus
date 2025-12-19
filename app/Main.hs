@@ -4,6 +4,8 @@
 -- | Main entry point for the Fluxus compiler
 module Main (main) where
 
+import Prelude
+
 import System.Environment (getArgs)
 import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
@@ -14,7 +16,7 @@ import Data.List (isPrefixOf, isSuffixOf)
 
 import Fluxus.Compiler.Driver (runCompiler, setupCompilerEnvironment, compileFile, compileProject, CompilerConfig(ccSourceLanguage, ccVerboseLevel), CompilerError(ParseError, TypeError, OptimizationError, CodeGenError, LinkError, FileSystemError, ConfigurationError, RuntimeError), CompilerWarning(TypeWarning, OptimizationWarning, DeprecationWarning, PerformanceWarning), CompilerState(csWarnings, csErrors, csProcessedFiles, csTotalFiles), validateConfig, SourceLanguage(Go))
 import Fluxus.Compiler.Config (loadConfig, printConfig, checkSystemRequirements, LoadConfigResult(LoadConfigSuccess, LoadConfigHelp, LoadConfigVersion))
-import Fluxus.AST.Common (SourceSpan(..), SourcePos(..))
+import Fluxus.AST.Common (SourceSpan, spanFilename, spanStart, posLine, posColumn)
 
 -- | Main entry point
 main :: IO ()

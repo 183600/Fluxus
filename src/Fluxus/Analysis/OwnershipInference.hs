@@ -21,7 +21,7 @@ module Fluxus.Analysis.OwnershipInference
   , generateCppMemoryManagement
   ) where
 
-import Fluxus.AST.Common
+import Fluxus.AST.Common (BinaryOp(..), CommonCompClause(..), CommonExpr(..), EscapeInfo(..), Identifier(..), Located(..), Literal(..), MemoryLocation(..), OwnershipInfo(..), Type(..), UnaryOp(..), cccFilters, cccIter, canMove, escapes, locatedValue, memLocation, ownsMemory, refCount)
 import Control.Monad.State (StateT, gets, modify, runStateT)
 import Control.Monad.Reader (ReaderT, ask, local, runReaderT)
 import Control.Monad.Except (Except, runExcept)

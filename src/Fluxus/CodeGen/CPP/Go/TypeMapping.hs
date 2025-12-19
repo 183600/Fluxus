@@ -21,6 +21,8 @@ import Fluxus.AST.Go
   , GoField(..)
   , GoExpr(..)
   , GoLiteral(..)
+  , goFieldType
+  , goFieldNames
   )
 import Fluxus.CodeGen.CPP.AST (CppType(..))
 

@@ -15,7 +15,7 @@ module Fluxus.Optimization.Monomorphization
   , collectTypeInstantiations
   ) where
 
-import Fluxus.AST.Common (Identifier(..), Located(..), Type(..), QualifiedName(..), CommonExpr(..), Literal(..), locatedValue)
+import Fluxus.AST.Common (Identifier(..), Located(..), Type(..), QualifiedName(..), CommonExpr(..), Literal(..), locatedValue, locSpan)
 import Control.Monad.State (State, gets, modify, runState)
 import Control.Monad.Reader (ReaderT, runReaderT)
 import Data.Text (Text)

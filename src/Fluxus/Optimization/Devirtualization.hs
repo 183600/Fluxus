@@ -16,7 +16,7 @@ module Fluxus.Optimization.Devirtualization
   , optimizeDispatch
   ) where
 
-import Fluxus.AST.Common (Identifier, Located(..), Type(..), QualifiedName(..), ModuleName(..), CommonExpr(..), locatedValue)
+import Fluxus.AST.Common (Identifier, Located(..), Type(..), QualifiedName(..), ModuleName(..), CommonExpr(..), locatedValue, locSpan)
 import Control.Monad.State (State, gets, modify, runState)
 import Control.Monad.Reader (ReaderT, asks, runReaderT)
 import Data.Text (Text)

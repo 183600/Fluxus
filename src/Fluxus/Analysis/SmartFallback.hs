@@ -20,9 +20,11 @@ import Fluxus.AST.Common
   , Located(..)
   , CommonExpr(..)
   , CommonCompClause(..)
+  , cccFilters
+  , cccIter
+  , locSpan
   , locatedValue
   , noLoc
-  , locSpan
   )
 import Control.Monad.State (State, gets, modify, runState)
 import Control.Monad.Reader (ReaderT, asks, runReaderT)
