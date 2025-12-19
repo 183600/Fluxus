@@ -22,13 +22,14 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import System.IO (hFlush, stdout)
 import System.Environment (lookupEnv)
-import System.IO.Unsafe (unsafePerformIO)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Time (getCurrentTime, diffUTCTime)
+import System.IO.Unsafe (unsafePerformIO)
 
-{-# NOINLINE currentDebugLevel #-}
-currentDebugLevel :: IORef DebugLevel
-currentDebugLevel = unsafePerformIO $ newIORef Warning
+-- Global debug level reference
+{-# NOINLINE debugLevelRef #-}
+debugLevelRef :: IORef (Maybe DebugLevel)
+debugLevelRef = unsafePerformIO $ newIORef Nothing
 
 -- | Debug level for controlling verbosity
 data DebugLevel
@@ -90,23 +91,25 @@ debugWith level msg action = do
 -- | Set debug level for the current session
 setDebugLevel :: DebugLevel -> IO ()
 setDebugLevel level = do
-  writeIORef currentDebugLevel level
+  writeIORef debugLevelRef (Just level)
   putStrLn $ "Setting debug level to: " ++ show level
 
 -- | Get current debug level
 getDebugLevel :: IO DebugLevel
 getDebugLevel = do
   envLevel <- getEnvDebugLevel
-  refLevel <- readIORef currentDebugLevel
-  return $ max envLevel refLevel  -- Use the higher of the two levels
+  refLevel <- readIORef debugLevelRef
+  case refLevel of
+    Just level -> return $ max envLevel level  -- Use the higher of the two levels
+    Nothing -> return envLevel  -- Only use environment level if not set
 
 -- | Execute action with temporary debug level
 withDebugLevel :: DebugLevel -> IO a -> IO a
 withDebugLevel level action = do
-  oldLevel <- getDebugLevel
-  setDebugLevel level
+  oldLevel <- readIORef debugLevelRef
+  writeIORef debugLevelRef (Just level)
   result <- action
-  setDebugLevel oldLevel
+  writeIORef debugLevelRef oldLevel
   pure result
 
 -- | Debug assertion - fails with error message if condition is false

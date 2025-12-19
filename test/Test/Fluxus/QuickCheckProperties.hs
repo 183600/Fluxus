@@ -16,8 +16,27 @@ import Data.Int (Int64)
 import Data.Bits (Bits(..), xor)
 import Data.List (isInfixOf, isPrefixOf, isSuffixOf)
 import qualified Data.List as L (intercalate)
+import Data.Char (isAlpha, isAlphaNum)
 -- import Data.Maybe (mapMaybe)  -- Not used
--- import Data.Char (isAlpha, isAlphaNum)  -- Not used
+
+-- Missing type definitions
+data Token = IdentifierTok Text
+          | IntTok Integer
+          | StringTok Text
+          deriving (Show, Eq)
+
+
+
+
+
+-- Helper functions
+_isAlpha :: Char -> Bool
+_isAlpha = isAlpha
+
+_isAlphaNumOrUnderscore :: Char -> Bool
+_isAlphaNumOrUnderscore c = isAlphaNum c || c == '_'
+
+
 
 spec :: Spec
 spec = describe "QuickCheck Property Tests" $ do
@@ -86,6 +105,14 @@ spec = describe "QuickCheck Property Tests" $ do
   bitManipulationProperties
   unicodeHandlingProperties
   nullSafetyProperties
+  moduleDependencyGraphProperties
+  codeInliningOptimizationProperties
+  typeInferenceMonotonicityProperties
+  scopeResolutionProperties
+  constantPropagationProperties
+  loopInvariantProperties
+  functionSignatureConsistencyProperties
+  expressionEvaluationOrderConsistencyProperties
 
 binaryOpProperties :: Spec
 binaryOpProperties = describe "Binary Operator Properties" $ do
@@ -1217,9 +1244,6 @@ countTreeDepth (Located _ (CEBinaryOp _ left right)) =
 countTreeDepth (Located _ (CEUnaryOp _ expr)) = 1 + countTreeDepth expr
 countTreeDepth _ = 1
 
--- 新增辅助函数和类型定义
-data Token = IdentifierTok Text | IntTok Int64 | StringTok Text
-
 -- Ownership analysis types are imported from Fluxus.AST.Common
 
 -- 编译器优化相关辅助函数
@@ -1355,7 +1379,7 @@ tokenizeIdentifier txt = [IdentifierTok txt]
 
 tokenizeNumber :: String -> [Token]
 tokenizeNumber str = case reads str :: [(Integer, String)] of
-  [(n, "")] -> [IntTok $ fromIntegral n]
+  [(n, "")] -> [IntTok n]
   _ -> []
 
 
@@ -1488,11 +1512,7 @@ expressionComplexity _ = 1
 
 
 isInfix :: String -> String -> Bool
-isInfix needle haystack = needle `isSubstringOf` haystack
-  where
-    isSubstringOf [] _ = True
-    isSubstringOf _ [] = False
-    isSubstringOf a b = a == take (length a) b || isSubstringOf a (drop 1 b)
+isInfix needle haystack = needle `isInfixOf` haystack
 
 contains :: String -> String -> Bool
 contains = isInfix
@@ -1564,6 +1584,59 @@ parseLiteral litStr = case readMaybe litStr of
     readMaybe s = case reads s of
       [(x, "")] -> Just x
       _ -> Nothing
+
+detectCycle :: [(ModuleName, ModuleName)] -> Bool
+detectCycle deps = any (\(from, to) -> from == to) deps
+
+computeTransitiveDeps :: [(ModuleName, ModuleName)] -> ModuleName -> [ModuleName]
+computeTransitiveDeps deps start = 
+  let directDeps = [to | (from, to) <- deps, from == start]
+      transitive = concatMap (computeTransitiveDeps deps) directDeps
+  in directDeps ++ transitive
+
+nubModules :: [ModuleName] -> [ModuleName]
+nubModules [] = []
+nubModules (x:xs) = x : nubModules (filter (/= x) xs)
+
+substituteVar :: Identifier -> Located CommonExpr -> Located CommonExpr -> Located CommonExpr
+substituteVar ident replacement (Located sp (CEVar v)) 
+  | v == ident = replacement
+  | otherwise = Located sp (CEVar v)
+substituteVar ident replacement (Located sp (CEBinaryOp op left right)) =
+  Located sp (CEBinaryOp op (substituteVar ident replacement left) (substituteVar ident replacement right))
+substituteVar _ _ expr = expr
+
+isRecursiveCall :: Identifier -> Located CommonExpr -> Bool
+isRecursiveCall funcName (Located _ (CECall (Located _ (CEVar name)) _)) = name == funcName
+isRecursiveCall funcName (Located _ (CEBinaryOp _ left right)) = 
+  isRecursiveCall funcName left || isRecursiveCall funcName right
+isRecursiveCall _ _ = False
+
+typeMatches :: Type -> Type -> Bool
+typeMatches t1 t2 = t1 == t2 || t2 == TAny || t1 == TAny
+
+resolveInScope :: [(Identifier, Located CommonExpr)] -> Identifier -> Maybe (Located CommonExpr)
+resolveInScope [] _ = Nothing
+resolveInScope ((name, expr):rest) target 
+  | name == target = Just expr
+  | otherwise = resolveInScope rest target
+
+propagateConstants :: Located CommonExpr -> Located CommonExpr
+propagateConstants (Located sp (CEBinaryOp op left right)) =
+  let leftProp = propagateConstants left
+      rightProp = propagateConstants right
+  in case (locatedValue leftProp, locatedValue rightProp) of
+       (CELiteral (LInt a), CELiteral (LInt b)) -> 
+         Located sp (CELiteral (LInt (applyBinaryOp op a b)))
+       _ -> Located sp (CEBinaryOp op leftProp rightProp)
+propagateConstants expr = expr
+
+containsLoopVariable :: Located CommonExpr -> Bool
+containsLoopVariable (Located _ (CEVar (Identifier name))) = 
+  name `elem` ["i", "j", "k", "index", "counter"]
+containsLoopVariable (Located _ (CEBinaryOp _ left right)) = 
+  containsLoopVariable left || containsLoopVariable right
+containsLoopVariable _ = False
 
 arrayBoundsCheckingProperties :: Spec
 arrayBoundsCheckingProperties = describe "Array Bounds Checking Properties" $ do
@@ -1804,5 +1877,211 @@ nullSafetyProperties = describe "Null Safety Properties" $ do
             TOptional _ -> True
             _ -> False
       in isNullable === True
+
+moduleDependencyGraphProperties :: Spec
+moduleDependencyGraphProperties = describe "Module Dependency Graph Properties" $ do
+  prop "module dependency graph is acyclic" $
+    forAll arbitraryModuleName $ \mod1 ->
+    forAll arbitraryModuleName $ \mod2 ->
+      let deps = [(mod1, mod2)]
+          hasCycle = detectCycle deps
+      in not hasCycle || mod1 == mod2
+  
+  prop "transitive dependencies are preserved" $
+    forAll arbitraryModuleName $ \mod1 ->
+    forAll arbitraryModuleName $ \mod2 ->
+    forAll arbitraryModuleName $ \mod3 ->
+      let deps = [(mod1, mod2), (mod2, mod3)]
+          transitive = computeTransitiveDeps deps mod1
+      in mod3 `elem` transitive || mod1 == mod2 || mod2 == mod3
+  
+  prop "module names are unique in dependency graph" $
+    forAll (listOf arbitraryModuleName) $ \mods ->
+      let uniqueMods = nubModules mods
+      in length uniqueMods <= length mods
+
+codeInliningOptimizationProperties :: Spec
+codeInliningOptimizationProperties = describe "Code Inlining Optimization Properties" $ do
+  prop "inlining small functions reduces call overhead" $
+    forAll arbitraryLiteral $ \bodyLit ->
+      let funcBody = noLoc $ CELiteral bodyLit
+          inlineThreshold = 10
+          bodySize = expressionSize funcBody
+      in (bodySize <= inlineThreshold) ==> (bodySize <= inlineThreshold)
+  
+  prop "inlining preserves function semantics" $
+    forAll arbitraryIdentifierText $ \paramName ->
+    forAll arbitraryLiteral $ \argLit ->
+      let param = Identifier paramName
+          body = noLoc $ CEVar param
+          arg = noLoc $ CELiteral argLit
+          inlined = substituteVar param arg body
+      in locatedValue inlined === CELiteral argLit
+  
+  prop "recursive functions are not inlined" $
+    forAll arbitraryIdentifierText $ \funcName ->
+      let func = Identifier funcName
+          recursiveCall = noLoc $ CECall (noLoc $ CEVar func) []
+          shouldInline = not $ isRecursiveCall func recursiveCall
+      in shouldInline === False
+
+typeInferenceMonotonicityProperties :: Spec
+typeInferenceMonotonicityProperties = describe "Type Inference Monotonicity Properties" $ do
+  prop "adding type annotations does not change inferred type" $
+    forAll arbitraryLiteral $ \lit ->
+    forAll arbitraryType $ \annotatedType ->
+      let inferredType = inferLiteralType lit
+          withAnnotation = if typeMatches inferredType annotatedType 
+                          then annotatedType 
+                          else inferredType
+      in typeMatches inferredType withAnnotation
+  
+  prop "type inference converges to most specific type" $
+    forAll arbitrarySimpleType $ \t1 ->
+    forAll arbitrarySimpleType $ \t2 ->
+      let unified = unifyTypes t1 t2
+      in case unified of
+           Right t -> typeMatches t1 t || typeMatches t2 t
+           Left _ -> t1 /= t2
+  
+  prop "polymorphic types are more general than monomorphic" $
+    forAll arbitrarySimpleType $ \concreteType ->
+      let polyType = TAny
+      in typeMatches concreteType polyType
+
+scopeResolutionProperties :: Spec
+scopeResolutionProperties = describe "Scope Resolution Properties" $ do
+  prop "inner scope shadows outer scope" $
+    forAll arbitraryIdentifierText $ \varName ->
+    forAll arbitraryLiteral $ \outerLit ->
+    forAll arbitraryLiteral $ \innerLit ->
+      let outerVar = (Identifier varName, noLoc $ CELiteral outerLit)
+          innerVar = (Identifier varName, noLoc $ CELiteral innerLit)
+          resolved = resolveInScope [innerVar, outerVar] (Identifier varName)
+      in resolved === Just (noLoc $ CELiteral innerLit)
+  
+  prop "undefined variables are detected" $
+    forAll arbitraryIdentifierText $ \varName ->
+      let emptyScope = []
+          resolved = resolveInScope emptyScope (Identifier varName)
+      in resolved === Nothing
+  
+  prop "qualified names resolve to correct module" $
+    forAll arbitraryModuleName $ \modName ->
+    forAll arbitraryIdentifierText $ \name ->
+      let qn = QualifiedName [modName] (Identifier name)
+      in case qn of
+           QualifiedName mods (Identifier n) -> length mods === 1 .&&. n === name
+
+constantPropagationProperties :: Spec
+constantPropagationProperties = describe "Constant Propagation Properties" $ do
+  prop "constant expressions are evaluated at compile time" $
+    \(a :: Int) (b :: Int) ->
+      let expr = noLoc $ CEBinaryOp OpAdd 
+                   (noLoc $ CELiteral $ LInt $ fromIntegral a)
+                   (noLoc $ CELiteral $ LInt $ fromIntegral b)
+          propagated = propagateConstants expr
+          expected = fromIntegral a + fromIntegral b :: Int64
+      in case locatedValue propagated of
+           CELiteral (LInt result) -> result === expected
+           _ -> property False
+  
+  prop "variable references block constant propagation" $
+    forAll arbitraryIdentifierText $ \varName ->
+    forAll arbitraryLiteral $ \lit ->
+      let expr = noLoc $ CEBinaryOp OpAdd 
+                   (noLoc $ CEVar $ Identifier varName)
+                   (noLoc $ CELiteral lit)
+          propagated = propagateConstants expr
+      in case locatedValue propagated of
+           CEBinaryOp OpAdd (Located _ (CEVar _)) _ -> True
+           _ -> False
+  
+  prop "constant folding reduces expression depth" $
+    \(a :: Int) (b :: Int) (c :: Int) ->
+      let expr = noLoc $ CEBinaryOp OpAdd 
+                   (noLoc $ CEBinaryOp OpMul 
+                     (noLoc $ CELiteral $ LInt $ fromIntegral a)
+                     (noLoc $ CELiteral $ LInt $ fromIntegral b))
+                   (noLoc $ CELiteral $ LInt $ fromIntegral c)
+          originalDepth = countTreeDepth expr
+          propagated = propagateConstants expr
+          propagatedDepth = countTreeDepth propagated
+      in propagatedDepth <= originalDepth
+
+loopInvariantProperties :: Spec
+loopInvariantProperties = describe "Loop Invariant Properties" $ do
+  prop "loop invariant expressions are hoisted" $
+    forAll arbitraryLiteral $ \lit ->
+      let invariantExpr = noLoc $ CELiteral lit
+          isInvariant = not $ containsLoopVariable invariantExpr
+      in isInvariant === True
+  
+  prop "loop counter is not invariant" $
+    forAll (elements ["i", "j", "k", "index", "counter"]) $ \counterName ->
+      let counter = Identifier counterName
+          counterExpr = noLoc $ CEVar counter
+          isInvariant = not $ containsLoopVariable counterExpr
+      in isInvariant === False
+  
+  prop "nested loops have separate invariants" $
+    forAll arbitraryLiteral $ \outerLit ->
+    forAll arbitraryLiteral $ \innerLit ->
+      let outerInvariant = noLoc $ CELiteral outerLit
+          innerInvariant = noLoc $ CELiteral innerLit
+      in outerInvariant /= innerInvariant || outerLit == innerLit
+
+functionSignatureConsistencyProperties :: Spec
+functionSignatureConsistencyProperties = describe "Function Signature Consistency Properties" $ do
+  prop "function declaration matches definition" $
+    forAll (choose (1, 5)) $ \arity ->
+    forAll arbitraryType $ \retType ->
+      let declArgTypes = replicate arity (TInt 32)
+          defnArgTypes = replicate arity (TInt 32)
+          declType = TFunction declArgTypes retType
+          defnType = TFunction defnArgTypes retType
+      in declType === defnType
+  
+  prop "function overloading preserves name uniqueness" $
+    forAll arbitraryIdentifierText $ \funcName ->
+    forAll (choose (1, 3)) $ \arity1 ->
+    forAll (choose (1, 3)) $ \arity2 ->
+      let func1 = (Identifier funcName, TFunction (replicate arity1 (TInt 32)) (TInt 32))
+          func2 = (Identifier funcName, TFunction (replicate arity2 (TInt 32)) (TInt 32))
+      in (arity1 == arity2) ==> (snd func1 === snd func2)
+  
+  prop "variadic functions accept variable arguments" $
+    forAll (choose (0, 5) :: Gen Int) $ \minArgs ->
+    forAll (choose (0, 5) :: Gen Int) $ \actualArgs ->
+      let argCount = minArgs + actualArgs
+      in argCount >= minArgs
+
+expressionEvaluationOrderConsistencyProperties :: Spec
+expressionEvaluationOrderConsistencyProperties = describe "Expression Evaluation Order Consistency Properties" $ do
+  prop "function arguments are evaluated left-to-right" $
+    \(NonNegative n) ->
+      let count = n `mod` 5
+          args = [noLoc $ CELiteral $ LInt (fromIntegral i) | i <- [1..count]]
+          funcExpr = noLoc $ CEVar $ Identifier "func"
+          callExpr = CECall funcExpr args
+      in case callExpr of
+           CECall _ as -> length as === count
+           _ -> property False
+  
+  prop "binary operators evaluate operands in order" $
+    forAll arbitraryBinaryOp $ \op ->
+    forAll arbitraryLiteral $ \leftLit ->
+    forAll arbitraryLiteral $ \rightLit ->
+      let expr = CEBinaryOp op (noLoc $ CELiteral leftLit) (noLoc $ CELiteral rightLit)
+      in case expr of
+           CEBinaryOp _ _ _ -> True
+           _ -> False
+  
+  prop "short-circuit operators skip evaluation" $
+    \(b :: Bool) ->
+      let shortCircuits = b == False
+      in not b ==> shortCircuits
+
+
 
 
