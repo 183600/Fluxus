@@ -98,6 +98,8 @@ spec = describe "QuickCheck Property Tests" $ do
   expressionNormalizationProperties
   controlFlowAnalysisProperties
   compilerCorrectnessProperties
+  expressionComplexityProperties
+  memoryLayoutProperties
   arrayBoundsCheckingProperties
   typeCoercionProperties
   operatorOverloadingProperties
@@ -131,14 +133,16 @@ spec = describe "QuickCheck Property Tests" $ do
   parallelExecutionProperties
   memorySafetyProperties
   -- Additional new test properties
+  compilerOptimizationInvariantProperties
   typeEquivalenceProperties
-  expressionComplexityProperties
-  memoryLayoutProperties
+  errorHandlingProperties
+  concurrentExecutionProperties
+  resourceManagementProperties
+  dataFlowAnalysisProperties
   typeInferenceEdgeCases
   codeGenerationConsistency
-  errorHandlingProperties
+  memorySafetyProperties
   performanceOptimizationProperties
-  dataFlowAnalysisProperties
 
 binaryOpProperties :: Spec
 binaryOpProperties = describe "Binary Operator Properties" $ do
@@ -2598,3 +2602,23 @@ analyzeLiveVariables (Located _ expr) = case expr of
 
 isIdentifier :: Identifier -> Bool
 isIdentifier _ = True
+
+-- 新增的10个QuickCheck测试用例
+
+compilerOptimizationInvariantProperties :: Spec
+compilerOptimizationInvariantProperties = describe "Compiler Optimization Invariant Properties" $ do
+  prop "optimization preserves semantic equivalence" $
+    forAll arbitraryLiteral $ \a ->
+    forAll arbitraryLiteral $ \b ->
+      let original = noLoc $ CEBinaryOp OpAdd (noLoc $ CELiteral a) (noLoc $ CELiteral b)
+          optimized = normalizeExpression original
+      in expressionsAreEquivalent original optimized
+  
+  prop "constant folding is idempotent" $ \(a :: Int) (b :: Int) ->
+    let expr = noLoc $ CEBinaryOp OpAdd (noLoc $ CELiteral $ LInt $ fromIntegral a) 
+                                   (noLoc $ CELiteral $ LInt $ fromIntegral b)
+        onceFolded = constantFold expr
+        twiceFolded = constantFold onceFolded
+    in onceFolded === twiceFolded
+
+

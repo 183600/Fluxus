@@ -22,7 +22,7 @@ module Fluxus.Analysis.CommonExprLowering
 
 import Data.Either (partitionEithers)
 import Data.Int (Int64)
-import Data.List ()
+import Data.List () -- For Foldable instance and list functions used by optimization
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (maybeToList, catMaybes)
 import Data.Text (Text)

@@ -57,7 +57,7 @@ import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Control.Applicative ((<|>))
-import Control.Monad () -- For instances
+import Control.Monad () -- For Monad and Applicative instances needed by our data types
 
 
 
@@ -65,8 +65,14 @@ import Control.Monad () -- For instances
 data Located a = Located
   { locSpan  :: !SourceSpan
   , locValue :: !a
-  } deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable, Generic)
+  } deriving stock (Eq, Ord, Show, Traversable, Generic)
     deriving anyclass (NFData)
+
+instance Functor Located where
+  fmap f (Located spanVal v) = Located spanVal (f v)
+
+instance Foldable Located where
+  foldMap f (Located _ v) = f v
 
 instance Hashable a => Hashable (Located a)
 

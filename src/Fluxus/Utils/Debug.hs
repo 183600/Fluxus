@@ -27,6 +27,7 @@ import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Time (getCurrentTime, diffUTCTime)
 import Control.Concurrent.MVar (MVar, newMVar, takeMVar, putMVar)
 import Control.Exception (evaluate)
+import System.Mem (performGC)
 
 -- Safe global state using MVar for thread safety
 type DebugState = (IORef (Maybe DebugLevel), MVar ())
@@ -171,49 +172,7 @@ debugCallStack context = do
 debugMemory :: MonadIO m => m ()
 debugMemory = do
   debugLog Trace "Memory usage information:"
-  -- Get GC statistics
-  stats <- liftIO $ getGCStats
-  debugLog Trace $ "  GC statistics: " <> T.pack (show stats)
-  where
-    -- Simplified GC stats for demonstration
-    getGCStats = do
-      -- In a full implementation, you would use System.Mem.Performance.getGCStats
-      -- For now, we return a simple placeholder
-      return $ GcStats {
-        gcStatsBytesAllocated = 0,
-        gcStatsNumGcs = 0,
-        gcStatsMaxBytesUsed = 0,
-        gcStatsNumByteUsageSamples = 0,
-        gcStatsByteAllocatedSinceLastGC = 0,
-        gcStatsBytesCopiedDuringGC = 0,
-        gcStatsCurrentBytesUsed = 0,
-        gcStatsCurrentBytesSlop = 0,
-        gcStatsTotalBytesSlop = 0,
-        gcStatsPeakBytesAllocated = 0,
-        gcStatsMutatorWallSeconds = 0,
-        gcStatsMutatorCpuSeconds = 0,
-        gcStatsGcWallSeconds = 0,
-        gcStatsGcCpuSeconds = 0,
-        gcStatsCpuSeconds = 0,
-        gcStatsWallSeconds = 0
-      }
-
--- Simplified GC statistics data type
-data GcStats = GcStats
-  { gcStatsBytesAllocated :: Int
-  , gcStatsNumGcs :: Int
-  , gcStatsMaxBytesUsed :: Int
-  , gcStatsNumByteUsageSamples :: Int
-  , gcStatsByteAllocatedSinceLastGC :: Int
-  , gcStatsBytesCopiedDuringGC :: Int
-  , gcStatsCurrentBytesUsed :: Int
-  , gcStatsCurrentBytesSlop :: Int
-  , gcStatsTotalBytesSlop :: Int
-  , gcStatsPeakBytesAllocated :: Int
-  , gcStatsMutatorWallSeconds :: Double
-  , gcStatsMutatorCpuSeconds :: Double
-  , gcStatsGcWallSeconds :: Double
-  , gcStatsGcCpuSeconds :: Double
-  , gcStatsCpuSeconds :: Double
-  , gcStatsWallSeconds :: Double
-  } deriving Show
+  -- Force garbage collection to get more accurate stats
+  liftIO $ performGC
+  debugLog Trace "  Garbage collection performed"
+  debugLog Trace "  Note: Detailed GC statistics require GHC-specific imports"

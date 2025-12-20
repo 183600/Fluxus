@@ -35,11 +35,15 @@ common shared-properties
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates
                -Wincomplete-uni-patterns -Wmissing-export-lists
                -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
-               -Wno-missing-import-lists -Wno-unused-imports -Wno-unused-binds
+               -Wno-missing-import-lists -Wunused-imports -Wunused-binds
 
 library
   import: shared-properties
   hs-source-dirs: src
+  if flag(fast)
+    ghc-options: -O0
+  if flag(production) 
+    ghc-options: -O2
   exposed-modules:
     Fluxus.AST.Common
     Fluxus.AST.Python

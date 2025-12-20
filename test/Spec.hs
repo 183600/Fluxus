@@ -72,20 +72,22 @@ ensureTestLogDirectory = catch findAndCreateLogDir $ \(_ :: SomeException) -> re
       createDirectoryIfMissing True testDir
 
 fullSpec :: Spec
-fullSpec = parallel $ describe "Fluxus Compiler Test Suite" $ do
-  PythonTests.spec
-  GoTests.spec
-  TypeInferenceTests.spec
-  EscapeAnalysisTests.spec
-  OwnershipInferenceTests.spec
-  SmartFallbackTests.spec
-  CommonExprLoweringTests.spec
-  ShapeAnalysisTests.spec
-  CodeGenTests.spec
-  GraphUtilsTests.spec
+fullSpec = describe "Fluxus Compiler Test Suite" $ do
+  parallel $ do
+    PythonTests.spec
+    GoTests.spec
+    TypeInferenceTests.spec
+    EscapeAnalysisTests.spec
+    OwnershipInferenceTests.spec
+    SmartFallbackTests.spec
+    CommonExprLoweringTests.spec
+    ShapeAnalysisTests.spec
+    CodeGenTests.spec
+    GraphUtilsTests.spec
+    DriverTests.spec
+    QuickCheckTests.spec
+  -- Run config tests serially to avoid environment variable interference
   ConfigTests.spec
-  DriverTests.spec
-  QuickCheckTests.spec
 
 ensureProgressFormat :: [String] -> [String]
 ensureProgressFormat args

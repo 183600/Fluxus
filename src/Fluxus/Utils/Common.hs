@@ -35,18 +35,18 @@ data SourceSpan = SourceSpan
 instance Hashable SourceSpan
 instance NFData SourceSpan
 
--- 统一的 mergeSpans 实现
+-- Unified mergeSpans implementation
 mergeSpans :: SourceSpan -> SourceSpan -> SourceSpan
 mergeSpans (SourceSpan file start _) (SourceSpan _ _ end) = SourceSpan file start end
 
--- 统一的 textShow 实现  
+-- Unified textShow implementation
 textShow :: Show a => a -> Text
 textShow = T.pack . show
 
--- 统一的 defaultSpan 实现
+-- Unified defaultSpan implementation
 defaultSpan :: Text -> SourceSpan
 defaultSpan file = SourceSpan file (SourcePos 0 0) (SourcePos 0 0)
 
--- 统一的 zeroWidthSpan 实现
+-- Unified zeroWidthSpan implementation
 zeroWidthSpan :: SourceSpan -> SourceSpan
 zeroWidthSpan (SourceSpan file start _) = SourceSpan file start start

@@ -2,7 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -w -Wno-unused-imports #-}
+
 
 module Fluxus.Parser.Go.Parser.Expressions
   ( parseExpression
@@ -28,7 +28,6 @@ module Fluxus.Parser.Go.Parser.Expressions
 import Control.Applicative (optional, many, (<|>))
 import Control.Monad (void)
 import Control.Monad.Logger (MonadLogger)
-import Fluxus.AST.Go (GoStmt)
 import Data.Functor (($>))
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
@@ -69,7 +68,6 @@ import Fluxus.Parser.Go.Parser.Common
 -- This import is necessary due to circular dependency between Expressions and Statements modules
 -- We use parseBlockStmt' at line 302 in parseFunctionLit
 import {-# SOURCE #-} Fluxus.Parser.Go.Parser.Statements (parseBlockStmt')
--- SUPPRESS GHC WARNING: This import is used at line 302 in parseFunctionLit
 
 -- | Parse expressions with operator precedence.
 parseExpression :: MonadLogger m => GoParser m (Located GoExpr)
@@ -522,9 +520,6 @@ parseParameterList = do
             pure [GoField [] typeExpr Nothing]
         ]
 
--- Dummy reference to suppress GHC warning about unused SOURCE import
--- This is actually used at line 302 in parseFunctionLit
--- Dummy reference to suppress unused import warning
--- parseBlockStmt' is used in parseFunctionLit via circular dependency
+
 
 
