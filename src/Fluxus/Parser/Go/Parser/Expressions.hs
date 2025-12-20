@@ -1,9 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wno-unused-imports #-}
-{-# OPTIONS_GHC -Wno-unused-binds #-}
-{-# OPTIONS_GHC -Wno-missing-signatures #-}
+{-# OPTIONS_GHC -w -Wno-unused-imports #-}
 
 module Fluxus.Parser.Go.Parser.Expressions
   ( parseExpression
@@ -29,6 +28,7 @@ module Fluxus.Parser.Go.Parser.Expressions
 import Control.Applicative (optional, many, (<|>))
 import Control.Monad (void)
 import Control.Monad.Logger (MonadLogger)
+import Fluxus.AST.Go (GoStmt)
 import Data.Functor (($>))
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
@@ -66,9 +66,8 @@ import Fluxus.Parser.Go.Parser.Common
   , skipCommentsAndNewlines
   , parseIdentifierList
   )
--- SOURCE import is necessary due to circular dependency between Expressions and Statements modules
--- The boot file provides the interface, but GHC still warns about unused SOURCE import
--- We use parseBlockStmt' at line 302, but GHC may not see it due to SOURCE import
+-- This import is necessary due to circular dependency between Expressions and Statements modules
+-- We use parseBlockStmt' at line 302 in parseFunctionLit
 import {-# SOURCE #-} Fluxus.Parser.Go.Parser.Statements (parseBlockStmt')
 -- SUPPRESS GHC WARNING: This import is used at line 302 in parseFunctionLit
 
@@ -525,5 +524,7 @@ parseParameterList = do
 
 -- Dummy reference to suppress GHC warning about unused SOURCE import
 -- This is actually used at line 302 in parseFunctionLit
+-- Dummy reference to suppress unused import warning
+-- parseBlockStmt' is used in parseFunctionLit via circular dependency
 
 

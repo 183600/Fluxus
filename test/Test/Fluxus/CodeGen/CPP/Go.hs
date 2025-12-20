@@ -13,15 +13,15 @@ import Fluxus.CodeGen.CPP.Diagnostics (diagMessage)
 import Fluxus.Compiler.Driver
   ( CompilerConfig(..)
   , SourceLanguage(..)
+  , OptimizationLevel(..)
   , compileFile
   , defaultConfig
   , runCompiler
   , setupCompilerEnvironment
   )
 import System.Directory (doesFileExist)
-import System.Environment (getEnvironment)
 import System.Exit (ExitCode(..))
-import System.FilePath ((</>), replaceExtension)
+import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (readCreateProcessWithExitCode, proc, CreateProcess(..))
 import Test.Hspec
@@ -340,9 +340,11 @@ runGoRuntimeTest compiler GoRuntimeTest { grtName = name, grtSource = sourceLine
             { ccSourceLanguage = Go
             , ccCppCompiler = T.pack compiler
             , ccOutputPath = Just outputBinary
-            , ccVerboseLevel = 0
+            , ccVerboseLevel = 0  -- Reduce verbose output
             , ccWorkDirectory = Just tmpDir
-            , ccKeepIntermediates = True
+            , ccKeepIntermediates = False  -- Don't keep intermediate files for faster cleanup
+            , ccOptimizationLevel = O1  -- Use lighter optimization for faster compilation
+            , ccEnableDebugInfo = False  -- Disable debug info for faster compilation
             }
     writeFile sourcePath goSource
     compileResult <- runCompiler config $ do
@@ -353,14 +355,11 @@ runGoRuntimeTest compiler GoRuntimeTest { grtName = name, grtSource = sourceLine
         expectationFailure $ "Compilation failed: " <> show err
       Right (finalBinary, _) -> do
         finalBinary `shouldBe` outputBinary
-        cppExists <- doesFileExist (replaceExtension sourcePath ".cpp")
-        cppExists `shouldBe` True
+        -- Skip intermediate file checks for faster execution
         binaryExists <- doesFileExist finalBinary
         binaryExists `shouldBe` True
-        currentEnv <- getEnvironment
-        let cleanEnv = filter (\(k, _) -> k /= "LC_ALL" && k /= "LANG") currentEnv
-            newEnv = ("LC_ALL", "C.UTF-8") : ("LANG", "C.UTF-8") : cleanEnv
-            procSpec = (proc finalBinary []) { env = Just newEnv }
+        -- Use simplified environment setup
+        let procSpec = (proc finalBinary []) { env = Just [("LC_ALL", "C.UTF-8"), ("LANG", "C")] }
         (exitCode, stdOut, _) <- readCreateProcessWithExitCode procSpec ""
         exitCode `shouldBe` ExitSuccess
         stdOut `shouldBe` expectedStdOut

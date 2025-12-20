@@ -8,7 +8,7 @@ import qualified Data.Text as T
 import System.Environment (getArgs, withArgs)
 import System.Directory (createDirectoryIfMissing, doesDirectoryExist, listDirectory)
 import System.FilePath ((</>))
-import Test.Hspec
+import Test.Hspec (Spec, describe, hspec, parallel)
 import Control.Monad (when, filterM)
 import Control.Exception (catch, SomeException)
 
@@ -72,21 +72,20 @@ ensureTestLogDirectory = catch findAndCreateLogDir $ \(_ :: SomeException) -> re
       createDirectoryIfMissing True testDir
 
 fullSpec :: Spec
-fullSpec =
-  describe "Fluxus Compiler Test Suite" $ do
-    PythonTests.spec
-    GoTests.spec
-    TypeInferenceTests.spec
-    EscapeAnalysisTests.spec
-    OwnershipInferenceTests.spec
-    SmartFallbackTests.spec
-    CommonExprLoweringTests.spec
-    ShapeAnalysisTests.spec
-    CodeGenTests.spec
-    GraphUtilsTests.spec
-    ConfigTests.spec
-    DriverTests.spec
-    QuickCheckTests.spec
+fullSpec = parallel $ describe "Fluxus Compiler Test Suite" $ do
+  PythonTests.spec
+  GoTests.spec
+  TypeInferenceTests.spec
+  EscapeAnalysisTests.spec
+  OwnershipInferenceTests.spec
+  SmartFallbackTests.spec
+  CommonExprLoweringTests.spec
+  ShapeAnalysisTests.spec
+  CodeGenTests.spec
+  GraphUtilsTests.spec
+  ConfigTests.spec
+  DriverTests.spec
+  QuickCheckTests.spec
 
 ensureProgressFormat :: [String] -> [String]
 ensureProgressFormat args

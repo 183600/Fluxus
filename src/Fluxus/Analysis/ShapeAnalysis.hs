@@ -495,7 +495,7 @@ generateCppStructure shape
     context <- ask
     let useArray = if Vector.null (siDimensions shape)
           then False  -- Empty dimensions, can't use array
-          else case Vector.head (siDimensions shape) of
+          else case Vector.unsafeHead (siDimensions shape) of
                  size | size > 0 && size <= scMaxInlineSize context -> True
                  _ -> False
     

@@ -29,6 +29,8 @@ module Fluxus.Compiler.Driver
   , defaultConfig
   , validateConfig
   , setupCompilerEnvironment
+  , platformIncludeDefaults
+  , platformLibraryDefaults
   , detectCompilerBinary
   , showTargetPlatform
   , resolveWorkPath

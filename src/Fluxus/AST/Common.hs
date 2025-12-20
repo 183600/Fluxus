@@ -80,7 +80,7 @@ instance Monad Located where
     Located span' v -> Located (mergeSpans locSpan1 span') v
 
 instance MonadFail Located where
-  fail msg = noLoc (error msg)
+  fail msg = noLoc (error ("Located fail: " ++ msg))
 
 -- | Create a node without location information (for testing/internal use)
 noLoc :: a -> Located a

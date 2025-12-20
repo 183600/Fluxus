@@ -164,24 +164,35 @@ spec = describe "Fluxus.Compiler.Config" $ do
                 Left err -> expectationFailure $ "loadConfig failed: " ++ err)
 
     it "loads configuration overrides from explicit --config files" $ do
+      originalCxx <- lookupEnv "CXX"
+      originalCppStd <- lookupEnv "FLUXUS_CPP_STD"
       withSystemTempDirectory "fluxus-config-explicit" $ \tmpDir -> do
         let firstConfig = tmpDir </> "first.yaml"
             secondConfig = tmpDir </> "second.yaml"
-        writeFile firstConfig $ unlines
-          [ "cpp_standard: c++17"
-          , "cpp_compiler: first-clang++"
-          ]
-        writeFile secondConfig $ unlines
-          [ "cpp_standard: c++23"
-          , "cpp_compiler: second-clang++"
-          ]
-        result <- loadConfig ["--config", firstConfig, "--config", secondConfig]
-        case result of
-          Right (LoadConfigSuccess finalConfig) -> do
-            ccCppStandard finalConfig `shouldBe` T.pack "c++23"
-            ccCppCompiler finalConfig `shouldBe` T.pack "second-clang++"
-          Right other -> expectationFailure $ "unexpected non-success result: " ++ show other
-          Left err -> expectationFailure $ "loadConfig failed: " ++ err
+            restoreEnv name maybeValue =
+              case maybeValue of
+                Just value -> setEnv name value
+                Nothing -> unsetEnv name
+        bracket_
+          (do unsetEnv "CXX"
+              unsetEnv "FLUXUS_CPP_STD")
+          (do restoreEnv "CXX" originalCxx
+              restoreEnv "FLUXUS_CPP_STD" originalCppStd)
+          (do writeFile firstConfig $ unlines
+                [ "cpp_standard: c++17"
+                , "cpp_compiler: first-clang++"
+                ]
+              writeFile secondConfig $ unlines
+                [ "cpp_standard: c++23"
+                , "cpp_compiler: second-clang++"
+                ]
+              result <- loadConfig ["--config", firstConfig, "--config", secondConfig]
+              case result of
+                Right (LoadConfigSuccess finalConfig) -> do
+                  ccCppStandard finalConfig `shouldBe` T.pack "c++23"
+                  ccCppCompiler finalConfig `shouldBe` T.pack "second-clang++"
+                Right other -> expectationFailure $ "unexpected non-success result: " ++ show other
+                Left err -> expectationFailure $ "loadConfig failed: " ++ err)
 
     it "reports parsing errors from configuration files" $ do
       withSystemTempDirectory "fluxus-config-invalid" $ \tmpDir -> do

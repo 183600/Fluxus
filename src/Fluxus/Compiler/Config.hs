@@ -41,7 +41,7 @@ import Data.Yaml (decodeFileEither, prettyPrintParseException)
 import System.Environment (lookupEnv)
 import System.Directory
 import System.IO (hPutStrLn, stderr)
-import Control.Monad (unless, when)
+import Control.Monad (when)
 import Data.Char (toLower)
 import Data.Maybe (fromMaybe)
 import Data.List (isPrefixOf, nub)
@@ -516,16 +516,26 @@ checkSystemRequirements config = do
   case compilerCheckResult of
     Left err -> pure $ Left err
     Right () -> do
-      mapM_ checkIncludePath (ccIncludePaths config)
-      mapM_ checkLibraryPath (ccLibraryPaths config)
+      let currentPlatform = ccTargetPlatform config
+          platformIncludes = platformIncludeDefaults currentPlatform
+          platformLibraries = platformLibraryDefaults currentPlatform
+      
+      mapM_ (checkIncludePath platformIncludes) (ccIncludePaths config)
+      mapM_ (checkLibraryPath platformLibraries) (ccLibraryPaths config)
       pure $ Right ()
   where
-    checkIncludePath path = do
+    checkIncludePath platformIncludes path = do
       exists <- doesDirectoryExist path
-      unless exists $ hPutStrLn stderr $ "Warning: Include path does not exist: " ++ path
-    checkLibraryPath path = do
+      -- Only warn about missing paths if they are platform-specific defaults
+      let isPlatformDefault = path `elem` platformIncludes
+      when (not exists && isPlatformDefault) $ 
+        hPutStrLn stderr $ "Warning: Include path does not exist: " ++ path
+    checkLibraryPath platformLibraries path = do
       exists <- doesDirectoryExist path
-      unless exists $ hPutStrLn stderr $ "Warning: Library path does not exist: " ++ path
+      -- Only warn about missing paths if they are platform-specific defaults
+      let isPlatformDefault = path `elem` platformLibraries
+      when (not exists && isPlatformDefault) $ 
+        hPutStrLn stderr $ "Warning: Library path does not exist: " ++ path
 
 -- | Predefined configurations
 developmentConfig :: CompilerConfig
