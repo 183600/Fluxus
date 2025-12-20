@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 set -u
 
-export LC_ALL=C.utf8
-export LANG=C.utf8
-
 # ==================== 配置参数 ====================
 WATCHDOG_TIMEOUT=900  # 15分钟（秒）
 CHECK_INTERVAL=30     # 检查间隔（秒）
@@ -74,7 +71,7 @@ run_with_heartbeat() {
 # ==================== 主循环 ====================
 trap 'echo; echo "已终止."; exit 0' INT TERM
 
-run_with_heartbeat iflow "给这个项目增加一些cabal test测试用例，不要超过10个，要使用QuickCheck think:high" --yolo || true
+# run_with_heartbeat iflow "给这个项目增加一些cabal test测试用例，不要超过10个，要使用QuickCheck think:high" --yolo || true
 
 while true; do
   touch "$HEARTBEAT_FILE"
@@ -84,7 +81,7 @@ while true; do
   echo "===================="
 
   # 运行测试：不写入日志文件，实时检测 warning，并按行刷新心跳
-  stdbuf -oL -eL bash -c 'export LC_ALL=C.utf8; export LANG=C.utf8; cabal test --flags="-fast production" --test-show-details=direct' 2>&1 | \
+  stdbuf -oL -eL cabal test --flags="-fast production" --test-show-details=direct 2>&1 | \
     awk -v hb="$HEARTBEAT_FILE" '
       BEGIN { found=0 }
       {
@@ -93,8 +90,7 @@ while true; do
         # 每行刷新一次心跳，避免 watchdog 误杀
         system("touch " hb)
         l=tolower($0)
-        # 忽略所有locale相关的警告，只检测实际的编译警告
-        if (l ~ /(warn(ing)?|警告)/ && l !~ /setlocale.*LC_ALL.*cannot change locale/ && l !~ /locale.*cannot set/ && l !~ /LC_ALL.*zh_CN/) found=1
+        if (l ~ /(warn(ing)?|警告)/) found=1
       }
       END {
         # 0=发现warning，1=未发现（用退出码传递给外层）
@@ -134,8 +130,8 @@ while true; do
     fi
   else
     echo "⚠️ 发现问题或 warning（退出码=$CABAL_STATUS），调用 iflow 修复..."
-    run_with_heartbeat iflow '解决cabal test --flags="-fast production" --test-show-details=direct显示的所有问题（包括warning），除非测试用例本身有编译错误，否则只修改测试用例以外的代码，debug时可通过加日志和打断点 think:high' --yolo || true
-    run_with_heartbeat iflow '删除项目根目录多余的.md文件或者.txt文件（像TEST_ENHANCEMENT_SUMMARY.md和test_wall_production.txt这样的） think:high' --yolo || true
+    run_with_heartbeat iflow '运行cabal test --flags="-fast production" --test-show-details=direct，每个问题（包括warning）分别运行这个shell命令，每次执行shell命令只输入一个问题<shell命令>iflow "除非测试用例本身有编译错误，否则只修改测试用例以外的代码，debug时可通过加日志和打断点，尽量不要消耗大量CPU/内存资源<问题内容>" --yolo<shell命令/> think:high' --yolo || true
+    run_with_heartbeat iflow '删除项目根目录多余的.md文件或者.txt文件（像TEST_ENHANCEMENT_SUMMARY.md和test_wall_production.txt这样的），并整理根目录下的文件，把文件放到应该放的目录 think:high' --yolo || true
   fi
 
   echo "🔁 回到第 1 步..."
