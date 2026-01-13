@@ -80,13 +80,13 @@ jobs:
 
       - name: Make loop script executable
         run: |
-          chmod +x script/typus_cabal_loop_2.sh
+          chmod +x script/typus_cabal_loop.sh
 
       - name: Run for ${{ env.RUN_HOURS }} hours
         shell: bash
         run: |
           # 运行 5 小时，到点给脚本发 TERM；你的脚本会清理并退出
-          timeout --signal=TERM $(( ${RUN_HOURS} * 3600 )) bash script/typus_cabal_loop_2.sh || true
+          timeout --signal=TERM $(( ${RUN_HOURS} * 3600 )) bash script/typus_cabal_loop.sh || true
 
       - name: Commit & push after ${RUN_HOURS}h
         if: always()
