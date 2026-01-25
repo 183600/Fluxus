@@ -8,7 +8,7 @@ module Fluxus.CodeGen.CPP.Python
 
 import Control.Monad (unless, when, foldM)
 import Control.Monad.State (gets, modify)
-import Data.Foldable (traverse_)
+import Data.Foldable (traverse_, foldl')
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.List (nub, partition)

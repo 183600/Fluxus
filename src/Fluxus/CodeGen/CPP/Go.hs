@@ -7,6 +7,7 @@ module Fluxus.CodeGen.CPP.Go
 
 import Control.Monad (unless, when)
 import Control.Monad.State (gets)
+import Data.Foldable (foldl')
 import Data.List (partition)
 import qualified Data.HashMap.Strict as HM
 import Data.Maybe (catMaybes, isNothing)

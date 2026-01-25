@@ -2,7 +2,7 @@
 
 module Test.Fluxus.CodeGen.CPP.Python (spec) where
 
-import Data.Foldable (for_)
+import Data.Foldable (for_, foldl')
 import Data.List (find)
 import Data.Maybe (listToMaybe)
 import qualified Data.Text as T

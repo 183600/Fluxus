@@ -21,6 +21,7 @@ import Control.DeepSeq (NFData)
 import Control.Monad (foldM)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.State.Strict (State, evalState, gets, modify)
+import Data.Foldable (foldl')
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.Maybe (fromMaybe)
