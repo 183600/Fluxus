@@ -5,6 +5,7 @@ module Test.Fluxus.BoundaryTests (spec) where
 import Test.Hspec
 import qualified Data.Text as T
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import Control.Exception (try, SomeException)
 import Data.List (replicate)
 
@@ -150,6 +151,69 @@ spec = describe "Boundary Tests" $ do
       case runTypeInference Map.empty (inferType expr) of
         Right inference -> resultType inference `shouldBe` TList (TList (TInt 32))
         Left err -> expectationFailure $ "Type inference should handle deep structures: " <> T.unpack err
+
+  describe "Additional Boundary Tests - Graph Algorithms" $ do
+    it "handles empty graph in topological sort" $ do
+      topologicalSort emptyGraph `shouldBe` Just []
+
+    it "handles single node graph in topological sort" $ do
+      let (nodeId, graph) = addNode "single" emptyGraph
+      topologicalSort graph `shouldBe` Just [nodeId]
+
+    it "handles graph with self-loop in topological sort" $ do
+      let (nodeId, graph1) = addNode "self-loop" emptyGraph
+          graph2 = addEdge nodeId nodeId Nothing graph1
+      topologicalSort graph2 `shouldBe` Nothing
+
+    it "handles very long path in topological sort" $ do
+      let buildChain n g = if n <= 0 then (0, g) else
+            let (prevId, g1) = buildChain (n-1) g
+                (currId, g2) = addNode ("node" ++ show n) g1
+                g3 = if prevId == currId then g2 else addEdge prevId currId Nothing g2
+            in (currId, g3)
+          (_, graph) = buildChain 100 emptyGraph
+      length (topologicalSort graph `shouldBe` Just (map nodeId (nodes graph)))
+
+    it "handles graph with multiple disconnected components" $ do
+      let (n1, g1) = addNode "A" emptyGraph
+          (n2, g2) = addNode "B" g1
+          (n3, g3) = addNode "C" g2
+          graph = addEdge n1 n2 Nothing g3
+      length (nodes graph) `shouldBe` 3
+      edgeExists n2 n3 graph `shouldBe` False
+
+    it "handles dominator computation with missing entry node" $ do
+      let (n1, g1) = addNode "A" emptyGraph
+          (n2, g2) = addNode "B" g1
+          graph = addEdge n1 n2 Nothing g2
+      let doms = dominators 999 graph  -- Non-existent entry node
+      Map.size doms `shouldBe` 0
+
+    it "handles shortest path in disconnected graph" $ do
+      let (n1, g1) = addNode "A" emptyGraph
+          (n2, g2) = addNode "B" g1
+          (n3, g3) = addNode "C" g2
+          graph = addEdge n1 n2 Nothing g3
+      shortestPath n1 n3 graph `shouldBe` Nothing
+
+    it "handles reachableFrom with non-existent start node" $ do
+      let (n1, g1) = addNode "A" emptyGraph
+          (n2, g2) = addNode "B" g1
+          graph = addEdge n1 n2 Nothing g2
+      let reachable = reachableFrom 999 graph  -- Non-existent start node
+      length (Set.toList reachable) `shouldBe` 0
+
+    it "handles findPath with same start and end node" $ do
+      let (n1, g1) = addNode "A" emptyGraph
+      findPath n1 n1 g1 `shouldBe` Just [n1]
+
+    it "handles graph with duplicate edges" $ do
+      let (n1, g1) = addNode "A" emptyGraph
+          (n2, g2) = addNode "B" g1
+          g3 = addEdge n1 n2 (Just "label1") g2
+          g4 = addEdge n1 n2 (Just "label2") g3
+          g5 = addEdge n1 n2 Nothing g4
+      length (edges g5) `shouldBe` 3
 
 -- Helper function to parse module from text
 parseModuleFrom :: T.Text -> Either String PythonModule
