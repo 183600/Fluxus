@@ -16,6 +16,10 @@ import Fluxus.AST.Common
 import Fluxus.Compiler.Config (parseCommandLineArgs, CLICommand(..))
 import Fluxus.AST.Python (PythonModule, pyModuleBody, PythonAST(..))
 import Fluxus.AST.Common (Located, locatedValue)
+import Fluxus.Utils.Graph
+       ( Graph, Node(..), NodeId, Edge(..), emptyGraph, addNode, addEdge, nodes,
+         edges, edgeExists, topologicalSort, dominators, shortestPath,
+         reachableFrom, findPath )
 
 spec :: Spec
 spec = describe "Boundary Tests" $ do
