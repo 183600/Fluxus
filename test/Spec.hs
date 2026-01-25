@@ -25,6 +25,7 @@ import qualified Test.Fluxus.Utils.GraphSpec as GraphUtilsTests
 import qualified Test.Fluxus.Compiler.ConfigSpec as ConfigTests
 import qualified Test.Fluxus.Compiler.DriverSpec as DriverTests
 import qualified Test.Fluxus.QuickCheckProperties as QuickCheckTests
+import qualified Test.Fluxus.BoundaryTests as BoundaryTests
 
 import Fluxus.Utils.Debug (DebugLevel(..), getDebugLevel, debugLog, debugBreak)
 
@@ -86,6 +87,7 @@ fullSpec = describe "Fluxus Compiler Test Suite" $ do
     GraphUtilsTests.spec
     DriverTests.spec
     QuickCheckTests.spec
+    BoundaryTests.spec
   -- Run config tests serially to avoid environment variable interference
   ConfigTests.spec
 
