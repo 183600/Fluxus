@@ -249,11 +249,15 @@ stronglyConnectedComponents graph =
 -- | Compute dominators using iterative algorithm
 dominators :: NodeId -> Graph a -> Map NodeId (Set NodeId)
 dominators entry graph = 
-  let allNodes = Set.fromList $ map nodeId $ nodes graph
-      initialDom = Map.fromList $ 
-                   [(entry, Set.singleton entry)] ++
-                   [(n, allNodes) | n <- map nodeId $ nodes graph, n /= entry]
-  in fixpoint initialDom
+  -- Check if entry node exists in the graph
+  if not (nodeExists entry graph)
+  then Map.empty
+  else
+    let allNodes = Set.fromList $ map nodeId $ nodes graph
+        initialDom = Map.fromList $ 
+                     [(entry, Set.singleton entry)] ++
+                     [(n, allNodes) | n <- map nodeId $ nodes graph, n /= entry]
+    in fixpoint initialDom
   where
     fixpoint dom = 
       let newDom = Map.mapWithKey (updateDom dom) dom
