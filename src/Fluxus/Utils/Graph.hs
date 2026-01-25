@@ -67,7 +67,7 @@ import qualified Data.Text as T
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
-import Data.List (find)
+import Data.List (find, foldl')
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 

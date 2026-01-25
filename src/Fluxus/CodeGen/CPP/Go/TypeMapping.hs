@@ -9,6 +9,7 @@ module Fluxus.CodeGen.CPP.Go.TypeMapping
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Set as Set
+import Data.List (foldl')
 
 import Fluxus.AST.Common 
   ( Identifier(..)
