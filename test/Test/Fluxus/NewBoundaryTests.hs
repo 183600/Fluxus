@@ -9,6 +9,7 @@ import qualified Data.Map.Strict as Map
 import Control.Exception (try, SomeException, evaluate)
 import Data.List (replicate)
 import Control.DeepSeq (force)
+import Control.Monad (forM_)
 
 import Fluxus.AST.Common
 import Fluxus.Utils.Graph
@@ -16,6 +17,7 @@ import Fluxus.Parser.Python.Lexer
 import Fluxus.Parser.Python.Parser
 import Fluxus.Analysis.TypeInference
 import Fluxus.Compiler.Config
+import Fluxus.Compiler.Driver (OptimizationLevel(..), CompilerConfig(..))
 import Fluxus.AST.Python (PythonModule, PythonAST(..), pyModuleBody)
 
 spec :: Spec
@@ -69,7 +71,7 @@ spec = describe "New Boundary Tests" $ do
           buildVar name = CEBinaryOp OpAdd (noLoc (CEVar (Identifier name))) (noLoc (CELiteral (LInt 1)))
       
       forM_ unicodeCases $ \(name, desc) -> do
-        let expr = buildVar name
+        let expr = buildVar (T.pack name)
         case runTypeInference Map.empty (inferType expr) of
           Right _ -> pure ()  -- Success is expected
           Left err -> expectationFailure $ "Type inference failed on " <> desc <> ": " <> T.unpack err
@@ -169,7 +171,7 @@ spec = describe "New Boundary Tests" $ do
       let buildPolyExpr depth =
             if depth <= 0
             then CELiteral (LInt 1)
-            else CECall (noLoc (CEVar (Identifier ("f" ++ show depth)))) [noLoc (buildPolyExpr (depth - 1))]
+            else CECall (noLoc (CEVar (Identifier (T.pack ("f" ++ show depth))))) [noLoc (buildPolyExpr (depth - 1))]
           expr = buildPolyExpr 5
       case runTypeInference Map.empty (inferType expr) of
         Right inference -> resultType inference `shouldSatisfy` (\t -> t /= TError "unknown")
@@ -193,20 +195,20 @@ spec = describe "New Boundary Tests" $ do
     it "handles configuration with extreme numeric values" $ do
       let overrides = emptyOverrides {
                 ccoMaxConcurrency = Just 999999,
-                ccoOptimizationLevel = Just (OptimizationLevel 100),
+                ccoOptimizationLevel = Just O3,
                 ccoCppStandard = Just "c++99"
             }
           config = mergeConfigs developmentConfig overrides
-      ccoMaxConcurrency config `shouldBe` Just 999999
-      ccoOptimizationLevel config `shouldBe` Just (OptimizationLevel 100)
-      ccoCppStandard config `shouldBe` Just "c++99"
+      ccMaxConcurrency config `shouldBe` 999999
+      ccOptimizationLevel config `shouldBe` O3
+      ccCppStandard config `shouldBe` "c++99"
 
     it "handles configuration merges with conflicting values" $ do
       let overrides1 = emptyOverrides { ccoEnableDebugInfo = Just True }
           overrides2 = emptyOverrides { ccoEnableDebugInfo = Just False }
           config1 = mergeConfigs developmentConfig overrides1
           config2 = mergeConfigs config1 overrides2
-      ccoEnableDebugInfo config2 `shouldBe` Just False
+      ccEnableDebugInfo config2 `shouldBe` False
 
     it "handles empty and malformed command line arguments" $ do
       case parseCommandLineArgs [] of
