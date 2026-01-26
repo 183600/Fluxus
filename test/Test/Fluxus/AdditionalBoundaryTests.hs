@@ -76,7 +76,7 @@ spec = describe "Additional Boundary Tests" $ do
     it "handles type inference with circular type constraints" $ do
       let expr = CEList [noLoc $ CELiteral (LInt 1), noLoc $ CEBinaryOp OpAdd (noLoc $ CEVar (Identifier "x")) (noLoc $ CELiteral (LInt 1))]
       case runTypeInference (Map.singleton (Identifier "x") (TList (TInt 32))) (inferType expr) of
-        Right inference -> resultType inference `shouldSatisfy` (\t -> t == TList (TInt 32) || t == TList TError "unknown")
+        Right inference -> resultType inference `shouldSatisfy` (\t -> t == TList (TInt 32) || t == TError "unknown")
         Left _ -> pure ()  -- Either success or graceful failure
 
     it "handles extremely large union types" $ do
@@ -89,22 +89,22 @@ spec = describe "Additional Boundary Tests" $ do
 
   describe "Configuration Boundary Tests" $ do
     it "handles configuration with extreme concurrency values" $ do
-      let config = developmentConfig { ccoMaxConcurrency = 999999 }
-      ccoMaxConcurrency config `shouldBe` 999999
+      let config = developmentConfig { ccMaxConcurrency = 999999 }
+      ccMaxConcurrency config `shouldBe` 999999
 
     it "handles configuration with empty include paths" $ do
-      let config = developmentConfig { ccoIncludePaths = [] }
-      ccoIncludePaths config `shouldBe` []
+      let config = developmentConfig { ccIncludePaths = [] }
+      ccIncludePaths config `shouldBe` []
 
     it "handles configuration with extremely long library paths" $ do
       let longPaths = replicate 100 "/very/long/path/to/library/that/goes/on/and/on/lib"
-          config = developmentConfig { ccoLibraryPaths = longPaths }
-      length (ccoLibraryPaths config) `shouldBe` 100
+          config = developmentConfig { ccLibraryPaths = longPaths }
+      length (ccLibraryPaths config) `shouldBe` 100
 
     it "handles configuration with conflicting boolean flags" $ do
-      let config = developmentConfig { ccoEnableDebugInfo = True, ccoEnableProfiler = False }
-      ccoEnableDebugInfo config `shouldBe` True
-      ccoEnableProfiler config `shouldBe` False
+      let config = developmentConfig { ccEnableDebugInfo = True, ccEnableProfiler = False }
+      ccEnableDebugInfo config `shouldBe` True
+      ccEnableProfiler config `shouldBe` False
 
   describe "Identifier Sanitization Boundary Tests" $ do
     it "handles extremely long identifiers" $ do
@@ -145,8 +145,8 @@ spec = describe "Additional Boundary Tests" $ do
       let buildCyclicGraph n g = if n <= 0 then g else
             let (nodeId, g1) = addNode ("node" ++ show n) g
                 g2 = addEdge nodeId nodeId Nothing g1  -- Self-loop
-                g3 = if n > 1 then addEdge nodeId (NodeId (n-1)) Nothing g2 else g2
-                g4 = if n > 1 then addEdge (NodeId (n-1)) nodeId Nothing g3 else g3
+                g3 = if n > 1 then addEdge nodeId (n-1) Nothing g2 else g2
+                g4 = if n > 1 then addEdge (n-1) nodeId Nothing g3 else g3
             in buildCyclicGraph (n-1) g4
           cyclicGraph = buildCyclicGraph 50 emptyGraph
       let sccs = stronglyConnectedComponents cyclicGraph
