@@ -147,6 +147,7 @@ test-suite fluxus-test
     Test.Fluxus.QuickCheckProperties
     Test.Fluxus.BoundaryTests
     Test.Fluxus.AdditionalBoundaryTests
+    Test.Fluxus.NewBoundaryTests
   build-depends:
     base,
     containers,
