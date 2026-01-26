@@ -253,10 +253,10 @@ dominators entry graph =
   if not (nodeExists entry graph)
   then Map.empty
   else
-    let allNodes = Set.fromList $ map nodeId $ nodes graph
+    let reachableNodes = reachableFrom entry graph
         initialDom = Map.fromList $ 
                      [(entry, Set.singleton entry)] ++
-                     [(n, allNodes) | n <- map nodeId $ nodes graph, n /= entry]
+                     [(n, reachableNodes) | n <- Set.toList reachableNodes, n /= entry]
     in fixpoint initialDom
   where
     fixpoint dom = 

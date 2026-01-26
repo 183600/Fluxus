@@ -71,8 +71,11 @@ spec = describe "New Boundary Tests" $ do
           buildVar name = CEBinaryOp OpAdd (noLoc (CEVar (Identifier name))) (noLoc (CELiteral (LInt 1)))
       
       forM_ unicodeCases $ \(name, desc) -> do
-        let expr = buildVar (T.pack name)
-        case runTypeInference Map.empty (inferType expr) of
+        let varName = Identifier (T.pack name)
+            expr = buildVar (T.pack name)
+            -- Bind the variable to a type in the environment
+            env = Map.singleton varName (TInt 32)
+        case runTypeInference env (inferType expr) of
           Right _ -> pure ()  -- Success is expected
           Left err -> expectationFailure $ "Type inference failed on " <> desc <> ": " <> T.unpack err
 
@@ -173,7 +176,15 @@ spec = describe "New Boundary Tests" $ do
             then CELiteral (LInt 1)
             else CECall (noLoc (CEVar (Identifier (T.pack ("f" ++ show depth))))) [noLoc (buildPolyExpr (depth - 1))]
           expr = buildPolyExpr 5
-      case runTypeInference Map.empty (inferType expr) of
+          -- Bind function variables to appropriate types
+          env = Map.fromList [
+            (Identifier "f1", TFunction [TInt 32] (TInt 32)),
+            (Identifier "f2", TFunction [TInt 32] (TInt 32)),
+            (Identifier "f3", TFunction [TInt 32] (TInt 32)),
+            (Identifier "f4", TFunction [TInt 32] (TInt 32)),
+            (Identifier "f5", TFunction [TInt 32] (TInt 32))
+          ]
+      case runTypeInference env (inferType expr) of
         Right inference -> resultType inference `shouldSatisfy` (\t -> t /= TError "unknown")
         Left err -> expectationFailure $ "Type inference failed on poly expr: " <> T.unpack err
 

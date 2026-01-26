@@ -405,8 +405,23 @@ stringLiteral = choice
   where
     parseRegularString = do
       quote <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
-      content <- lift $ manyTill L.charLiteral (string quote)
+      content <- lift $ parseStringContent quote
       return $ TokenString (T.pack content)
+    
+    parseStringContent :: Text -> MP.Parsec Void Text String
+    parseStringContent quote = case quote of
+      "'''" -> manyTillNonEmpty (L.charLiteral <|> (single '\'' <* notFollowedBy (string "''"))) (string "'''")
+      "\"\"\"" -> manyTillNonEmpty (L.charLiteral <|> (single '"' <* notFollowedBy (string "\"\""))) (string "\"\"\"")
+      _ -> manyTill L.charLiteral (string quote)
+    
+    manyTillNonEmpty :: MP.Parsec Void Text Char -> MP.Parsec Void Text Text -> MP.Parsec Void Text String
+    manyTillNonEmpty p end = go
+      where
+        go = (end $> []) <|> do
+          c <- p
+          (end $> [c]) <|> do
+            cs <- go
+            return (c:cs)
     
     parseFString = do
       _ <- lift $ char 'f' <|> char 'F'

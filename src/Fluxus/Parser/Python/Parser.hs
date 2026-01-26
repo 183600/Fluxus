@@ -150,11 +150,12 @@ parseModule = do
 
 -- | Parse module body with better handling of top-level statements
 parseModuleBody :: PythonParser [Located PythonStmt]
-parseModuleBody = many $ do
+parseModuleBody = do
   skipNewlinesAndComments
-  stmt <- parseStatement
-  skipNewlinesAndComments
-  return stmt
+  many $ do
+    stmt <- parseStatement
+    skipNewlinesAndComments
+    return stmt
 
 -- | Parse statements
 parseStatement :: PythonParser (Located PythonStmt)
