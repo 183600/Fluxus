@@ -241,12 +241,12 @@ spec = describe "New Boundary Tests" $ do
 
     it "handles repeated transformations on large expressions" $ do
       let buildExpr n = if n <= 0
-                then CELiteral (LInt 1)
-                else CEList [noLoc (buildExpr (n - 1))]
+            then CELiteral (LInt 1)
+            else CEList [noLoc (buildExpr (n - 1))]
           expr = buildExpr 15
           transform e = case e of
-                CEList xs -> CEList (map (fmap transform) xs)
-                other -> other
+            CEList xs -> CEList (map (fmap transform) xs)
+            other -> other
       
       result <- try (evaluate $ force $ transform expr)
       case result of
