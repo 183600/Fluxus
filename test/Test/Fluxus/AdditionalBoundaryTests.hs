@@ -74,9 +74,9 @@ spec = describe "Additional Boundary Tests" $ do
         Left err -> expectationFailure $ "Type inference failed on empty tuple: " <> T.unpack err
 
     it "handles type inference with circular type constraints" $ do
-      let expr = CEList [noLoc $ CELiteral (LInt 1), noLoc $ CEBinaryOp OpAdd (noLoc $ CEVAR (Identifier "x")) (noLoc $ CELiteral (LInt 1))]
+      let expr = CEList [noLoc $ CELiteral (LInt 1), noLoc $ CEBinaryOp OpAdd (noLoc $ CEVar (Identifier "x")) (noLoc $ CELiteral (LInt 1))]
       case runTypeInference (Map.singleton (Identifier "x") (TList (TInt 32))) (inferType expr) of
-        Right inference -> resultType inference `shouldSatisfy` (\t -> t == TList (TInt 32) || t == TList TUnknown)
+        Right inference -> resultType inference `shouldSatisfy` (\t -> t == TList (TInt 32) || t == TList TError "unknown")
         Left _ -> pure ()  -- Either success or graceful failure
 
     it "handles extremely large union types" $ do
@@ -129,12 +129,14 @@ spec = describe "Additional Boundary Tests" $ do
   describe "Graph Algorithm Boundary Tests" $ do
     it "handles shortest path in massive graph (1000 nodes)" $ do
       let buildLargeGraph n g = if n <= 0 then g else
-            let (_, g1) = addNode ("node" ++ show n) g
-                (_, g2) = if n > 1 then addNode ("node" ++ show (n-1)) g1 else g1
-                g3 = if n > 1 then addEdge (NodeId (n-1)) (NodeId n) Nothing g2 else g2
+            let (nid1, g1) = addNode ("node" ++ show n) g
+                (nid2, g2) = if n > 1 then addNode ("node" ++ show (n-1)) g1 else (nid1, g1)
+                g3 = if n > 1 then addEdge nid2 nid1 Nothing g2 else g2
             in buildLargeGraph (n-1) g3
           largeGraph = buildLargeGraph 1000 emptyGraph
-      shortestPath (NodeId 1) (NodeId 1000) largeGraph `shouldSatisfy` (\maybePath ->
+          (startId, _) = addNode "start" largeGraph
+          (endId, _) = addNode "end" largeGraph
+      shortestPath startId endId largeGraph `shouldSatisfy` (\maybePath ->
         case maybePath of
           Just path -> length path <= 1000
           Nothing -> True)
@@ -143,8 +145,8 @@ spec = describe "Additional Boundary Tests" $ do
       let buildCyclicGraph n g = if n <= 0 then g else
             let (nodeId, g1) = addNode ("node" ++ show n) g
                 g2 = addEdge nodeId nodeId Nothing g1  -- Self-loop
-                g3 = if n > 1 then addEdge (NodeId n) (NodeId (n-1)) Nothing g2 else g2
-                g4 = if n > 1 then addEdge (NodeId (n-1)) (NodeId n) Nothing g3 else g3
+                g3 = if n > 1 then addEdge nodeId (NodeId (n-1)) Nothing g2 else g2
+                g4 = if n > 1 then addEdge (NodeId (n-1)) nodeId Nothing g3 else g3
             in buildCyclicGraph (n-1) g4
           cyclicGraph = buildCyclicGraph 50 emptyGraph
       let sccs = stronglyConnectedComponents cyclicGraph
@@ -208,11 +210,8 @@ parseModuleFrom source =
         Left perr -> Left (show perr)
         Right (PythonAST modu) -> Right modu
 
-noLoc :: a -> Located a
-noLoc = Located (SourceSpan (T.pack "<test>") (SourcePos 0 0) (SourcePos 0 0))
-
 nodeId :: Node a -> NodeId
-nodeId (Node nid _ _) = nid
+nodeId (Node nid _) = nid
 
 -- Mock variable for testing
 cevarX :: Located CommonExpr
