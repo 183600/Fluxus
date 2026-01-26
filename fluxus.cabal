@@ -150,6 +150,7 @@ test-suite fluxus-test
   build-depends:
     base,
     containers,
+    deepseq >= 1.4 && < 1.6,
     directory,
     filepath,
     fluxus,
