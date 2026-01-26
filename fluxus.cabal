@@ -146,6 +146,7 @@ test-suite fluxus-test
     Test.Fluxus.Compiler.DriverSpec
     Test.Fluxus.QuickCheckProperties
     Test.Fluxus.BoundaryTests
+    Test.Fluxus.AdditionalBoundaryTests
   build-depends:
     base,
     containers,
