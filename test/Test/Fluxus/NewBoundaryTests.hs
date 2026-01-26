@@ -126,8 +126,8 @@ spec = describe "New Boundary Tests" $ do
 
     it "handles deeply nested parentheses and brackets" $ do
       let depth = 30
-          openParens = T.pack $ replicate depth "([{" 
-          closeParens = T.pack $ replicate depth "}])"
+          openParens = T.pack $ concat $ replicate depth "([{" 
+          closeParens = T.pack $ concat $ replicate depth "}])"
           input = T.concat ["x = ", openParens, "1", closeParens]
       case parseModuleFrom input of
         Left err -> expectationFailure $ "Parser failed on nested brackets: " <> err
