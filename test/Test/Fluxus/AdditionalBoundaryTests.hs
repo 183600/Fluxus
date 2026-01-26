@@ -89,22 +89,22 @@ spec = describe "Additional Boundary Tests" $ do
 
   describe "Configuration Boundary Tests" $ do
     it "handles configuration with extreme concurrency values" $ do
-      let config = developmentConfig { ccMaxConcurrency = 999999 }
-      ccMaxConcurrency config `shouldBe` 999999
+      let config = developmentConfig { ccoMaxConcurrency = 999999 }
+      ccoMaxConcurrency config `shouldBe` 999999
 
     it "handles configuration with empty include paths" $ do
-      let config = developmentConfig { ccIncludePaths = [] }
-      ccIncludePaths config `shouldBe` []
+      let config = developmentConfig { ccoIncludePaths = [] }
+      ccoIncludePaths config `shouldBe` []
 
     it "handles configuration with extremely long library paths" $ do
       let longPaths = replicate 100 "/very/long/path/to/library/that/goes/on/and/on/lib"
-          config = developmentConfig { ccLibraryPaths = longPaths }
-      length (ccLibraryPaths config) `shouldBe` 100
+          config = developmentConfig { ccoLibraryPaths = longPaths }
+      length (ccoLibraryPaths config) `shouldBe` 100
 
     it "handles configuration with conflicting boolean flags" $ do
-      let config = developmentConfig { ccEnableDebugInfo = True, ccEnableProfiler = False }
-      ccEnableDebugInfo config `shouldBe` True
-      ccEnableProfiler config `shouldBe` False
+      let config = developmentConfig { ccoEnableDebugInfo = True, ccoEnableProfiler = False }
+      ccoEnableDebugInfo config `shouldBe` True
+      ccoEnableProfiler config `shouldBe` False
 
   describe "Identifier Sanitization Boundary Tests" $ do
     it "handles extremely long identifiers" $ do
