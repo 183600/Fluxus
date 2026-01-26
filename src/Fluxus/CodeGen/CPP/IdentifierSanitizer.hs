@@ -6,7 +6,7 @@ module Fluxus.CodeGen.CPP.IdentifierSanitizer
   , sanitizeIdentifier
   ) where
 
-import Data.Char (isDigit, isSpace, isUpper)
+import Data.Char (isDigit, isSpace, isUpper, isLower)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.HashSet as HS
@@ -205,11 +205,17 @@ sanitizeIdentifier name
   | isPythonDunder name = name
   | otherwise = finalize adjusted
   where
-    adjusted = applyDigitRule $ applyUnderscoreRule name
+    adjusted = applySpecialCharRule $ applyDigitRule $ applyUnderscoreRule name
     finalize candidate
       | HS.member candidate reservedKeywords = candidate <> "_fluxus"
       | otherwise = candidate
     fallbackName = "fluxus_symbol"
+
+    applySpecialCharRule candidate
+      | T.all (not . isValidIdentifierChar) candidate = "fluxus_" <> candidate
+      | otherwise = candidate
+
+    isValidIdentifierChar c = isDigit c || isUpper c || isLower c || c == '_'
 
     applyDigitRule candidate
       | startsWithDigit candidate = "fluxus_" <> candidate
