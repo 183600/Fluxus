@@ -115,13 +115,17 @@ propagateEscapes :: EscapeAnalysisM ()
 propagateEscapes = do
   graph <- gets easEscapeGraph
   escapeMap <- gets easEscapeMap
-  let propagated = propagateEscapeInfo graph escapeMap
-  modify $ \s -> s { easEscapeMap = propagated }
+  let (propagated, hasChanges) = propagateEscapeInfo graph escapeMap
+  when hasChanges $ modify $ \s -> s { easEscapeMap = propagated }
   where
-    propagateEscapeInfo :: HashMap Identifier (Set Identifier) -> HashMap Identifier EscapeInfo -> HashMap Identifier EscapeInfo
+    propagateEscapeInfo :: HashMap Identifier (Set Identifier) -> HashMap Identifier EscapeInfo -> (HashMap Identifier EscapeInfo, Bool)
     propagateEscapeInfo graph escapesMap = 
       let updated = HashMap.mapWithKey (propagateForVar graph escapesMap) escapesMap
-      in if updated == escapesMap then escapesMap else propagateEscapeInfo graph updated
+          hasChanges = updated /= escapesMap
+      in if not hasChanges
+         then (escapesMap, False)
+         else case propagateEscapeInfo graph updated of
+              (finalMap, _) -> (finalMap, True)
     
     propagateForVar :: HashMap Identifier (Set Identifier) -> HashMap Identifier EscapeInfo -> Identifier -> EscapeInfo -> EscapeInfo
     propagateForVar graph escapesMap var currentEscape =
