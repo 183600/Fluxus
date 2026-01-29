@@ -22,7 +22,7 @@ module Fluxus.Analysis.EscapeAnalysis
 import Fluxus.AST.Common (CommonCompClause(..), CommonExpr(..), EscapeInfo(..), Identifier(..), Located(..), MemoryLocation(..), cccFilters, cccIter, locatedValue)
 import Control.Monad.State (State, gets, modify, runState)
 import Control.Monad.Reader (ReaderT, ask, local, runReaderT)
-import Control.Monad (void)
+import Control.Monad (void, when)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.HashMap.Strict (HashMap)
