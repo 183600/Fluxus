@@ -78,7 +78,7 @@ spec = describe "Type Inference" $ do
     it "unifies list element types" $ do
       let action = unifyTypes (TList (TVar (TypeVar "a"))) (TList (TInt 32))
       case runTypeInference Map.empty action of
-        Right (Just unifiedConstraints) -> unifiedConstraints `shouldBe" [(TVar (TypeVar "a"), TInt 32)]
+        Right (Just unifiedConstraints) -> unifiedConstraints `shouldBe` [(TVar (TypeVar "a"), TInt 32)]
         Right Nothing -> expectationFailure "expected constraints, but unification returned Nothing"
         Left err -> expectationFailure $ "expected unification to succeed, but got: " <> T.unpack err
 
