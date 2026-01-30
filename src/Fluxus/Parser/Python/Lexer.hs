@@ -412,7 +412,29 @@ stringLiteral = choice
     parseStringContent quote = case quote of
       "'''" -> manyTill L.charLiteral (string "'''")
       "\"\"\"" -> manyTill L.charLiteral (string "\"\"\"")
-      _ -> manyTill L.charLiteral (string quote)
+      _ -> parseEscapedStringContent quote
+    
+    parseEscapedStringContent :: Text -> MP.Parsec Void Text String
+    parseEscapedStringContent quote = go False
+      where
+        go escaped = do
+          -- Check if we've reached the end quote (and it's not escaped)
+          if not escaped then do
+            -- Try to match the ending quote
+            (try (string quote) >> return "") <|> do
+              -- If not, parse a character
+              c <- MP.anySingle
+              -- If it's a backslash, next char is escaped
+              if c == '\\'
+                then go True
+                else do
+                  rest <- go False
+                  return (c : rest)
+          else do
+            -- We're in escaped mode, just consume the next char
+            c <- MP.anySingle
+            rest <- go False
+            return (c : rest)
     
     manyTillNonEmpty :: MP.Parsec Void Text Char -> MP.Parsec Void Text Text -> MP.Parsec Void Text String
     manyTillNonEmpty p end = go
