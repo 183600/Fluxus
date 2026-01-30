@@ -233,7 +233,25 @@ stronglyConnectedComponents graph =
           lowlinks' = Map.insert v index lowlinks
           stack' = v : stack
           index' = index + 1
-      in foldl' (processSuccessor v) (indices', lowlinks', stack', index', result) (successors v graph)
+          (indices'', lowlinks'', stack'', index'', result'') = 
+            foldl' (processSuccessor v) (indices', lowlinks', stack', index', result) (successors v graph)
+          -- After processing all successors, check if v is a root node
+          (finalStack, finalResult) = 
+            if lowlinks'' Map.! v == indices'' Map.! v
+            then 
+              let (scc, restStack) = popStack v stack'' []
+              in (restStack, scc : result'')
+            else (stack'', result'')
+      in (indices'', lowlinks'', finalStack, index'', finalResult)
+
+    popStack :: Int -> [Int] -> [Int] -> ([Int], [Int])
+    popStack v stack acc =
+      case stack of
+        [] -> (reverse acc, [])  -- Should not happen in valid algorithm
+        (x:xs) ->
+          if x == v
+          then (reverse (x:acc), xs)
+          else popStack v xs (x:acc)
 
     processSuccessor :: Int -> (Map Int Int, Map Int Int, [Int], Int, [[Int]]) -> Int -> (Map Int Int, Map Int Int, [Int], Int, [[Int]])
     processSuccessor v (indices, lowlinks, stack, index, result) w
