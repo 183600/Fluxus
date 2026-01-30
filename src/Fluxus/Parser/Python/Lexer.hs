@@ -410,8 +410,8 @@ stringLiteral = choice
     
     parseStringContent :: Text -> MP.Parsec Void Text String
     parseStringContent quote = case quote of
-      "'''" -> manyTillNonEmpty (L.charLiteral <|> (MP.single '\'' <* notFollowedBy (string "''"))) (string "'''")
-      "\"\"\"" -> manyTillNonEmpty (L.charLiteral <|> (MP.single '"' <* notFollowedBy (string "\"\""))) (string "\"\"\"")
+      "'''" -> manyTill L.charLiteral (string "'''")
+      "\"\"\"" -> manyTill L.charLiteral (string "\"\"\"")
       _ -> manyTill L.charLiteral (string quote)
     
     manyTillNonEmpty :: MP.Parsec Void Text Char -> MP.Parsec Void Text Text -> MP.Parsec Void Text String
