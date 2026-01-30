@@ -426,7 +426,9 @@ stringLiteral = choice
               c <- MP.anySingle
               -- If it's a backslash, next char is escaped
               if c == '\\'
-                then go True
+                then do
+                  rest <- go True
+                  return (c : rest)
                 else do
                   rest <- go False
                   return (c : rest)
