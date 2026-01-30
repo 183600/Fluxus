@@ -178,12 +178,12 @@ spec = describe "New Boundary Tests" $ do
           expr = buildPolyExpr 5
           -- Bind function variables to appropriate types
           env = Map.fromList [
-            (Identifier "f1", TFunction [TInt 32] (TInt 32)),
-            (Identifier "f2", TFunction [TInt 32] (TInt 32)),
-            (Identifier "f3", TFunction [TInt 32] (TInt 32)),
-            (Identifier "f4", TFunction [TInt 32] (TInt 32)),
-            (Identifier "f5", TFunction [TInt 32] (TInt 32))
-          ]
+                (Identifier "f1", TFunction [TInt 32] (TInt 32)),
+                (Identifier "f2", TFunction [TInt 32] (TInt 32)),
+                (Identifier "f3", TFunction [TInt 32] (TInt 32)),
+                (Identifier "f4", TFunction [TInt 32] (TInt 32)),
+                (Identifier "f5", TFunction [TInt 32] (TInt 32))
+              ]
       case runTypeInference env (inferType expr) of
         Right inference -> resultType inference `shouldSatisfy` (\t -> t /= TError "unknown")
         Left err -> expectationFailure $ "Type inference failed on poly expr: " <> T.unpack err
