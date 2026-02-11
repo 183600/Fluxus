@@ -53,7 +53,6 @@ spec = describe "Extended Boundary Tests" $ do
         Right _ -> expectationFailure "Should reject invalid platform"
 
     it "handles empty configuration file content" $ do
-      let emptyOverrides = emptyOverrides
       let merged = mergeConfigs defaultConfig emptyOverrides
       merged `shouldBe` defaultConfig
 
