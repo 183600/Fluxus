@@ -407,13 +407,14 @@ stringLiteral = choice
       quote <- lift $ choice [string "\"\"\"", string "'''", string "\"", string "'"]
       content <- lift $ parseStringContent quote
       return $ TokenString (T.pack content)
-    
+
+    -- | Parse the contents of a string literal until the matching closing quotes.
+    -- We intentionally avoid 'L.charLiteral' here because it disallows quote
+    -- characters, which breaks triple-quoted strings that contain mixed quotes
+    -- like '''triple'"quotes"'''.
     parseStringContent :: Text -> MP.Parsec Void Text String
-    parseStringContent quote = case quote of
-      "'''" -> manyTill L.charLiteral (string "'''")
-      "\"\"\"" -> manyTill L.charLiteral (string "\"\"\"")
-      _ -> parseEscapedStringContent quote
-    
+    parseStringContent = parseEscapedStringContent
+
     parseEscapedStringContent :: Text -> MP.Parsec Void Text String
     parseEscapedStringContent quote = go False
       where
