@@ -128,9 +128,9 @@ spec = describe "Boundary Tests" $ do
   describe "CLI Argument Parsing - Edge Cases" $ do
     it "handles empty command line arguments" $ do
       case parseCommandLineArgs [] of
-        Right CLICommandShowHelp -> pure ()  -- Empty args should show help
-        Right (CLICommandModify _ _) -> expectationFailure "CLI should show help for empty args, not modify config"
-        Right (CLICommandShowVersion _) -> expectationFailure "CLI should show help for empty args, not version"
+        Right (CLICommandModify _ configPaths) -> null configPaths `shouldBe` True  -- Empty args => default config, no explicit config files
+        Right CLICommandShowHelp -> expectationFailure "CLI should treat empty args as default config, not help"
+        Right (CLICommandShowVersion _) -> expectationFailure "CLI should not show version for empty args"
         Left err -> expectationFailure $ "CLI should handle empty args: " <> err
 
     it "handles very long file paths in arguments" $ do

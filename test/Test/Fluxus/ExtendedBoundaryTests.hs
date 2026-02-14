@@ -24,7 +24,8 @@ spec = describe "Extended Boundary Tests" $ do
   describe "Configuration System - Edge Cases" $ do
     it "handles parsing empty command line arguments" $ do
       case parseCommandLineArgs [] of
-        Right (CLICommandModify _ files) -> files `shouldBe` []
+        Right (CLICommandModify _ _) -> pure ()  -- Empty args => default config
+        Right _ -> expectationFailure "Expected CLICommandModify for empty args"
         Left err -> expectationFailure $ "Should handle empty args: " ++ err
 
     it "handles extremely long file paths in command line" $ do

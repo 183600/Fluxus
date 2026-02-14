@@ -1,5 +1,13 @@
 resolver: lts-22.24
 
+# Use GHC 9.6.x explicitly to avoid "not tested with GHC above 9.4" warnings when system has 9.6.
+# Omit this to use the resolver's default GHC (e.g. 9.4 for lts-22).
+compiler: ghc-9.6.5
+
+# Allow GHC/Cabal versions newer than those Stack was tested with (e.g. GHC 9.6, Cabal 3.10).
+compiler-check: newer-minor
+allow-newer: true
+
 extra-deps:
   - ansi-terminal-types-1.1.3
   - ansi-terminal-1.1.3

@@ -1977,12 +1977,36 @@ extractDocstringAndImports (stmt:rest) = case locatedValue stmt of
   _ -> (Nothing, stmt:rest)
 
 
--- | Skip newlines and comments
+-- | Skip an indent block that contains only newlines and comments (and nested
+-- such blocks). Used so that top-level "indented comment" lines parse without
+-- leaving stray TokenIndent for eof.
+skipIndentCommentBlock :: PythonParser ()
+skipIndentCommentBlock = do
+  loc <- satisfy $ \case Located _ (TokenIndent _) -> True; _ -> False
+  let level = case locatedValue loc of TokenIndent n -> n; _ -> error "skipIndentCommentBlock"
+  skipUntilMatchingDedent level
+
+-- | Skip newlines, comments, and nested indent-comment blocks until TokenDedent level.
+skipUntilMatchingDedent :: Int -> PythonParser ()
+skipUntilMatchingDedent level = do
+  many $ choice
+    [ void $ satisfy $ \case
+        Located _ TokenNewline -> True
+        Located _ (TokenComment _) -> True
+        _ -> False
+    , skipIndentCommentBlock
+    ]
+  void $ satisfy $ \case Located _ (TokenDedent n) -> n == level; _ -> False
+
+-- | Skip newlines and comments (and indent blocks that contain only those)
 skipNewlinesAndComments :: PythonParser ()
-skipNewlinesAndComments = void $ many $ satisfy $ \case
-  Located _ TokenNewline -> True
-  Located _ (TokenComment _) -> True
-  _ -> False
+skipNewlinesAndComments = void $ many $ choice
+  [ void $ satisfy $ \case
+      Located _ TokenNewline -> True
+      Located _ (TokenComment _) -> True
+      _ -> False
+  , skipIndentCommentBlock
+  ]
 
 -- | Skip comments
 skipComments :: PythonParser ()

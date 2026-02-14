@@ -254,7 +254,7 @@ loadConfigFromFile configFile = do
 -- | Parse command line arguments to compiler configuration modifiers or
 -- informational CLI commands.
 parseCommandLineArgs :: [String] -> Either String CLICommand
-parseCommandLineArgs [] = Right CLICommandShowHelp
+parseCommandLineArgs [] = Right (CLICommandModify id [])
 parseCommandLineArgs args = go id [] args
   where
     go modifier configs [] = Right (CLICommandModify modifier configs)

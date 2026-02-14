@@ -44,7 +44,7 @@ import qualified Data.Vector.Unboxed as UV
 import qualified Text.Megaparsec as MP
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
-import Text.Megaparsec (many, choice, try, notFollowedBy, optional, eof, getSourcePos, satisfy, takeWhileP, manyTill, (<|>), lookAhead, skipMany)
+import Text.Megaparsec (many, choice, try, notFollowedBy, optional, eof, getSourcePos, satisfy, takeWhileP, manyTill, (<|>), lookAhead, skipMany, empty)
 import Data.Functor (($>))
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
@@ -241,6 +241,11 @@ processLine = do
   -- Update state for new line
   when (not (null newlineTokens)) $ do
     modify $ \s -> s { atLineStart = True }
+  
+  -- If we produced no tokens at all, we may be at EOF (no trailing newline).
+  -- Fail so that manyTill processLine eof can terminate on eof.
+  when (null locatedIndentTokens && null lineTokens && null locatedNewlineTokens) $ do
+    lift (lookAhead eof) >> empty
   
   return $ locatedIndentTokens ++ lineTokens ++ locatedNewlineTokens
 

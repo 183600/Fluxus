@@ -140,7 +140,7 @@ spec = describe "New Boundary Tests" $ do
       let input = T.unlines [
                 "s1 = 'single'",
                 "s2 = \"double\"",
-                "s3 = '''triple'\"quotes\"''",
+                "s3 = '''triple'\"quotes\"'''",
                 "s4 = \"\"\"mixed'quotes\"\"\"",
                 "s5 = 'escaped\\'quote'",
                 "s6 = \"escaped\\\"quote\""
@@ -223,8 +223,8 @@ spec = describe "New Boundary Tests" $ do
 
     it "handles empty and malformed command line arguments" $ do
       case parseCommandLineArgs [] of
-        Right CLICommandShowHelp -> pure ()  -- Expected
-        Right _ -> expectationFailure "Expected CLICommandShowHelp"
+        Right (CLICommandModify _ _) -> pure ()  -- Empty args => default config
+        Right _ -> expectationFailure "Expected CLICommandModify for empty args"
         Left err -> expectationFailure $ "CLI should handle empty args: " <> err
 
   describe "Memory and Performance Boundaries" $ do
