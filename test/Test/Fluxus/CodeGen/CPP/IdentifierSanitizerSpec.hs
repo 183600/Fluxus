@@ -50,6 +50,20 @@ spec = describe "Fluxus.CodeGen.CPP.IdentifierSanitizer" $ do
       sanitizeIdentifier "__internal" `shouldBe` "fluxus__internal"
       sanitizeIdentifier "_Uppercase" `shouldBe` "fluxus_Uppercase"
 
+    it "suffixes more C++ keywords" $ do
+      sanitizeIdentifier "true" `shouldBe` "true_fluxus"
+      sanitizeIdentifier "false" `shouldBe` "false_fluxus"
+      sanitizeIdentifier "final" `shouldBe` "final_fluxus"
+      sanitizeIdentifier "override" `shouldBe` "override_fluxus"
+
+    it "prefixes identifier that is all non-identifier characters" $ do
+      sanitizeIdentifier "..." `shouldBe` "fluxus_..."
+      sanitizeIdentifier "---" `shouldBe` "fluxus_---"
+
+    it "leaves single leading underscore without uppercase unchanged" $ do
+      sanitizeIdentifier "_private" `shouldBe` "_private"
+      sanitizeIdentifier "_x" `shouldBe` "_x"
+
   describe "sanitizeCppUnit" $ do
     it "sanitizes namespace names" $ do
       let unit = CppUnit [] ["class"] []
@@ -70,3 +84,21 @@ spec = describe "Fluxus.CodeGen.CPP.IdentifierSanitizer" $ do
           vname `shouldBe` "int_fluxus"
           ename `shouldBe` "class_fluxus"
         _ -> expectationFailure "expected CppVariable with CppVar init"
+
+    it "sanitizes struct and namespace names" $ do
+      let unit = CppUnit [] [] [CppStruct "struct" [], CppNamespace "namespace" []]
+      let decls = cppDeclarations (sanitizeCppUnit unit)
+      case decls of
+        [CppStruct sname _, CppNamespace nname _] -> do
+          sname `shouldBe` "struct_fluxus"
+          nname `shouldBe` "namespace_fluxus"
+        _ -> expectationFailure "expected CppStruct and CppNamespace"
+
+    it "sanitizes class names and base list" $ do
+      let unit = CppUnit [] [] [CppClass "class" ["public", "virtual"] []]
+      let decls = cppDeclarations (sanitizeCppUnit unit)
+      case decls of
+        [CppClass cname bases _] -> do
+          cname `shouldBe` "class_fluxus"
+          bases `shouldBe` ["public_fluxus", "virtual_fluxus"]
+        _ -> expectationFailure "expected CppClass with bases"

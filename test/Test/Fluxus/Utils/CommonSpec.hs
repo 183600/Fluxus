@@ -25,6 +25,16 @@ spec = describe "Fluxus.Utils.Common" $ do
       b < c `shouldBe` True
       a < c `shouldBe` True
 
+    it "orders by column when lines are equal" $ do
+      let a = SourcePos 3 0
+          b = SourcePos 3 10
+      a < b `shouldBe` True
+      a <= b `shouldBe` True
+      b > a `shouldBe` True
+
+    it "equates same line and column" $ do
+      SourcePos 2 5 `shouldBe` SourcePos 2 5
+
   describe "SourceSpan" $ do
     it "stores filename and start/end positions" $ do
       let span' = SourceSpan "file.py" (SourcePos 1 0) (SourcePos 1 10)
@@ -46,6 +56,17 @@ spec = describe "Fluxus.Utils.Common" $ do
       let s1 = SourceSpan "first.py" (SourcePos 0 0) (SourcePos 0 0)
           s2 = SourceSpan "second.py" (SourcePos 1 0) (SourcePos 1 1)
       spanFilename (mergeSpans s1 s2) `shouldBe` "first.py"
+
+    it "mergeSpans with same span yields span with same start and end" $ do
+      let s = SourceSpan "f" (SourcePos 2 1) (SourcePos 2 8)
+          merged = mergeSpans s s
+      spanStart merged `shouldBe` SourcePos 2 1
+      spanEnd merged `shouldBe` SourcePos 2 8
+
+    it "mergeSpans is not symmetric in filename" $ do
+      let s1 = SourceSpan "a" (SourcePos 1 0) (SourcePos 1 1)
+          s2 = SourceSpan "b" (SourcePos 2 0) (SourcePos 2 1)
+      spanFilename (mergeSpans s1 s2) `shouldBe` "a"
 
   describe "textShow" $ do
     it "converts Int to Text" $ do

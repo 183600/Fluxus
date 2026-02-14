@@ -11,11 +11,14 @@ import Fluxus.Utils.Pretty
   , renderCompact
   , text
   , int
+  , double
   , bool
   , empty
   , (</>)
   , quotes
   , doubleQuotes
+  , red
+  , underline
   )
 
 spec :: Spec
@@ -76,3 +79,28 @@ spec = describe "Fluxus.Utils.Pretty" $ do
 
     it "empty renders as empty string" $ do
       renderDoc empty `shouldBe` ""
+
+  describe "Pretty String instance" $ do
+    it "String renders as-is" $ do
+      renderDoc (pretty ("hello" :: String)) `shouldBe` "hello"
+
+  describe "double combinator" $ do
+    it "renders Double values" $ do
+      T.unpack (renderDoc (double 0.5)) `shouldContain` "0.5"
+      T.unpack (renderDoc (double (-1.0))) `shouldContain` "-1.0"
+
+  describe "layout" $ do
+    it "renderCompact preserves both parts of vertical composition" $ do
+      let doc = text "x" </> text "y"
+          out = T.unpack (renderCompact doc)
+      out `shouldContain` "x"
+      out `shouldContain` "y"
+
+  describe "color and style combinators" $ do
+    it "red preserves text content" $ do
+      let out = T.unpack (renderDoc (red (text "error")))
+      out `shouldContain` "error"
+
+    it "underline preserves text content" $ do
+      let out = T.unpack (renderDoc (underline (text "x")))
+      out `shouldContain` "x"

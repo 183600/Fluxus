@@ -53,7 +53,7 @@ renderCompact = renderStrict . layoutCompact
 instance Pretty Text where
   pretty = PrettyDoc.pretty
 
-instance Pretty String where
+instance {-# OVERLAPPING #-} Pretty String where
   pretty = PrettyDoc.pretty
 
 instance Pretty Int where

@@ -8,16 +8,22 @@ import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import qualified Data.Text as T
 
-import Fluxus.Compiler.Driver (CompilerConfig(..), defaultConfig)
+import Fluxus.Compiler.Driver (CompilerConfig(..), OptimizationLevel(..), SourceLanguage(..), TargetPlatform(..), defaultConfig)
 import Fluxus.Compiler.Config
   ( CLICommand(..)
+  , ConfigFileError(..)
   , CompilerConfigOverrides(..)
   , LoadConfigResult(..)
+  , configToArgs
+  , debugConfig
+  , developmentConfig
   , emptyOverrides
   , fluxusVersionString
   , loadConfig
   , mergeConfigs
   , parseCommandLineArgs
+  , productionConfig
+  , renderConfigFileError
   )
 
 spec :: Spec
@@ -53,6 +59,77 @@ spec = describe "Fluxus.Compiler.Config" $ do
         Right (CLICommandModify _ configs) -> configs `shouldBe` ["alpha.yaml", "beta.yaml"]
         Right _ -> expectationFailure "expected CLICommandModify for --config"
         Left err -> expectationFailure $ "failed to parse CLI args: " ++ err
+
+    it "sets source language with --python and --go" $ do
+      case parseCommandLineArgs ["--python"] of
+        Right (CLICommandModify modifier _) ->
+          ccSourceLanguage (modifier defaultConfig) `shouldBe` Python
+        _ -> expectationFailure "expected CLICommandModify for --python"
+      case parseCommandLineArgs ["--go"] of
+        Right (CLICommandModify modifier _) ->
+          ccSourceLanguage (modifier defaultConfig) `shouldBe` Go
+        _ -> expectationFailure "expected CLICommandModify for --go"
+
+    it "sets output path with -o and --output" $ do
+      case parseCommandLineArgs ["-o", "out.cpp"] of
+        Right (CLICommandModify modifier _) ->
+          ccOutputPath (modifier defaultConfig) `shouldBe` Just "out.cpp"
+        _ -> expectationFailure "expected CLICommandModify for -o"
+      case parseCommandLineArgs ["--output", "result"] of
+        Right (CLICommandModify modifier _) ->
+          ccOutputPath (modifier defaultConfig) `shouldBe` Just "result"
+        _ -> expectationFailure "expected CLICommandModify for --output"
+
+    it "sets target platform with --target" $ do
+      case parseCommandLineArgs ["--target", "linux-x86_64"] of
+        Right (CLICommandModify modifier _) ->
+          ccTargetPlatform (modifier defaultConfig) `shouldBe` Linux_x86_64
+        _ -> expectationFailure "expected CLICommandModify for --target linux-x86_64"
+
+    it "reports error when -o has no argument" $ do
+      case parseCommandLineArgs ["-o"] of
+        Left err -> err `shouldContain` "output"
+        Right _ -> expectationFailure "expected parse error for -o without argument"
+
+  describe "renderConfigFileError" $ do
+    it "formats ConfigFileNotFound" $ do
+      renderConfigFileError (ConfigFileNotFound "missing.yaml") `shouldContain` "not found"
+      renderConfigFileError (ConfigFileNotFound "missing.yaml") `shouldContain` "missing.yaml"
+
+    it "formats ConfigFileParseError" $ do
+      let msg = renderConfigFileError (ConfigFileParseError "bad.yaml" "invalid YAML")
+      msg `shouldContain` "Failed to parse"
+      msg `shouldContain` "bad.yaml"
+      msg `shouldContain` "invalid YAML"
+
+  describe "predefined configs" $ do
+    it "developmentConfig has O0, debug on, verbose 2, keep intermediates" $ do
+      ccOptimizationLevel developmentConfig `shouldBe` O0
+      ccEnableDebugInfo developmentConfig `shouldBe` True
+      ccVerboseLevel developmentConfig `shouldBe` 2
+      ccKeepIntermediates developmentConfig `shouldBe` True
+      ccStrictMode developmentConfig `shouldBe` False
+
+    it "productionConfig has O3, no debug, verbose 0, strict" $ do
+      ccOptimizationLevel productionConfig `shouldBe` O3
+      ccEnableDebugInfo productionConfig `shouldBe` False
+      ccVerboseLevel productionConfig `shouldBe` 0
+      ccKeepIntermediates productionConfig `shouldBe` False
+      ccStrictMode productionConfig `shouldBe` True
+
+    it "debugConfig has profiler and high verbosity" $ do
+      ccEnableProfiler debugConfig `shouldBe` True
+      ccVerboseLevel debugConfig `shouldBe` 3
+
+  describe "configToArgs" $ do
+    it "includes --python for Python source language" $ do
+      let cfg = defaultConfig { ccSourceLanguage = Python }
+      ("--python" `elem` configToArgs cfg) `shouldBe` True
+
+    it "includes -o when output path is set" $ do
+      let cfg = defaultConfig { ccOutputPath = Just "out.bin" }
+      ("-o" `elem` configToArgs cfg) `shouldBe` True
+      ("out.bin" `elem` configToArgs cfg) `shouldBe` True
 
   describe "mergeConfigs" $ do
     it "allows overriding include paths with an empty list" $ do

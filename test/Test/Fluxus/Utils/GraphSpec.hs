@@ -2,6 +2,7 @@ module Test.Fluxus.Utils.GraphSpec (spec) where
 
 import Data.List (sort)
 import Test.Hspec
+import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as T
 
@@ -13,13 +14,17 @@ import Fluxus.Utils.Graph
   , cfgEntry
   , cfgExit
   , dominatorFrontier
+  , dominators
   , edges
   , emptyGraph
   , findPath
+  , graphToDot
   , immediateDominator
+  , neighbors
   , nodeExists
   , nodeId
   , nodes
+  , postDominators
   , reachableFrom
   , removeEdge
   , removeNode
@@ -161,3 +166,78 @@ spec = do
              . addEdge leftId exitId Nothing . addEdge rightId exitId Nothing $ g4
           domTree = buildDominatorTree entryId g5
       dominatorFrontier entryId g5 domTree `shouldBe` Set.empty
+
+  describe "Fluxus.Utils.Graph.dominators" $ do
+    it "returns empty map when entry node does not exist" $ do
+      let (aId, g) = addNode "A" emptyGraph
+      dominators (aId + 99) g `shouldBe` Map.empty
+
+    it "returns singleton for entry when graph has only entry" $ do
+      let (entryId, g) = addNode "entry" emptyGraph
+      dominators entryId g `shouldBe` Map.singleton entryId (Set.singleton entryId)
+
+    it "computes dominators for linear chain" $ do
+      let (aId, g1) = addNode "A" emptyGraph
+          (bId, g2) = addNode "B" g1
+          (cId, g3) = addNode "C" g2
+          g4 = addEdge aId bId Nothing . addEdge bId cId Nothing $ g3
+          doms = dominators aId g4
+      Map.lookup aId doms `shouldBe` Just (Set.singleton aId)
+      Map.lookup bId doms `shouldBe` Just (Set.fromList [aId, bId])
+      Map.lookup cId doms `shouldBe` Just (Set.fromList [aId, bId, cId])
+
+  describe "Fluxus.Utils.Graph.postDominators" $ do
+    it "computes post-dominators for linear chain with exit" $ do
+      let (aId, g1) = addNode "A" emptyGraph
+          (bId, g2) = addNode "B" g1
+          (cId, g3) = addNode "C" g2
+          g4 = addEdge aId bId Nothing . addEdge bId cId Nothing $ g3
+          postDoms = postDominators cId g4
+      Map.lookup cId postDoms `shouldBe` Just (Set.singleton cId)
+      Map.lookup bId postDoms `shouldBe` Just (Set.fromList [bId, cId])
+      Map.lookup aId postDoms `shouldBe` Just (Set.fromList [aId, bId, cId])
+
+  describe "Fluxus.Utils.Graph.neighbors" $ do
+    it "returns successors and predecessors combined" $ do
+      let (aId, g1) = addNode "A" emptyGraph
+          (bId, g2) = addNode "B" g1
+          (cId, g3) = addNode "C" g2
+          g4 = addEdge aId bId Nothing . addEdge bId cId Nothing $ g3
+      sort (neighbors aId g4) `shouldBe` [bId]
+      sort (neighbors bId g4) `shouldBe` [aId, cId]
+      sort (neighbors cId g4) `shouldBe` [bId]
+
+  describe "Fluxus.Utils.Graph.topologicalSort edge cases" $ do
+    it "returns Just [] for empty graph" $ do
+      topologicalSort emptyGraph `shouldBe` Just []
+
+    it "returns single node for singleton graph" $ do
+      let (aId, g) = addNode "A" emptyGraph
+      topologicalSort g `shouldBe` Just [aId]
+
+  describe "Fluxus.Utils.Graph.findPath and shortestPath edge cases" $ do
+    it "findPath returns single-node path when start equals end" $ do
+      let (aId, g) = addNode "A" emptyGraph
+      findPath aId aId g `shouldBe` Just [aId]
+
+    it "shortestPath returns single-node path when start equals end" $ do
+      let (aId, g) = addNode "A" emptyGraph
+      shortestPath aId aId g `shouldBe` Just [aId]
+
+    it "shortestPath returns Nothing when end is unreachable" $ do
+      let (aId, g1) = addNode "A" emptyGraph
+          (bId, g2) = addNode "B" g1
+          g3 = addEdge aId bId Nothing g2
+      shortestPath bId aId g3 `shouldBe` Nothing
+
+  describe "Fluxus.Utils.Graph.graphToDot" $ do
+    it "produces valid DOT with nodes and edges" $ do
+      let (aId, g1) = addNode "A" emptyGraph
+          (bId, g2) = addNode "B" g1
+          g3 = addEdge aId bId (Just (T.pack "e1")) g2
+          dot = graphToDot g3
+      T.unpack dot `shouldContain` "digraph G"
+      T.unpack dot `shouldContain` show aId
+      T.unpack dot `shouldContain` show bId
+      T.unpack dot `shouldContain` "->"
+      T.unpack dot `shouldContain` "e1"
