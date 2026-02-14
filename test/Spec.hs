@@ -22,6 +22,9 @@ import qualified Test.Fluxus.Analysis.CommonExprLowering as CommonExprLoweringTe
 import qualified Test.Fluxus.Analysis.ShapeAnalysis as ShapeAnalysisTests
 import qualified Test.Fluxus.CodeGen.CPP as CodeGenTests
 import qualified Test.Fluxus.Utils.GraphSpec as GraphUtilsTests
+import qualified Test.Fluxus.Utils.CommonSpec as CommonUtilsTests
+import qualified Test.Fluxus.Utils.PrettySpec as PrettyUtilsTests
+import qualified Test.Fluxus.CodeGen.CPP.IdentifierSanitizerSpec as IdentifierSanitizerTests
 import qualified Test.Fluxus.Compiler.ConfigSpec as ConfigTests
 import qualified Test.Fluxus.Compiler.DriverSpec as DriverTests
 import qualified Test.Fluxus.QuickCheckProperties as QuickCheckTests
@@ -87,6 +90,9 @@ fullSpec = describe "Fluxus Compiler Test Suite" $ do
     ShapeAnalysisTests.spec
     CodeGenTests.spec
     GraphUtilsTests.spec
+    CommonUtilsTests.spec
+    PrettyUtilsTests.spec
+    IdentifierSanitizerTests.spec
     DriverTests.spec
     QuickCheckTests.spec
     BoundaryTests.spec

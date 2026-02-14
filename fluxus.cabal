@@ -142,6 +142,9 @@ test-suite fluxus-test
     Test.Fluxus.CodeGen.CPP.PythonExtended
     Test.Fluxus.CodeGen.CPP.Go
     Test.Fluxus.Utils.GraphSpec
+    Test.Fluxus.Utils.CommonSpec
+    Test.Fluxus.Utils.PrettySpec
+    Test.Fluxus.CodeGen.CPP.IdentifierSanitizerSpec
     Test.Fluxus.Compiler.ConfigSpec
     Test.Fluxus.Compiler.DriverSpec
     Test.Fluxus.QuickCheckProperties

@@ -66,7 +66,8 @@ instance Pretty Double where
   pretty = PrettyDoc.pretty
 
 instance Pretty Bool where
-  pretty = PrettyDoc.pretty
+  pretty True = text "true"
+  pretty False = text "false"
 
 instance Pretty a => Pretty [a] where
   pretty = PrettyDoc.list . map Fluxus.Utils.Pretty.pretty
