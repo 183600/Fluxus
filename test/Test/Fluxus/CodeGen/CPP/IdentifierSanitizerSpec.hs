@@ -102,3 +102,21 @@ spec = describe "Fluxus.CodeGen.CPP.IdentifierSanitizer" $ do
           cname `shouldBe` "class_fluxus"
           bases `shouldBe` ["public_fluxus", "virtual_fluxus"]
         _ -> expectationFailure "expected CppClass with bases"
+
+  describe "sanitizeIdentifier additional keywords" $ do
+    it "suffixes template and operator keywords" $ do
+      sanitizeIdentifier "template" `shouldBe` "template_fluxus"
+      sanitizeIdentifier "operator" `shouldBe` "operator_fluxus"
+      sanitizeIdentifier "typename" `shouldBe` "typename_fluxus"
+
+    it "suffixes control flow keywords" $ do
+      sanitizeIdentifier "if" `shouldBe` "if_fluxus"
+      sanitizeIdentifier "else" `shouldBe` "else_fluxus"
+      sanitizeIdentifier "while" `shouldBe` "while_fluxus"
+      sanitizeIdentifier "for" `shouldBe` "for_fluxus"
+      sanitizeIdentifier "switch" `shouldBe` "switch_fluxus"
+      sanitizeIdentifier "case" `shouldBe` "case_fluxus"
+
+    it "preserves mixed alphanumeric identifiers" $ do
+      sanitizeIdentifier "foo42bar" `shouldBe` "foo42bar"
+      sanitizeIdentifier "a1_b2_c3" `shouldBe` "a1_b2_c3"

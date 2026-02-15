@@ -35,6 +35,14 @@ spec = describe "Fluxus.Utils.Common" $ do
     it "equates same line and column" $ do
       SourcePos 2 5 `shouldBe` SourcePos 2 5
 
+    it "orders with > and >=" $ do
+      let a = SourcePos 1 0
+          b = SourcePos 2 0
+      b > a `shouldBe` True
+      a >= a `shouldBe` True
+      b >= a `shouldBe` True
+      a >= b `shouldBe` False
+
   describe "SourceSpan" $ do
     it "stores filename and start/end positions" $ do
       let span' = SourceSpan "file.py" (SourcePos 1 0) (SourcePos 1 10)
@@ -77,6 +85,13 @@ spec = describe "Fluxus.Utils.Common" $ do
 
     it "converts list to Text" $ do
       textShow [1, 2, 3] `shouldBe` T.pack "[1,2,3]"
+
+    it "converts String to Text" $ do
+      textShow ("hello" :: String) `shouldBe` T.pack "\"hello\""
+
+    it "converts Maybe to Text" $ do
+      textShow (Nothing :: Maybe Int) `shouldBe` T.pack "Nothing"
+      textShow (Just 7 :: Maybe Int) `shouldBe` T.pack "Just 7"
 
   describe "defaultSpan" $ do
     it "produces zero-width span at line 0 column 0" $ do

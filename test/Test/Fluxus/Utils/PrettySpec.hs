@@ -18,6 +18,11 @@ import Fluxus.Utils.Pretty
   , quotes
   , doubleQuotes
   , red
+  , green
+  , blue
+  , yellow
+  , cyan
+  , magenta
   , underline
   )
 
@@ -100,6 +105,26 @@ spec = describe "Fluxus.Utils.Pretty" $ do
     it "red preserves text content" $ do
       let out = T.unpack (renderDoc (red (text "error")))
       out `shouldContain` "error"
+
+    it "green preserves text content" $ do
+      let out = T.unpack (renderDoc (green (text "ok")))
+      out `shouldContain` "ok"
+
+    it "blue preserves text content" $ do
+      let out = T.unpack (renderDoc (blue (text "info")))
+      out `shouldContain` "info"
+
+    it "yellow preserves text content" $ do
+      let out = T.unpack (renderDoc (yellow (text "warn")))
+      out `shouldContain` "warn"
+
+    it "cyan preserves text content" $ do
+      let out = T.unpack (renderDoc (cyan (text "hint")))
+      out `shouldContain` "hint"
+
+    it "magenta preserves text content" $ do
+      let out = T.unpack (renderDoc (magenta (text "meta")))
+      out `shouldContain` "meta"
 
     it "underline preserves text content" $ do
       let out = T.unpack (renderDoc (underline (text "x")))

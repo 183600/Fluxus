@@ -13,8 +13,12 @@ import Fluxus.Utils.Graph
   , buildDominatorTree
   , cfgEntry
   , cfgExit
+  , DataFlowProblem(..)
+  , DataFlowDirection(..)
   , dominatorFrontier
   , dominators
+  , dataFlowAnalysis
+  , Edge(..)
   , edges
   , emptyGraph
   , findPath
@@ -23,6 +27,7 @@ import Fluxus.Utils.Graph
   , neighbors
   , nodeExists
   , nodeId
+  , nodeData
   , nodes
   , postDominators
   , reachableFrom
@@ -148,6 +153,22 @@ spec = do
           g4 = addEdge aId bId Nothing . addEdge aId cId Nothing . addEdge bId cId Nothing $ g3
       shortestPath aId cId g4 `shouldBe` Just [aId, cId]
 
+  describe "Fluxus.Utils.Graph.edges" $ do
+    it "returns edges with correct from, to, and label" $ do
+      let (aId, g1) = addNode "A" emptyGraph
+          (bId, g2) = addNode "B" g1
+          g3 = addEdge aId bId (Just (T.pack "e1")) g2
+          es = edges g3
+      length es `shouldBe` 1
+      let e = head es
+      edgeFrom e `shouldBe` aId
+      edgeTo e `shouldBe` bId
+      edgeLabel e `shouldBe` Just (T.pack "e1")
+
+    it "returns empty list for graph with no edges" $ do
+      let (_, g) = addNode "A" emptyGraph
+      edges g `shouldBe` []
+
   describe "Fluxus.Utils.Graph.buildCFG" $ do
     it "buildCFG produces graph with entry and exit" $ do
       let cfg = buildCFG [T.pack "stmt1", T.pack "stmt2"]
@@ -155,6 +176,44 @@ spec = do
       cfgExit cfg `shouldSatisfy` maybe False (const True)
       length (nodes cfg) `shouldBe` 3
       length (edges cfg) `shouldBe` 2
+
+    it "buildCFG with empty statements list still has entry, block, and exit" $ do
+      let cfg = buildCFG []
+      length (nodes cfg) `shouldBe` 3
+      length (edges cfg) `shouldBe` 2
+      cfgEntry cfg `shouldSatisfy` maybe False (const True)
+      cfgExit cfg `shouldSatisfy` maybe False (const True)
+
+    it "buildCFG node data includes basic block with statement list" $ do
+      let cfg = buildCFG [T.pack "x = 1"]
+          ns = nodes cfg
+      length ns `shouldBe` 3
+      let blockNodes = filter (\n -> T.pack "main" `T.isInfixOf` T.pack (show (nodeData n))) ns
+      length blockNodes `shouldBe` 1
+
+  describe "Fluxus.Utils.Graph.dataFlowAnalysis" $ do
+    it "forward data flow returns a map with one entry per node" $ do
+      let cfg = buildCFG [T.pack "stmt1"]
+          problem = DataFlowProblem
+            { dfpDirection = Forward
+            , dfpInitial = (0 :: Int)
+            , dfpTransfer = \_ v -> v + 1
+            , dfpMeet = maximum
+            }
+          result = dataFlowAnalysis problem cfg
+      Map.size result `shouldBe` length (nodes cfg)
+      Map.size result `shouldBe` 3
+
+    it "backward data flow runs and returns a map with one entry per node" $ do
+      let cfg = buildCFG [T.pack "a"]
+          problem = DataFlowProblem
+            { dfpDirection = Backward
+            , dfpInitial = False
+            , dfpTransfer = \_ b -> b
+            , dfpMeet = or
+            }
+          result = dataFlowAnalysis problem cfg
+      Map.size result `shouldBe` length (nodes cfg)
 
   describe "Fluxus.Utils.Graph.dominatorFrontier" $ do
     it "computes dominator frontier (entry dominates all so frontier empty)" $ do

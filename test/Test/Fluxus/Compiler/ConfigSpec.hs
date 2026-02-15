@@ -126,12 +126,31 @@ spec = describe "Fluxus.Compiler.Config" $ do
       let cfg = defaultConfig { ccSourceLanguage = Python }
       ("--python" `elem` configToArgs cfg) `shouldBe` True
 
+    it "includes --go for Go source language" $ do
+      let cfg = defaultConfig { ccSourceLanguage = Go }
+      ("--go" `elem` configToArgs cfg) `shouldBe` True
+
     it "includes -o when output path is set" $ do
       let cfg = defaultConfig { ccOutputPath = Just "out.bin" }
       ("-o" `elem` configToArgs cfg) `shouldBe` True
       ("out.bin" `elem` configToArgs cfg) `shouldBe` True
 
+    it "includes --target when target platform is set" $ do
+      let cfg = defaultConfig { ccTargetPlatform = Linux_ARM64 }
+          args = configToArgs cfg
+      ("--target" `elem` args) `shouldBe` True
+      ("linux-arm64" `elem` args) `shouldBe` True
+
   describe "mergeConfigs" $ do
+    it "mergeConfigs with emptyOverrides leaves base config unchanged" $ do
+      let base = defaultConfig
+            { ccSourceLanguage = Go
+            , ccOptimizationLevel = O2
+            , ccOutputPath = Just "out"
+            }
+          merged = mergeConfigs base emptyOverrides
+      merged `shouldBe` base
+
     it "allows overriding include paths with an empty list" $ do
       let overrides = emptyOverrides { ccoIncludePaths = Just [] }
           merged = mergeConfigs defaultConfig overrides
