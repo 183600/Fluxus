@@ -23,8 +23,8 @@ jobs:
       RELEASE_MARKER_FILE: .git/azimuth_release_tag
 
       IFLOW_API_KEY: ${{ secrets.IFLOW_API_KEY }}
-      IFLOW_BASE_URL: https://api.routin.ai/v1
-      IFLOW_MODEL_NAME: glm-4.7
+      IFLOW_BASE_URL:
+      IFLOW_MODEL_NAME:
 
       GH_TOKEN: ${{ github.token }}
       GITEE_REMOTE_URL: ${{ secrets.GITEE_REMOTE_URL }}
