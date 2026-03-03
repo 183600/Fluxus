@@ -1,0 +1,172 @@
+name: iflow-stack-autoloop
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: iflow-autoflow-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  run-5h:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      RUN_HOURS: 5
+      WORK_BRANCH: master
+      RELEASE_MARKER_FILE: .git/azimuth_release_tag
+
+      IFLOW_API_KEY: ${{ secrets.IFLOW_API_KEY }}
+      IFLOW_BASE_URL: https://api.routin.ai/v1
+      IFLOW_MODEL_NAME: glm-4.7
+
+      GH_TOKEN: ${{ github.token }}
+      GITEE_REMOTE_URL: ${{ secrets.GITEE_REMOTE_URL }}
+      # Stack 不需要 CABAL_TRANSPORT 或 CABAL_MIRROR_URL
+
+      # 门禁开关：
+      # clean：自动清理坏路径后继续；fail：发现坏路径直接失败退出
+      IFLOW_GUARD_MODE: clean
+      # 非空即开启 ASCII-only（会禁止中文等非 ASCII 文件名）
+      IFLOW_GUARD_ASCII_ONLY: "1"
+
+    steps:
+      - name: Increase Swap space (防止内存溢出断连)
+        run: |
+          # 1. 检查是否存在 /swapfile，如果存在则禁用并删除，避免 "Text file busy" 错误
+          if [ -f /swapfile ]; then
+            echo "Removing existing /swapfile..."
+            sudo swapoff /swapfile || true
+            sudo rm /swapfile
+          fi
+
+          # 2. 创建、设置权限并启用新的 10G 交换文件
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          
+          # 3. 显示当前交换分区状态确认生效
+          swapon -s
+
+      - name: Checkout with PAT
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.IFLOW_PAT }}
+          fetch-depth: 0
+
+      - name: Ensure branch and git identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH="${WORK_BRANCH:-master}"
+          git fetch origin "${BRANCH}" --prune
+          git checkout -B "${BRANCH}" "origin/${BRANCH}"
+          git config user.name "iflow-bot"
+          git config user.email "iflow-bot@users.noreply.github.com"
+
+      - name: Setup Node (for iFlow CLI)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install iFlow CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm i -g @iflow-ai/iflow-cli@latest
+          iflow --version
+
+      - name: Verify IFLOW_API_KEY is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${IFLOW_API_KEY:-}" || { echo "Missing IFLOW_API_KEY secret"; exit 1; }
+
+      - name: Verify GITEE_REMOTE_URL is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GITEE_REMOTE_URL:-}" || { echo "Missing GITEE_REMOTE_URL secret"; exit 1; }
+
+      - name: Setup Haskell (GHC + Stack)
+        uses: haskell-actions/setup@v2
+        with:
+          enable-stack: true
+          stack-version: 'latest'
+
+      - name: Show tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          stack --version
+
+      - name: Cache Stack global and project
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.stack
+            .stack-work
+          key: stack-${{ runner.os }}-${{ hashFiles('stack.yaml', '**/*.cabal') }}
+          restore-keys: |
+            stack-${{ runner.os }}-
+
+      - name: Make scripts executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/typus_stack_loop.sh
+          chmod +x scripts/guard_bad_paths.py
+
+      - name: Run for ${{ env.RUN_HOURS }} hours
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM $(( RUN_HOURS * 3600 )) bash scripts/typus_stack_loop.sh || true
+
+      - name: Guard bad/garbled paths (final gate)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${IFLOW_GUARD_ASCII_ONLY:-}" ]]; then
+            python3 scripts/guard_bad_paths.py --mode "${IFLOW_GUARD_MODE:-clean}" --ascii-only
+          else
+            python3 scripts/guard_bad_paths.py --mode "${IFLOW_GUARD_MODE:-clean}"
+          fi
+
+      - name: Commit & push once (GitHub + Gitee)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH="${WORK_BRANCH:-master}"
+
+          if git remote get-url gitee >/dev/null 2>&1; then
+            git remote set-url gitee "${GITEE_REMOTE_URL}"
+          else
+            git remote add gitee "${GITEE_REMOTE_URL}"
+          fi
+
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "ci: ${RUN_HOURS}h batch update (run $GITHUB_RUN_ID)" || true
+          fi
+
+          MARKER_FILE="${RELEASE_MARKER_FILE}"
+          if [[ ! -f "${MARKER_FILE}" ]]; then
+            GIT_DIR_REAL="$(git rev-parse --git-dir 2>/dev/null || echo ".git")"
+            MARKER_FILE="${GIT_DIR_REAL%/}/azimuth_release_tag"
+          fi
+          if [[ -f "${MARKER_FILE}" ]]; then
+            echo "Release tag prepared: $(cat "${MARKER_FILE}")"
+          fi
+
+          git push origin "HEAD:${BRANCH}" --follow-tags
+          git push gitee "HEAD:${BRANCH}" --follow-tags --force
