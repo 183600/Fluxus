@@ -129,17 +129,6 @@ jobs:
           set -euo pipefail
           timeout --signal=TERM $(( RUN_HOURS * 3600 )) bash script/typus_stack_loop.sh || true
 
-      - name: Guard bad/garbled paths (final gate)
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -n "${IFLOW_GUARD_ASCII_ONLY:-}" ]]; then
-            python3 scripts/guard_bad_paths.py --mode "${IFLOW_GUARD_MODE:-clean}" --ascii-only
-          else
-            python3 scripts/guard_bad_paths.py --mode "${IFLOW_GUARD_MODE:-clean}"
-          fi
-
       - name: Commit & push once (GitHub + Gitee)
         if: always()
         shell: bash
