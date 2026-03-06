@@ -121,14 +121,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x scripts/typus_stack_loop.sh
-          chmod +x scripts/guard_bad_paths.py
+          chmod +x script/typus_stack_loop.sh
 
       - name: Run for ${{ env.RUN_HOURS }} hours
         shell: bash
         run: |
           set -euo pipefail
-          timeout --signal=TERM $(( RUN_HOURS * 3600 )) bash scripts/typus_stack_loop.sh || true
+          timeout --signal=TERM $(( RUN_HOURS * 3600 )) bash script/typus_stack_loop.sh || true
 
       - name: Guard bad/garbled paths (final gate)
         if: always()
