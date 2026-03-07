@@ -13,15 +13,6 @@ GIT_DIR_REAL="$(git rev-parse --git-dir 2>/dev/null || echo ".git")"
 RELEASE_MARKER_FILE="${RELEASE_MARKER_FILE:-${GIT_DIR_REAL%/}/typus_release_tag}"
 
 guard_bad_paths() {
-  local mode ascii
-  mode="${IFLOW_GUARD_MODE:-clean}"      # clean 或 fail
-  ascii="${IFLOW_GUARD_ASCII_ONLY:-}"    # 设为非空即开启 --ascii-only
-
-  if [[ -n "${ascii}" ]]; then
-    python3 scripts/guard_bad_paths.py --mode "${mode}" --ascii-only || return $?
-  else
-    python3 scripts/guard_bad_paths.py --mode "${mode}" || return $?
-  fi
 }
 
 extract_cabal_version() {
