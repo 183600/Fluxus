@@ -12,9 +12,6 @@ WORK_BRANCH="${WORK_BRANCH:-master}"
 GIT_DIR_REAL="$(git rev-parse --git-dir 2>/dev/null || echo ".git")"
 RELEASE_MARKER_FILE="${RELEASE_MARKER_FILE:-${GIT_DIR_REAL%/}/typus_release_tag}"
 
-guard_bad_paths() {
-}
-
 extract_cabal_version() {
   local f ver
 
@@ -82,14 +79,11 @@ attempt_bump_and_tag() {
   old_ver="$(extract_cabal_version || true)"
   echo "当前版本：${old_ver:-<unknown>}"
 
-  echo "满足发布条件：开始 bump 版本号（iFlow）..."
+  echo "满足发布条件：开始 bump 版本号..."
   iflow '增加版本号(例如0.9.1变成0.9.2) think:high' --yolo || {
     echo "bump 版本号失败，跳过本次发布准备。"
     return 0
   }
-
-  # 门禁：防止 iflow 生成乱码路径被提交
-  guard_bad_paths || return $?
 
   git add -A
 
@@ -163,9 +157,6 @@ while true; do
     iflow '删除项目根目录多余的.md文件或者.txt文件（像TEST_ENHANCEMENT_SUMMARY.md和test_wall_production.txt这样的） think:high' --yolo || true
     iflow '确保所有测试用的文件都在专门用来存放测试文件的目录 think:high' --yolo || true
 
-    # 门禁：防止 iflow 生成乱码路径被提交
-    guard_bad_paths || exit $?
-
     git add -A
     if git diff --cached --quiet; then
       echo "没有文件变化可提交"
@@ -210,9 +201,6 @@ debug时可通过加日志和打断点。think:high" --yolo || true
     fi
 
     iflow '删除项目根目录多余的.md文件或者.txt文件（像TEST_ENHANCEMENT_SUMMARY.md和test_wall_production.txt这样的）' --yolo || true
-
-    # 门禁：即使修复失败也清理掉工作区可能出现的乱码路径，避免下轮被 add
-    guard_bad_paths || exit $?
   fi
 
   echo "回到第 1 步..."
