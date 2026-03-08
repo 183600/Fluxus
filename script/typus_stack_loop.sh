@@ -80,7 +80,7 @@ attempt_bump_and_tag() {
   echo "当前版本：${old_ver:-<unknown>}"
 
   echo "满足发布条件：开始 bump 版本号..."
-  iflow '增加版本号(例如0.9.1变成0.9.2) think:high' --yolo || {
+  iflow '增加版本号(例如0.9.1变成0.9.2) ' --yolo || {
     echo "bump 版本号失败，跳过本次发布准备。"
     return 0
   }
@@ -125,7 +125,7 @@ attempt_bump_and_tag() {
 
 trap 'echo; echo "已终止."; exit 0' INT TERM
 
-# iflow "确保测试用例不会消耗大量内存，尽量不要删除测试用例 think:high" --yolo || true
+# iflow "确保测试用例不会消耗大量内存，尽量不要删除测试用例 " --yolo || true
 
 while true; do
   echo "===================="
@@ -152,10 +152,10 @@ while true; do
   fi
 
   if [[ "$STACK_STATUS" -eq 0 ]]; then
-    iflow '确保所有测试用例都符合README.md的内容 think:high' --yolo || true
-    iflow "给这个项目增加一些stack test测试用例，不要超过200个，在这些新测试用例里面，如果需要添加使用QuickCheck的测试用例就添加，确保所有新测试用例都符合README.md的内容 think:high" --yolo || true
-    iflow '删除项目根目录多余的.md文件或者.txt文件（像TEST_ENHANCEMENT_SUMMARY.md和test_wall_production.txt这样的） think:high' --yolo || true
-    iflow '确保所有测试用的文件都在专门用来存放测试文件的目录 think:high' --yolo || true
+    iflow '确保所有测试用例都符合README.md的内容 ' --yolo || true
+    iflow "给这个项目增加一些stack test测试用例，不要超过200个，在这些新测试用例里面，如果需要添加使用QuickCheck的测试用例就添加，确保所有新测试用例都符合README.md的内容 " --yolo || true
+    iflow '删除项目根目录多余的.md文件或者.txt文件（像TEST_ENHANCEMENT_SUMMARY.md和test_wall_production.txt这样的） ' --yolo || true
+    iflow '确保所有测试用的文件都在专门用来存放测试文件的目录 ' --yolo || true
 
     git add -A
     if git diff --cached --quiet; then
@@ -186,7 +186,7 @@ while true; do
           iflow "修复这个具体的错误：$err
 上下文：项目使用 GHCRTS=\"-M2G -A16m\" stack test --flag \"*:fast\" --flag \"*:-production\" --ghc-options=\"-O0 -rtsopts\" --test-arguments=\"+RTS -M1024m -A16m -RTS\" --jobs=1 进行测试。
 除非该错误位于测试文件中（如 Spec.hs），否则只修改测试用例以外的代码。如果是在测试文件中，请修复测试代码。
-debug时可通过加日志和打断点。think:high" --yolo || true
+debug时可通过加日志和打断点。" --yolo || true
         fi
       done <<< "$error_logs"
     else
@@ -197,7 +197,7 @@ debug时可通过加日志和打断点。think:high" --yolo || true
         --flag "*:-production" \
         --ghc-options="-O0 -rtsopts" \
         --test-arguments="+RTS -M1024m -A16m -RTS" \
-        --jobs=1显示的所有问题（除了warning），除非测试用例本身有编译错误，否则只修改测试用例以外的代码，debug时可通过加日志和打断点 think:high' --yolo || true
+        --jobs=1显示的所有问题（除了warning），除非测试用例本身有编译错误，否则只修改测试用例以外的代码，debug时可通过加日志和打断点 ' --yolo || true
     fi
 
     iflow '删除项目根目录多余的.md文件或者.txt文件（像TEST_ENHANCEMENT_SUMMARY.md和test_wall_production.txt这样的）' --yolo || true
